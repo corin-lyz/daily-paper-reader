@@ -1,0 +1,415 @@
+Title: Training-Free Generalized Few-Shot Segmentation through Open-Vocabulary Semantic Arbitration
+
+URL Source: https://arxiv.org/pdf/2606.09474v1
+
+Published Time: Tue, 09 Jun 2026 02:17:32 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+# Training-Free Generalized Few-Shot Segmentation through Open-Vocabulary Semantic Arbitration 
+
+## Silas Kwabla Gah Department of Computer Science University of Ghana 
+
+> skgah001@st.ug.edu.gh
+
+## Ebenezer Owusu Department of Computer Science University of Ghana 
+
+> ebeowusu@ug.edu.gh
+
+## Abstract 
+
+Generalized Few-Shot Semantic Segmentation (GFSS) has traditionally been approached as a representation-learning problem, requiring task-specific adaptation to incorpo-rate novel classes from limited support examples. Re-cent foundation models, however, already exhibit strong open-vocabulary recognition and segmentation capabili-ties, raising a different question: can GFSS be solved through inference-time coordination of frozen semantic pri-ors rather than parameter adaptation? We answer this question with Open-V, a training-free GFSS framework that combines Segment Anything (SAM3) Promptable Concept Segmentation (PCS) with a K-shot CLIP support centroid through calibrated per-pixel semantic arbitration. Open-V introduces no trainable components and supports arbi-trary semantic categories at inference time. Beyond seg-mentation performance, our study contributes three broader findings. First, we show that support information can be incorporated through inference-time semantic grounding, and that its contribution increases as foundation-model text priors weaken on label-disjoint vocabularies. Sec-ond, we identify a reproducibility confound in foundation-model segmentation, demonstrating that preprocessing and evaluation-space mismatches can silently distort reported performance. Finally, we validate Open-V across PASCAL-5i, COCO-20i, and ADE-OW, showing that training-free co-ordination of foundation-model priors generalizes across both conventional GFSS and open-vocabulary evaluation settings. On PASCAL-5 i (1-shot), Open-V attains base/nov-el/harmonic mIoU of 78.4/77.5/77.9, without GFSS-specific training surpassing the strongest trained baseline by +17.7 HM. 
+
+## 1. Introduction 
+
+Semantic segmentation, the task of assigning a class label to every pixel, has advanced rapidly through large supervised datasets and deep architectures [6]. Yet two structural limi-tations persist. First, annotating pixel-level masks is expen-sive and slow. Second, models trained on a fixed vocabulary fail on any class outside that set, no matter how closely re-lated it is to a seen class. 
+
+Generalized Few-Shot Semantic Segmentation (GFSS) addresses both limitations simultaneously. Given 
+
+Cb base classes with dense annotations and Cn novel classes described only by K labelled support images, a GFSS model must segment all Cb + Cn classes simulta-neously in a single forward pass. The joint requirement distinguishes GFSS from vanilla few-shot segmentation (FSS) approaches [30], which handle one novel class in isolation and ignore base-class inference entirely. Existing GFSS methods [10, 11, 27] attack this problem by parameter adaptation : a base-class decoder is trained on abundant base data, then a small visual-prompting head is fitted for novel classes. This design has two inherent costs. The class vocabulary is fixed at training time, that is any change to the class list forces retraining and the novel-class head must generalise from K shots, which is difficult when the head itself has trainable parameters. Recent visual foundation models offer a different per-spective to this task, segment anything (SAM) [12] and SAM2 [23] provide class-agnostic mask proposals through geometric prompts. CLIP [22] provides open-vocabulary recognition through a shared visual-language embedding space. TFM 2 [39] shows that a key-value mask cache built from few-shot masks can enhance OVSS models without any training, while LPOSS [24] demonstrates that label propagation over frozen VLM and vision-model features achieves state-of-the-art training-free open-vocabulary seg-mentation. SAM3 [3] closes a key gap by adding na-tive Promptable Concept Segmentation (PCS) : given a free-form text concept, it returns all instance masks of that con-cept with calibrated presence scores, connecting the geo-metric precision of SAM with the semantic scope of CLIP. In this work, we explore a fully frozen SAM3 for GFSS. Instead of introducing new modules or adapting the model, 1
+
+> arXiv:2606.09474v1 [cs.CV] 8 Jun 2026
+
+we argue that PCS makes a conceptual reframing of GFSS not only possible but natural. Rather than asking “how do we adapt a fixed-vocabulary segmenter to absorb new classes?”, we ask: “how do we arbitrate, per pixel, among open-vocabulary class hypotheses drawn from heteroge-neous frozen evidence sources?” This shifts the problem from parameter fitting to calibrated inference. Three proper-ties follow immediately: (i) the vocabulary is a property of the arbitration step, not of the model’s weights; (ii) the few-shot signal influences exactly one evidence source with-out touching the arbitration rule; and (iii) the dominant de-sign choices are calibration and combination, not model fit-ting. Beyond the proposed framework, we uncover a repro-ducibility and evaluation confound that affects conclusions in foundation-model-based segmentation. We show that in-consistencies between preprocessing, prediction, and eval-uation spaces can silently distort performance estimates, obscuring the true impact of support-conditioning mecha-nisms and segmentation strategies. By identifying and cor-recting this confound, we provide a more reliable evalua-tion protocol and highlight the importance of spatial align-ment for reproducible foundation-model segmentation re-search. Figure 1 illustrates the Open-V pipeline, where frozen SAM3-PCS and CLIP priors are coordinated through support-conditioned semantic arbitration and boundary re-finement to perform training-free generalized few-shot seg-mentation. The main contributions of this work are summarized as follows: 1. Open-vocabulary semantic arbitration for GFSS. We introduce Open-V , a strict training-free GFSS frame-work that coordinates frozen SAM3-PCS and CLIP pri-ors through calibrated per-pixel semantic arbitration. By leveraging foundation-model representations rather than task-specific adaptation, Open-V naturally supports ar-bitrary category vocabularies at inference time. 2. Inference-time semantic grounding without parame-ter updates. We show that the few-shot signal can be in-jected as a post-hoc CLIP support-centroid rerank rather than a trained prompt head. We further show that this signal’s contribution scales with the degree to which the foundation text prior weakens: on a label-disjoint vocab-ulary the optimal weight of the visual centroid shifts and its peak gain widens by a factor of 6.6 × relative to in-distribution PASCAL classes. 3. Diagnosis of spatial-alignment confounds in foundation-model segmentation. We identify and characterize a reproducibility confound that arises when foundation-model segmentation pipelines are evaluated under preprocessing and coordinate-frame mismatches. Through controlled analysis across multiple predictor backbones, we show that inconsistencies between pre-diction and evaluation spaces can substantially distort reported performance, highlighting the importance of spatial alignment for reliable benchmarking of foundation-model-based segmentation systems. 4. Cross-benchmark validation across closed- and open-vocabulary regimes. We evaluate Open-V on PASCAL-5i, COCO-20 i, and ADE-OW, demonstrating that training-free coordination of foundation-model priors generalizes across conventional GFSS benchmarks and label-disjoint open-vocabulary settings without task-specific adaptation. Query Image Support Set    
+
+> SAM3 image
+> encoder
+> SAM3-PCS decoder
+> CLIP image
+> encoder
+> K-shot CLIP centroid
+> Rerank (novel classes only)
+> Floor presence τ_PCS and union
+> Tier-2 boundary refinement
+> update only the δ-pixel band of Mc
+> Per-pixel arg-max over class scores σc
+> Tier-2 Arbitration
+> Inputs frozen features
+> Tier-1: Open-vocab
+
+Figure 1. Open-Vpipeline. Frozen foundation models (SAM3 ViT-L, CLIP ViT-B/16) carry both evidence sources; the K-shot path on the right is applied only to novel classes; the per-pixel arg-max at the bottom is the arbitration stage. The query is en-coded once by SAM3; SAM3-PCS decodes one text-conditioned instance set per class c ∈ C b ∪C n. Base-class scores pass through unchanged; novel-class scores are reranked against a single L2-normalised CLIP centroid vc computed once per run. Instances passing the presence floor τPCS are unioned, sharpened by a sec-ond SAM3 box-prompt call, and resolved by per-pixel arg-max into the final label map. 
+
+## 2. Related Work 
+
+2.1. Few-Shot and Generalized FSS 
+
+Few-shot semantic segmentation [13, 19, 26, 29, 34, 35] conditions on a support set to segment a single novel class 2per query episode. Prototypical methods [9, 26, 37] com-press support features via mask-average pooling into global prototypes, sacrificing spatial detail. Pixel-wise matching methods [19, 21, 34] use cross-attention or 4D convolu-tions to match support and query features directly, achiev-ing stronger results at the cost of heavy episodic training. To eliminate episodic training, recent methods adapt frozen foundation models; for instance, FSS-SAM3 [28] reformu-lates FSS as a spatial-reasoning task on a shared canvas. GFSS [10, 11, 15, 27] extends the task to joint base-and-novel inference. BCM [27] decomposes the prediction into base and novel streams and uses prototype matching to handle novel classes. Visual Prompting [11] appends learn-able visual prompts that adapt to novel classes, achieving the strongest trained performance on PASCAL-5 i. Make It Up [31] augments the support set by synthesising additional shots via diffusion. All prior GFSS methods fix the vocab-ulary at training time. 
+
+2.2. Foundation Models for Segmentation 
+
+SAM [12] demonstrated strong zero-shot class-agnostic segmentation via point, box, or mask prompts. SAM2 [23] extended promptable segmentation to video via a memory-attention mechanism for temporal tracking. SAM3 [3] introduced Promptable Concept Segmentation (PCS), enabling segmentation from free-form text concepts—each returning instance masks with calibrated presence scores—and natively aligning the geometric precision of SAM with the semantic scope of vision-language models. CLIP [22] provides a joint visual-language embedding space, widely used for open-vocabulary classification and retrieval. DINOv2 [20] produces strong dense visual fea-tures for segmentation and retrieval without text supervi-sion. LPOSS [24] exploits label propagation over DINO and CLIP features to achieve state-of-the-art training-free open-vocabulary segmentation, showing that geodesic sim-ilarities capture richer patch-to-patch relationships than Eu-clidean affinity alone. 
+
+2.3. Training-Free Few-Shot and Open-Vocabulary Segmentation 
+
+Unlike traditional closed-set semantic segmentation, re-cent open-vocabulary segmentation methods [1, 2, 5, 7, 8, 14, 18, 32, 33, 38] can recognize arbitrary categories at test time. For instance, the pioneering work of Zhao 
+
+et al . [38] learns a joint embedding from visual and word features. SimSeg [32] decouples open-vocabulary segmen-tation into class-agnostic mask generation and mask clas-sification, which SAN [33] refines using side-adapter net-works. TFM 2 [39] builds a key-value mask cache from a small number of few-shot masks and shows that three refine-ment modules—Dynamic Filter, Channel Reduction, and Feature Alignment—can improve mask classification in a training-free fashion across multiple OVSS backbones. VRP-SAM [25] replaces SAM’s prompt encoder with a vi-sual reference adapter trained per dataset. FSSAM [36] couples frozen SAM with diffusion-derived features. FSS-SAM3 [28] reformulates FSS as a spatial-reasoning prob-lem by placing support and query images on a shared can-vas, achieving state-of-the-art 1-shot results on PASCAL-5 i
+
+while revealing that negative prompts consistently degrade performance in few-shot settings. Matcher [16] uses all-purpose feature matching for one-shot segmentation. Re-cent work has also explored training-free pipelines for seg-mentation, including low-data regimes such as fine-grained fungi classification [4] How Open-V differs. While FSS-SAM3, VRP-SAM, and related work target the FSS proto-col (single novel class per query, no base-class inference), Open-V targets the stricter GFSS protocol requiring joint base-and-novel single-pass inference. Unlike TFM 2, which appends a cache-based adapter to a trained OVSS backbone, Open-V introduces no trained component at any stage. Un-like LPOSS, which operates on a pre-specified class list through label propagation, Open-V’s class vocabulary is a runtime argument with natural support for arbitrary cate-gory vocabularies at inference time. 
+
+## 3. Method 
+
+3.1. Problem Formulation 
+
+We follow the strict GFSS protocol of [11, 27]. A query image Iq ∈ RH×W ×3 must be segmented into 1 + Cb + Cn
+
+classes (background, Cb base, Cn novel) in a single forward pass. Base classes have dense training annotations; novel classes are specified at test time through a per-class support set Sc = {(Iks , M ks )}Kk=1 for each c ∈ C n, with K ∈ { 1, 5}.No novel-class sample is seen at training time. Open-V eliminates the training stage entirely: every component is a frozen pretrained foundation model, and the GFSS task is solved at inference without a single parameter update. 
+
+3.2. Semantic Arbitration: Conceptual Framing 
+
+We recast GFSS as open-vocabulary semantic arbitration .Each class c ∈ C b ∪ C n contributes a per-pixel hypothesis score drawn from a combination of: • A foundation text prior : SAM3-PCS returns instance masks and calibrated presence scores conditioned on the bare class name. • A few-shot visual anchor : a K-shot CLIP support cen-troid, applied only to novel classes, reranks SAM3 in-stances by cosine similarity to the support appearance. The arbitration step selects, for each pixel, the class with the highest arbitrated score. Three things follow from this framing. The vocabulary is a property of the arbitration in-3puts, not of any parameter; changing it requires no retrain-ing. The few-shot signal influences exactly one of the two evidence sources rather than the arbitration rule itself. The dominant design choices are calibration and combination, not model fitting. 
+
+3.3. Tier 1: SAM3-PCS for Open-Vocabulary Seg-mentation 
+
+SAM3’s PCS interface accepts a bare text concept and re-turns an instance set 
+
+Pc = {(mc,j , s c,j , b c,j )}Nc
+
+> j=1
+
+, sc,j = σ(ℓc,j ) · σ(ρc,j ),
+
+(1) where mc,j ∈ {0, 1}H×W is an instance mask, bc,j its bounding box, and sc,j ∈ [0 , 1] is the calibrated sigmoid product of SAM3’s per-instance quality logit ℓc,j and pres-ence logit ρc,j .We pass the bare class name ( e.g. , “aeroplane”) rather than any CLIP-style template; empirically, SAM3 returns zero masks for “a photo of a {cls }” on all tested images, because the model was trained on bare-concept prompts and the templated variant falls outside its calibration. The SAM3 backbone is computed once per query; iterating over 
+
+Cb + Cn classes costs one backbone forward pass and 
+
+Cb + Cn lightweight decoder passes, as the backbone state is cached across classes. 
+
+Presence floor and class-level mask. We apply a pres-ence floor τPCS = 0 .20 to filter low-confidence instances. Defining the post-floor index set Jc = {j : ˜ sc,j ≥ τPCS },the class-level semantic mask and class score are: 
+
+Mc = [
+
+> j∈J c
+
+mc,j , σc = max 
+
+> j∈J c
+
+˜sc,j . (2) If Jc = ∅, the class is treated as absent in this query: Mc =
+
+0 and σc = −∞ .
+
+3.4. K-Shot CLIP Support-Centroid Rerank 
+
+SAM3’s released image processor accepts text and geo-metric prompts only; no exemplar-mask prompt interface is exposed at inference time (see Sec. 4.7 for the spatial-concatenation workaround we evaluated and its negative re-sult). We therefore inject the K-shot signal through CLIP’s joint vision-language space as a post-hoc rerank. 
+
+Per-class visual centroid. For each novel class c ∈ C n,define the masked-foreground operator ϕ(I, M) = I ⊙ M
+
+and the L 2-normalised CLIP image embedder fCLIP (·) = 
+
+CLIP img (·)/∥CLIP img (·)∥2. The support centroid is: 
+
+vc =
+
+PKk=1 fCLIP (ϕ(Iks , M ks )) 
+
+PKk=1 fCLIP (ϕ(Iks , M ks )) 2
+
+∈ Rd, ∥vc∥2 = 1 .
+
+(3) 
+
+vc is computed once per evaluation run and shared across all queries; CLIP is never re-invoked on the support side. Con-cretely, ϕ(I, M ) crops the image to the tight bounding box of M , zeros pixels outside M within that crop, and passes the result to the frozen CLIP image encoder, which resizes it to 224 ×224 internally; query instances mc,j are em-bedded identically using ϕ(Iq , m c,j ). Per-instance score rerank. At inference, for each novel-class SAM3 instance 
+
+(mc,j , s c,j ) ∈ P c we extract the corresponding query region and embed it: 
+
+ec,j = fCLIP (ϕ(Iq , m c,j )) ∈ Rd, ∥ec,j ∥2 = 1 , (4) so e⊤ 
+
+> c,j
+
+vc = cos( ec,j , vc) ∈ [−1, 1] measures cosine sim-ilarity between the query region and the class centroid. The reranked score linearly fuses SAM3 confidence with support-conditioned CLIP similarity, with α controlling the contribution of each evidence source: 
+
+˜sc,j = (1 − α) sc,j + α e⊤ 
+
+> c,j
+
+vc, α ∈ [0 , 1] . (5) Setting α = 0 recovers pure SAM3-PCS; α = 1 relies on the K-shot centroid alone. α is the only continuous hyperparameter Open-V introduces ; we fix α = 0.5
+
+throughout. Base-class instances are not reranked: their text prompts are pretraining-strong and the strict GFSS protocol provides no base support set from which to build a centroid. 
+
+3.5. Tier 2: Boundary-Band Refinement 
+
+Tier-1 masks are accurate in object interiors but may be im-precise along boundaries, since PCS optimises for instance discovery. We include an optional second SAM3 call that ports the boundary-band refinement of [17]: for each class 
+
+c with Mc̸ = 0, let ∂M c be the morphological bound-ary of Mc, Bc = Dδ (∂M c) the δ-pixel dilation (boundary band), and b+ 
+
+> c
+
+the bounding box of Mc enlarged by η pix-els. Querying SAM3 with box prompt b+ 
+
+> c
+
+returns ˆMc; we update only the band-restricted pixels: 
+
+Mc ← (Mc \ Bc) ∪
+
+
+
+Bc ∩ ˆMc
+
+
+
+. (6) The second SAM3 call reuses the backbone state cached by Tier 1 (no additional image encoding). We use δ = 5 
+
+and η = 8 pixels. The class score σc is left unchanged. Tier-2’s empirical contribution on PASCAL is at the noise floor ( ∆ = +0 .02 HM on a 200-episode probe), consistent with PCS already producing pixel-tight masks at PASCAL object scales; we retain it for open-vocabulary categories where Tier-1 localisation may be weaker. 
+
+3.6. Per-Pixel Semantic Arbitration 
+
+The refined class masks {Mc}c∈C b∪C n may overlap because SAM3-PCS processes each class independently. Letting 
+
+Ap = {c : Mc(p) = 1 } denote the set of classes claim-ing pixel p:Label (p) = 
+
+(
+
+arg max c∈A p σc Ap̸ = ∅,
+
+0 (background) Ap = ∅. (7) 4The rule is symmetric in base and novel classes, consistent with the strict GFSS protocol. The rerank of Eq. (5) is there-fore the only place where novel classes are treated specially, and it carries all of the few-shot signal. 
+
+3.7. Spatial-Alignment Requirement 
+
+Open-V inherits a non-obvious requirement from the inter-action between the SAM3 image processor and the strict-protocol GFSS data loader. The strict-protocol loader ap-plies an aspect-preserving letterbox resize (longest side to 
+
+S, zero-pad to S × S, ground-truth padded with ignore in-dex 255). The natural drop-in implementation—re-loading the disk image and calling a square resize—places object centroids at spatial positions incompatible with the loader’s letterbox, causing silent evaluation failure. We feed the 
+
+same letterboxed image produced by the loader directly into SAM3, sharing a single spatial frame. This one-line fix has a large empirical effect (Sec. 4.4). 
+
+## 4. Experiments 
+
+4.1. Setup 
+
+Datasets and protocols. PASCAL-5 i: 4-fold cross-validation over 20 PASCAL VOC classes (15 base + 5 novel per fold). We report per-fold and mean results under both 1-shot and 5-shot at full validation ( ∼1450 episodes per fold), averaged over five independent runs. COCO-20 i: 4-fold; 60 base + 20 novel per fold. Full-val ( 40 ,117 episodes per fold) is infeasible at SAM3 ViT-L’s ∼23 s per query on the hardware used (estimated ∼10 days per fold per run), so we follow the episode-sampling evaluation proto-col adopted by prior work [11, 27]. ADE-OW : A 26-class held-out subset of ADE-20K constructed by removing ev-ery class whose WordNet noun-synset lemma overlaps the union of PASCAL VOC (20 classes), COCO-Stuff (181 classes), and ImageNet-1K (1000 labels), as a label-level control for long-tail open-vocabulary evaluation. The full class list with ADE indices and synset mappings is given in Appendix B, and the subset is fully reproducible from the stated lemma-overlap criterion. 
+
+Metrics. Mean intersection-over-union over base classes (mIoU b), novel classes (mIoU n), and their harmonic mean HM = 2 · mIoU b · mIoU n/(mIoU b + mIoU n). HM is the headline GFSS metric. 
+
+Implementation. Open-V uses SAM3 ViT-L (facebook/sam3 ) and CLIP ViT-B/16 (openai ), both frozen with no task-specific parameter updates. Infer-ence runs at 1024 × 1024 resolution on a single L4 GPU (24 GB). The presence floor is fixed at τPCS = 0 .20 ; the centroid weight at α = 0 .5 for novel classes (0 for base). The spatial-alignment fix of Sec. 3.7 is applied throughout.                                
+
+> Table 1. Strict-GFSS results on PASCAL-5 i, mean over 4 folds (full validation, 5 runs per fold unless noted). Bold: best 1-shot HM. †: frozen SAM3/CLIP (PASCAL vocabulary seen). ‡: split-0 200-episode probe.
+> Method Trained? OV? mIoU bmIoU nHM BCM [27] ✓75.0 47.0 57.8 Vis. Prompting [11] ✓74.9 50.3 60.2 Open-V ( α=0 , no align) †✓45.6 28.9 35.3 Open-V (zero-shot, aligned) †‡ ✓76.0 76.9 76.5 Open-V ( α=0 .5, 1-shot) †✓78.4 77.5 77.9
+> Open-V ( α=0 .5, 5-shot) †✓78.5 76.9 77.6
+
+4.2. Main Results on PASCAL-5 i
+
+Table 1 compares Open-V against trained GFSS baselines. The +17.7 HM gap over the strongest trained baseline (Vi-sual Prompting [11]) decomposes into three factors: (i) SAM3’s foundation-scale pretraining already covers the PASCAL class vocabulary; (ii) the CLIP centroid rerank disambiguates novel classes without parameter updates; and (iii) spatial alignment (Sec. 4.4) closes the dominant silent failure mode. The +17.7 HM margin reflects the comple-mentary strengths of foundation-scale text priors and the Open-V arbitration design; rows marked † indicate that Open-V operates over an open vocabulary while trained baselines fix their class list at training time. The ADE-OW evaluation (Sec. 4.5) further validates Open-V on a label-disjoint vocabulary outside any standard benchmark. On in-distribution PASCAL categories the foundation prior is already strong: with no support set, zero-shot SAM3-PCS reaches 76.5 HM on the matched split-0 probe, and adding the K-shot centroid ( α = 0.5) lifts full-validation HM to 77.9. A modest in-distribution mar-gin is expected when the class vocabulary lies inside the foundation prior; the support signal’s value emerges where that prior weakens, widening by 6.6× on the label-disjoint ADE-OW vocabulary (Sec. 4.5). Open-V supplies this sig-nal without retraining, so it is available exactly when the text prior is insufficient. Per-fold HM is 77.49/78.89/78.84/76.20 (1-shot) and 77.02/78.52/78.87/75.99 (5-shot) for folds 0–3 (five-run mean). Cross-fold spread is tight (2.69 pp at 1-shot) com-pared with 5–10 pp typical of trained baselines that fit a sep-arate decoder per fold; Open-V shares a single frozen back-bone, so between-fold variability comes only from support sampling. 
+
+4.3. Main Results on COCO-20 i
+
+Table 2 reports five-run means for all four COCO-20 i folds. The cross-fold 1-shot mean is HM = 58.17 (mIoU b = 58.92, mIoU n = 57.81). The 5-shot cross-fold mean is HM = 58.35—a near-tie with 1-shot ( ≤ 0.18 pp HM difference), consistent with the saturated-vocabulary reading: additional shots cannot recover SAM3 mass the text prompt already 5cat dog sofa train tv bird chair person   
+
+> query ground truth openV-GFSS
+
+Figure 2. Qualitative strict-GFSS predictions on PASCAL-5i
+
+(input, ground truth, Open-V ). Each row mixes base and novel classes in a single forward pass: Open-V recovers thin and artic-ulated novel structures ( bird , dog ) and large base regions ( train ,
+
+person ) without per-split training. Best viewed zoomed in. 
+
+failed to produce when the class vocabulary is within the foundation pretraining scope. Cross-fold spread on COCO ( ∼5.7 pp HM between splits 1 and 3) is wider than on PASCAL ( 2.7 pp). This tracks how well each fold’s novel vocabulary maps onto SAM3’s text prior. Split-1’s novel set consists of largely common-object vocabulary (bicycle, bus, bear, pizza, etc.), lifting novel mIoU to 66.49. Splits 2–3 include concept-ambiguous classes (mouse: animal or input device; hair drier: 0% detection in both splits), pulling novel mIoU to 55.16 and 51.95 respectively. This is the foundation prior-coverage caveat at fold granularity. 
+
+4.4. Spatial-Alignment Diagnosis 
+
+Table 3 isolates the spatial-alignment confound on PASCAL-5 i split-0, 1-shot, over a 200-episode probe, un-der two predictor backbones. For SAM3-PCS, switching from a na¨ ıve square resize to the loader’s letterbox lifts HM from 35.79% to 72.92%—a +37.1 pp shift. To confirm the failure is a property of the foundation-segmenter integration class rather than of SAM3 specifi-
+
+Table 2. COCO-20 i results (1-shot and 5-shot), mean over 5 runs per fold. Protocol matches [11, 27]. σHM ≤ 0.20 pp on splits 0–2, 0.45 pp on split-3. 1-shot 5-shot Fold mIoU b mIoU n HM mIoU b mIoU n HM Split-0 59.38 57.63 58.49 59.52 57.94 58.72 Split-1 56.66 66.49 61.18 56.72 66.10 61.05 Split-2 60.19 55.16 57.57 60.21 55.27 57.63 Split-3 59.44 51.95 55.44 60.00 52.49 55.99 
+
+Mean 58.92 57.81 58.17 59.11 57.95 58.35 
+
+Table 3. Spatial-alignment diagnosis. PASCAL-5 i split-0, 1-shot, 200-episode probe. Both backbones drop >10 HM pp un-der square-stretch, establishing the failure as a class property of foundation-segmenter integrations. Tier-1 backbone Preprocess mIoU b mIoU n HM SAM3-PCS letterbox 75.94 70.14 72.92 SAM3-PCS cv2.resize 40.93 31.81 35.79 SAM2 + CLIP letterbox 26.19 31.51 28.61 SAM2 + CLIP cv2.resize 15.35 10.19 12.25 
+
+∆ (SAM3-PCS) lbox →sq −35 .01 −38 .33 −37 .13 ∆ (SAM2+CLIP) lbox →sq −10 .84 −21 .32 −16 .36 
+
+cally, we replicate under the canonical SAM2-AutoMask + CLIP rerank backbone, matched for Tier-2, α, support sampling, and evaluator. SAM2 + CLIP also degrades catastrophically under square-stretch (28.61% to 12.25%, 
+
+∆ = −16 .36 pp). Two foundation segmenters of different architecture and different training corpus fail silently in the same way under the same evaluator mismatch. 
+
+Why this is silent. The confound is invisible at the level of image resolution, mask resolution, or foreground pixel fraction. It surfaces through per-class IoU on spa-tially contained objects (cat, chair, pottedplant), whose cen-troids are displaced by a larger fraction of the normalised frame than elongated objects (bus, train). The minimal di-agnostic check we recommend: measure the mean object-centroid displacement between the predictor’s spatial trans-form Tpred (I) and the evaluator’s Teval (I) on a small valida-tion sample; a displacement exceeding a few percent of the canvas size on small objects signals incompatibility. 
+
+4.5. Ablation Studies 
+
+Support-centroid weight α (Table 4). On PASCAL-5 i
+
+split-0, sweeping α from 0 to 1 moves HM within a 0.44 pp band (76.11 to 76.55). The contribution of the K-shot centroid over pure text-conditioned inference ( α = 0 ) is 
+
+∆ = +0 .10 HM, of the same order as run-to-run vari-ance. SAM3-PCS calibration is already strong on PASCAL classes, leaving limited headroom for the visual centroid to 6Table 4. Effect of α (Eq. 5). PASCAL-5 i split-0, 1-shot, 200-episode probe. Bold: default. 
+
+α mIoU b mIoU n HM 0.0 75.97 76.94 76.45 0.3 75.97 76.95 76.46 
+
+0.5 75.94 77.17 76.55 
+
+0.7 75.88 76.33 76.11 1.0 75.91 77.04 76.47 Table 5. Effect of α on ADE-OW (26 label-disjoint classes from ADE-20K, K = 5 , N = 860 queries). The sweep span widens 6.6 × vs. PASCAL, tracking the weakening of the foundation text prior. Bold: ADE-OW peak. 
+
+α mIoU (%) ∆ vs. α=0 
+
+0.0 60.65 0.00 0.3 60.64 −0.01 0.5 60.95 +0.30 
+
+0.7 61.62 +0.97 1.0 58.72 −1.93 
+
+shift the decision boundary. 
+
+Few-shot signal on a label-disjoint vocabulary (Ta-ble 5). Repeating the α-sweep on ADE-OW reveals a qual-itatively different picture. The optimal α shifts from 0.5 on PASCAL to 0.7 on ADE-OW; the sweep span widens from 0.44 pp to 2.90 pp—a factor of 6.6 ×. This establishes that the K-shot centroid’s contribution scales with the degree to which the foundation text prior weakens. The collapse at 
+
+α = 1 .0 (−2.90 pp from peak) shows that pure-centroid replacement loses the text prior on classes where SAM3-PCS still segments accurately; the convex combination over either extreme is empirically motivated by this asymmetry. The per-class breakdown in Table 6 further resolves the aggregate into three interaction regimes: prior-dominant 
+
+classes (flat IoU across α, e.g., tower, flag, stairway); 
+
+ambiguity-resolving classes (IoU peaks at interior α, e.g., sconce 41 .2 → 51 .0, streetlight 65 .7 → 67 .6); and prior-conflicting classes (IoU collapses at α = 1 .0, e.g., chande-lier 73 .5 → 44 .6, fan 83 .8 → 73 .3). The growth of the ambiguity-resolving regime as the foundation prior weak-ens is precisely what produces the 6.6 × widening of the sweep span. 
+
+4.6. Runtime and Scalability 
+
+Table 7 reports per-query wall time on a single L4 GPU. SAM3’s backbone is invoked once per query and cached; the PCS decoder is invoked once per class on that cached state, so cost grows linearly in class count. The CLIP rerank over Nc ∼ 1–8 instances per novel class is negli-gible against the PCS-decoder cost. The support centroid is computed once per evaluation run and adds no per-query 
+
+Table 6. Per-class IoU (%) on ADE-OW (representative classes from each regime; all 26 classes with ADE indices and synonyms in Appendix B). n: query count after K=5 support removal.                                                             
+
+> Class α=0 α=0 .3α=0 .5α=0 .7α=1 .0n
+> Prior-dominant
+> tower 93.0 93.0 93.0 93.0 92.8 9flag 84.7 84.8 84.8 84.7 84.7 49 stairway 80.7 80.7 80.7 80.7 80.7 44
+> Ambiguity-resolving
+> streetlight 65.7 66.2 67.2 67.6 67.9 228 basket 54.3 54.3 59.3 59.1 55.1 63 sconce 41.2 45.8 47.3 51.0 41.7 96
+> Prior-conflicting
+> fan 83.8 82.2 82.6 72.6 73.3 35 chandelier 73.5 71.6 70.3 68.7 44.6 51 lamp 72.5 72.5 72.8 71.1 61.5 274
+
+Table 7. Per-query wall time, L4 GPU ( 1024 2). One backbone pass is amortised; per-class decoder cost grows linearly. Benchmark Cb + Cn s/query 500-class proj. PASCAL-5 i 20 ∼6 —COCO-20 i 80 ∼23 ∼120 s 
+
+cost. At 500 classes, the same architectural shape predicts ∼2minutes per query, dominated by 500 PCS-decoder passes. Two practical mitigations are available: a cheap CLIP zero-shot whole-image pre-filter to prune classes, and batching the independent per-class decoder calls. We pursue nei-ther in this paper but note both as routes to bring large-vocabulary Open-V into interactive time budgets. 
+
+4.7. Negative Result: Spatial-Concatenation Exem-plar Prompting 
+
+We evaluated a dual-stream variant in which novel classes are segmented via SAM3-PCS on a [query — support] can-vas, following the spatial-concatenation strategy of FSS-SAM3 [28]. The intent was to provide a visual exemplar an-chor within the SAM3 input space, by analogy to in-context image prompting. On split-0 1-shot, this variant did not im-prove over the CLIP-centroid rerank once spatial alignment was corrected. Inspecting SAM3’s processor API clarifies the result: the released Sam3Processor accepts text and geometric (point/box) prompts only; no exemplar-mask prompt slot is populated at the image-level in the released code. A can-vas + text query thus reduces to running PCS on a nois-ier, larger image, with support-side instances filtered out in post-processing. We report this as a negative result. Inte-grating SAM3 with image-exemplar prompting will require a model-side interface, not a canvas-side workaround. This finding echoes the observation in FSS-SAM3 [28] that neg-ative prompts can cause prediction collapse through con-7flicting spatial signals—both results point to limitations in how current foundation models handle competing semantic inputs. 
+
+## 5. Limitations and Open Questions 
+
+Foundation-pretraining coverage. PASCAL-5 i and COCO-20 i classes are plausibly covered by SAM3’s text-encoder pretraining and SA-1B-style mask pretraining. Fol-lowing the annotation convention of VRP-SAM [25], we mark foundation-based rows in Table 1 with †. We there-fore scope the +17.7 HM result as evidence that training-free arbitration of large pretrained priors can match or sur-pass trained GFSS baselines on in-distribution categories, with the support centroid supplying the novel-class disam-biguation that a text prompt alone does not. The role of that signal grows as the prior weakens: our ADE-OW ablation (Sec. 4.5) shows a 6.6 × widening on a label-disjoint vocab-ulary, and a larger benchmark disjoint from PASCAL VOC, COCO-Stuff, and ImageNet-1K is the natural next step for the community. 
+
+No exemplar-mask API in released SAM3. The released SAM3 image processor exposes text and box prompts only; the spatial-concatenation workaround un-derperforms the CLIP-centroid rerank. A model-side exemplar-mask interface would likely strengthen the K-shot signal on fine-grained classes whose text concepts under-cover the visual category. 
+
+Union and class-level arbitration in crowded scenes. 
+
+The class-level scalar σc = max j ˜sc,j is set by the strongest instance only. In dense multi-class scenes, a single strong instance can lend its score to weaker same-class instances at distant pixels via the union. Resolving this requires per-pixel confidence maps, which the current SAM3 API does not expose. 
+
+## 6. Conclusion 
+
+We presented Open-V, a training-free open-vocabulary pipeline for Generalized Few-Shot Semantic Segmenta-tion, reframed as open-vocabulary semantic arbitration over per-class hypothesis sources. By coupling SAM3-PCS with a K-shot CLIP support-centroid rerank and adjudicat-ing the two priors through a calibrated per-pixel arg-max, Open-V matches and surpasses trained GFSS baselines on PASCAL-5 i and COCO-20 i under the strict protocol, with no GFSS-specific training, no fine-tuning, and no support-image augmentation. Three findings accompany the segmentation results as methodological contributions. First, the few-shot sig-nal’s contribution to GFSS is calibration-dependent: on in-distribution PASCAL categories, where the text prior al-ready covers the vocabulary, the K-shot centroid yields a small margin, whereas on a label-disjoint vocabulary the same centroid’s contribution widens by 6.6 ×, tracking the weakening of the foundation text prior. Second, spatial alignment between predictor and evaluator is a dominant silent failure mode that can shift harmonic-mean mIoU by more than 37 percentage points and replicates across pre-dictor backbones—we characterise it and provide a mini-mal diagnostic check. Third, spatial-concatenation exem-plar prompting, a natural route to injecting few-shot evi-dence, fails in the absence of a model-side exemplar-mask interface, and we document this as a negative result that de-lineates the current limits of canvas-side workarounds. Open-V suggests a broader principle: as foundation models grow stronger, the scarce resource in few-shot recognition shifts from learned representations to calibrated arbitration among frozen priors. Designing arbitration rules that are robust to prior-coverage heterogeneity—and eval-uation protocols that are sensitive to this heterogeneity—is the key challenge going forward. 
+
+## References                                      
+
+> [1] Luca Barsellotti, Roberto Amoroso, Lorenzo Baraldi, and Rita Cucchiara. Fossil: Free Open-Vocabulary Semantic Segmentation through Synthetic References Retrieval. In
+> IEEE/CVF Winter Conference on Applications of Computer Vision (WACV) , pages 1464–1473, 2024. 3 [2] Luca Barsellotti, Roberto Amoroso, Marcella Cornia, Lorenzo Baraldi, and Rita Cucchiara. Training-Free Open-Vocabulary Segmentation with Offline Diffusion-Augmented Prototype Generation. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 3689–3698, 2024. 3 [3] Nicolas Carion, Laura Gustafson, Yuan-Ting Hu, Shoub-hik Debnath, Ronghang Hu, Didac Suris, Chaitanya Ryali, Kalyan Vasudev Alwala, Haitham Khedr, Andrew Huang, et al. SAM 3: Segment Anything with Concepts. In In-ternational Conference on Learning Representations (ICLR) ,2026. 1, 3 [4] Sebastian Cavada, Francesco Pelosin, and Lapo Faggi. Training-free fine-grained semantic segmentations in low data regimes: A fungitastic baseline. 2026. Accepted at the 13th Workshop on Fine-Grained Visual Categorization, CVPR 2026. 3 [5] Junbum Cha, Jonghwan Mun, and Byungseok Roh. Learning to Generate Text-Grounded Mask for Open-World Semantic Segmentation from Only Image-Text Pairs. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 11165–11174, 2023. 3 [6] Liang-Chieh Chen, George Papandreou, Iasonas Kokkinos, Kevin Murphy, and Alan L. Yuille. DeepLab: Semantic Image Segmentation with Deep Convolutional Nets, Atrous Convolution, and Fully Connected CRFs. IEEE Transac-tions on Pattern Analysis and Machine Intelligence (TPAMI) ,2018. 1 [7] Seokju Cho, Heeseong Shin, Sunghwan Hong, Anurag Arnab, Paul Hongsuck Seo, and Seungryong Kim. CAT-Seg:
+
+8Cost Aggregation for Open-Vocabulary Semantic Segmen-tation. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 4113–4123, 2024. 3 [8] Zheng Ding, Jieke Wang, and Zhuowen Tu. Open-Vocabulary Universal Image Segmentation with MaskCLIP. In International Conference on Learning Representations (ICLR) , 2023. 3 [9] Qi Fan, Wenjie Pei, Yu-Wing Tai, and Chi-Keung Tang. Self-Support Few-Shot Semantic Segmentation. In European Conference on Computer Vision (ECCV) , 2022. 3 [10] Xinwei Geng et al. Enhancing Generalized Few-Shot Se-mantic Segmentation via Effective Knowledge Transfer. In 
+
+AAAI Conference on Artificial Intelligence (AAAI) , 2024. 1, 3[11] Mir Rayat Imtiaz Hossain et al. Visual Prompting for Gen-eralized Few-Shot Segmentation: A Multi-Scale Approach. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2024. 1, 3, 5, 6 [12] Alexander Kirillov, Eric Mintun, Nikhila Ravi, Hanzi Mao, Chloe Rolland, Laura Gustafson, Tete Xiao, Spencer White-head, Alexander C. Berg, Wan-Yen Lo, Piotr Doll´ ar, and Ross Girshick. Segment Anything. In IEEE/CVF Interna-tional Conference on Computer Vision (ICCV) , 2023. 1, 3 [13] Chunbo Lang, Gong Cheng, Binfei Tu, and Junwei Han. Learning What Not to Segment: A New Perspective on Few-Shot Segmentation. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2022. 2 [14] Feng Liang, Bichen Wu, Xiaoliang Dai, Kunpeng Li, Yinan Zhao, Hang Zhang, Peizhao Zhang, Peter Vajda, and Diana Marculescu. Open-Vocabulary Semantic Segmentation with Mask-Adapted CLIP. In IEEE/CVF Conference on Com-puter Vision and Pattern Recognition (CVPR) , 2023. 3 [15] Lan Liu et al. Class-Agnostic Few-Shot Object Counting and Segmentation via Cross-Attention Networks. In AAAI Conference on Artificial Intelligence (AAAI) , 2023. 3 [16] Yang Liu, Muzhi Zhu, Hengtao Li, Hao Chen, Xinlong Wang, and Chunhua Shen. Matcher: Segment Anything with One Shot Using All-Purpose Feature Matching. In In-ternational Conference on Learning Representations (ICLR) ,2024. 3 [17] Yuanwei Liu et al. Intermediate Prototype Mining Trans-former for Few-Shot Semantic Segmentation. In Advances in Neural Information Processing Systems (NeurIPS) , 2022. 4[18] Huaishao Luo, Junwei Bao, Youzheng Wu, Xiaodong He, and Tianrui Li. SegCLIP: Patch Aggregation with Learnable Centers for Open-Vocabulary Semantic Segmentation. In In-ternational Conference on Machine Learning (ICML) , pages 23033–23044, 2023. 3 [19] Juhong Min, Dahyun Kang, and Minsu Cho. Hypercorre-lation Squeeze for Few-Shot Segmentation. In IEEE/CVF International Conference on Computer Vision (ICCV) , 2021. 2, 3 [20] Maxime Oquab, Timoth´ ee Darcet, Th´ eo Moutakanni, Huy V. Vo, Marc Szafraniec, Vasil Khalidov, Pierre Fernandez, Daniel Haziza, Francisco Massa, Alaaeldin El-Nouby, et al. DINOv2: Learning Robust Visual Features Without Supervi-sion. Transactions on Machine Learning Research (TMLR) ,2024. 3 [21] Bohao Peng, Zhuotao Tian, Xiaoyang Wu, Chengyao Wang, Shu Liu, Jingyong Su, and Jiaya Jia. Hierarchical Dense Correlation Distillation for Few-Shot Segmentation. In 
+
+IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2023. 3 [22] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, Gretchen Krueger, and Ilya Sutskever. Learning Transferable Visual Models from Natural Language Supervision. In Interna-tional Conference on Machine Learning (ICML) , 2021. 1, 3[23] Nikhila Ravi, Valentin Gabeur, Yuan-Ting Hu, Ronghang Hu, Chaitanya Ryali, Tengyu Ma, Haitham Khedr, Roman R¨ adle, Chloe Rolland, Laura Gustafson, et al. SAM 2: Seg-ment Anything in Images and Videos. In International Con-ference on Learning Representations (ICLR) , 2025. 1, 3 [24] Vladan Stojni´ c, Yannis Kalantidis, Jiri Matas, and Giorgos Tolias. LPOSS: Label Propagation Over Patches and Pixels for Open-Vocabulary Semantic Segmentation. arXiv preprint arXiv:2503.19777 , 2025. 1, 3 [25] Yanpeng Sun, Jiahui Chen, Shan Zhang, Xinyu Zhang, Qiang Chen, Gang Zhang, Errui Ding, Jingdong Wang, and Zechao Li. VRP-SAM: SAM with Visual Reference Prompt. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2024. 3, 8 [26] Zhuotao Tian, Hengshuang Zhao, Michelle Shu, Zhicheng Yang, Ruiyu Li, and Jiaya Jia. Prior Guided Feature Enrich-ment Network for Few-Shot Segmentation. IEEE Transac-tions on Pattern Analysis and Machine Intelligence (TPAMI) ,44(2):1050–1065, 2020. 2, 3 [27] Zhuotao Tian, Hengshuang Zhao, Michelle Shu, Zhicheng Yang, Ruiyu Li, and Jiaya Jia. Generalized Few-Shot Se-mantic Segmentation. In IEEE/CVF Conference on Com-puter Vision and Pattern Recognition (CVPR) , 2022. 1, 3, 5, 6[28] Yi-Jen Tsai, Yen-Yu Lin, and Chien-Yao Wang. Few-Shot Semantic Segmentation Meets SAM3. arXiv preprint arXiv:2604.05433 , 2026. 3, 7 [29] Kaixin Wang, Jun Hao Liew, Yingtian Zou, Daquan Zhou, and Jiashi Feng. PANet: Few-Shot Image Semantic Segmen-tation with Prototype Alignment. In IEEE/CVF International Conference on Computer Vision (ICCV) , 2019. 2 [30] Yuan Wang, Naisong Luo, and Tianzhu Zhang. Focus on query: Adversarial mining transformer for few-shot segmen-tation. Advances in neural information processing systems ,36:31524–31542, 2023. 1 [31] Guohuan Xie, Xin He, Dingying Fan, Le Zhang, Ming-Ming Cheng, and Yun Liu. Make it up: Fake images, real gains in generalized few-shot semantic segmentation. arXiv preprint arXiv:2603.27206 , 2026. 3 [32] Mengde Xu, Zheng Zhang, Fangyun Wei, Yutong Lin, Yue Cao, Han Hu, and Xiang Bai. A Simple Baseline for Open-Vocabulary Semantic Segmentation with Pre-Trained Vision-Language Model. In European Conference on Com-puter Vision (ECCV) , pages 736–753, 2022. 3 
+
+9[33] Mengde Xu, Zheng Zhang, Fangyun Wei, Han Hu, and Xi-ang Bai. Side Adapter Network for Open-Vocabulary Se-mantic Segmentation. In IEEE/CVF Conference on Com-puter Vision and Pattern Recognition (CVPR) , pages 2945– 2954, 2023. 3 [34] Qianxiong Xu, Wenting Zhao, Guosheng Lin, and Cheng Long. Self-Calibrated Cross Attention Network for Few-Shot Segmentation. In IEEE/CVF International Conference on Computer Vision (ICCV) , 2023. 2, 3 [35] Qianxiong Xu, Guosheng Lin, Chen Change Loy, Cheng Long, Ziyue Li, and Rui Zhao. Eliminating Feature Ambi-guity for Few-Shot Segmentation. In European Conference on Computer Vision (ECCV) , 2024. 2 [36] Qianxiong Xu, Lanyun Zhu, Xuanyi Liu, Guosheng Lin, Cheng Long, Ziyue Li, and Rui Zhao. Unlocking the Power of SAM 2 for Few-Shot Segmentation. In International Con-ference on Machine Learning (ICML) , 2025. 3 [37] Jian-Wei Zhang, Yifan Sun, Yi Yang, and Wei Chen. Feature-Proxy Transformer for Few-Shot Segmentation. In Advances in Neural Information Processing Systems (NeurIPS) , 2022. 3[38] Hang Zhao, Xavier Puig, Bolei Zhou, Sanja Fidler, and Antonio Torralba. Open Vocabulary Scene Parsing. In 
+
+IEEE/CVF International Conference on Computer Vision (ICCV) , 2017. 3 [39] Yaoxin Zhuo, Zachary Bessinger, Lichen Wang, Naji Khos-ravan, Baoxin Li, and Sing Bing Kang. TFM 2: Training-Free Mask Matching for Open-Vocabulary Semantic Segmenta-tion. In IEEE/CVF Winter Conference on Applications of Computer Vision (WACV) , 2025. 1, 3 
+
+10 A. Alignment-Diagnostic Reference Imple-mentation 
+
+This appendix supports the methodological recommenda-tion at the end of §3.7 (“predictor–loader transform equiv-alence”). We give an unambiguous specification of the two transforms compared in Table 3, a centroid-displacement diagnostic that surfaces the failure mode on a small sam-ple of any val set, and a worked numerical example. 
+
+A.1. Transform specification 
+
+Both transforms map a disk image I ∈ RH×W ×3 to a fixed-size canvas I′ ∈ RS×S×3 with S = 1024 in our experiments. They differ only in how aspect ratio is handled. 
+
+Letterbox (ours, matching the GFSS loader). Compute 
+
+r = S/ max( H, W ), resize to (⌈rH ⌉, ⌈rW ⌉), zero-pad symmetrically to S×S. The pad offset is py = ⌊(S −rH )/2⌋
+
+(top) and px = ⌊(S − rW )/2⌋ (left). A pixel at original co-ordinates (y, x ) maps to 
+
+Tletterbox (y, x ) =  py + r y, p x + r x . (8) 
+
+Square stretch (failure mode). Apply 
+
+cv2.resize(I, (S, S)) directly. The two axes use independent scales ry = S/H , rx = S/W :
+
+Tsquare (y, x ) = ( ry y, r x x). (9) These agree only when H = W ; for any other aspect ra-tio, the square-stretch transform displaces every off-centre pixel. The ground-truth mask is letterboxed by the loader regardless, so a prediction made under Tsquare is scored against a mask in a different coordinate frame. 
+
+A.2. Centroid-displacement diagnostic 
+
+The minimum check we recommend before trusting any foundation-segmenter integration is the per-object centroid displacement between the two transforms, expressed as a fraction of the canvas. Pseudocode:                                                                                               
+
+> def centroid_displacement(I_shape, S, mask): """ I_shape: (H, W) of the original disk image S: canvas size used by both pipelines (e.g. 1024) mask: HxW binary object mask in original coords Returns: ||T_letterbox(c) -T_square(c)||_2 /Swhere cis the mask centroid. """ H, W=I_shape ys, xs =np.where(mask)
+> if len (ys) == 0:
+> return 0.0 cy, cx =ys.mean(), xs.mean()
+> Centroid (y, x )in original Tletterbox Tsquare ∆(px) ∆/S
+> image centre (187 ,250) (511 ,512) (511 ,512) 0.3<0.001
+> upper-left object (60 ,80) (251 ,164) (164 ,164) 87 .30.085
+> upper-right object (60 ,420) (251 ,860) (164 ,860) 87 .30.085
+> bottom-left object (310 ,80) (763 ,164) (847 ,164) 84 .20.082
+> bottom-right object (310 ,420) (763 ,860) (847 ,860) 84 .20.082
+
+Table S1. Centroid displacement on a single 500 × 375 PAS-CAL image. The image centre is invariant by symmetry. Every off-centre object centroid shifts by ∼8 % of the canvas along the padded axis. With SAM3-PCS’s instance-localised prediction and the loader’s letterboxed ground truth, this is enough to drop IoU to near-zero on small objects whose IoU support is narrow in the displaced direction.                                               
+
+> r=S/max (H, W) py =(S -r* H) /2px =(S -r* W) /2ly, lx =py +r* cy, px +r* cx sy, sx =(S /H) * cy, (S /W) * cx
+> return np.hypot(ly -sy, lx -sx) /S
+
+The diagnostic returns a scalar in [0 , 1] : zero means the two transforms place the centroid identically; any value above a few percent indicates a coordinate-frame mismatch that will silently suppress IoU on the affected objects. As a rule of thumb, a mean displacement above 0.02 on a 50-image sample, computed class-by-class, is sufficient evi-dence that the predictor and the loader are not aligned; the per-class breakdown then reveals which object scales are most affected. 
+
+A.3. Worked numerical example 
+
+We illustrate the diagnostic on a single image with the modal PASCAL VOC aspect ratio. Take H = 375 , W =500 , S = 1024 . Then r = 1024 /500 = 2 .048 , py =(1024 − 768) /2 = 128 , px = 0 , ry = 2 .731 , rx = 2 .048 .The 8 % number is not specific to this example: it is set by the aspect ratio. For PASCAL VOC, where most im-ages have aspect ratio ∈ [1 .3, 1.5] , off-centre objects shift by 5–10 % of the canvas; for COCO and ADE-20K, which include both portrait and landscape frames, the range is sim-ilar. The diagnostic returns the same order of magnitude on all three. The HM gain reported in Table 3 ( +37 .1 pp on PASCAL split-0, −16 .4 pp under SAM2+CLIP) is the inte-grated effect of this displacement over the full val set. 
+
+## B. ADE-OW Construction 
+
+This appendix specifies the construction of ADE-OW, the held-out 26-class subset of ADE-20K used in Table 5. The artifact is shipped in machine-readable form alongside the code release ( owgfss/benchmarks/ade ow/ ); we summarise the construction here for reproducibility. 11 B.1. Filter rule 
+
+ADE-OW retains every ADE150 class whose names share 
+
+no WordNet noun-synset lemma with any label in the union of COCO-stuff (181 thing+stuff labels), Pascal VOC (20 foreground classes), and ImageNet-1k (1000 classes). Con-cretely: 1. For each candidate ADE150 class, split its name on “ ;” into synonyms (e.g. streetlight;street lamp →
+
+{streetlight, street lamp} ). 2. For each synonym, collect every WordNet noun-synset lemma reachable from any of its tokens (no hyper-nym/hyponym expansion). 3. Form the union of these lemma sets over all synonyms of the candidate; call it Lc.4. Build the same lemma sets for every COCO-stuff, VOC, and IN-1k label, with one prepro-cessing exception: COCO-stuff compound labels of the form {class }-other , {class }-stuff ,
+
+{class }-merged are decomposed into their whites-pace tokens (e.g. sky-other contributes the bare lemma sky ). VOC and IN-1k labels are kept whole, so 
+
+table lamp does not leak the bare class lamp .5. Drop the candidate iff Lc intersects any of these three union lemma sets. The full filter is implemented in 
+
+owgfss/benchmarks/ade ow/build ade ow.py 
+
+and runs in seconds on CPU; the script writes the kept and rejected lists to ade ow classes.json and 
+
+ade ow rejected.json respectively. 
+
+B.2. Retained classes 
+
+Table S2 lists the 26 surviving ADE150 classes with their ADE-20K class indices, the synonyms used as text con-cepts at inference, and the original ADE-20K val/train im-age counts (before the K = 5 support sampler removes some val images). Display names for rows 18, 50, 74, 88, 97, 106, 113, 121, and 148 patch a known upstream mangling of the CSAILVision/sceneparsing CSV: rows whose origi-nal Name field contained both “ ;” (synonym separator) and a space had spaces silently turned into semicolons. The fil-ter logic is robust to this because WordNet lookup operates on each whitespace token, but the display name is patched for readability. 
+
+B.3. Why 26 and not 30 
+
+An earlier draft of the protocol specification anticipated 30 surviving classes. The strict filter of Sec. B.1 returns 26: relaxing the rule to hit a round number would have introduced classes with known PASCAL/COCO/ImageNet lemma overlap (the dominant family is furniture nouns whose ADE compound names share a head lemma with a plain ImageNet class, e.g. table lamp /lamp would have                                                                                                             
+
+> #Class (synonyms separated by “;”) ADE idx val n train n 1lamp 37 302 3089 2streetlight;street lamp 88 239 1989 3box 42 162 1440 4cushion 40 153 1453 5sconce 135 108 1020 6armchair 31 98 1172 7column;pillar 43 77 800 8basket;handbasket 113 75 622 9awning;sunshade;sunblind 87 61 533 10 chandelier;pendant;pendent 86 56 583 11 flag 150 56 421 12 stairway;staircase 60 52 564 13 fan 140 44 397 14 fireplace;hearth;open fireplace 50 38 468 15 plaything;toy 109 38 340 16 countertop 71 31 331 17 canopy 107 31 292 18 sculpture 133 21 285 19 tower 85 18 147 20 shower 146 14 130 21 kitchen island 74 9144 22 hovel;hut;hutch;shack;shanty 80 865 23 escalator;moving staircase;moving stairway 97 642 24 lake 129 552 25 ship 104 452 26 conveyer belt;conveyor belt;transporter 106 457
+
+Table S2. The 26 ADE-OW classes, sorted by ADE-20K val fre-quency. “val n” / “train n” are ADE-20K val/train image counts before the K = 5 support sampler. The three lowest-frequency rows ( n ≤ 5) have all of their val images consumed by the sampler at K = 5 and therefore appear as n = 0 in Table 6. 
+
+leaked under a hypernym-permissive rule). We ship the 26 strict survivors as the canonical ADE-OW class list. 
+
+B.4. Sampling protocol 
+
+Of ADE-20K’s 983 -image val set, the val-image fil-ter ( build ade ow val filter.py ) keeps every val frame containing ≥ 1 pixel of any ADE-OW class. The 
+
+K-shot support sampler picks the K = 5 val images of highest per-class pixel coverage as the support set for each ADE-OW class; the remaining val images form the per-class query pool, with N counted in Table 6. The CLIP cen-troid is built once per class from the K = 5 support images using the same masked-foreground operator ϕ as Eq. (3), with no augmentation. Three classes ( lake , ship , conveyer belt ) have all of their val instances consumed by the sup-port sampler at K = 5 and therefore appear in Table 6 with 
+
+n = 0 query images; their rows are retained for vocabulary completeness. 12

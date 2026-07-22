@@ -1,0 +1,465 @@
+Title: AISPO: Enhancing Depth Reliability for Robotic Manipulation of Non-Lambertian Objects via Affine-Invariant Shape Prior
+
+URL Source: https://arxiv.org/pdf/2606.25503v1
+
+Published Time: Thu, 25 Jun 2026 00:38:53 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+> IEEE ROBOTICS AND AUTOMATION LETTERS. PREPRINT VERSION. ACCEPTED APRIL, 2026 1
+
+# AISPO: Enhancing Depth Reliability for Robotic Manipulation of Non-Lambertian Objects via Affine-Invariant Shape Prior 
+
+Zhiming Chen ∗1,6, Linfang Zheng ∗2, Kun Zhang 6, Hyung Jin Chang 5, Wei Zhang 3,6, Hongyu Yu 1, Hua Chen †4,6,
+
+Abstract —Reliable depth perception is critical for robotic manipulation, especially for non-Lambertian objects such as transparent or highly specular surfaces, where raw depth measurements are often corrupted or missing. These failures frequently propagate to motion planning, resulting in invalid grasp poses and execution errors. We propose AISPO, a depth completion framework that improves depth reliability for ma-nipulation in challenging sensing conditions. AISPO combines multi-scale RGB-D feature fusion with an affine-invariant shape prior to enforce geometric consistency and mitigate catastrophic depth failures. Unlike methods that focus primarily on average depth accuracy, our approach emphasizes physical plausibility and structural integrity of the predicted depth maps. Extensive benchmark evaluations demonstrate competitive performance and strong generalization to unseen objects and novel scenes. Real-world grasping experiments further show that enhanced depth reliability significantly improves manipulation success rates, particularly for transparent objects where many existing methods fail to produce physically usable depth estimates. 
+
+Index Terms —RGB-D Perception; Perception for Grasping and Manipulation; Computer Vision for Automation 
+
+I. INTRODUCTION Reliable depth perception is fundamental to robotic manipu-lation. Modern robotic systems [1][2][3] heavily rely on depth sensors to estimate scene geometry for grasp planning, colli-sion avoidance, and motion execution. However, when inter-acting with non-Lambertian objects—such as transparent con-tainers, glassware, or highly specular metallic surfaces—raw depth measurements are often severely corrupted or entirely missing. In practical manipulation pipelines, such perception failures frequently propagate to motion planning, resulting in physically invalid grasp poses and execution failure. Therefore, improving depth reliability under these challenging conditions is critical for robust real-world robotic systems [4][5]. Existing depth completion methods aim to refine incomplete or noisy depth maps by leveraging RGB guidance or geomet-ric constraints[6][7][8]. While significant progress has been achieved on public benchmarks, many approaches primarily optimize global depth error metrics (e.g., RMSE or MAE), which may not adequately reflect system-level robustness. In robotic manipulation, small average improvements are often less important than preventing catastrophic depth failures that 
+
+Manuscript received: Decemember 18, 2025; Revised: February 27, 2026; Accepted: April 3, 2026. This paper was recommended for publication by Editor Markus Vincze upon evaluation of reviewers’ comments. 
+
+> ∗
+
+denotes equal contribution, †denotes the corresponding author. 
+
+> 1
+
+The Hong Kong University of Science & Technology, 2The Uni-versity of Hong Kong, 3Southern University of Science & Technol-ogy, 4Zhejiang University, 5University of Birminghan, 6LimX Dynamics. 
+
+zhiming.chen@connect.ust.hk, huachen@intl.zju.edu.cn 
+
+Digital Object Identifier (DOI): see top of this page. (c) 
+
+(b) 
+
+(a)  (d) 
+
+(e) 
+
+(f) (g) 
+
+Fig. 1: Unlocking reliable depth sensing for robotic manip-ulation in the real world. AISPO completes missing depth for challenging non-Lambertian objects—such as transparent and reflective items—by combining learned shape priors and multi-modal visual cues. Shown: (a) real-world robotic scene, (b) input RGB, (c) detected non-Lambertian object mask, (d) raw depth with large missing regions, (e) our completed depth, and the RGB-colored point clouds (f) and (g) generated from raw and completed depth respectively. Our approach enables significant improvement of the success rate on grasping non-lambertian objects. produce distorted object geometry or hallucinated surfaces. Moreover, multi-view or optimization-based approaches [5][9] can improve reconstruction fidelity but typically incur sub-stantial computational overhead, limiting their suitability for time-sensitive robotic applications. To address these challenges, we propose AISPO , adepth completion framework designed to enhance geomet-ric consistency and reduce catastrophic estimation errors in manipulation-oriented scenarios. Our approach integrates multi-scale RGB-D feature fusion with an affine-invariant shape prior, enabling the network to better preserve struc-tural integrity under non-Lambertian sensing conditions. By enforcing geometric regularity through a dedicated shape-prior autoencoder and a two-stage training paradigm, AISPO improves the physical plausibility of predicted depth maps rather than merely minimizing pixel-wise errors. We evaluate our method on public depth completion benchmarks to assess  
+
+> arXiv:2606.25503v1 [cs.RO] 24 Jun 2026 2IEEE ROBOTICS AND AUTOMATION LETTERS. PREPRINT VERSION. ACCEPTED APRIL, 2026
+
+quantitative performance and generalization capability. More importantly, we validate its practical impact in real-world robotic grasping experiments. Our results demonstrate that reducing catastrophic depth artifacts directly translates into substantially higher grasp success rates, particularly for trans-parent objects where many existing methods fail to produce usable depth maps. The main contributions of this work are summarized as follows: 1) We propose AISPO, a depth completion framework that integrates multi-scale RGB-D feature fusion with an affine-invariant shape prior to enhance geometric consistency under non-Lambertian sensing conditions. 2) We introduce a shape-prior autoencoder and a two-stage training strategy to enforce structural regularity and reduce catastrophic depth estimation failures. 3) We demonstrate through extensive benchmark evalua-tion and real-world robotic experiments that improved depth reliability significantly enhances manipulation per-formance, especially in challenging transparent object scenarios. II. RELATED WORK 
+
+Single-view RGB-D Depth Completion: ClearGrasp [6] pioneered the use of single-view RGB-D input for transparent object depth completion, employing three separate models to predict the mask, surface normal, and occlusion boundary, followed by a global optimization step to obtain the final depth. Zhu et al. [7] proposed that the depth of a transparent object can be inferred from nearby opaque regions using a trained local implicit depth function (LIDF). TransparentNet [10] lifts depth maps to point clouds for completion. DFNet [8] utilizes a U-Net architecture to encode inaccurate depth maps at multiple resolutions. More recent works, such as SwinDRNet [11] and TODE-Trans [12], leverage the Swin Transformer [13] to better capture global context. However, the challenge of accurately handling non-Lambertian surfaces remains largely unresolved. 
+
+Monocular Depth Estimation: Recently, monocular depth estimation has attracted a lot of research attention. However, most of them [14][15][16] focus on relative depth estimation, which is more beneficial for AIGC applications [17][18] and does not directly apply to real-world robotic manipulations. Absolute depth estimation methods [19] exhibit significant deviations from the ground truth for diffuse objects - let alone challenging cases involving transparent or specular surfaces. PromptDA [20] uses LiDAR as the prompt to guide the Depth Anything model [14] for accurate metric depth output, which has the potential to generalize with transparent and specular objects. Depth-Pro [21] is a foundation model trained on various public datasets. MODEST [22] proposes a monocular framework to jointly predict depth and segmentation for trans-parent objects where a semantic and geometric fusion module that can better leverage the complementary information of both tasks. Nevertheless, these methods have limited performance in depth accuracy due to the ill-posed nature of the monocular depth estimation problem lacking direct metric input. Pi3 [23] and Depth AnythingV3 [24] are newer 3D vision foundation models which can also apply for single view case. 
+
+Multi-view RGB Depth Prediction: Multi-view methods typically leverage observations from multiple perspectives to benefit from richer visual information. In this work, we treat stereo approaches as a special case of two-view methods within the multi-view category. SimNet [25] explored a sin-gle multi-headed neural network as a multi-task framework using stereo data as input, utilizing multiple visual percep-tions—including segmentation masks, 3D oriented bounding boxes, object keypoints, and disparity as output to sup-port transparent object manipulation. D3RoMa [26] leverages stereo image pairs to predict the depth of non-Lambertian objects using a denoising diffusion probabilistic model [27]; however, its non-negligible training time and demand for large amounts of data limit its scalability. MVTrans [28] extends stereo methods by introducing an end-to-end multi-view architecture with multiple perceptual capabilities, thereby avoiding reliance on unreliable depth maps from RGB-D sen-sors. Nevertheless, multi-view methods [29] [30] still struggle with high computational costs and latency. 
+
+NeRF-based Methods: Building upon recent advances in neural radiance fields (NeRF) [31], DexNeRF [32] became the first to extend multi-view depth estimation by employ-ing an implicit neural radiance field to represent transparent objects, although its optimization process required several hours. EvoNeRF [33] improves upon DexNeRF by integrat-ing Instant-NGP [34], a faster variant of NeRF. Instead of training on a fixed set of images, EvoNeRF incrementally optimizes from a stream of images captured during robot motion. However, it still relies on dense input views and requires scene-specific training prior to each grasping attempt. GraspNeRF [35] later accelerated inference by leveraging a generalizable NeRF framework. Methods such as SAID-NeRF [5] and ResidualNeRF [9] further improve robustness by decoupling the background. Despite these advances, existing NeRF-based approaches often struggle with complex light interactions, particularly for highly transparent objects (e.g., wine glasses) or specular surfaces (e.g., kitchen foil), where the lack of stable visual features and strong view-dependent appearance variations pose significant challenges. III. METHOD 
+
+A. Problem Setup 
+
+This section presents our depth-sensing framework designed to address the severe depth corruption commonly observed in non-Lambertian objects—such as transparent and spec-ular surfaces—during robotic manipulation. The framework aims to enhance the accuracy of dense depth estimation, particularly for these challenging yet ubiquitous object types. Given an RGB image I ∈ R3×H×W capturing color and texture information, and a raw, often corrupted depth image 
+
+Draw ∈ RH×W providing geometric cues, our framework learns a mapping fθ (·) to predict the corresponding restored depth image Drestored :
+
+Drestored = fθ (I, D raw ) (1) CHEN et al. : AISPO: ENHANCING DEPTH RELIABILITY FOR ROBOTIC MANIPULATION OF NON-LAMBERTIAN OBJECTS VIA AFFINE-INVARIANT SHAPE PRIOR3 
+
+B. Affine-Invariant Shape Prior RGB 
+
+> Mask
+> Affine -Invariant
+> Depth
+> e
+> e
+> e
+> ……
+> s
+> …
+> s
+> s
+> d
+> …
+> d
+> d
+> d
+> d
+> d
+> …
+> e
+> s
+> d
+> Encoder Position Token
+> Decoder Position Token
+> Shape Prior Latent Token
+> ViT
+> Decoder
+> ViT
+> Encoder
+> Shape Prior Latent Code z
+> z
+> s
+> …
+> s
+> s
+
+Fig. 2: Overview of the shape prior auto-encoder archi-tecture. Encoder εθ processes the RGB image and the non-Lambertian object mask to extract the shape prior latent code 
+
+z. Subsequently, decoder Dθ decodes z into an affine-invariant shape representation of the non-Lambertian object. Notably, the output contains only the object-level shape prior, with background information fully excluded. As illustrated in Fig. 2, our depth completion framework for non-Lambertian objects starts by estimating an affine-invariant shape prior. Given an RGB image I and an object mask 
+
+M typically obtained via a foundation model like Grounded-SAM2 [36]—we train an autoencoder to reconstruct a masked, affine-invariant depth map. The input images are first encoded by a Vision Transformer (ViT) encoder εθ into a latent shape code z, which is subsequently decoded to produce the corresponding affine-invariant shape representation. For the subsequent depth completion stage, we freeze the encoder weights and discard the decoder Dθ , retaining only the encoder to extract the shape prior latent code. To generate the ground-truth depth map, we first mask out the background and then normalize the depth values within each object instance, resulting in an affine-invariant object shape representation 
+
+Dshape . This normalization eliminates unknown scale and shift variations across objects. The encoder εθ and decoder Dθ are optimized using an L1 loss. 
+
+Lfull = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+∥Di 
+
+> pred
+
+− Di
+
+> shape
+
+∥1 (2) where Di 
+
+> pred
+
+represents the scaled and shifted depth pre-diction. To further emphasize the object region, we also incorporate a masked loss term. 
+
+Lmasked = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+∥Di 
+
+> pred
+
+⊙ Mi − Di 
+
+> shape
+
+⊙ Mi∥1 (3) where ⊙ denotes element-wise masking using the object mask Mi. Additionally, we incorporate a Sobel [37] gradient loss to enhance training stability and sharpen object shape boundaries. 
+
+LSobel = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+∥G(Di
+
+> pred
+
+) − G(Di
+
+> shape
+
+)∥21 (4) where G(D) = pGx ∗ D + Gy ∗ D, and 
+
+Gx =
+
+
+
+−1 0 1
+
+−2 0 2
+
+−1 0 1
+
+ , Gy =
+
+
+
+−1 −2 −10 0 01 2 1
+
+ (5) The total training objective for the shape prior autoencoder combines the aforementioned components into the following loss function: 
+
+Lshape = αfull · L full + αmasked · L masked + αSobel · L Sobel (6) 
+
+C. Overall Framework 1) Feature Extraction: As illustrated in Fig. 3, our frame-work employs three dedicated encoders to extract complemen-tary cues from RGB and raw depth inputs, each designed to address specific challenges in scene understanding and depth completion. First, an RGB encoder ϕθ , based on the vision foundation model DINOv2 [38], extracts color and texture features Fic from the RGB input. While this encoder effectively leverages rich photometric information to distinguish objects with similar geometry but distinct appearances, RGB data alone lack explicit depth cues and are therefore inadequate for accurate metric depth estimation. To address this limitation, we introduce a raw depth encoder ψθ , based on a Swin-Transformer architecture [13], to extract geometric features 
+
+Fid from raw depth inputs. The hierarchical design and shifted window mechanism of the Swin-Transformer enable effective modeling of both long-range dependencies and local spatial details, making it well-suited for processing challenging sur-faces such as transparent or specular materials [12]. This de-sign achieves an effective balance between local precision and global context, which is essential for robust depth estimation. However, raw depth images are often corrupted or contain missing pixels due to sensor noise, reflections, or transparency. To mitigate these issues, we explicitly incorporate a shape prior encoder εθ , introduced in Sec. III-B, which extracts object-level shape features from the RGB image and its cor-responding object mask. By leveraging learned shape priors, this encoder compensates for incomplete or noisy depth data, thereby enhancing the overall robustness of the system. By in-tegrating these three complementary encoders, our framework effectively fuses color cues, geometric features, and shape priors to build a comprehensive scene representation, thereby addressing the inherent limitations of each individual modality. From each encoder, we extract a set of multi-scale features, specifically from four intermediate stages of their blocks: 
+
+{F ic }i=0 ,1,2,3 = ϕθ (I) (7) 
+
+{F is}i=0 ,1,2,3 = εθ (I, GroundedSAM2 (I)) (8) 
+
+{F id}i=0 ,1,2,3 = ψθ (Draw ) (9) 
+
+2) Cross-Attention based Feature Fusion: Given the inter-mediate features {F ic }, {F id}, {F is} extracted from the three encoders, our fusion module Γθ employs cross-attention trans-formers to integrate them into a fused hierarchical representa-tion: Hi = Γ θ (Fic , Fid, Fis). Before fusion, all intermediate 4 IEEE ROBOTICS AND AUTOMATION LETTERS. PREPRINT VERSION. ACCEPTED APRIL, 2026 Grounding 
+
+> SAM2
+> Raw Depth
+> RGB
+> Decoder Fusion
+> Block
+> Residual Conv
+> Unit
+> Residual Conv
+> Unit
+> Resample
+> Project
+> Reassambling
+> Block
+> Read
+> Concanate
+> Project
+> Resample
+> Multi -
+> Head
+> Attention
+> Add
+> &
+> Norm
+> Multi -
+> Head
+> Attention
+> Add
+> &
+> Norm
+> Add
+> &
+> Norm
+> Feed
+> Forward
+> Hierarhical Fusion
+> Block
+> ViT -Block N
+> ViT -Block N*3/4
+> ViT -Block N*2/4
+> ViT -Block N*1/4
+> SwinT -Stage 4
+> SwinT -Stage 3
+> SwinT -Stage 2
+> SwinT -Stage 1
+> ViT -Block N
+> ViT -Block N*3/4
+> ViT -Block N*2/4
+> ViT -Block N*1/4
+
+Encoding  Feature Fusion  Decoding     
+
+> Restored Depth
+> Data Flow
+> RGB
+> Encoder
+> Shape Prior
+> Encoder
+> Raw Depth
+> Encoder
+> Conv
+> Interpolation
+> Conv
+> Head
+> 1
+> 2
+> δ
+> δ
+> Reassambling 32
+> Reassambling 16
+> Reassambling 4
+> Reassambling 8
+> Fusion
+> Fusion
+> Fusion
+> Fusion
+> Head
+> Hierarhical
+> Fusion
+> Module
+
+Σ
+
+Fig. 3: Framework Overview. Our framework extracts complementary cues via three parallel encoders. The RGB encoder ϕθ
+
+processes image I for color and texture. Concurrently, a pretrained shape-prior encoder εθ takes I and a non-Lambertian mask (from Grounded-SAM2 [36]) to capture object-shape features. A Swin-Transformer-based depth encoder ψθ handles the raw depth input. These streams yield multi-scale intermediate features {F ic }, {F is}, {F id}, which are fused through cross-attention in a hierarchical fusion module Γθ . The fused representation is iteratively refined and decoded by φθ to produce the final restored depth Drestored .features are projected to the same dimension. The fusion proceeds through sequential cross-attention operations. Given 
+
+Qs = Fis · Wq , K c = Fic · Wk, V c = Fic · Wv , we first obtain a fused feature HFis →F ic from the cross attention operation between Fis and Fic . That is: 
+
+HFis →F ic = Softmax 
+
+ Qs · KTc
+
+√dK
+
+
+
+· Vc
+
+HFis →F ic = LayerNorm (HFis →F ic + Fis)
+
+(10) Next, we apply cross-attention between HFis →F ic and Fid
+
+with Qsc = HFis →F ic · W ′ 
+
+> q
+
+, K d = Fid · W ′
+
+> k
+
+, V d = Fid · W ′ 
+
+> v
+
+.
+
+HFis →F ic →F id = Softmax 
+
+ Qsc · KTd
+
+√dK
+
+
+
+· Vd
+
+HFis →F ic →F id = LayerNorm (HFis →F ic →F id + Fid)
+
+(11) Finally, a two-layer feedforward network refines the fused representation: 
+
+Hi = FFN (HFis →F ic →F id )
+
+Hi = LayerNorm (Hi + HFis →F ic →F id ) (12) 
+
+3) Dense Depth Prediction: Following MiDaS [15] and DepthAnythingV2 [39], we use the DPT [40] decoder architec-ture in the decoder φθ for depth regression. The fused multi-scale hierarchical feature tokens are assembled into image-like representations at various resolutions, which are then progres-sively refined using RefineNet-based fusion blocks [41][42]. These blocks integrate low- and high-resolution features through residual convolutional units and iterative fusion mech-anisms. Finally, a convolutional layer generates the dense depth prediction: 
+
+Drestored = φθ ({H i}i=0 ,1,2,3) (13) 
+
+4) Optimization: During training, we freeze the parameters of the RGB encoder ϕθ and the pre-trained shape prior encoder 
+
+εθ . The remaining modules ψθ , Γθ , φ θ are optimized using a combination of full and masked loss: 
+
+L = βfull · L full + βmasked · L masked (14) Where Lfull = 1
+
+> N
+
+PNi=1 ∥Di 
+
+> restored
+
+− Di
+
+> gt
+
+∥1, Lmasked =
+
+> 1
+> N
+
+PNi=1 ∥Di 
+
+> restored
+
+⊙ Mi − Di 
+
+> gt
+
+⊙ Mi∥1, and ⊙ denotes the mask operator. IV. E XPERIMENT 
+
+A. Experiment Setup 
+
+Our framework adopts a two-stage training paradigm. In the first stage, we train a Vision Transformer (ViT)-based shape prior autoencoder on the DREDS-CatKnown dataset [11], which comprises 100,200 training and 19,380 testing RGB-D images across 1,801 ShapeNetCore [43] objects rendered with randomized specular, transparent, and diffuse textures. Once trained, this module remains fixed in all subsequent experiments. Both the encoder εθ and decoder Dθ are implemented with 
+
+8 ViT blocks, employing a patch size of 16 × 16 , 8 attention CHEN et al. : AISPO: ENHANCING DEPTH RELIABILITY FOR ROBOTIC MANIPULATION OF NON-LAMBERTIAN OBJECTS VIA AFFINE-INVARIANT SHAPE PRIOR5 RGB  Raw Depth  Predicted Depth 
+
+Raw 
+
+Point Cloud  Predicted 
+
+Point Cloud 
+
+Fig. 4: Real-world qualitative results on non-Lambertian objects in robotic manipulation environment. Using only synthetic data (DREDS-CatKnown [11]) for training the framework, our model generalizes to real household objects with severe depth corruption (e.g., reflective cans, water-filled bottles, transparent cups). It recovers dense depth and complete 3D geometry, accurately reconstructing fine structures like thin handles, demonstrating strong zero-shot robustness. heads, and a feature dimension of 768 . The model is trained for 300 epochs on eight NVIDIA A100 GPUs with a batch size of 128 , using the AdamW optimizer at a learning rate of 
+
+8.0 × 10 −5. The loss weighting coefficients are set to αfull =1.0, αmasked = 0 .8, and αSobel = 0 .5. After pre-training, only the encoder εθ is retained for the second stage. In the second stage, we train the full model on the DREDS-CatKnown dataset for quality comparison. The train-ing runs for 300 epochs with a batch size of 64, using the AdamW optimizer (learning rate 8.0 × 10 −5) and loss weights βfull = 1 .0, βmasked = 0 .8. The RGB encoder ϕθ (·) is initialized with the pretrained DINOv2-base model (Hugging Face). The raw-depth encoder ψθ (·) is a Swin-Transformer with patch size 4, a single input channel, an embedding dimension of 128, and Swin-Transformer blocks arranged as (2, 2, 18, 2) across its four stages. The number of attention heads per stage is (4, 8, 16, 32), with a window size of 16. The hierarchical fusion module Γθ (·) employs four cross-attention blocks to process intermediate features at different scales. It uses an embedding dimension of 1024 and 8 attention heads. The decoder φθ (·) takes an input channel of 192 ; its four fusion branches have output channels of 256 , 512 , 1024 , and 
+
+1024 , respectively. All models are trained and evaluated at a resolution of 256 × 256 . For real-world robotic grasping, predictions are interpolated to the original input resolution. We compare our method against four state-of-the-art ap-proaches. SwinDRNet [11] and DFNet [8] serve as baselines for the DREDS-CatKnown and TransCG datasets, respectively. DepthAnythingV2 (DA2) [14] is a foundation model of single view depth estimation for comparison. PromptDA [20] is a re-cent monocular depth estimation model that fine-tunes the pre-vious foundation model [14]. Since the related field is evolving quite fast, we further add Pi3 [23], and another two depth estimation foundation models: DepthAnythingV3(DA3 ∗1) [24] and Depth-Pro ∗1 [21]. 
+
+B. Robotic Manipulation Experiment 
+
+As shown in Fig. 1, we evaluate our method in real-world grasping experiments using a Franka robotic arm, with all models running on an NVIDIA RTX 3090 GPU. Our depth completion model for manipulation is trained on aforemen-tioned synthetic DREDS [11] dataset. To ensure fairness, all methods share the same grasp motion planning configuration [44], differing only in the input depth maps. The grasp point will first extracted from the depth map, then a feasible trajectory will be planned to execute the action. For statistical reliability, we conduct 30 independent trials per method on specular objects and 45 trials on transparent objects, reflecting the higher difficulty of the latter. The success rates are reported             
+
+> 1∗indicates results reproduced with publicly available weights, since these methods were trained on diverse datasets and only inference code was released. 6IEEE ROBOTICS AND AUTOMATION LETTERS. PREPRINT VERSION. ACCEPTED APRIL, 2026
+
+in Table I. On specular objects, baseline methods achieve non-zero success rates. However, on transparent objects, baseline methods consistently fail due to inaccurate depth predictions that result in invalid grasp proposals. In contrast, our method substantially improves grasp success rates in both settings.                
+
+> Method Specular SR Transparent SR Total SR Raw 0.13 (4/30) 0 (0/45) 0.05 SwinDRNet 0.17 (5/30) 0 (0/45) 0.07 DFNet 0.63 (19/30) 0 (0/45) 0.25 Ours 1.00 (30/30) 0.89 (40/45) 0.93
+
+TABLE I: Tabletop grasping success rates (SR) on specular and transparent objects. Transparent objects represent a chal-lenging perception regime where inaccurate depth estimation directly leads to invalid grasp planning. 
+
+C. Failure Analysis / Real-World Qualitative Results 
+
+Fig. 4 shows qualitative results from robotic manipulation environment on real-world non-Lambertian objects, including coke cans, metal cups, water-filled bottles, and transparent mugs. Our analysis identifies two main categories of failure:  
+
+> •
+
+Upstream Perception Failures – Errors from early stages, such as inaccurate instance segmentation under overlapping or occluded objects, transparent or reflective surfaces, and small or low-contrast items, can propagate to depth reconstruction and grasp planning. These fail-ures occasionally produce incomplete object masks or distorted point clouds.  
+
+> •
+
+Depth Estimation Failures – Localized mismatches between the predicted affine-invariant shape prior and actual object geometry may occur, for example, due to complex refraction in transparent objects like glasses or thin structures like handles. These distortions are usually minor and rarely prevent successful grasps on the main object body. Trained solely on the synthetic DREDS-CatKnown dataset [11], AISPO generates dense, geometrically coherent depth maps that recover fine structures accurately. This enables valid grasp proposals even in challenging scenarios where baseline methods fail. By explicitly distinguishing failure modes, we provide clearer insight into system behavior and directions for future improvement, while demonstrating that reducing catastrophic depth failures directly improves real-world grasp success. 
+
+D. Benchmark Evaluation: Depth Completion Quality 1) Quality Evaluation: We evaluate our method and base-lines on the synthetic DREDS-CatKnown dataset [11], with qualitative results shown in Fig. 5. Our approach effectively preserves object geometry and depth consistency, achieving performance on par with state-of-the-art methods. To further assess generalization ability, we conduct zero-shot evaluations on the synthetic ClearGrasp dataset [6]. As shown in Fig. 6, our method adapts well to unseen transparent objects and successfully recovers fine geometric details over the baselines, demonstrating strong generalization capability.                                                       
+
+> Method RMSE ↓MAE ↓REL ↓δ1.05 ↑δ1.10 ↑δ1.25 ↑
+> PromptDA 0.203 0.128 0.281 31.23 50.19 67.32 DA2 0.035 0.017 0.074 85.02 94.19 98.56 TransCG 0.048 0.033 0.095 51.35 79.73 98.75 SwinDRNet 0.031 0.012 0.046 93.98 97.69 98.95 DA3 ∗0.150 0.144 0.291 8.64 15.76 33.76 Depth-Pro ∗0.198 0.191 0.431 8.32 14.77 36.10 Pi3 0.034 0.007 0.056 96.46 97.87 99.06 Ours 0.030 0.007 0.047 97.26 98.59 99.19
+
+TABLE II: Quantitative results on the STD-Novel dataset. 
+
+2) Quantitative Evaluation: We evaluate depth completion on two real-world datasets, STD-CatNovel [11] and Clear-Pose [45]. STD-CatNovel contains novel object categories in diverse scenes, including transparent and specular objects, while ClearPose features challenging scenarios with transpar-ent and translucent objects under occlusion and non-planar surfaces. As shown in Fig. 7, Fig. 8, Table II, and Table III, our method effectively refines raw depth and reconstructs object structures. It achieves the best performance on STD-CatNovel and ranks second on ClearPose, with only marginal gaps to the top method.                                                       
+
+> Method RMSE ↓MAE ↓REL ↓δ1.05 ↑δ1.10 ↑δ1.25 ↑
+> PromptDA 0.243 0.133 0.175 37.70 53.96 80.16 DA2 0.070 0.038 0.065 68.85 86.78 97.22 TransCG 0.077 0.047 0.080 57.58 79.93 97.06 SwinDRNet 0.081 0.048 0.073 52.41 79.72 97.66 DA3 ∗0.382 0.360 0.453 0.29 0.57 2.77 Depth-Pro ∗0.218 0.132 0.217 23.99 45.36 81.58 Pi3 0.057 0.027 0.050 83.03 93.76 98.34
+> Ours 0.071 0.036 0.066 68.38 87.06 97.68
+
+TABLE III: Quantitative results on the ClearPose dataset. 
+
+E. Ablation Study 
+
+We evaluate three ablated variants: without the RGB en-coder, without the shape prior encoder, and using only raw depth. Results in Table IV show that the shape prior is essential. The full model performs best by jointly leveraging RGB cues, metric depth, and geometric priors for improved structural consistency.                               
+
+> Method RMSE ↓MAE ↓REL ↓δ1.05 ↑δ1.10 ↑δ1.25 ↑
+> w.o. RGB encoder 0.031 0.010 0.053 96.77 98.45 99.19 w.o. Shape Prior Encoder 0.033 0.011 0.054 93.02 97.44 99.13 w. only Raw Depth Encoder 0.033 0.012 0.056 91.41 97.18 99.11 Ours 0.030 0.007 0.047 97.26 98.59 99.19
+
+TABLE IV: Quantitative results of the ablation study 
+
+F. Inference Speed Analysis 
+
+We evaluate the single-frame inference latency of our method and several baselines on an NVIDIA RTX 3090 GPU with batch size 1. The image resolutions follows the original setting of these algorithms, 256 × 256 for DFNet and our approach, 224 × 224 for SwinDRNet, 504 × 504 for DA3(large), 518 ×518 for DA2(vitl) and Pi3, and 1536 ×1536 CHEN et al. : AISPO: ENHANCING DEPTH RELIABILITY FOR ROBOTIC MANIPULATION OF NON-LAMBERTIAN OBJECTS VIA AFFINE-INVARIANT SHAPE PRIOR7 RGB SwinDRNet Pi3 Ours DFNet DA2 PromptDA DA3 * Depth-Pro *
+
+Fig. 5: Qualitative Comparison on the DREDS-CatKnown dataset [11]. Each column (from left to right) shows the RGB image, the predictions from the baselines and our method. RGB Ours SwinDRNet DFNet PromptDA DA2 Pi3 DA3 * Depth Pro *
+
+Fig. 6: Zeroshot qualitative comparison on the ClearGrasp dataset [6]. Models trained on the DREDS-CatKnown dataset [11] are directly evaluated on the ClearGrasp dataset. RGB  Raw  Ours  GT 
+
+Fig. 7: Qualitative results of our method on the STD-CatNovel dataset [11] . For better visualization, we crop our prediction to align with the ground-truth missing region. RGB  Raw  Ours  GT 
+
+Fig. 8: Qualitative results on ClearPose [45]. Columns show RGB input, raw depth, our prediction, and ground truth. for DepthPro. As reported in Table V, our method achieves 28.79 ms per frame, supporting real-time operation in robotic grasping scenarios, providing a favorable trade-off between inference speed and depth estimation performance.            
+
+> Method SwinDR DFNet DA2(vitl) DA3(large) Pi3 Depth-Pro Ours Infer Speed[ms] 19.70 5.19 101.47 59.73 191.22 1139.89 28.79
+
+TABLE V: Single-frame inference latency (batch size = 1) on an RTX 3090 GPU. Our method achieves real-time perfor-mance without multi-view or iterative optimization. V. CONCLUSIONS In this work, we presented AISPO, a depth completion framework that combines multi-scale RGB-D features with an affine-invariant shape prior to improve geometric consistency for non-Lambertian objects. Trained entirely on synthetic data, AISPO generalizes effectively to real-world specular and trans-parent objects, producing dense, fine-grained depth maps that support reliable robotic grasping. Beyond benchmark accuracy, our experiments show that reducing catastrophic depth failures translates to substantially higher grasp success rates, particu-larly in scenarios involving transparent or reflective objects. By categorizing failure modes into upstream perception errors and depth estimation mismatches, we provide clearer insights into system limitations and potential improvements. Future work will focus on integrating more robust segmentation models and advanced shape-aware learning to further enhance depth reliability and manipulation performance in cluttered real-world environments. REFERENCES [1] Z. Jiang, Y. Zhu, M. Svetlik, K. Fang, and Y. Zhu, “Synergies between affordance and geometry: 6-dof grasp detection via implicit representa-tions,” ArXiv , vol. abs/2104.01542, 2021. 8 IEEE ROBOTICS AND AUTOMATION LETTERS. PREPRINT VERSION. ACCEPTED APRIL, 2026 
+
+[2] T. Mu, Z. Ling, F. Xiang, D. Yang, X. Li, S. Tao, Z. Huang, Z. Jia, and H. Su, “Maniskill: Generalizable manipulation skill benchmark with large-scale demonstrations,” in NeurIPS Datasets and Benchmarks ,2021. [3] J. Krantz, S. Banerjee, W. Zhu, J. J. Corso, P. Anderson, S. Lee, and J. Thomason, “Iterative vision-and-language navigation,” 2023 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 14 921–14 930, 2022. [4] F. Erich, B. Leme, N. Ando, R. Hanai, and Y. Domae, “Learning depth completion of transparent objects using augmented unpaired data,” in 2023 IEEE International Conference on Robotics and Automation (ICRA) . IEEE, 2023. [5] A. Ummadisingu, J. Choi, K. Yamane, S. Masuda, N. Fukaya, and K. Takahashi, “Said-nerf: Segmentation-aided nerf for depth completion of transparent objects,” 2024 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) , pp. 7535–7542, 2024. [6] S. S. Sajjan, M. J. Moore, M. Pan, G. Nagaraja, J. Lee, A. Zeng, and S. Song, “Clear grasp: 3d shape estimation of transparent objects for manipulation,” 2020 IEEE International Conference on Robotics and Automation (ICRA) , pp. 3634–3642, 2019. [7] L. Zhu, A. Mousavian, Y. Xiang, H. Mazhar, J. van Eenbergen, S. Deb-nath, and D. Fox, “Rgb-d local implicit function for depth completion of transparent objects,” 2021 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 4647–4656, 2021. [8] H. Fang, H. Fang, S. Xu, and C. Lu, “Transcg: A large-scale real-world dataset for transparent object depth completion and a grasping baseline,” 
+
+IEEE Robotics and Automation Letters , vol. PP, pp. 1–8, 2022. [9] B. P. Duisterhof, Y. Mao, S. H. Teng, and J. Ichnowski, “Residual-nerf: Learning residual nerfs for transparent object manipulation,” 2024 IEEE International Conference on Robotics and Automation (ICRA) , pp. 13 918–13 924, 2024. [10] H. Xu, Y. R. Wang, S. Eppel, A. Aspuru-Guzik, F. Shkurti, and A. Garg, “Seeing glass: Joint point cloud and depth completion for transparent objects,” in Conference on Robot Learning , 2021. [11] Q. Dai, J. Zhang, Q. Li, T. Wu, H. Dong, Z. Liu, P. Tan, and H. Wang, “Domain randomization-enhanced depth simulation and restoration for perceiving and grasping specular and transparent objects,” in European Conference on Computer Vision (ECCV) , 2022. [12] K. Chen, S. Wang, B. Xia, D. Li, Z. Kan, and B. Li, “Tode-trans: Transparent object depth estimation with transformer,” 2023 IEEE In-ternational Conference on Robotics and Automation (ICRA) , pp. 4880– 4886, 2022. [13] Z. Liu, Y. Lin, Y. Cao, H. Hu, Y. Wei, Z. Zhang, S. Lin, and B. Guo, “Swin transformer: Hierarchical vision transformer using shifted win-dows,” 2021 IEEE/CVF International Conference on Computer Vision (ICCV) , pp. 9992–10 002, 2021. [14] L. Yang, B. Kang, Z. Huang, Z. Zhao, X. Xu, J. Feng, and H. Zhao, “Depth anything v2,” ArXiv , vol. abs/2406.09414, 2024. [15] R. Birkl, D. Wofk, and M. M¨ uller, “Midas v3.1 - a model zoo for robust monocular relative depth estimation,” ArXiv , vol. abs/2307.14460, 2023. [16] B. Ke, A. Obukhov, S. Huang, N. Metzger, R. C. Daudt, and K. Schindler, “Repurposing diffusion-based image generators for monoc-ular depth estimation,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2024. [17] T.-Y. Cheng, P. Sharma, A. Markham, N. Trigoni, and V. Jampani, “Zest: Zero-shot material transfer from a single image,” in European Conference on Computer Vision , 2024. [18] J. Shriram, A. Trevithick, L. Liu, and R. Ramamoorthi, “Realmdreamer: Text-driven 3d scene generation with inpainting and depth diffusion,” 
+
+ArXiv , vol. abs/2404.07199, 2024. [19] M. Hu, W. Yin, C. X. Zhang, Z. Cai, X. Long, H. Chen, K. Wang, G. Yu, C. Shen, and S. Shen, “Metric3d v2: A versatile monocular geometric foundation model for zero-shot metric depth and surface normal estimation,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 46, pp. 10 579–10 596, 2024. [20] H. Lin, S. Peng, J. Chen, S. Peng, J. Sun, M. Liu, H. Bao, J. Feng, X. Zhou, and B. Kang, “Prompting depth anything for 4k resolution accurate metric depth estimation,” 2024. [21] A. Bochkovskii, A. Delaunoy, H. Germain, M. Santos, Y. Zhou, S. R. Richter, and V. Koltun, “Depth pro: Sharp monocular metric depth in less than a second,” in International Conference on Learning Represen-tations , 2025. [22] J. Liu, H. Ma, Y. Guo, Y. Zhao, C. Zhang, W. Sui, and W. Zou, “Monoc-ular depth estimation and segmentation for transparent object with iter-ative semantic and geometric fusion,” arXiv preprint arXiv:2502.14616 ,2025. [23] Y. Wang, J. Zhou, H. Zhu, W. Chang, Y. Zhou, Z. Li, J. Chen, J. Pang, C. Shen, and T. He, “pi3: Permutation-equivariant visual geometry learning,” arXiv preprint arXiv:2507.13347 , 2025. [24] H. Lin, S. Chen, J. H. Liew, D. Y. Chen, Z. Li, G. Shi, J. Feng, and B. Kang, “Depth anything 3: Recovering the visual space from any views,” arXiv preprint arXiv:2511.10647 , 2025. [25] T. Kollar, M. Laskey, K. Stone, B. Thananjeyan, and M. Tjersland, “Simnet: Enabling robust unknown object manipulation from pure synthetic data via stereo,” ArXiv , vol. abs/2106.16118, 2021. [26] S. Wei, H. Geng, J. Chen, C. Deng, W. Cui, C. Zhao, X. Fang, L. J. Guibas, and H. Wang, “D3roma: Disparity diffusion-based depth sensing for material-agnostic robotic manipulation,” in Conference on Robot Learning , 2024. [27] J. Ho, A. Jain, and P. Abbeel, “Denoising diffusion probabilistic models,” 
+
+ArXiv , vol. abs/2006.11239, 2020. [28] Y. R. Wang, Y. Zhao, H. Xu, S. Eppel, A. Aspuru-Guzik, F. Shkurti, and A. Garg, “Mvtrans: Multi-view perception of transparent objects,” 2023 IEEE International Conference on Robotics and Automation (ICRA) , pp. 3771–3778, 2023. [29] K. Bai, H. Zeng, L. Zhang, Y. Liu, H. Xu, Z. Chen, J. Zhang, and C. Parameters, “Cleardepth: Efficient stereo perception of transparent objects for robotic manipulation.” [30] K. Bai, L. Zhang, Y. Liu, Z. Chen, and J. Zhang, “Stereoanything: Advanced zero-shot stereo imaging for robotic grasp detection with transparent objects.” IEEE transactions on cybernetics , vol. PP, 2026. [31] B. Mildenhall, P. P. Srinivasan, M. Tancik, J. T. Barron, R. Ramamoorthi, and R. Ng, “Nerf,” Communications of the ACM , vol. 65, pp. 99 – 106, 2020. [32] J. Ichnowski, Y. Avigal, J. Kerr, and K. Goldberg, “Dex-nerf: Us-ing a neural radiance field to grasp transparent objects,” ArXiv , vol. abs/2110.14217, 2021. [33] J. Kerr, L. Fu, H. Huang, Y. Avigal, M. Tancik, J. Ichnowski, A. Kanazawa, and K. Goldberg, “Evo-nerf: Evolving nerf for sequential robot grasping of transparent objects,” in Conference on Robot Learning ,2022. [34] T. M¨ uller, A. Evans, C. Schied, and A. Keller, “Instant neural graphics primitives with a multiresolution hash encoding,” ACM Trans. Graph. ,vol. 41, no. 4, pp. 102:1–102:15, Jul. 2022. [35] Q. Dai, Y. Zhu, Y. Geng, C. Ruan, J. Zhang, and H. Wang, “Graspnerf: Multiview-based 6-dof grasp detection for transparent and specular objects using generalizable nerf,” 2023 IEEE International Conference on Robotics and Automation (ICRA) , pp. 1757–1763, 2022. [36] IDEA-Research, “Grounded-sam-2,” https://github.com/ IDEA-Research/Grounded-SAM-2, 2024, accessed: 2024-08-07. [37] B. J¨ ahne and H. W. Haussecker, “Computer vision and applications: a guide for students and practitioners,” Journal of Electronic Imaging ,vol. 11, pp. 115–115, 2000. [38] M. Oquab, T. Darcet, T. Moutakanni, H. Q. Vo, M. Szafraniec, V. Khali-dov, P. Fernandez, D. Haziza, F. Massa, A. El-Nouby, M. Assran, N. Ballas, W. Galuba, R. Howes, P.-Y. B. Huang, S.-W. Li, I. Misra, M. G. Rabbat, V. Sharma, G. Synnaeve, H. Xu, H. J´ egou, J. Mairal, P. Labatut, A. Joulin, and P. Bojanowski, “Dinov2: Learning robust visual features without supervision,” ArXiv , vol. abs/2304.07193, 2023. [39] L. Yang, B. Kang, Z. Huang, Z. Zhao, X. Xu, J. Feng, and H. Zhao, “Depth anything v2,” arXiv:2406.09414 , 2024. [40] R. Ranftl, A. Bochkovskiy, and V. Koltun, “Vision transformers for dense prediction,” 2021 IEEE/CVF International Conference on Computer Vision (ICCV) , pp. 12 159–12 168, 2021. [41] G. Lin, A. Milan, C. Shen, and I. D. Reid, “Refinenet: Multi-path refinement networks for high-resolution semantic segmentation,” 2017 IEEE Conference on Computer Vision and Pattern Recognition (CVPR) ,pp. 5168–5177, 2016. [42] K. Xian, C. Shen, Z. CAO, H. Lu, Y. Xiao, R. Li, and Z. Luo, “Monoc-ular relative depth perception with web stereo data supervision,” 2018 IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 311–320, 2018. [43] A. X. Chang, T. A. Funkhouser, L. J. Guibas, P. Hanrahan, Q.-X. Huang, Z. Li, S. Savarese, M. Savva, S. Song, H. Su, J. Xiao, L. Yi, and F. Yu, “Shapenet: An information-rich 3d model repository,” ArXiv , vol. abs/1512.03012, 2015. [44] M. Community, “Moveit: Motion planning framework for robotics,” https://github.com/moveit/moveit, 2025, accessed: 2025-04-07. [45] X. Chen, H. Zhang, Z. Yu, A. Opipari, and O. C. Jenkins, “Clearpose: Large-scale transparent object dataset and benchmark,” in European Conference on Computer Vision , 2022.

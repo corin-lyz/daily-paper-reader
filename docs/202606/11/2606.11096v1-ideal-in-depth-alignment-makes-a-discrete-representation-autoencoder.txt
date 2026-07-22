@@ -1,0 +1,451 @@
+Title: IDEAL: In-DEpth ALignment Makes A Discrete Representation AutoEncoder
+
+URL Source: https://arxiv.org/pdf/2606.11096v1
+
+Published Time: Wed, 10 Jun 2026 01:27:12 GMT
+
+Number of Pages: 21
+
+Markdown Content:
+# Ideal : In-DEpth ALignment Makes A Discrete Representation AutoEncoder 
+
+Yitong Chen 1,2,* , Zĳie Diao 1,* , Junke Wang 1, Lingyu Kong 1, Yixuan Ren 3, Bo He 3,Yu-Gang Jiang 1, Zuxuan Wu 1,2, †
+
+> 1
+
+Institute of Trustworthy Embodied AI, Fudan University , 2Shanghai Innovation Institute ,
+
+> 3
+
+University of Maryland, College Park 
+
+> ∗
+
+Equal contribution , †Corresponding author 
+
+Abstract 
+
+Built on pretrained vision foundation models (VFMs), representation autoencoders (RAEs) have recently emerged as a promising approach for constructing semantically rich latent spaces for image generation. However, their reconstruction quality often remains suboptimal, largely because deep VFM representations do not preserve sufficient fine-grained visual detail. This limitation becomes even more severe after discretization, where missing low-level information is difficult to recover. In fact, we observe that shallow VFM features retain considerably richer local appearance and structural detail, which complements the high-level semantics carried by deep features used in existing RAEs. Motivated by this complementary property, we propose Ideal , an In-de pth Al ignment framework for discrete representation autoencoding. By jointly aligning quantized tokens with both shallow and deep VFM features, Ideal enables the resulting discrete visual tokens to preserve both visual fidelity and rich semantics. Extensive experiments demonstrate that Ideal yields superior reconstruction performance, achieving 0.61 rFID on ImageNet and outperforming the previous best method by 0.28 .When used for autoregressive image generation, Ideal further produces a gFID of 1.89 , establishing a new state of the art for autoregressive image generation.  
+
+> Website:
+
+https://github.com/Row11n/IDEAL 
+
+1 Introduction 
+
+Pretrained vision foundation models (VFMs)[ 2, 4, 34 , 36 , 43 , 50 , 67 ] encode images into semantically rich latent spaces that exhibit strong transfer across a broad spectrum of downstream vision tasks. More recently, representation autoencoders (RAEs)[ 71 ] have shown that such frozen VFM features can also serve as effective latent representations for diffusion-based image generation [ 30 , 35 , 39 ], improving both optimization efficiency and synthesis quality. This emerging connection between representation learning and generative modeling suggests that pretrained representations may offer a strong and scalable foundation for image generation. However, this promising paradigm still faces a fundamental reconstruction bottleneck. Pretrained VFMs are primarily optimized for semantic discrimination [ 43 , 50 ], rather than detail-preserving reconstruction [ 20 ,51 , 53 ]. As a consequence, their deep features emphasize high-level semantics but are relatively insensitive to fine-grained visual attributes such as color, texture, and local structure [ 42 , 45 ]. Existing RAEs therefore remain suboptimal for faithful reconstruction, despite their benefits for generation. This issue is further 1
+
+> arXiv:2606.11096v1 [cs.CV] 9 Jun 2026 Better
+> Better
+
+Original Layer 8 Layer 16 Layer 24Linear Probing Top -1     
+
+> rFID Figure 1 (Left) Depth-wise linear probing of SigLIP2 [ 50 ] features. Each point represents a different VFM block, showing the trade-off between reconstruction fidelity and semantic preservation: shallow blocks reconstruct better but are less semantic, while deeper blocks are more semantic but reconstruct worse. (Right) PCA visualization. By visualizing features across different layers of SigLIP2, we observe a consistent depth-dependent transition: the representations gradually evolve from low-level visual details to high-level semantic concepts.
+
+amplified in autoregressive (AR) image generation, where VFM latents must be discretized into visual tokens and missing low-level information is difficult to recover after quantization [47, 64]. In this work, we ask a simple question: how can discrete representation autoencoding capture fine-grained visual detail without sacrificing high-level semantics? To answer this question, we conduct a systematic depth-wise study by discretizing intermediate VFM representations and evaluating them from two complementary perspectives: semantic preservation and reconstruction fidelity. As shown in figure 1, a clear trade-off emerges across layers: shallow representations yield stronger reconstruction but weaker semantics, whereas deeper representations better preserve semantics at the cost of reconstruction fidelity. This trend is consistent with the hierarchical nature of VFMs, whose representations evolve from local texture and geometry in early layers to high-level semantic concepts in later layers [ 3, 7, 49 ]. Taken together, these findings point to a simple yet effective solution: rather than committing to a single layer for tokenization, we enrich deep semantic representations with shallow visual cues, yielding a unified representation that preserves rich semantics while supporting higher-fidelity reconstruction. With this in mind, we propose Ideal , a simple yet effective In-de pth Al ignment framework for discrete representation autoencoding. Rather than choosing a single VFM layer for tokenization, Ideal combines appearance-rich shallow features with semantically informative deep features prior to vector quantization, forming a unified representation that preserves both visual details and high-level semantics. The resulting tokens are further supervised to recover the corresponding shallow and deep features, explicitly encouraging the discrete representation to retain information from both ends of the hierarchy. Finally, the reconstructed deep features are passed to a lightweight pixel decoder for high-fidelity image reconstruction. In this way, 
+
+Ideal turns frozen VFM features into discrete visual tokens that remain both semantically expressive and suitable for faithful reconstruction. We evaluate Ideal on ImageNet [ 8] from three complementary perspectives: reconstruction fidelity, semantic preservation, and autoregressive generation. For reconstruction, Ideal obtains an rFID of 0.61 , outperforming previous tokenizers by 0.28 and demonstrating the advantage of incorporating shallow appearance cues. For semantic preservation, the learned discrete representation maintains strong VFM semantics, reaching 80.89% zero-shot ImageNet classification accuracy. When used for autoregressive image generation, Ideal yields a gFID of 1.89 on ImageNet at 256 × 256 resolution, establishing a new state of the art. 
+
+2 Related Work 
+
+Conventional Tokenizers. Existing tokenizers can be roughly divided into two categories: continuous tokenizers and discrete tokenizers. Continuous tokenizers are typically realized as VAEs, with an encoder 2parameterizing a continuous latent distribution and a decoder reconstructing images from it [ 15 , 20 , 39 ]. In contrast, discrete tokenizers ( e.g. , VQ-VAE [ 52 ]) learn a finite codebook and quantize encoder features via nearest-neighbor lookup to yield token indices. Building on VQ-VAE, VQGAN [ 10 ] augments the reconstruction objective with perceptual and adversarial losses, while ViT-VQGAN [ 62 ] further modernizes the tokenizer with Transformer-based architectures. Recent advances refine VQ-based tokenizers along two axes: improved quantization strategy to reduce discretization error [ 19 , 23 , 28 , 33 , 64 , 69 ], and more stable codebook update approach to mitigate codebook collapse [37, 73, 74]. 
+
+VFM-based Tokenizers. Despite steady progress, most visual tokenizers still lack global semantic structure, which is significant for generation quality [ 71 ]. Recent advances show that incorporating pretrained VFM semantics during tokenization [ 61 ] or generation [ 56 , 66 ] can substantially improve generation quality and training efficiency. These findings have spurred continuous semantic tokenizers like RAE [ 71 ], to directly apply tokenization on VFM features. FAE [ 12 ] then successfully reduces the high dimensional latent space of VFMs to a lower dimension using a single attention layer. On the discrete side, VQRAE [ 9 ] introduces vector quantization into the RAE framework to obtain discrete tokens. VFMTok [ 70 ] discretizes multi-scale frozen VFM features into codebook indices with deformable attention layers [ 58 ]. DINO-Tok [ 18 ] stabilizes vector quantization in DINO [34, 43] latent space through global PCA reweighting. 
+
+Autoregressive Visual Generation. With a strong discrete visual tokenizer, images and videos can be compressed into discrete sequences suitable for next-token prediction. Autoregressive models then per-form sequence modeling over these tokens and generate diverse high-quality images [ 47 , 54 , 55 , 63 ] and videos [13, 59] . VAR [ 48 ] further redefines autoregressive learning from raster-scan next-token prediction to coarse-to-fine next-scale prediction. xAR [ 38 ] extends the autoregressive framework further by introducing next-X prediction, enabling flexible prediction targets such as tokens, cells, subsamples, and entire images. 
+
+3 Method 
+
+3.1 Preliminary: Vector Quantized Image Tokenizers 
+
+A quantized image tokenizer is commonly formulated as an encoder 𝐸 (·) , a vector-quantizer VQ (·) with a learnable codebook 𝐶 (·) , and a decoder 𝐷 (·) . Given an input image 𝑥 ∈ ℝ𝐻 ×𝑊 ×3, the encoder first compresses it into a 2D patch embedding, and then applies a CNN/ViT backbone to produce the latent embedding 𝑧 .
+
+𝑧 = 𝐸 (𝑥 ) ∈ ℝ𝐻 /𝑝 ×𝑊 /𝑝 ×𝑑 , (1) where 𝑝 denotes the downsampling patch size and 𝑑 is the channel dimension. The quantizer maintains a codebook 𝐶 = {𝑐 𝑘 }𝐾 𝑘 =1 with each 𝑐 𝑘 ∈ ℝ𝑑 . For each spatial location 𝑖 , the continuous embedding 𝑧 𝑖 is mapped to its nearest codebook entry: 
+
+VQ (𝑧 𝑖 ) = ˜𝑧 𝑖 = 𝑐 𝑘 𝑖 , 𝑘 𝑖 = arg min 
+
+> 𝑘 ∈{ 1,...,𝐾 }
+
+∥𝑧 𝑖 − 𝑐 𝑘 ∥2. (2) The resulting discrete representation is the index map {𝑘 𝑖 }, which can be flattened into a token sequence for AR modeling. De-quantization retrieves the corresponding embeddings ˜𝑧 from the indices and decodes them back to the image domain. In practice, the decoder often consists of a feature-decoding backbone followed by a lightweight pixel head. 
+
+ˆ𝑥 = 𝐷 (˜ 𝑧 ) = 𝐷 (VQ (𝑧 )) . (3) To optimize the codebook, we use the standard VQ objective 
+
+ℒVQ =
+
+Õ
+
+> 𝑖
+
+sg (𝑧 𝑖 ) − 𝑐 𝑘 𝑖  
+
+> 22
+
++ 𝛽 sg (𝑐 𝑘 𝑖 ) − 𝑧 𝑖  
+
+> 22
+
+, (4) where sg (·) denotes the stop-gradient operator [1] and 𝛽 is the weight of commitment loss [52]. 301 
+
+11 
+
+14 
+
+99 
+
+> Deep
+> Head
+> Shallow
+> Head
+
+... 
+
+... 
+
+Block 08 
+
+Block 16 
+
+Block 24 
+
+Block 01 
+
+Details 
+
+Semantics 
+
+... 
+
+> ...
+
+Quantizer 
+
+0
+
+1
+
+N
+
+> Cross -Attention
+> Feature  Decoder
+
+Vision Foundation Model In -DEpth ALignment 
+
+Pixel 
+
+Decoder  
+
+> <latexit sha1_base64="1xFzd1B1H6znmsg5WAGsu93r8PY=">AAACCHicbVC7TsMwFHXKq5RXgJEBiwqJqUoQKowVLAwMRaIPqY0qx3Vaq44d2Q6oijKy8CssDCDEyiew8Tc4aQZoOZKl43Pu1b33+BGjSjvOt1VaWl5ZXSuvVzY2t7Z37N29thKxxKSFBROy6yNFGOWkpalmpBtJgkKfkY4/ucr8zj2Rigp+p6cR8UI04jSgGGkjDezDfoj0GCOW3KSDJP/IMFFjxJh4SNPKwK46NScHXCRuQaqgQHNgf/WHAsch4RozpFTPdSLtJUhqihlJK/1YkQjhCRqRnqEchUR5SX5ICo+NMoSBkOZxDXP1d0eCQqWmoW8qs03VvJeJ/3m9WAcXXkJ5FGvC8WxQEDOoBcxSgUMqCdZsagjCkppdIR4jibA22WUhuPMnL5L2ac2t1+q3Z9XGZRFHGRyAI3ACXHAOGuAaNEELYPAInsEreLOerBfr3fqYlZasomcf/IH1+QMCcJqe</latexit>
+
+Lshallow  
+
+> <latexit sha1_base64="/DYWVLykkCYtObb74fqvxmPesPc=">AAACBXicbVDLSsNAFJ34rPUVdamLYBFclUSkuiy6ceGign1AG8JkctsOnZmEmYlQQjZu/BU3LhRx6z+4829M0iy09cDAmXPu5d57/IhRpW3721haXlldW69sVDe3tnd2zb39jgpjSaBNQhbKno8VMCqgralm0IskYO4z6PqT69zvPoBUNBT3ehqBy/FI0CElWGeSZx4NONZjgllym3pJ8ZE8CQCiNK16Zs2u2wWsReKUpIZKtDzzaxCEJOYgNGFYqb5jR9pNsNSUMEirg1hBhMkEj6CfUYE5KDcprkitk0wJrGEosye0Vai/OxLMlZpyP6vM11TzXi7+5/VjPbx0EyqiWIMgs0HDmFk6tPJIrIBKIJpNM4KJpNmuFhljiYnOgstDcOZPXiSds7rTqDfuzmvNqzKOCjpEx+gUOegCNdENaqE2IugRPaNX9GY8GS/Gu/ExK10yyp4D9AfG5w9ehJkk</latexit>
+
+Ldeep 
+
+Reconstructed 
+
+Image Figure 2 Illustration of Ideal . Ideal first extract shallow and deep features from a frozen VFM. A lightweight cross-attention module then fuses them into a unified representation. After vector quantization, a feature decoder reconstructs both shallow and deep features. The reconstructed deep semantic feature is finally mapped to pixels by a lightweight pixel decoder for image reconstruction. 
+
+For image reconstruction, we minimize an auto-encoding loss 
+
+ℒAE = ℒ2(𝑥, ˆ𝑥 ) + ℒ P(𝑥, ˆ𝑥 ) + 𝜆 G ℒG( ˆ 𝑥 ), (5) where ℒ2 is a pixel-wise reconstruction loss, ℒP is a perceptual loss ( e.g. , LPIPS [ 68 ]), and ℒG is an adversarial loss ( e.g. , PatchGAN [17]) weighted by 𝜆 G.In this work, we follow the quantized-tokenizer paradigm above and focus on learning discrete codes that are suitable for AR modeling while preserving VFM semantics. 
+
+3.2 Semantic-Spatial Complementarity in VFMs 
+
+Protocol. To understand which VFM features can provide fine-grained details for discrete semantic tokenization, we conduct a depth-wise probe by freezing a pretrained VFM 
+
+Φ(·) and tokenizing its intermediate features, as mentioned in Sec. 1. Given an image 𝑥 , we extract a layer feature 
+
+𝑓 (ℓ ) = Φ ℓ (𝑥 ), quantize it with the VQ module in Sec. 3.1, and reconstruct it in two steps: a feature decoder produces a reconstructed feature, which is then mapped to pixels by a decoder. We evaluate each layer ℓ using (i) pixel reconstruction FID after the decoder and (ii) linear probing classification Top-1 accuracy on the reconstructed feature. 
+
+Layer-wise trade-off. We probe a set of VFM layers ℓ ∈{8, 12 , 16 , 20 , 24 } as tokenization targets. As shown in Ta-ble 3.2, shallow-layer features are easier to reconstruct with 
+
+Table 1 Layer-wise probing results on SigLIPv2 [ 50 ] features. We report reconstruction fidelity using rFID and semantic preservation us-ing linear probing classification Top-1 accuracy. Deeper layers retain more semantics, but leads to inferior reconstruction performance. 
+
+Layer rFID ↓ LP-Top1 ↑
+
+8 0.69 28.66 12 0.66 51.40 16 0.71 74.78 20 0.75 81.57 24 0.85 83.43 
+
+higher pixel fidelity, while their reconstructed features exhibit weak semantic transfer. Meanwhile, deeper-layer features preserve semantic ability better after quantization, but their pixel reconstruction performance tend to degrade. Overall, VFMs provide complementary signals across depth: shallow features are more reconstruction-friendly, whereas deep features are more semantic. 43.3 Ideal 
+
+Motivated by the complementary behavior of shallow and deep VFM features, we propose Ideal , a VFM-based semantic tokenizer that produces discrete token indices for AR modeling and preserves semantic capability after de-quantization. The overall architecture of Ideal is illustrated in Figure 2. 
+
+Frozen VFM encoder and fusion before quantization. We freeze a pretrained VFM Φ(·) as the encoder. Given an image 𝑥 , we extract a shallow feature 𝑓 (𝑠 ) = Φ ℓ𝑠 (𝑥 ) and a deep feature 𝑓 (𝑑 ) = Φ ℓ𝑑 (𝑥 ) from two VFM layers. In our setting, both features are sequences with matched shapes, i.e. , 𝑓 (𝑠 ) , 𝑓 (𝑑 ) ∈ ℝ𝐵 ×𝐿 ×𝐷 , allowing fusion without any additional resizing or projection. We implement AttnFuse (·) as a single lightweight cross-attention block where deep features provide queries and shallow features provide keys/values, followed by a Feed Forward Network(FFN) to produce the fused representation 𝑧 .
+
+𝑧 = AttnFuse 
+
+
+
+𝑓 (𝑑 ) , 𝑓 (𝑠 )
+
+
+
+. (6) We adopt the VFM’s original normalization for 𝑓 (𝑑 ) and a learnable normalization for 𝑓 (𝑠 ).
+
+Vector quantization. To avoid introducing additional complexity, we quantize 𝑧 using the standard VQ formulation in Equation 2, yielding discrete token indices 𝑦 and de-quantized embeddings ˜𝑧 . We apply an 
+
+ℓ2 normalization on codebook vectors to stabilize nearest-neighbor assignment during training. Following common practice [ 62 ], we apply down-factorization to map the fused feature 𝑧 into a lower-dimensional quantization space before lookup, and recover the original dimension after de-quantization. This design mitigates codebook collapse and achieves full codebook utilization in our experiments. The resulting token indices 𝑦 are used for AR modeling in Sec. 3.4. 
+
+Two-step decoding with dual feature heads. We decode ˜𝑧 using a ViT backbone feature decoder 𝐷 feat to reconstruct the unified feature. 
+
+𝑔 = 𝐷 feat (˜ 𝑧 ). (7) Following previous work [ 70 ], we also append a [CLS] token and several register tokens to the input sequence to enhance representation learning and capture global context. These tokens are not used for reconstruction. From 𝑔 , we apply two lightweight linear heads to reconstruct the deep semantic feature and the shallow spatial feature, producing ˆ𝑓 (𝑑 ) and ˆ𝑓 (𝑠 ), respectively. We use ˆ𝑓 (𝑑 ) as the interface feature for semantic preservation evaluation, and also feed it into the pixel decoder to reconstruct the image: 
+
+ˆ𝑥 = 𝐷 pixel 
+
+ ˆ𝑓 (𝑑 )
+
+
+
+. (8) 
+
+Objectives In addition to the standard VQ loss ℒVQ (Equation 4) and the auto-encoding loss ℒAE (Equation 5), we align reconstructed features with their VFM targets on both the deep and shallow branches. These alignment terms encourage the feature decoder to produce representations that preserve both semantic structure and fine-grained details. The deep alignment loss is 
+
+ℒdeep = ˆ𝑓 (𝑑 ) − 𝑓 (𝑑 ) 22 +
+
+
+
+1 − cos 
+
+ ˆ𝑓 (𝑑 ) , 𝑓 (𝑑 )
+
+ 
+
+, (9) and the shallow alignment loss is 
+
+ℒshallow = ˆ𝑓 (𝑠 ) − 𝑓 (𝑠 ) 22 +
+
+
+
+1 − cos 
+
+ ˆ𝑓 (𝑠 ) , 𝑓 (𝑠 )
+
+ 
+
+. (10) For the adversarial term in ℒAE , we replace the conventional PatchGAN discriminator [ 17 ] with a frozen 5DINOv1-s model [ 4], yielding semantically meaningful adversarial guidance that consistently improves reconstruction quality. The full objective is then 
+
+ℒ = ℒAE + ℒ VQ + ℒ deep + ℒ shallow . (11) 
+
+3.4 Autoregressive Image Generation 
+
+Once a tokenizer is trained, its discrete codes can be modeled by an autoregressive Transformer via next-token prediction. Let 𝑦 = (𝑦 1 , . . . , 𝑦 𝑇 ) denote the flattened token indices, and let 𝑐 be the conditioning signal such as a class label or text embedding. An AR model parameterized by 𝜃 factorizes the likelihood as 
+
+𝑝 𝜃 (𝑦 | 𝑐 ) =
+
+> 𝑇
+
+Ö
+
+> 𝑡 =1
+
+𝑝 𝜃 (𝑦 𝑡 | 𝑦 <𝑡 , 𝑐 ), (12) and is trained with the standard cross-entropy objective 
+
+ℒAR = −
+
+> 𝑇
+
+Õ
+
+> 𝑡 =1
+
+log 𝑝 𝜃 (𝑦 𝑡 | 𝑦 <𝑡 , 𝑐 ). (13) During sampling, the model generates ˆ𝑦 sequentially, after which the tokenizer decoder maps ˆ𝑦 back to an image. In the AR model, we use 2D RoPE [46] to better capture spatial locality. 
+
+4 Experiments 
+
+4.1 Setup 
+
+Image tokenizer. We train Ideal on ImageNet-1K [ 8] and report results on the validation set. Unless stated otherwise, we follow the standard tokenizer training protocol in VQGAN [ 10 ] to ensure fair comparison. Since many VFMs are pretrained with an input resolution of 384 ×384 , we train the tokenizer on images resized to the same resolution. We adopt SigLIP2-Large-384 [ 50 ] as the frozen VFM encoder and use features from the 8th and 24 th Transformer(deepest) blocks as 𝑓 (𝑠 ) and 𝑓 (𝑑 ) respectively. The feature decoder is a 
+
+6-layer Transformer, consistent with prior work [70]. For reporting reconstruction metrics, we resize reconstructed images to 256 ×256 , matching the evaluation protocol in [47]. We use a VQ codebook with size 𝐾 =16384 and vector dim 𝑑 =64 .
+
+Class-conditional autoregressive generation. We evaluate class-conditional AR generation by training AR models on the discrete token sequences produced by our tokenizer. We evaluate Ideal with class-conditional autoregressive (AR) generation on ImageNet-1K at 256 ×256 . Following LlamaGen recipe [ 47 ], samples generated by AR models are 384 ×384 and are resized to 256 ×256 for metric computation. We train four AR model variants at different scales: Base (111M), Large (343M), XXL (1.4B), and 3B parameters. Models with fewer than 1B parameters are trained for 300 epochs, and larger models are trained for 200 epochs. 
+
+Evaluation metrics. For tokenizer reconstruction, we report reconstruction Fréchet Inception Distance [ 14 ](rFID) and reconstruction Inception Score [ 40 ] (rIS) as main metrics. For generation quality, we use generation Fréchet Inception Distance (gFID) and generation Inception Score (gIS) as primary metrics. We additionally report sFID, Precision, and Recall [22] for completeness. To quantify how well our tokenizer preserves VFM semantics, we report zero-shot ImageNet-1K classification accuracy (ZS Top-1/Top-5) following CLIP [36]. 6Figure 3 Visualization of reconstruction results from Ideal . Left: input image; Right: output image. 
+
+4.2 Main Results 
+
+Image reconstruction. We compare Ideal 
+
+with representative discrete image tok-enizers, including conventional visual to-kenizers like VQGAN [ 10 ] and semantic tokenizers like VFMTok [ 70 ]. As shown in Tab. 2, Ideal achieves 0.61 rFID, outper-forming prior VQ-based baselines under comparable settings while maintaining 
+
+100% codebook utilization. Beyond pixel fidelity, Ideal also attains the highest rIS of 230 .4, indicating Ideal ’s strong seman-tic consistency between reconstructed and original images. This suggests that Ideal 
+
+improves reconstruction without sacrific-ing the semantic structure inherited from the VFM. Refer to Tab. 6 for a fully con-trolled comparison on 256 resolution. Overall, Ideal can achieve superior per-formance in both reconstruction fidelity and semantic consistency while still main-taining 100% usage, demonstrating that our design can substantially improve dis-crete autoencoding. 
+
+Table 2 System-level reconstruction performance and codebook utiliza-tion. ‘ 𝑓 ’ denotes the downsampling ratio, ‘Size’ the codebook size, ‘Dim.’ the codebook vector dimension, and ‘#Res.’ the tokenization resolution. Results with resolution higher than 256 are resized to 256 when comput-ing the metrics. oim indicates tokenizers trained on OpenImages [21]. Method 𝑓 Size Dim. #Res. rFID ↓ rIS ↑ Usage (%) 
+
+Conventional tokenizer 
+
+TiTok [65] – 8192 64 256 1.05 191.5 100 ImageFolder [25] – 32768 32 256 0.69 201.5 100 VQGAN [10] – 16384 256 256 4.98 – –VQGAN [10] – 8192 256 256 1.49 – –VQGAN oim [10] – 16384 4 256 1.19 – –ViT-VQGAN [62] – 8192 32 256 1.28 192.3 95.0 MaskGiT [5] 16 – – 256 2.28 – –VAR [48] 16 4096 32 256 0.92 196.0 100 RQ-VAE [23] 32 16384 256 256 1.83 – –LlamaGen [47] 16 16384 8 336 1.21 189.1 99.2 LlamaGen [47] 16 16384 8 384 0.95 197.3 99.7 
+
+VFM-based tokenizer 
+
+VQRAE [9] 16 16384 1536 256 1.31 – –DINO-Tok [18] 16 16384 ×2 832 256 1.15 – –VFMTok [70] – 16384 12 336 0.89 215.4 100 
+
+Ideal (Ours) 16 16384 64 384 0.61 230.4 100 
+
+7Semantic Preservation. A primary goal of Ideal 
+
+is to preserve the semantic structure of the un-derlying VFM after discretization and decod-ing. We compare our model’s performance with the underlying VFM SigLIPv2 [ 50 ] on zero-shot ImageNet-1K classification. Tab. 3 shows that Ideal ’s decoded interface feature can achieve 80 .89 % Top-1 and 96 .40 % Top-5 accuracy, closely matching SigLIPv2’s deepest feature ( 83 .23 % vs 97 .11 %). This indicates that,                    
+
+> Table 3Zero-shot ImageNet-1K classification accuracy for SigLIPv2 [ 50 ] and Ideal .N/A indicates visual tokenziers do not support zero-shot evaluation. Model / Feature Top-1 (%) ↑Top-5 (%) ↑
+> Conventional tokenizers N/A N/A SigLIP2 83.23 97.11
+> Ideal 80.89 96.40
+
+despite vector quantization and reconstruction oriented training objectives, the feature reconstructed by decoder can still retain near original VFM semantic structure. Since we preserve a SigLIPv2-native semantic space, our decoded features naturally remain compatible with SigLIPv2 text embeddings without additional vision–language contrastive training [ 29 , 36 ]. This text-interactive property is largely absent in most prior tokenizers, as their decoded features are not compatible with text embeddings and therefore do not support CLIP-style zero-shot classification. We further evaluate the decoded features on multimodal understanding benchmarks under common used setting [ 6]: the vision encoder is frozen, a newly initialized adapter connects it to LLaMA 3.0 8B, the adapter and LLM are jointly tuned on LLaVA SFT data for one epoch.                              
+
+> Table 4 Multimodal understanding results. Model Token RealWorldQA [57] ChartQA [31] OKVQA [41] InfoVQA [32] SEED [24] MME [11] DINOv2 576 46.26 10.80 54.12 21.33 57.00 1345 SigLIP2 576 47.19 13.80 59.88 20.56 58.24 1730
+> Ideal 576 52.68 12.48 61.06 22.88 68.02 1878
+
+Class-conditional image generation. We compare against representative mainstream generators, including diffusion models (Diff.) [ 30 , 35 , 60 , 72 ], masked generation models (Mask.) [ 5], and autoregressive models (AR) built on visual tokenizers or semantic tokenizers [ 47 , 48 , 65 , 70 ]. All AR baselines are trained and evaluated under the same protocol as LlamaGen [47]. As shown in Table 5, Ideal yields strong generation performance compared to mainstream image generation models. Notably, at the Base scale, Ideal -B achieves a gFID of 3.38 , outperforming masked autoregressive baselines [ 5 ] with fewer parameters. Ideal -B also substantially outperforms AR baselines trained on visual tokenizers such as LlamaGen [ 47 ], with a gain of 2.71 in gFID and a gain of 37 .3 in gIS. When scaled to the Large scale, Ideal -L further reduces gFID to 2.26, which is comparable to some competitive diffusion models [ 30 , 35 , 60 , 72 ]. However, Ideal requires much shorter training length and approximately half of the parameters needed by diffusion models, demonstrating the efficiency of our model. Scaling Ideal to larger models further improves generation quality. At the XXL scale, Ideal -XXL reaches a gFID of 1.95 and the best sFID of 4.81, surpassing strong AR baselines such as VFMTok-XXL [ 70 ] and LlamaGen-XXL [ 47 ] under the same training length. Notably, when scaled to 3B parameters, Ideal continues improving and achieves a gFID of 1.89 , establishing a new state-of-the-art result for autoregressive modeling. VFMTok [ 70 ] achieves higher gIS than Ideal at similar parameter counts. We attribute this difference to a well-known trade-off between IS and FID. IS emphasizes classification confidence, which does not necessarily reflect the image realism captured by FID. Moreover, Ideal has tighter training constraints: its decoded feature must stay close to the underlying VFM semantic geometry while remain directly decodable by a CNN pixel head for high-fidelity reconstruction. These additional constraints reduce the degrees of freedom available for generation-optimality, which can manifest as lower gIS even when fidelity-oriented metrics ( e.g. ,8Table 5 Class-conditional ImageNet 256 × 256 generation results with classifier-free guidance (CFG). † indicates re-implementation by [ 70 ]; ‘-re’ denotes rejection sampling. Images generated at resolution higher than 256 will be resized to 256 during evaluation. Ideal -B performs best with a CFG scale of 1.75, while other variants perform best with a CFG scale of 1.25. Type Method #Epoch #Params. Res. Generation w/ CFG gFID ↓ sFID ↓ gIS ↑ Pre. ↑ Rec. ↑
+
+Diff. MaskDiT [72] 1600 675M 256 2.28 5.67 276.6 0.80 0.61 DiT [35] 1600 675M 256 2.27 4.60 278.2 0.83 0.57 SiT [30] 1600 675M 256 2.06 4.50 270.3 0.82 0.59 FasterDiT [60] 400 675M 256 2.03 4.63 264.0 0.81 0.60 Mask. MaskGiT-re [5] 555 227M 256 4.02 – 355.6 – –VAR VAR [48] 350 310M 256 3.30 – 274.4 0.84 0.51 AR 
+
+Base ( ≈111M params) 
+
+TiTok-B † [65] 300 111M – 6.76 7.82 175.3 0.85 0.43 LlamaGen-B [47] 300 111M 384 6.09 7.24 182.5 0.85 0.42 VFMTok-B [70] 300 111M 336 3.43 5.88 252.2 0.85 0.53 
+
+Ideal -B (Ours) 300 111M 384 3.38 5.18 219.8 0.84 0.51 
+
+Large ( ≈343M params) 
+
+TiTok-L † [65] 300 343M – 4.03 6.93 219.5 0.84 0.52 LlamaGen-L [47] 300 343M 384 3.07 6.09 256.1 0.83 0.52 VFMTok-L [70] 300 343M 336 2.75 5.58 278.8 0.84 0.57 
+
+Ideal -L (Ours) 300 343M 384 2.26 5.10 219.71 0.81 0.58 XXL ( ≈1.4B params) 
+
+LlamaGen-XXL [47] 200 1.4B 384 2.34 6.00 253.9 0.81 0.60 VFMTok-XXL [70] 200 1.4B 336 2.19 5.53 278.0 0.83 0.60 
+
+Ideal -XXL (Ours) 200 1.4B 384 1.95 4.81 260.2 0.83 0.59 
+
+3B params 
+
+LlamaGen-3B [47] 200 3.1B 384 2.19 5.97 263.3 0.82 0.58 VFMTok-3B [70] 200 3.1B 336 2.07 6.23 280.4 0.81 0.62 
+
+Ideal -3B (Ours) 200 3.1B 384 1.89 5.08 270.8 0.83 0.59 
+
+gFID/sFID) remain strong. Overall, these results show that Ideal provides a three-in-one unified representation, supporting AR modeling without sacrificing VFM semantics during semantic tokenization. 
+
+4.3 Ablation Study 
+
+We conduct ablations from two complementary perspectives. First, we provide a controlled comparison at 
+
+256 ×256 resolution to isolate the effect of the tokenizer. Then, we analyze the core design choices of Ideal ,including feature fusion, shallow-feature supervision, and the choice of VFM backbone. 
+
+Controlled 256 ×256 AR Generation. Following VFMTok, we train both the image tokenizer and the AR generation model at 256 ×256 resolution. The tokenizer is trained for 50 epochs, and the AR-Base model is trained for 300 epochs. As shown in Tab. 6, Ideal improves over LlamaGen and VFMTok in both reconstruction quality and generation fidelity under this controlled setting. 9Figure 4 Visualization of class-conditional image generation results from Ideal -L. 
+
+Table 6 Comparison of tokenizer performance and AR generation at 256 ×256 resolution. Approach Image recon. Usage ↑ #Epochs #Params. AR gen. #Toks rFID ↓ rIS ↑ gFID ↓ gIS ↑
+
+LlamaGen-B 256 2.22 169.8 95.2% 300 111M 5.46 193.6 VFMTok-B 256 1.02 213.2 100.0% 300 111M 3.61 247.6 
+
+Ideal -B 256 0.98 220.0 100.0% 300 111M 3.43 181.9 
+
+Table 7 Ablations of Ideal along three axes: (a) fusion operator choices, (b) the effect of enabling spatial reconstruction, and (c) the backbone VFM. We test SigLIPv2 [ 50 ], DINOv2 [ 34 ], and DINOv3 [ 43 ] as VFM backbones. We report rFID as a measure of reconstruction fidelity and rIS as a measure of reconstruction semantic quality. Fusion type rFID ↓ rIS ↑
+
+Attention 0.61 230.4 Linear 0.63 225.9 None 0.85 231.1 (a) Fusion operator. Variant rFID ↓ rIS ↑
+
+w/ ℒshallow 0.61 230.4 
+
+w/o ℒshallow 0.66 229.4 
+
+(b) Shallow alignment. VFM variant rFID ↓ rIS ↑
+
+SigLIP2 0.61 230.4 
+
+DINOv2 0.60 227.0 DINOv3 0.54 227.9 
+
+(c) Backbone VFM. 
+
+Design Ablations. Tab. 7 examines three design aspects of Ideal : the fusion operator, the auxiliary supervision for shallow spatial reconstruction, and the choice of VFM backbone. We first find that fusion is critical: removing fusion leads to a clear drop in reconstruction quality, confirming that injecting complementary shallow spatial cues into deep semantic features is essential for decodability. Across fusion choices, reconstruction fidelity is relatively stable, while semantic retention is more sensitive: 10 in particular, attention better preserves semantics under reconstruction-driven learning, suggesting it is more effective at selectively integrating low-level details without distorting the semantic structure. Next, adding the auxiliary objective to reconstruct shallow features consistently improves reconstruction, validating the benefit of explicitly supervising reconstruction-friendly signals in the decoder. Finally, Ideal is robust across different VFM backbones, achieving strong performance trends consistently. We observe a mild trade-off between reconstruction and semantics: DINO-style [ 34 , 43 ] SSL features tend to favor reconstruction, whereas SigLIP2 [ 50 ] features better support semantic retention and offer vision–language aligned representations that can directly interact with text. For this reason, we adopt SigLIP2 as the default backbone in our main experiments. 
+
+5 Conclusion 
+
+We introduced Ideal , a discrete representation autoencoder that converts VFM features into discrete codes for autoregressive image generation while preserving both semantic richness and high-fidelity reconstructability. The design is motivated by a simple empirical observation: VFM feature hierarchies exhibit a clear depth-dependent trade-off, where shallow layers retain spatial detail useful for reconstruction, whereas deeper layers encode stronger semantics. Exploiting this complementarity, Ideal injects reconstruction-relevant shallow signals into deep semantic features, yielding a latent space that retains both detailed visual information and strong semantics. Experiments on ImageNet show that Ideal delivers strong performance on both reconstruction and generation, while largely preserving the semantics of the original VFM representations. When scaled to 3B parameters, Ideal achieves a gFID of 1.89 at 256 × 256 , establishing a new state of the art for autoregressive image generation. 
+
+References 
+
+[1] Yoshua Bengio, Nicholas Léonard, and Aaron Courville. Estimating or propagating gradients through stochastic neurons for conditional computation, 2013. URL https://arxiv.org/abs/1308.3432 .[2] Daniel Bolya, Po-Yao Huang, Peize Sun, Jang Hyun Cho, Andrea Madotto, Chen Wei, Tengyu Ma, Jiale Zhi, Jathushan Rajasegaran, Hanoona Bangalath, et al. Perception encoder: The best visual embeddings are not at the output of the network. In NeurIPS, 2025. [3] Daniel Bolya, Po-Yao Huang, Peize Sun, Jang Hyun Cho, Andrea Madotto, Chen Wei, Tengyu Ma, Jiale Zhi, Jathushan Rajasegaran, Hanoona Rasheed, et al. Perception encoder: The best visual embeddings are not at the output of the network. In NeurIPS, 2025. [4] Mathilde Caron, Hugo Touvron, Ishan Misra, Hervé Jégou, Julien Mairal, Piotr Bojanowski, and Armand Joulin. Emerging properties in self-supervised vision transformers. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV), pages 9650–9660, October 2021. [5] Huiwen Chang, Han Zhang, Lu Jiang, Ce Liu, and William T Freeman. Maskgit: Masked generative image transformer. In CVPR, 2022. [6] Yitong Chen, Lingchen Meng, Wujian Peng, Zuxuan Wu, and Yu-Gang Jiang. Comp: Continual multimodal pre-training for vision foundation models. arXiv preprint arXiv:2503.18931, 2025. [7] Timothée Darcet, Maxime Oquab, Julien Mairal, and Piotr Bojanowski. Vision transformers need registers. In ICLR, 2024. [8] Jia Deng, Wei Dong, Richard Socher, Li-Jia Li, Kai Li, and Li Fei-Fei. Imagenet: A large-scale hierarchical image database. In 2009 IEEE Conference on Computer Vision and Pattern Recognition, pages 248–255, 2009. doi: 10.1109/CVPR.2009.5206848. [9] Sinan Du, Jiahao Guo, Bo Li, Shuhao Cui, Zhengzhuo Xu, Yifu Luo, Yongxian Wei, Kun Gai, Xinggang Wang, Kai Wu, and Chun Yuan. Vqrae: Representation quantization autoencoders for multimodal understanding, generation and reconstruction, 2025. URL https://arxiv.org/abs/2511.23386 .
+
+11 [10] Patrick Esser, Robin Rombach, and Bjorn Ommer. Taming transformers for high-resolution image synthesis. In CVPR, 2021. [11] Chaoyou Fu, Peixian Chen, Yunhang Shen, Yulei Qin, Mengdan Zhang, Xu Lin, Jinrui Yang, Xiawu Zheng, Ke Li, Xing Sun, et al. Mme: A comprehensive evaluation benchmark for multimodal large language models. arXiv preprint arXiv:2306.13394, 2023. [12] Yuan Gao, Chen Chen, Tianrong Chen, and Jiatao Gu. One layer is enough: Adapting pretrained visual encoders for image generation, 2025. URL https://arxiv.org/abs/2512.07829 .[13] Songwei Ge, Thomas Hayes, Harry Yang, Xi Yin, Guan Pang, David Jacobs, Jia-Bin Huang, and Devi Parikh. Long video generation with time-agnostic vqgan and time-sensitive transformer, 2022. URL https://arxiv.org/abs/ 2204.03638 .[14] Martin Heusel, Hubert Ramsauer, Thomas Unterthiner, Bernhard Nessler, and Sepp Hochreiter. Gans trained by a two time-scale update rule converge to a local nash equilibrium. In NeurIPS, 2017. [15] Irina Higgins, Loïc Matthey, Arka Pal, Christopher P. Burgess, Xavier Glorot, Matthew M. Botvinick, Shakir Mohamed, and Alexander Lerchner. beta-vae: Learning basic visual concepts with a constrained variational framework. In International Conference on Learning Representations, 2016. URL https://api.semanticscholar.org/ CorpusID:46798026 .[16] Drew A. Hudson and Christopher D. Manning. Gqa: A new dataset for real-world visual reasoning and compositional question answering, 2019. URL https://arxiv.org/abs/1902.09506 .[17] Phillip Isola, Jun-Yan Zhu, Tinghui Zhou, and Alexei A Efros. Image-to-image translation with conditional adversarial networks. In CVPR, 2017. [18] Mingkai Jia, Mingxiao Li, Liaoyuan Fan, Tianxing Shi, Jiaxin Guo, Zeming Li, Xiaoyang Guo, Xiao-Xiao Long, Qian Zhang, Ping Tan, and Wei Yin. Dino-tok: Adapting dino for visual tokenizers, 2025. URL https://arxiv.org/ abs/2511.20565 .[19] Herve Jégou, Matthĳs Douze, and Cordelia Schmid. Product quantization for nearest neighbor search. IEEE Transactions on Pattern Analysis and Machine Intelligence, 33(1):117–128, 2011. doi: 10.1109/TPAMI.2010.57. [20] Diederik P Kingma and Max Welling. Auto-encoding variational bayes. In ICLR, 2014. [21] Alina Kuznetsova, Hassan Rom, Neil Alldrin, Jasper Uĳlings, Ivan Krasin, Jordi Pont-Tuset, Shahab Kamali, Stefan Popov, Matteo Malloci, Alexander Kolesnikov, Tom Duerig, and Vittorio Ferrari. The open images dataset v4: Unified image classification, object detection, and visual relationship detection at scale. International Journal of Computer Vision, 128, 03 2020. doi: 10.1007/s11263-020-01316-z. [22] Tuomas Kynkäänniemi, Tero Karras, Samuli Laine, Jaakko Lehtinen, and Timo Aila. Improved precision and recall metric for assessing generative models, 2019. URL https://arxiv.org/abs/1904.06991 .[23] Doyup Lee, Chiheon Kim, Saehoon Kim, Minsu Cho, and Wook-Shin Han. Autoregressive image generation using residual quantization, 2022. URL https://arxiv.org/abs/2203.01941 .[24] Bohao Li, Rui Wang, Guangzhi Wang, Yuying Ge, Yixiao Ge, and Ying Shan. Seed-bench: Benchmarking multimodal llms with generative comprehension. arXiv preprint arXiv:2307.16125, 2023. [25] Xiang Li, Kai Qiu, Hao Chen, Jason Kuen, Jiuxiang Gu, Bhiksha Raj, and Zhe Lin. Imagefolder: Autoregressive image generation with folded tokens, 2024. URL https://arxiv.org/abs/2410.01756 .[26] Yifan Li, Yifan Du, Kun Zhou, Jinpeng Wang, Wayne Xin Zhao, and Ji-Rong Wen. Evaluating object hallucination in large vision-language models, 2023. URL https://arxiv.org/abs/2305.10355 .[27] Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization, 2019. URL https://arxiv.org/abs/ 1711.05101 .[28] Zhuoyan Luo, Fengyuan Shi, Yixiao Ge, Yujiu Yang, Limin Wang, and Ying Shan. Open-magvit2: An open-source project toward democratizing auto-regressive visual generation. arXiv preprint arXiv:2409.04410, 2024. [29] Chuofan Ma, Yi Jiang, Junfeng Wu, Jihan Yang, Xin Yu, Zehuan Yuan, Bingyue Peng, and Xiaojuan Qi. Unitok: A unified tokenizer for visual generation and understanding, 2025. URL https://arxiv.org/abs/2502.20321 .
+
+12 [30] Nanye Ma, Mark Goldstein, Michael S. Albergo, Nicholas M. Boffi, Eric Vanden-Eĳnden, and Saining Xie. Sit: Exploring flow and diffusion-based generative models with scalable interpolant transformers, 2024. URL https: //arxiv.org/abs/2401.08740 .[31] Ahmed Masry, Xuan Long Do, Jia Qing Tan, Shafiq Joty, and Enamul Hoque. Chartqa: A benchmark for question answering about charts with visual and logical reasoning. In ACL Findings, 2022. [32] Minesh Mathew, Dimosthenis Karatzas, and CV Jawahar. Docvqa: A dataset for vqa on document images. In WACV, 2021. [33] Fabian Mentzer, David Minnen, Eirikur Agustsson, and Michael Tschannen. Finite scalar quantization: Vq-vae made simple, 2023. URL https://arxiv.org/abs/2309.15505 .[34] Maxime Oquab, Timothée Darcet, Théo Moutakanni, Huy Vo, Marc Szafraniec, Vasil Khalidov, Pierre Fernandez, Daniel Haziza, Francisco Massa, Alaaeldin El-Nouby, et al. Dinov2: Learning robust visual features without supervision. TMLR, 2024. [35] William Peebles and Saining Xie. Scalable diffusion models with transformers. In ICCV, 2023. [36] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, Gretchen Krueger, and Ilya Sutskever. Learning transferable visual models from natural language supervision, 2021. URL https://arxiv.org/abs/2103.00020 .[37] Ali Razavi, Aaron van den Oord, and Oriol Vinyals. Generating diverse high-fidelity images with vq-vae-2, 2019. [38] Sucheng Ren, Qihang Yu, Ju He, Xiaohui Shen, Alan Yuille, and Liang-Chieh Chen. Beyond next-token: Next-x prediction for autoregressive visual generation, 2025. URL https://arxiv.org/abs/2502.20388 .[39] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Björn Ommer. High-resolution image synthesis with latent diffusion models, 2022. URL https://arxiv.org/abs/2112.10752 .[40] Tim Salimans, Ian Goodfellow, Wojciech Zaremba, Vicki Cheung, Alec Radford, and Xi Chen. Improved techniques for training gans. In NeurIPS, 2016. [41] Dustin Schwenk, Apoorv Khandelwal, Christopher Clark, Kenneth Marino, and Roozbeh Mottaghi. A-okvqa: A benchmark for visual question answering using world knowledge. In ECCV, 2022. [42] Minglei Shi, Haolin Wang, Wenzhao Zheng, Ziyang Yuan, Xiaoshi Wu, Xintao Wang, Pengfei Wan, Jie Zhou, and Jiwen Lu. Latent diffusion model without variational autoencoder. In ICLR, 2026. [43] Oriane Siméoni, Huy V Vo, Maximilian Seitzer, Federico Baldassarre, Maxime Oquab, Cĳo Jose, Vasil Khalidov, Marc Szafraniec, Seungeun Yi, Michaël Ramamonjisoa, et al. Dinov3. arXiv preprint arXiv:2508.10104, 2025. [44] Amanpreet Singh, Vivek Natarajan, Meet Shah, Yu Jiang, Xinlei Chen, Dhruv Batra, Devi Parikh, and Marcus Rohrbach. Towards vqa models that can read, 2019. URL https://arxiv.org/abs/1904.08920 .[45] Wei Song, Yuran Wang, Zĳia Song, Yadong Li, Zenan Zhou, Long Chen, Jianhua Xu, Jiaqi Wang, and Kaicheng Yu. Dualtoken: Towards unifying visual understanding and generation with dual visual vocabularies. In ICLR, 2026. [46] Jianlin Su, Yu Lu, Shengfeng Pan, Ahmed Murtadha, Bo Wen, and Yunfeng Liu. Roformer: Enhanced transformer with rotary position embedding, 2023. URL https://arxiv.org/abs/2104.09864 .[47] Peize Sun, Yi Jiang, Shoufa Chen, Shilong Zhang, Bingyue Peng, Ping Luo, and Zehuan Yuan. Autoregressive model beats diffusion: Llama for scalable image generation. arXiv preprint arXiv:2406.06525, 2024. [48] Keyu Tian, Yi Jiang, Zehuan Yuan, Bingyue Peng, and Liwei Wang. Visual autoregressive modeling: Scalable image generation via next-scale prediction. In NeurIPS, 2024. [49] Shengbang Tong, Ellis Brown, Penghao Wu, Sanghyun Woo, Manoj Middepogu, Sai C Akula, Jihan Yang, Shusheng Yang, Adithya Iyer, Xichen Pan, et al. Cambrian-1: A fully open, vision-centric exploration of multimodal llms. In NeurIPS, 2024. [50] Michael Tschannen, Alexey Gritsenko, Xiao Wang, Muhammad Ferjad Naeem, Ibrahim Alabdulmohsin, Nikhil Parthasarathy, Talfan Evans, Lucas Beyer, Ye Xia, Basil Mustafa, et al. Siglip 2: Multilingual vision-language encoders with improved semantic understanding, localization, and dense features. arXiv preprint arXiv:2502.14786, 2025. 
+
+13 [51] Aaron Van Den Oord, Oriol Vinyals, et al. Neural discrete representation learning. In NeurIPS, 2017. [52] Aaron van den Oord, Oriol Vinyals, and Koray Kavukcuoglu. Neural discrete representation learning, 2018. URL 
+
+https://arxiv.org/abs/1711.00937 .[53] Junke Wang, Yi Jiang, Zehuan Yuan, Binyue Peng, Zuxuan Wu, and Yu-Gang Jiang. Omnitokenizer: A joint image-video tokenizer for visual generation. In NeurIPS, 2024. [54] Junke Wang, Zhi Tian, Xun Wang, Xinyu Zhang, Weilin Huang, Zuxuan Wu, and Yu-Gang Jiang. Simplear: Pushing the frontier of autoregressive visual generation through pretraining, sft, and rl. arXiv preprint arXiv:2504.11455, 2025. [55] Junke Wang, Xun Wang, Qiushan Guo, Peize Sun, Weilin Huang, Zuxuan Wu, and Yu-Gang Jiang. Omnigen-ar: Autoregressive any-to-image generation. In NeurIPS, 2025. [56] Ge Wu, Shen Zhang, Ruĳing Shi, Shanghua Gao, Zhenyuan Chen, Lei Wang, Zhaowei Chen, Hongcheng Gao, Yao Tang, Jian Yang, Ming-Ming Cheng, and Xiang Li. Representation entanglement for generation: Training diffusion transformers is much easier than you think, 2025. URL https://arxiv.org/abs/2507.01467 .[57] xAI Team. Grok-1.5 vision preview, 2024. URL https://x.ai/blog/grok-1.5v .[58] Zhuofan Xia, Xuran Pan, Shĳi Song, Li Erran Li, and Gao Huang. Vision transformer with deformable attention, 2022. URL https://arxiv.org/abs/2201.00520 .[59] Wilson Yan, Yunzhi Zhang, Pieter Abbeel, and Aravind Srinivas. Videogpt: Video generation using vq-vae and transformers, 2021. [60] Jingfeng Yao, Wang Cheng, Wenyu Liu, and Xinggang Wang. Fasterdit: Towards faster diffusion transformers training without architecture modification, 2024. URL https://arxiv.org/abs/2410.10356 .[61] Jingfeng Yao, Bin Yang, and Xinggang Wang. Reconstruction vs. generation: Taming optimization dilemma in latent diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, 2025. [62] Jiahui Yu, Xin Li, Jing Yu Koh, Han Zhang, Ruoming Pang, James Qin, Alexander Ku, Yuanzhong Xu, Jason Baldridge, and Yonghui Wu. Vector-quantized image modeling with improved vqgan, 2022. URL https: //arxiv.org/abs/2110.04627 .[63] Jiahui Yu, Yuanzhong Xu, Jing Yu Koh, Thang Luong, Gunjan Baid, Zirui Wang, Vĳay Vasudevan, Alexander Ku, Yinfei Yang, Burcu Karagol Ayan, Ben Hutchinson, Wei Han, Zarana Parekh, Xin Li, Han Zhang, Jason Baldridge, and Yonghui Wu. Scaling autoregressive models for content-rich text-to-image generation, 2022. URL 
+
+https://arxiv.org/abs/2206.10789 .[64] Lĳun Yu, José Lezama, Nitesh B Gundavarapu, Luca Versari, Kihyuk Sohn, David Minnen, Yong Cheng, Vighnesh Birodkar, Agrim Gupta, Xiuye Gu, et al. Language model beats diffusion–tokenizer is key to visual generation. In ICLR, 2024. [65] Qihang Yu, Mark Weber, Xueqing Deng, Xiaohui Shen, Daniel Cremers, and Liang-Chieh Chen. An image is worth 32 tokens for reconstruction and generation. In NeurIPS, 2024. [66] Sihyun Yu, Sangkyung Kwak, Huiwon Jang, Jongheon Jeong, Jonathan Huang, Jinwoo Shin, and Saining Xie. Representation alignment for generation: Training diffusion transformers is easier than you think. In ICLR, 2024. [67] Xiaohua Zhai, Basil Mustafa, Alexander Kolesnikov, and Lucas Beyer. Sigmoid loss for language image pre-training, 2023. [68] Richard Zhang, Phillip Isola, Alexei A Efros, Eli Shechtman, and Oliver Wang. The unreasonable effectiveness of deep features as a perceptual metric. In CVPR, 2018. [69] Yue Zhao, Hanwen Jiang, Zhenlin Xu, Chutong Yang, Ehsan Adeli, and Philipp Krähenbühl. Spherical leech quantization for visual tokenization and generation, 2025. URL https://arxiv.org/abs/2512.14697 .[70] Anlin Zheng, Xin Wen, Xuanyang Zhang, Chuofan Ma, Tiancai Wang, Gang Yu, Xiangyu Zhang, and Xiaojuan Qi. Vision foundation models as effective visual tokenizers for autoregressive image generation, 2025. URL 
+
+https://arxiv.org/abs/2507.08441 .
+
+14 [71] Boyang Zheng, Nanye Ma, Shengbang Tong, and Saining Xie. Diffusion transformers with representation autoen-coders, 2025. URL https://arxiv.org/abs/2510.11690 .[72] Hongkai Zheng, Weili Nie, Arash Vahdat, and Anima Anandkumar. Fast training of diffusion models with masked transformers, 2024. URL https://arxiv.org/abs/2306.09305 .[73] Lei Zhu, Fangyun Wei, Yanye Lu, and Dong Chen. Scaling the codebook size of vqgan to 100,000 with a utilization rate of 99%, 2024. URL https://arxiv.org/abs/2406.11837 .[74] Yongxin Zhu, Bocheng Li, Yifei Xin, Zhihua Xia, and Linli Xu. Addressing representation collapse in vector quantized models with one linear layer, 2025. URL https://arxiv.org/abs/2411.02038 .
+
+15 A Ideal Implementation Details 
+
+A.1 Tokenizer Training Details 
+
+Overall, our tokenizer training recipe closely follows prior work VFMTok [ 70 ]. Since VFMTok uses a VFM with a patch size of 14 and an input resolution of 336, we use a patch size of 16 and an input resolution of 384 to maintain consistency in the feature map size. We train Ideal on ImageNet-1K [ 8] training set using random resized crop and horizontal flip, with an input resolution of 384 × 384 and evaluating reconstructions at 256 × 256 following the common protocol [47]. Ideal requires 2 days of training on 8 Nvidia H200 GPUs. We summarize some key training configuration of our tokenizer in Table 8.  
+
+> Table 8 Tokenizer implementation details
+
+Hyperparameter Value Hyperparameter Value 
+
+Backbone 
+
+VFM type SigLIPv2-Large [50] VFM input resolution 384 VFM training Frozen image_size / eval_image_size 384 / 256 decoder backbone ViT decoder layer_num 6decoder hidden_dim 1024 decoder attn_head 8decoder cls_num 1 decoder reg_num 4decoder dropout 0.1 
+
+General 
+
+mixed_precision bf16 ema True codebook_l2_norm True max_grad_norm 1.0 
+
+Loss 
+
+reconstruction_weight 1.0 perceptual_weight 1.0 vq_loss_ratio 1.0 commit_loss_beta 0.25 
+
+Adversarial 
+
+disc_type dino disc_loss / gen_loss hinge / hinge disc_weight 0.5 disc_start 20000 use_diff_aug True 
+
+Optimization 
+
+epochs 50 global_batch_size 256 optimizer AdamW [27] lr / lr_scheduler 1e-4 / cosine weight_decay 5e-2 beta1 / beta2 0.9 / 0.95 
+
+A.2 Autoregressive Training Details 
+
+Following VFMTok [ 70 ], an AR generator is trained to model the discrete token sequences produced by the tokenizer. However, VFMTok extracts token sequences on-the-fly using the tokenizer at each training epoch, which introduces additional overhead. In contrast, we follow the original LlamaGen training pipeline [ 47 ]: we apply ten-crop preprocessing to training images and pre-extract all token sequences offline before AR training, significantly improving training throughput. We train Base and Large models for 300 epochs, and train XXL and 3B models for 200 epochs, consistent with the scaling recipe in VFMTok. Ideal -B takes approximately 34 hours of training on 8 Nvidia H200 GPUs. Key AR training hyperparameters are summarized in Table 9. 16 Table 9 Autoregressive training and sampling configuration for Ideal .Hyperparameter Value Hyperparameter Value                                
+
+> Training protocol
+> token extraction offline image preprocessing ten-crop epochs (Base/Large) 300 epochs (XXL/3B) 200 EMA True mixed_precision bf16
+> Optimization
+> optimizer AdamW [27] lr 1e-4 weight_decay 0.05 beta1 / beta2 0.9 / 0.95 max_grad_norm 1.0 dropout_p 0.1 token_dropout_p 0.1 drop_path_rate 0.0
+> Architecture & conditioning
+> class_token_num 1class_dropout_prob 0.1 positional embedding 2D RoPE [46] rope_base 10000
+> Sampling
+> top_k 0top_p 1.0 temperature 1.0
+
+B Additional Qualitative Results 
+
+We provide additional qualitative results on image reconstruction and generation, and further analyze representative failure cases of both our tokenizer and autoregressive model. 
+
+B.1 Reconstruction Results 
+
+As shown in Figure 5, our tokenizer produces fine-grained reconstructions across diverse scenes and objects. 
+
+B.2 Generation Results 
+
+Figure 6 presents more samples demonstrating that our method can synthesize images with varied styles, subjects, and compositions. 
+
+B.3 Failure Cases 
+
+Despite these strengths, we observe degraded reconstruction quality on faces and text, as illustrated in Figure 7. We attribute this to the limited domain coverage of our tokenizer training data. In particular, our tokenizer is trained only on ImageNet, which contains sparse coverage of close-up faces and rich-text images. We do not incorporate additional face- or text-centric data either. In generation, Figure 8 shows that artifacts can still appear in fine-structure regions such as hands and faces, suggesting that post-training refinement on autoregressive models may be beneficial for further improving fidelity. 
+
+C Limitation and Future Work 
+
+Our tokenizer is trained mainly on ImageNet, which has limited domain coverage. Thus, reconstruction can degrade on faces, text, and other long-tail visual patterns. In addition, our semantic-preservation evaluation focuses on ImageNet zero-shot classification, which mainly reflects category-level semantics and does not fully cover broader semantic capabilities. A direct next step is to pretrain or adapt the tokenizer on larger and more diverse datasets to improve coverage of faces, text, and long-tail domains. We also plan to evaluate the decoded interface feature on broader 17 Figure 5 More visualization of reconstruction results from Ideal . Left: input image; Right: output image. 
+
+semantic benchmarks to better characterize semantic preservation [ 16 , 26 , 44 ]. Finally, our discrete-token formulation may naturally extend to videos by incorporating temporal consistency for semantic tokenization and generation. 18 Figure 6 More visualization of class-conditional image generation results from Ideal -L. 
+
+19 Figure 7 Visualization of failure reconstruction cases from Ideal . Left: input image; Right: output image. 
+
+20 Figure 8 Failure generation cases. Ideal still has artifacts in generating delicate text, human faces and fingers, which can be addressed with more training data on these images. 
+
+21

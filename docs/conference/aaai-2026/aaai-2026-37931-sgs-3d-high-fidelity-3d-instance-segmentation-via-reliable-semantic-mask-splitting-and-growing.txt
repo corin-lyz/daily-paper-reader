@@ -1,0 +1,277 @@
+Title: SGS-3D: High-Fidelity 3D Instance Segmentation via Reliable Semantic Mask Splitting and Growing
+
+URL Source: https://ojs.aaai.org/index.php/AAAI/article/download/37931/41893
+
+Number of Pages: 9
+
+Markdown Content:
+# SGS-3D: High-Fidelity 3D Instance Segmentation via Reliable Semantic Mask Splitting and Growing 
+
+# Chaolei Wang 1, Yang Luo 1, Jing Du 2* , Siyu Chen 3* , Yiping Chen 1† , Ting Han 1† 
+
+> 1
+
+Sun Yat-sen University, Zhuhai, China 
+
+> 2
+
+University of Waterloo, Waterloo, Canada 
+
+> 3
+
+Jimei University, Xiamen, China 
+
+{wangchlei5, hant23 }@mail2.sysu.edu.cn, chenyp79@mail.sysu.edu.cn 
+
+Abstract 
+
+Accurate 3D instance segmentation is crucial for high-quality scene understanding in the 3D vision domain. However, 3D instance segmentation based on 2D-to-3D lifting approaches struggle to produce precise instance-level segmentation, due to accumulated errors introduced during the lifting process from ambiguous semantic guidance and insufficient depth constraints. To tackle these challenges, we propose Split-ting and Growing reliable Semantic mask for high-fidelity 3D instance segmentation (SGS-3D), a novel ”split-then-grow” framework that first purifies and splits ambiguous lifted masks using geometric primitives, and then grows them into complete instances within the scene. Unlike existing ap-proaches that directly rely on raw lifted masks and sacrifice segmentation accuracy, SGS-3D serves as a training-free re-finement method that jointly fuses semantic and geometric information, enabling effective cooperation between the two levels of representation. Specifically, for semantic guidance, we introduce a mask filtering strategy that leverages the co-occurrence of 3D geometry primitives to identify and remove ambiguous masks, thereby ensuring more reliable semantic consistency with the 3D object instances. For the geometric refinement, we construct fine-grained object instances by ex-ploiting both spatial continuity and high-level features, par-ticularly in the case of semantic ambiguity between distinct objects. Experimental results on ScanNet200, ScanNet++, and KITTI-360 demonstrate that SGS-3D substantially im-proves segmentation accuracy and robustness against inaccu-rate masks from pre-trained models, yielding high-fidelity ob-ject instances while maintaining strong generalization across diverse indoor and outdoor environments. 
+
+Code — https://github.com/wangchaolei7/SGS-3D 
+
+# Introduction 
+
+Arbitrary instances segmentation within 3D scenes con-stitutes a crucial task in various domains, including au-tonomous driving, virtual reality, and multi-modality scene understanding. While recent methods (Felzenszwalb 2004; Chen et al. 2021; Vu et al. 2022; Liang et al. 2021; Engel-mann et al. 2020; Lu et al. 2023a; Schult et al. 2023; Yu 
+
+> *
+
+These authors contributed equally. 
+
+> †
+
+Corresponding author. Copyright © 2026, Association for the Advancement of Artificial Intelligence (www.aaai.org). All rights reserved. 
+
+et al. 2023; Han et al. 2024; Luo et al. 2025) yield impressive segmentation results when trained on specifically annotated datasets (Dai et al. 2017; Armeni et al. 2016; Robert, Raguet, and Landrieu 2023; Yeshwanth et al. 2023; Liao, Xie, and Geiger 2022), their generalization to open-world environ-ments remains limited. In contrast to the inherent difficulties in obtaining extensive 3D annotations, foundation models trained on massive 2D image datasets have shown remark-able performance and strong zero-shot generalization abili-ties. This observation motivates a promising direction: uti-lizing 2D pre-trained foundation models for 3D scene per-ception and interaction. 
+
+Currently, two predominant paradigms exist for executing the 3D instance segmentation: feature-based methods and mask-based methods. Feature-based methods (Peng et al. 2023; Takmaz et al. 2023; Ding et al. 2023; Hegde, Vala-narasu, and Patel 2023; Yang et al. 2024; Lee, Zhao, and Lee 2024; Huang et al. 2024b) primarily focus on learn-ing robust feature representations from 3D point clouds or by lifting features from 2D modalities (Oquab et al. 2023). Instance segmentation is subsequently achieved by classi-fying, grouping, or decoding these learned features into instance-level masks. However, these methods commonly suffer from inefficient training and error propagation, which arising from ambiguous feature representations stemming from 2D-to-3D lifting or the inherent high-dimensional fea-ture space. To mitigate these concerns, mask-based methods leverage the semantic masks extracted from input registered images using Segment Anything Model (SAM) (Kirillov et al. 2023) to derive instance-level assignments for each 3D geomet-ric primitive in the 3D scene, consolidating these 3D primi-tives iteratively based on their projected masks (Yang et al. 2023; Lu et al. 2023b; Xu et al. 2023; Nguyen et al. 2024; Huang et al. 2024a). Despite this advancement, the robust propagation of semantic information from these projected masks is often overlooked, with a primary focus on optimiz-ing strategies for merging 3D geometric primitives while ne-glecting fine-grained geometric cues. This oversight leads to continuous error accumulation during scene segmentation, ultimately yielding imprecise results, particularly for adja-cent but separate instances, as il-lustrated in Figure 1. Al-though some existing methods incorporate depth informa-tion from sensors to enhance back-projection accuracy (Guo The Fortieth AAAI Conference on Artificial Intelligence (AAAI-26) 
+
+9684 (a) Errors from Naive Projection (b) Our Geometry-Aware Correction (c) Consistent SOTA Performance  
+
+> SGS-3D SAM-graph SAI3D SAM3D HDBSCAN AP@0.25 AP@0.25 AP@0.25 AP@0.50 mAP AP@0.50 AP@0.50 mAP mAP
+
+Figure 1: SGS-3D: High-Fidelity segmentation by overcoming ambiguous 2D-to-3D lifting. Previous methods suffer from flawed instance grouping (a), caused by ambiguous 2D semantics and inadequately unhandled occlusions during projection. SGS-3D overcomes this by establishing reliable 3D semantics via occlusion-aware mapping and a novel ”split-then-grow” refinement (b). This dual-refinement strategy achieves state-of-the-art accuracy across diverse scenes, especially in challenging, depth-less outdoor environments (c). et al. 2024; Yin et al. 2024; Zhao et al. 2025), this reliance is problematic for two key reasons: depth sensors inherently struggle on textureless and highly reflective surfaces, and moreover, they are often entirely unavailable in wild scenes, severely compromising segmentation performance. To confront these issues, we propose SGS-3D, a training-free refinement and segmentation framework that jointly fuse semantic and geometric information to accurately regis-ter 2D semantic instance masks to 3D geometric primitives. Inspired by prior work, we introduce 3D geometric over-segmentation to decompose objects within the scene into primitives, which serve as the basic units for instance seg-mentation. Moreover, we reveal the significance of precise depth constraints, which serve as a powerful tool for prop-agating reliable and fine-grained semantic cues to 3D point clouds. Specifically, during the mask refinement phase, we first effectively establish a point-to-pixel mapping, without relying on true depth maps and without sacrificing precision. Leveraging this mapping, the co-occurrence of 3D geomet-ric primitives effectively prevents the accumulation of am-biguous semantic errors. In the geometry refinement phase, we split 3D semantic masks within the density space to fur-ther refine semantic guidance and maintain semantic qual-ity. After geometric optimization, our method consolidates the refined 3D semantic masks with geometric primitives by performing feature similarity matching, which enhances the completeness of object instances while reducing redun-dancy. To summarize our contributions in a few words: • We propose SGS-3D, a novel training-free framework that achieves high-fidelity 3D instance segmentation through a principled ”split-then-grow” strategy, jointly leveraging semantic and geometric cues to overcome error accumulation in existing 2D-to-3D lifting ap-proaches. • We introduce an occlusion-aware point-image map-ping that ensures accurate mask-to-point correspondence without ground-truth depth, and develop a visibility-based co-occurrence filtering that effectively removes ambiguous 2D masks while achieving 4 × computational speedup and robust cross-scene generalization. • We design a semantic-guided aggregation pipeline fea-turing density-based spatial splitting to generate pure semantic-geometric seeds, followed by feature-guided growing that intelligently aggregates fragmented in-stances into complete objects, particularly excelling in challenging interwoven scenarios. 
+
+# Methodology 
+
+Method Overview and Preliminaries 
+
+The proposed SGS-3D comprises three main components: (1) Point-Image Mapping, (2) 2D Mask Proposal Module, and (3) Semantic-Guided Aggregation, as illustrated in Fig-ure 2. Our primary objective is to generate a set of high-quality, class-agnostic 3D instance proposals by leverag-ing semantic and spatial cues from multiple 2D views. Our method takes as input a 3D point cloud P = {pi ∈ R6}Ni=1 
+
+(XYZRGB) and a set of T registered images {It}Tt=1 with their corresponding camera parameters, including intrinsics 
+
+Kt and pose Tt.We first over-segment the point cloud P into a set of U
+
+superpoints, S = {su}Uu=1 , which serve as our fundamental processing primitives. These spatially coherent and geomet-rically compact groups of points improve computational ef-ficiency and help maintain structural consistency. To adapt to diverse 3D scenarios, we employ method in (Dai et al. 2017) for indoor mesh inputs and (Robert, Raguet, and Landrieu 2023) for outdoor unstructured point clouds. Furthermore, for each superpoint su, we assume access to a pre-computed feature vector fu ∈ RD , derived from a pre-trained segmen-tation model (Schult et al. 2023), which captures its high-dimensional feature. 
+
+Point-Image Mapping 
+
+We start by establishing a robust and efficient mapping be-tween the points in P and the images in I. A point-image pair (p, I t) is considered compatible if the point p is visible in the image It. That is, p lies within the camera’s view-ing frustum and is not occluded by any other point that is closer to the camera. For each compatible pair, we define 9685 Semantic-Geometric Seeds Depth-based Visiblity Posed Images Candidate Masks Reliable Masks 
+
+§3.1 
+
+Point-Image Mapping 
+
+> Co-occurrence Mask Filtering
+> Spatial Continuity Spliting Feature-Guided Growing Multi-View Progressive Merging
+> projection w/ depth unprojection w/ depth projection w/o depth
+
+§3.2 2D Mask Proposal 
+
+> over-segmentation
+
+§3.3 Feature-Guided Aggregation Input 𝑷 :Output 
+
+> remove occlusion-aware
+
+Input :Figure 2: Overview of the training-free SGS-3D pipeline. Our method begins by computing robust, occlusion-aware point-image mappings without requiring ground-truth depth (§ 3.1). In the 2D Mask Proposal stage (§ 3.2), these mappings guide a Co-occurrence Mask Filtering process to prune ambiguous candidate masks, yielding a set of reliable 2D masks. These are then lifted to 3D and fed into the Feature-Guided Aggregation stage (§ 3.3), which first uses Spatial Continuity Splitting to generate pure semantic-geometric seeds. Subsequently, Feature-Guided Growing expands these seeds into complete instances, which are finally consolidated via Multi-View Progressive Merging to produce the final, high-fidelity object instances. its re-projection pix (p, I t) as the 2D pixel coordinate in im-age It where the point p is projected. However, computing this mapping is non-trivial, especially in multi-view scenar-ios where occlusions are common. 
+
+Depth Construction In contrast to existing methods that rely on ground-truth depth maps from dedicated sensors, we propose an efficient mapping strategy to compute vis-ibility directly from the point cloud and camera parame-ters using Z-buffering (Ravi et al. 2020). For a given im-age It with its associated camera parameters (Kt, Tt), the entire point cloud P is projected into the camera’s image plane. The transformation π maps a homogeneous world point pi to pixel coordinates (ui, v i) with depth zi, accord-ing to zi[ui, v i, 1] T = KtT−1 
+
+> t
+
+pi. To resolve occlusions, a depth buffer Dt ∈ RH×W is initialized with infinite values. The final value at each pixel (u, v ) is populated via a highly parallel rasterization process on the GPU, which efficiently solves for the minimum depth over the set of all points pro-jecting to that location: 
+
+Dt(u, v ) = min {zi | pi ∈ P, π (pi, Kt, Tt) = ( u, v )}.
+
+(1) 
+
+Viewing Visibility Verification Subsequent to the gener-ation of the metric depth buffer Dt, we finalize the visibility status for each point. The per-point visibility for a view t is encapsulated in a binary tensor Vt ∈ { 0, 1}N , whose ele-ments are computed via a composite frustum and occlusion (d) Input View Image (a) Scene Point Cloud (f) Ours Predict Depth (e) GT Depth (b) GT Viewing Visibility (c) Ours Viewing Visibility 
+
+Figure 3: Our method constructs valid visibility mapping for each point. While depth sensors struggle on textureless and highly reflective surfaces, our approach remains effective. check: 
+
+Vt(i) = 1(0 ≤ ui < W ∧ 0 ≤ vi < H )
+
+· 1(|zi − Dt(ui, v i)| ≤ τvis ), (2) where (ui, v i) and zi are the projected pixel coordinates and true computed camera-space depth of point pi, respectively, 
+
+1(·) is the indicator function, and τvis is the depth con-gruence tolerance. Simultaneously, we maintain a definitive point-to-pixel correspondence map Mpix,t ∈ ZN ×3, which 9686 (a) (c) (d) (b) (e) (f) Figure 4: Co-occurrence mask filtering strategy. Co-occurrence scores between superpoints are constructed from accurate 2D mask sets (a-c). Over-segmented (d) and under-segmented (e) masks exhibiting low scores are then re-moved from the candidate masks list, where image sets with 
+
+Pjvis,m = 0 (f) are excluded from the calculation. stores the valid mapping [ui, v i, 1] T for each point where 
+
+Vt(i) = 1. This verification yields the precise, per-view mapping essential for subsequent sections, as illustrated in Figure 3. 
+
+2D Mask Proposal 
+
+Mask Generation Mask-based 3D instance segmentation involves generating masks for the target objects based on input images. For each image It in a scene sequence I =
+
+{It}Tt=1 , the objective is to produce a corresponding set of binary masks, M2D,t = {Mt,k }Kt
+
+> k=1
+
+. With the emergence of foundational models like SAM (Kirillov et al. 2023), mask prediction has become highly precise. However, SAM lacks targeted guidance and often segments objects that are not of interest. Therefore, we apply Grounding-DINO (Liu et al. 2024) to extract box prompts from the images with text prompts. The high-confidence box prompts among them are then used to generate the initial mask predictions. 
+
+Co-occurrence Mask Filtering Through introducing text prompts via Grounding-DINO, the number of semantically ambiguous masks should progressively decline. However, experiments reveal that although the quantity of major am-biguous masks reduces, some minor ambiguous ones still remain. In fact, the binary masks M2D,t predicted by the trained 2D vision foundation model exhibit discreteness, which often leads to inaccuracies and inconsistencies in object boundary area predictions across different views. This lim-itation may increase the instability of the semantic guid-ance of 2D masks. Unlike Maskclustering (Yan et al. 2024), which purely relies on image pixel consistency between views, we leverage viewing visibility of superpoints to ex-clusively enhance robustness against inaccurate masks. View View 
+
+> Progressive Merging
+> Growing
+> … high overlap
+> View …low overlap
+> Growing Growing
+
+Figure 5: Semantic-guided aggregation. Within a single view, a Semantic-geometric Seed (SS) (orange) is expanded into a Super Semantic Seed (SSS) by merging with neigh-boring superpoints (colorful). Subsequently, these proposals from other views are progressively merged to form the final object instance. Specifically, for superpoints belonging to the same in-stance, we accumulate their mutual visibility across multiple masks and views in Figure 4. We leverage our pre-computed point-to-pixel mappings Mpix,t ∈ ZN ×3 to establish the as-sociation between a superpoint and a 2D mask. A point pi is considered to fall within a mask Mm in view j if it is physi-cally visible ( Vj (i) = 1 ) and its projected pixel coordinates 
+
+(ui, v i) lie inside the mask area. Let the set of all superpoints in the scene be S = {su}Uu=1 . We define the association be-tween a mask Mm and the superpoints it makes visible in view j, denoted as the set Pjvis,m :
+
+Pjvis,m = {su ∈ S | |{ pi∈su|V j (i)=1 ∧Mm(πj (pi))=1 }| |su| > 0.5}.
+
+(3) 
+
+Based on this, we define the visibility co-occurrence score 
+
+cm for each mask, which measures its average consistency with all other masks in the candidate set: 
+
+cm = 1(K2D − 1) T
+
+> K2D
+
+X
+
+> n=1 ,n ̸=mT
+
+X
+
+> j=1
+
+|P jvis,m ∩ P jvis,n |
+
+q
+
+|P jvis,m | · |P jvis,n |
+
+, (4) 
+
+where Pjvis,m represents the set of visible superpoints for mask Mm in view j, T is the total number of views, and 
+
+K2D is the total number of masks in the candidate set. This principled score allows us to rank masks by their cross-view consistency. To prevent error propagation, masks exhibiting low co-occurrence scores, which indicate inconsistent visi-bility patterns, are identified as outliers and pruned from the candidate set. 
+
+Semantic-Guided Aggregation 
+
+Existing methods often compromise segmentation quality by either directly unprojecting 2D masks onto the point cloud (Yang et al. 2023; Yan et al. 2024) or by solely us-ing them as a semantic prior to coarsely guide the iterative merging of superpoints (Yin et al. 2024; Nguyen et al. 2024). In such rough methods, the interplay between semantic and geometric information is not deeply exploited and leads to 9687 KITTI-360        
+
+> Input SAM3D Ours Ground Truth
+> ScanNet200 ScanNet++
+> Input SAM3D Open3DIS Ours Ground Truth
+
+Figure 6: Qualitative comparison on indoor and outdoor datasets. Our method obtains more accurate segmentation results and significantly reduces over-segmentation or fragmented instances compared to previous method. over-segmentation of object instances. To solve this prob-lem, our unique insight is that leveraging reliable 3D seman-tics can enhance 3D segmentation and improve the robust-ness of instance aggregation. 
+
+Spatial Continuity Splitting Leveraging the occlusion-aware viewing visibility, we lift the filtered 2D masks from each view t onto point cloud. These point sets, aggregated by their shared semantic identity, are termed 3D seman-tic masks, M3D,t = {Mt,k }Kt
+
+> k=1
+
+. While the 2D semantic consistency derived from vision models has proven effec-tive in prior work, the intrinsic geometric coherence of the 3D point cloud itself is often overlooked. We experimen-tally find that objects with similar appearances are erro-neously grouped into a single instance, despite being spa-tially distinct in the point cloud (see supplementary, Fig-ure 10). As a solution, we apply HDBSCAN (Campello, Moulavi, and Sander 2013) on each of the 3D semantic masks ( Mt,k ∈ M 3D,t ) which splits them into new clusters based on spatial contiguity. We refer to these dense clus-ters as semantic-geometric seeds, forming a new collection of fine-grained masks Mseed,t = {M ′ 
+
+> t,j
+
+}K′
+
+> t
+> j=1
+
+. This density-based splitting utilizes geometric properties to refine the se-mantics of the segmentation results, ensuring a fine-grained distinction between instances and mitigating the propagation of ambiguous semantics. The effectiveness of this geometric refinement in resolving semantic ambiguity is significant, as our ablation study shows it single-handedly surpasses exist-ing state-of-the-art methods (see Table 2). 
+
+Single-View Feature-Guided Growing While the pre-ceding density-based splitting excels at purifying seeds, pro-ducing Mseed,t , the challenge is ensembling these over-segmented superpoints into complete instances. To address this, we introduce a feature-guided growing process. We leverage rich pre-trained features (Schult et al. 2023) to bridge the spatial gaps between these semantic-geometric seeds and their corresponding object parts. Rather than applying rigid thresholds, our growing pro-cess is guided by a unified affinity score that naturally bal-ances semantic coherence with spatial adjacency, as illus-trated in Figure 5. For a given seed M ′ 
+
+> t,j
+
+∈ M seed,t and a candidate neighbor superpoint su, we define this score as: Affinity (M ′ 
+
+> t,j
+
+, s u) = sim (¯ft,j , fu) · Overlap (M ′ 
+
+> t,j
+
+, s u), (5) where sim (¯ft,j , fu) is the cosine similarity between the seed’s mean feature and the candidate’s mean feature, and Overlap (·, ·) measures their spatial overlap, calculated as the IoU of their 3D point sets. This multiplicative form ensures that a high affinity is only achieved when both semantic sim-ilarity and spatial overlap are strong. At each expansion step, we merge the unassigned neigh-bor with the highest affinity score into the seed. This iterative process continues until the affinity scores of all remaining neighbors become negligible. By optimizing for the high-est affinity, object instances can correctly associate disparate parts and expand their boundaries for the final aggregation stage. 
+
+Multi-View Progressive Merging The single-view grow-ing process generates high-fidelity instance proposals, which are essentially the grown semantic-geometric seeds from Mseed,t . However, each proposal is inherently limited to the information available from its originating viewpoint. To reconcile these partial views into complete objects, we employ a progressive, multi-view merging strategy. Inspired 9688 Methods Proc. & Year VFM ScanNet200 ScanNet++ KITTI-360 mAP AP 50 AP 25 mAP AP 50 AP 25 mAP AP 50 AP 25 
+
+training-dependent 
+
+UnScene3D CVPR24 DINO 15.9 32.2 58.5 - - - - - -Segment3D ECCV24 SAM - - - 12.0 22.7 37.8 - - -SAM-graph ECCV24 SAM 22.1 41.7 62.8 15.3 27.2 44.3 23.8 37.2 49.1 training-free 
+
+HDBSCAN ICDMW17 - 2.9 8.2 33.1 4.3 10.6 32.3 9.3 18.9 39.6 Felzenszwalb IJCV04 - 4.8 9.8 27.5 4.1 9.2 25.3 - - -SAM3D ICCVW23 SAM 20.9 34.8 51.4 9.3 16.6 29.5 13.0 24.2 41.1 Open3DIS CVPR24 GD-SAM 29.7 45.2 56.8 18.5 35.5 44.3 - - -SAI3D CVPR24 SAM 28.2 47.2 48.5 17.1 31.1 49.5 16.5 30.2 45.6 SAM2Object CVPR25 SAM2 - - - 20.2 34.1 48.7 - - -
+
+Ours − - GD-SAM 30.5 47.2 62.2 22.5 36.6 53.0 32.9 +16.4 43.7 +13.5 53.4 +7.8 
+
+Ours + - GD-SAM 34.3 +4.6 51.3 +4.1 64.6 +7.8 23.7 +3.5 39.6 +4.1 54.3 +4.8 N/A N/A N/A Table 1: Quantitative results compared with conventional clustering methods and diverse 2D-to-3D lifting methods on Scan-Net200, ScanNet++ and KITTI-360. ”VFM” denotes the vision foundation models. Ours − and Ours + represent our method without and with ground-truth (GT) depth, respectively. N/A indicates results are not applicable as KITTI-360 lacks the required GT depth. All 2D-to-3D lifting baselines use GT depth in indoor datasets. Best results are in bold (%), and the second-best are underlined. No. CMF SCP FGG mAP AP 50 AP 25 
+
+1 25.9 41.9 57.3 2 ✓ 27.8 44.0 59.0 3 ✓ ✓ 30.1 46.8 61.4 4 ✓ ✓ 29.7 45.2 58.9 5 ✓ ✓ ✓ 34.3 51.3 64.6 Table 2: Ablation of the effectiveness of our proposed com-ponents. CMF indicates the co-occurrence mask filtering; SCP indicates the spatial continuity Splitting; FGG indicates the feature-guided growing. by (Yin et al. 2024), we initially merge proposals from dif-ferent views only if their 3D spatial overlap is very high, ensuring only unambiguous matches are made. Subsequent iterations systematically relax this overlap requirement, al-lowing fragmented parts of the same large instance to be fused. This hierarchical process robustly assembles the final, complete 3D object instances for the entire scene, effectively consolidating information from multiple views. 
+
+# Experiments 
+
+Experimental Setup 
+
+We evaluate our method on three prevalent benchmarks: ScanNet200 (Dai et al. 2017), ScanNet++ (Yeshwanth et al. 2023) for indoor scenes, and KITTI-360 (Liao, Xie, and Geiger 2022) for outdoor environments. Following es-tablished protocols (Rozenberszki, Litany, and Dai 2024; Schult et al. 2023; Takmaz et al. 2023), we compute AP scores at 50% (AP 50 ) and 25% (AP 25 ) intersection-over-union (IoU) thresholds, as well as the mean AP (mAP) aver-aged over 50% to 95% IoU thresholds in 5% increments. Input w/o CMF Ground Truth w/ CMF Input w/o SCP&FGG Ground Truth w/ SCP&FGG 
+
+Figure 7: Ablation visualization results. Top: 2D mask pro-posal section; Bottom: semantic-guided aggregation section. 
+
+Analysis Experiments 
+
+Quantitative Results As shown in Table 1, SGS-3D achieves SOTA performance among training-free methods. On the challenging, depth-less KITTI-360 dataset, Ours −
+
+establishes a remarkable +16.4% mAP lead over the next best competitor, SAI3D, validating our method’s robust-ness in outdoor scenes. On indoor benchmarks, Ours − also consistently surpasses prior SOTA methods on ScanNet200 and ScanNet++. Furthermore, with GT depth, Ours + sets a new performance ceiling (e.g., 34.3% mAP on ScanNet200), outperforming all training-free and even several training-dependent approaches, showcasing our framework’s strong potential. 
+
+Qualitative Results Figure 6 shows our method produces visually superior results with more complete and geomet-rically precise instances. This stems from our framework’s ability to mitigate semantic ambiguity through mask filter-ing and spatial splitting, yielding cleaner and more coherent segmentations. 9689 Methods Proc. & Year 3D Mask mAP AP 50 AP 25 mAP head mAP common mAP tail 
+
+OpenMask3D NeurIPS23 Supervised 15.4 19.9 23.1 17.1 14.1 14.9 OpenIns3D ECCV24 Supervised 15.9 20.6 23.3 19.2 14.2 14.2 OVIR-3D CoRL23 Zero-shot 9.3 18.7 25.0 - - -SAM3D ICCVW23 Zero-shot 9.8 15.2 20.7 9.2 8.3 12.3 SAI3D CVPR24 Zero-shot 12.7 18.8 24.1 12.1 10.4 16.2 SAM2Object CVPR25 Zero-shot 13.3 19.0 23.8 - - -
+
+Ours - Zero-shot 21.1 +7.8 29.4 +10.4 35.0 +10.0 21.6 +9.5 20.0 +9.6 22.0 +5.8 
+
+Table 3: Semantic results on ScanNet200. Head, common, and tail categories represent object classes with high, medium, and low frequencies in the dataset, respectively. OpenMask3D (Takmaz et al. 2023) and OpenIns3D (Huang et al. 2024b) requires supervised training on ScanNet200. In fully supervised and zero-shot setting, our method surpass previous SOTA methods. Method Img. Prop. mAP AP 50 AP 75 Time Inst. Pred. Open3DIS 10% 29.7 45.2 56.8 9.18s 102 Ours 10% 34.3 51.3 64.6 9.51s 62 5% 33.7 51.1 64.5 4.94s 66 2.5% 31.8 48.8 63.2 2.42s 68 Table 4: Influence of input image proportion on segmenta-tion efficiency and performance. Inst. Pred. indicates pre-dicted instance counts per scene. VFM mAP AP 50 AP 25 
+
+Cropformer 33.6 50.7 63.1 SAM 32.3 47.8 63.8 YoloW-SAM 32.4 49.5 62.3 GD-SAM 34.3 51.3 64.6 
+
+Table 5: Ablation of differ-ent 2D vision models. 
+
+cm mAP AP 50 AP 25 
+
+0.4 33.8 50.2 63.1 0.3 34.0 50.9 63.2 0.2 34.3 51.6 64.6 0.1 32.0 48.3 61.8 Table 6: Ablation of co-occurrence score cm.
+
+Ablation Studies Table 2 details the contribution of each component. CMF provides an initial boost. Critically, adding SCP without growing achieves 30.1% mAP, already surpassing SOTA methods like SAM-graph and proving the power of our semantic purification. Finally, integrating FGG elevates performance to our full model’s 34.3% mAP, con-firming a powerful synergy where our purification stages create high-quality seeds for FGG to complete (Figure 7). 
+
+Efficiency and Robustness Table 4 highlights SGS-3D’s exceptional efficiency. Our method achieves superior accu-racy to Open3DIS while using only 2.5% of the images (vs. 10%) and being nearly four times faster. It also significantly reduces over-segmentation by 40%. Our pipeline demonstrates robustness across diverse vi-sion foundation models (VFMs, Table 5) (Qi et al. 2022; Cheng et al. 2024) and is insensitive to the co-occurrence threshold cm within a reasonable range (Table 6). As shown in Table 7, using a protocol inspired by (Naseer et al. 2021), our method is also resilient to occlusion, maintaining strong performance even when up to 50% of foreground masks are removed. Percentage (%) 0 5 10 30 50 60 70 90 mAP 34.3 34.1 34.1 33.4 29.6 24.2 14.8 0.1 Table 7: Robustness to simulated occlusion. Query: “ paper bag ” Query: “ hair dryer ” Query: “ coffee mug ”
+
+Figure 8: Open-vocabulary 3D object search. Given a text prompt, our method can accurately locate the corresponding object instances (pink) in a 3D scene. 
+
+Open-Set Scene Understanding Application 
+
+Our high-quality, class-agnostic proposals form a strong basis for open-set understanding. By labeling them with the off-the-shelf vision-language models (Radford et al. 2021; Zhai et al. 2023), we extend our method to open-vocabulary 3D segmentation. As shown in Table 3, our ge-ometrically precise instance masks reduce semantic ambi-guity, enabling SGS-3D to significantly outperform previ-ous zero-shot methods and support applications like text-based object search within complex 3D environments, as il-lustrated in Figure 8. 
+
+# Conclusion 
+
+We have presented SGS-3D, a training-free framework for high-fidelity 3D instance segmentation. Our ”split-then-grow” strategy first purifies noisy proposals into high-quality 3D seeds using geometric and spatial cues, then grows them into complete instances via a feature-guided process. Experiments show SGS-3D substantially outper-forms SOTA methods, particularly on challenging depth-less dataset. Our work provides a robust bridge between 2D semantics and 3D geometry, advancing class-agnostic seg-mentation and open-set understanding. Future directions in-clude extending our framework to dynamic scenes and opti-mizing its multi-stage design for real-time performance. 9690 Acknowledgments 
+
+This work was supported in part by the National Natural Science Foundation of China under Grant 42371343, and in part by the Basic and Applied Basic Research Foundation of Guangdong Province under Grant 2024A1515010986. 
+
+# References 
+
+Armeni, I.; Sener, O.; Zamir, A. R.; Jiang, H.; Brilakis, I.; Fischer, M.; and Savarese, S. 2016. 3d semantic parsing of large-scale indoor spaces. In Proceedings of the IEEE con-ference on computer vision and pattern recognition , 1534– 1543. Campello, R. J.; Moulavi, D.; and Sander, J. 2013. Density-based clustering based on hierarchical density estimates. In 
+
+Pacific-Asia conference on knowledge discovery and data mining , 160–172. Springer. Chen, S.; Fang, J.; Zhang, Q.; Liu, W.; and Wang, X. 2021. Hierarchical aggregation for 3d instance segmentation. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , 15467–15476. Cheng, T.; Song, L.; Ge, Y.; Liu, W.; Wang, X.; and Shan, Y. 2024. Yolo-world: Real-time open-vocabulary object detec-tion. In Proceedings of the IEEE/CVF conference on com-puter vision and pattern recognition , 16901–16911. Dai, A.; Chang, A. X.; Savva, M.; Halber, M.; Funkhouser, T.; and Nießner, M. 2017. Scannet: Richly-annotated 3d reconstructions of indoor scenes. In Proceedings of the IEEE conference on computer vision and pattern recogni-tion , 5828–5839. Ding, R.; Yang, J.; Xue, C.; Zhang, W.; Bai, S.; and Qi, X. 2023. Pla: Language-driven open-vocabulary 3d scene un-derstanding. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , 7010–7019. Engelmann, F.; Bokeloh, M.; Fathi, A.; Leibe, B.; and Nießner, M. 2020. 3d-mpa: Multi-proposal aggregation for 3d semantic instance segmentation. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , 9031–9040. Felzenszwalb, e. a. 2004. Efficient graph-based image seg-mentation. International journal of computer vision , 59: 167–181. Guo, H.; Zhu, H.; Peng, S.; Wang, Y.; Shen, Y.; Hu, R.; and Zhou, X. 2024. Sam-guided graph cut for 3d instance seg-mentation. In European Conference on Computer Vision ,234–251. Springer. Han, T.; Chen, Y.; Ma, J.; Liu, X.; Zhang, W.; Zhang, X.; and Wang, H. 2024. Point cloud semantic segmentation with adaptive spatial structure graph transformer. International Journal of Applied Earth Observation and Geoinformation ,133: 104105. Hegde, D.; Valanarasu, J. M. J.; and Patel, V. 2023. Clip goes 3d: Leveraging prompt tuning for language grounded 3d recognition. In Proceedings of the IEEE/CVF Interna-tional Conference on Computer Vision , 2028–2038. Huang, R.; Peng, S.; Takmaz, A.; Tombari, F.; Pollefeys, M.; Song, S.; Huang, G.; and Engelmann, F. 2024a. Segment3d: Learning fine-grained class-agnostic 3d segmentation with-out manual labels. In European Conference on Computer Vision , 278–295. Springer. Huang, Z.; Wu, X.; Chen, X.; Zhao, H.; Zhu, L.; and Lasenby, J. 2024b. Openins3d: Snap and lookup for 3d open-vocabulary instance segmentation. In European Con-ference on Computer Vision , 169–185. Springer. Kirillov, A.; Mintun, E.; Ravi, N.; Mao, H.; Rolland, C.; Gustafson, L.; Xiao, T.; Whitehead, S.; Berg, A. C.; Lo, W.-Y.; et al. 2023. Segment anything. In Proceedings of the IEEE/CVF international conference on computer vision ,4015–4026. Lee, S.; Zhao, Y.; and Lee, G. H. 2024. Segment any 3d object with language. arXiv preprint arXiv:2404.02157 .Liang, Z.; Li, Z.; Xu, S.; Tan, M.; and Jia, K. 2021. Instance segmentation in 3d scenes using semantic superpoint tree networks. In Proceedings of the IEEE/CVF international conference on computer vision , 2783–2792. Liao, Y.; Xie, J.; and Geiger, A. 2022. Kitti-360: A novel dataset and benchmarks for urban scene understanding in 2d and 3d. IEEE Transactions on Pattern Analysis and Machine Intelligence , 45(3): 3292–3310. Liu, S.; Zeng, Z.; Ren, T.; Li, F.; Zhang, H.; Yang, J.; Jiang, Q.; Li, C.; Yang, J.; Su, H.; et al. 2024. Grounding dino: Marrying dino with grounded pre-training for open-set ob-ject detection. In European Conference on Computer Vision ,38–55. Springer. Lu, J.; Deng, J.; Wang, C.; He, J.; and Zhang, T. 2023a. Query refinement transformer for 3d instance segmentation. In Proceedings of the IEEE/CVF International Conference on Computer Vision , 18516–18526. Lu, S.; Chang, H.; Jing, E. P.; Boularias, A.; and Bekris, K. 2023b. Ovir-3d: Open-vocabulary 3d instance retrieval with-out training on 3d data. In Conference on Robot Learning ,1610–1620. PMLR. Luo, Y.; Han, T.; Liu, Y.; Su, J.; Chen, Y.; Li, J.; Wu, Y.; and Cai, G. 2025. CSFNet: Cross-modal Semantic Focus Network for Semantic Segmentation of Large-Scale Point Clouds. IEEE Transactions on Geoscience and Remote Sensing .Naseer, M. M.; Ranasinghe, K.; Khan, S. H.; Hayat, M.; Shahbaz Khan, F.; and Yang, M.-H. 2021. Intriguing proper-ties of vision transformers. Advances in Neural Information Processing Systems , 34: 23296–23308. Nguyen, P.; Ngo, T. D.; Kalogerakis, E.; Gan, C.; Tran, A.; Pham, C.; and Nguyen, K. 2024. Open3dis: Open-vocabulary 3d instance segmentation with 2d mask guid-ance. In Proceedings of the IEEE/CVF Conference on Com-puter Vision and Pattern Recognition , 4018–4028. Oquab, M.; Darcet, T.; Moutakanni, T.; Vo, H.; Szafraniec, M.; Khalidov, V.; Fernandez, P.; Haziza, D.; Massa, F.; El-Nouby, A.; et al. 2023. Dinov2: Learning robust visual fea-tures without supervision. arXiv preprint arXiv:2304.07193 .Peng, S.; Genova, K.; Jiang, C.; Tagliasacchi, A.; Polle-feys, M.; Funkhouser, T.; et al. 2023. Openscene: 3d scene understanding with open vocabularies. In Proceedings of 9691 the IEEE/CVF conference on computer vision and pattern recognition , 815–824. Qi, L.; Kuen, J.; Guo, W.; Shen, T.; Gu, J.; Jia, J.; Lin, Z.; and Yang, M.-H. 2022. High-quality entity segmentation. 
+
+arXiv preprint arXiv:2211.05776 .Radford, A.; Kim, J. W.; Hallacy, C.; Ramesh, A.; Goh, G.; Agarwal, S.; Sastry, G.; Askell, A.; Mishkin, P.; Clark, J.; et al. 2021. Learning transferable visual models from nat-ural language supervision. In International conference on machine learning , 8748–8763. PmLR. Ravi, N.; Reizenstein, J.; Novotny, D.; Gordon, T.; Lo, W.-Y.; Johnson, J.; and Gkioxari, G. 2020. Accelerating 3d deep learning with pytorch3d. arXiv preprint arXiv:2007.08501 .Robert, D.; Raguet, H.; and Landrieu, L. 2023. Efficient 3d semantic segmentation with superpoint transformer. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , 17195–17204. Rozenberszki, D.; Litany, O.; and Dai, A. 2024. Unscene3d: Unsupervised 3d instance segmentation for indoor scenes. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 19957–19967. Schult, J.; Engelmann, F.; Hermans, A.; Litany, O.; Tang, S.; and Leibe, B. 2023. Mask3d: Mask transformer for 3d semantic instance segmentation. In 2023 IEEE Inter-national Conference on Robotics and Automation (ICRA) ,8216–8223. IEEE. Takmaz, A.; Fedele, E.; Sumner, R. W.; Pollefeys, M.; Tombari, F.; and Engelmann, F. 2023. Openmask3d: Open-vocabulary 3d instance segmentation. arXiv preprint arXiv:2306.13631 .Vu, T.; Kim, K.; Luu, T. M.; Nguyen, T.; and Yoo, C. D. 2022. Softgroup for 3d instance segmentation on point clouds. In Proceedings of the IEEE/CVF conference on com-puter vision and pattern recognition , 2708–2717. Xu, M.; Yin, X.; Qiu, L.; Liu, Y.; Tong, X.; and Han, X. 2023. Sampro3d: Locating sam prompts in 3d for zero-shot scene segmentation. arXiv preprint arXiv:2311.17707 .Yan, M.; Zhang, J.; Zhu, Y.; and Wang, H. 2024. Maskclus-tering: View consensus based mask graph clustering for open-vocabulary 3d instance segmentation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pat-tern Recognition , 28274–28284. Yang, J.; Ding, R.; Deng, W.; Wang, Z.; and Qi, X. 2024. Regionplc: Regional point-language contrastive learning for open-world 3d scene understanding. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , 19823–19832. Yang, Y.; Wu, X.; He, T.; Zhao, H.; and Liu, X. 2023. Sam3d: Segment anything in 3d scenes. arXiv preprint arXiv:2306.03908 .Yeshwanth, C.; Liu, Y.-C.; Nießner, M.; and Dai, A. 2023. Scannet++: A high-fidelity dataset of 3d indoor scenes. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , 12–22. Yin, Y.; Liu, Y.; Xiao, Y.; Cohen-Or, D.; Huang, J.; and Chen, B. 2024. Sai3d: Segment any instance in 3d scenes. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 3292–3302. Yu, Z.; Chen, M.; Zhang, Z.; You, S.; Rao, R.; Agarwal, S.; and Ren, F. 2023. Transupr: A transformer-based plug-and-play uncertain point refiner for lidar point cloud seman-tic segmentation. In 2023 IEEE/RSJ International Confer-ence on Intelligent Robots and Systems (IROS) , 5864–5869. IEEE. Zhai, X.; Mustafa, B.; Kolesnikov, A.; and Beyer, L. 2023. Sigmoid loss for language image pre-training. In Proceed-ings of the IEEE/CVF international conference on computer vision , 11975–11986. Zhao, J.; Zhuo, J.; Chen, J.; and Ma, H. 2025. SAM2Object: Consolidating View Consistency via SAM2 for Zero-Shot 3D Instance Segmentation. In Proceedings of the Computer Vision and Pattern Recognition Conference , 19325–19334. 9692

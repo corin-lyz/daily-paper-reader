@@ -1,0 +1,456 @@
+Title: Cinematic Compositing Using Character-Environment-Harmonized Video Generation Models
+
+URL Source: https://arxiv.org/pdf/2606.20233v1
+
+Published Time: Fri, 19 Jun 2026 01:10:01 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+# Cinematic Compositing Using Character-Environment-Harmonized Video Generation Models 
+
+# Tianyi Xiang 1 Mingming He 2 Li Ma 2 Jing Liao 11City University of Hong Kong 2Independent Researcher 
+
+Project Page: https://cehcomposition.github.io/demo/ Green Screen Video RGB  Green Screen Video Depth    
+
+> Input  Condition sComposition Results
+> Green Screen Video RGB Green Screen Video Depth
+> Composition Results  Input  Condition s
+
+“Red -haired woman in 
+
+kitchen holding a 
+
+textured orange.” 
+
+“Woman under tree 
+
+shade holding a clear 
+
+glass ball.” 
+
+“Woman in futuristic 
+
+lab holding a glowing 
+
+crystal ball.” 
+
+“Emerald -clad woman 
+
+retrieving an grimoire in 
+
+a candlelit chamber.” 
+
+“Red -haired lady in 
+
+velvet Gothic attire 
+
+lifting a golden tome. ”
+
+“Woman in minimalist 
+
+library holding a 
+
+Renaissance art book. ” 
+
+Figure 1: Input and compositing results of our method. We achieve cinematic-quality video compositing with bidirectional character-environment interaction. Given green-screen footage, predicted depth, and a text prompt, our method synthesizes realistic backgrounds while ensuring physical interaction and lighting harmonization. By adaptively combining conditions across different regions (RGB, depth, or unconditioned), our unified framework handles diverse production scenarios. These include performance and prop relighting (e.g., adjusting light on faces or clothes), prop replacement (e.g., the orange or glass ball), and prop/background generation (e.g., the glowing crystal ball and background scene). Note that text prompts are simplified due to space constraints. 
+
+## Abstract 
+
+Cinematic compositing aims to integrate green-screen characters into novel environments while maintaining physical and photo-metric realism. Previous methods often fail to capture the complex bidirectional interactions between characters and their surround-ings, which we characterize as Character-to-Environment (C2E) physical interaction and Environment-to-Character (E2C) lighting harmonization. To address this, we propose an end-to-end video diffusion framework that jointly models C2E and E2C interactions, specifically handling the challenges of interactive props. Our ap-proach introduces a tri-mask-guided architecture with RGB-D joint denoising to ensure physically consistent interactions among the character, props, and environment. We further develop an efficient prior-driven data curation pipeline to construct high-quality re-lighting pairs without expensive rendering. Finally, a reference-conditioned mechanism enables controllable environment synthesis and precise prop replacement. Extensive experiments demonstrate that our framework significantly outperforms existing methods in cinematic-quality dynamic video compositing. 
+
+## 1 Introduction 
+
+Cinematic compositing is the process of integrating dynamic fore-ground characters, typically captured against a green screen, into separately created background environments to produce visually coherent content. As a vital component of the VFX pipeline [Hu et al .2025b], it provides filmmakers with substantial creative control and 
+
+> arXiv:2606.20233v1 [cs.CV] 17 Jun 2026 Xiang et al.
+
+enables the simulation of inaccessible environments. Traditionally, compositing relies on alpha-channel matting to perform pixel-wise blending. However, such approaches fail to model the complex interactions required between characters and their surroundings, often resulting in a lack of both physical and photometric realism. Achieving film-quality compositing requires accurately model-ing the bidirectional interaction between the character and the environment, which we define along two primary dimensions: 
+
+Character-to-Environment (C2E) and Environment-to-Character (E2C). C2E describes physical interactions in which the character’s ge-ometry and motion influence the surrounding environment, in-cluding occlusions, spatial contact, and environmental response. Conversely, E2C refers to lighting harmonization, describing how environmental illumination is realistically cast onto and reflected by the character. Beyond direct interaction, props serve as a crucial mediator between the character and the environment, necessitating a spe-cialized handling approach. Depending on the capture conditions and whether the character holds a physical object during capture, we account for three key scenarios: preserving and relighting real props, replacing green-screen proxies with synthesized objects, and generating entirely virtual props. Effectively managing these sce-narios is essential for bridging the gap between isolated foreground captures and integrated cinematic narratives. Given a green-screen foreground capture of a character and op-tional props, our goal is to synthesize a fully composited video that integrates a newly generated dynamic environment with a realistically relit character and any associated props. While recent advances in generative video models for inpainting and relighting show promise, they address these tasks in isolation. For example, video inpainting models [Bian et al . 2025b; Jiang et al . 2025; Zhang et al . 2024b] can synthesize plausible backgrounds but lack E2C harmonization, either restricting background illumination changes or leaving the foreground lighting inconsistent with the new envi-ronment. Conversely, relighting models [Fang et al . 2025; Zhang et al . 2025; Zhou et al . 2025] modify subject appearance but cannot generate dynamic background responses to character motion. Fur-thermore, existing methods lack a unified treatment of props, failing to adaptively relight, replace, or synthesize objects across diverse interaction scenarios. Consequently, neither single-task approaches nor naïvely cascaded pipelines can achieve the physically grounded bidirectional harmonization required for cinematic realism. We propose an end-to-end generative framework that simulta-neously addresses both C2E physical interaction and E2C lighting harmonization using a unified video diffusion model. To model C2E interactions, we design a tri-mask-guided generative architecture that adaptively handles diverse prop scenarios. We also introduce an RGB-D joint denoising strategy to explicitly incorporate depth infor-mation, allowing the model to better understand 3D spatial relations and human motion. To address E2C harmonization, we propose an efficient, prior-driven data curation pipeline. Specifically, we leverage video generation priors to synthesize multi-illumination scenes and subsequently filter them based on realism and aesthetic scoring, producing high-quality paired data for training video re-lighting and harmonization. Finally, we extend the conditioning mechanism for reference injection, enabling flexible control over target environments and props via reference examples. Through extensive experiments, we demonstrate that our frame-work establishes a new state of the art for cinematic-quality dy-namic video compositing. Our contributions are summarized as follows: 
+
+• We formulate green-screen compositing as a generative task of bidirectional character–environment interaction by decomposing it into C2E physical interaction and E2C lighting harmonization, and address both within a unified generative framework. 
+
+• We introduce a tri-mask-guided generative architecture along with an RGB-D joint denoising architecture that en-hances the model’s spatial understanding and improves the synthesis of physically consistent background interactions. 
+
+• We propose a prior-driven data construction pipeline that efficiently generates high-quality multi-illumination data without requiring expensive rendering pipelines. 
+
+• We design a reference-conditioned mechanism that enables customizable environment synthesis and fine-grained con-trol over interactive props. 
+
+## 2 Related Work 
+
+Video matting and compositing. High-fidelity foreground iso-lation from the captured environment is a prerequisite for cine-matic compositing. Classical matting solutions such as BGMv2 [Lin et al . 2021] and RVM [Lin et al . 2022] prioritize real-time efficiency and temporal stability, making them suitable for live applications. More recent advancements like MatAnyone [Yang et al . 2025c] and MatAnyone 2 [Yang et al . 2026] utilize memory propagation and learned quality evaluators to achieve high-quality extraction with fine-grained boundary details in complex scenes. 
+
+Video generation and background synthesis. Beyond using al-pha matting for direct foreground and background blending, back-ground generation can be achieved using the recent generative video models which are designed for video inpainting and editing. Some unified video editing frameworks offer all-in-one solutions. For example, VACE [Jiang et al . 2025] integrates reference guid-ance, inpainting, and outpainting into a single multimodal interface. Given a foreground character sequence, it can inpaint a dynamic background for each frame. For long sequences, VideoPainter [Bian et al . 2025b] and AVID [Zhang et al . 2024b] employ temporal MultiD-iffusion and context-aware encoders to prevent error accumulation. To address computational overhead, EditCtrl [Litman et al . 2026] introduces a local context module that restricts diffusion processing to masked tokens, allowing for efficient high-resolution editing. Background synthesis has shifted toward subject-aware genera-tion. ActAnywhere [Pan et al . 2024] proposes environment genera-tion conditioned on subject segmentation, while Yao et al . [2025] introduce explicit camera-pose control to ensure background mo-tion aligns with complex foreground trajectories. Unlike general video inpainting, these models attempt to synthesize realistic envi-ronmental responses, including subtle interactions, shadows, and secondary lighting. However, the generated environmental illu-mination remains constrained by the initial foreground lighting. Consequently, these methods struggle to achieve realistic or desired Cinematic Compositing Using Character-Environment-Harmonized Video Generation Models Input depth 
+
+> Input text
+> Input RGB
+> Context blocks
+> VAE
+> Dec.
+> RGB
+> Ref
+> ???
+> Tri -Mask -Guided Token Generation (TMGTG)
+
+## …
+
+## …    
+
+> A red -haired woman
+> holds a glowing crystal
+> ball in a dark sci -fi lab
+> with blue neon light.
+> Tokenization
+> Output RGB
+> Output depth
+> Noise latent
+> Tri -mask
+> Masked RGB
+> tokens
+> Masked depth
+> tokens Masked RGB
+> token
+> Masked depth
+> token
+> Tri -mask
+> Tri -mask
+> TMGTG
+> Output depth latent
+> Output RGB latent
+> DiT blocks ( LoRA )
+> Reference images Reference
+> tokens
+> Element -wise
+> Multiplication
+> Token -level
+> Concatenation
+> Canvas
+
+Figure 2: Overview of our framework. We achieve bidirectional character–environment interaction by addressing physical interaction and lighting harmonization within a single diffusion-based framework. The architecture employs a Tri-Mask-Guided Token Generation (TMGTG) module, which uses a tri-mask to adaptively determine whether a region is conditioned by input RGB, depth, or remains unconditioned. These masked tokens, alongside reference and text conditions, are fed into context blocks to guide a joint RGB-D denoising process via a DiT-based backbone. By jointly denoising color and geometry in the latent space, the model synthesizes physically plausible backgrounds and interactive objects that are spatially and photometrically consistent with the actor. 
+
+environmental illumination if the target environment’s radiance significantly deviates from the original foreground capture. 
+
+Character interactive motion and replacement. Realistic inter-action between characters and their surroundings is vital for visual coherence. Frameworks such as Animate Anyone 2 [Hu et al . 2025b] and AnchorCrafter [Xu et al . 2026a] integrate environmental affor-dance and interactive object features to ensure physical plausibility. MimicMotion [Zhang et al . 2024a] and ByteLOOM [Liu et al . 2025a] further refine these interactions by introducing confidence-aware pose guidance and geometric priors to prevent artifacts such as hand-object interpenetration. In the context of character replacement, MoCha [Xu et al . 2026b] and WanAnimate [Cheng et al . 2025] eliminate the need for dense structural guidance by utilizing a single-frame reference and unified token streams. This enables appearance transfer while preserving the original character motion. However, these methods primarily focus on character generation and struggle to synthesize dynamic backgrounds with physically consistent environmental responses to character motion. 
+
+Video relighting and harmonization. To achieve lighting con-sistency between foreground characters and background environ-ments, video relighting or harmonization methods have emerged as potential solutions. Earlier harmonization works adjust appearance via parametric shading maps [Wang et al . 2023], diffusion priors [Ren et al . 2024], or 2.5D pixel-height geometry [Sheng et al . 2023]. Recent video relighting generally follows two paradigms: training-free methods like LightCtrl [Peng et al . 2026] and Light-A-Video [Zhou et al. 2025] adapt image-based priors (e.g., IC-Light [Zhang et al . 2025]) to video, while 4D-aware approaches such as [Hu et al .2025a; Liu et al . 2026; Xiao et al . 2026] ensure consistency across viewpoints. Modern unified models (e.g., [He et al . 2025; Liu et al .2025d,c] further enhance physical plausibility by jointly modeling intrinsics and lighting. However, acquiring high-quality real-world multi-illumination data for training data-driven methods remains challenging. Existing approaches often rely on game engines to construct paired datasets. For example, RelightVid [Fang et al . 2025] and RelightMaster [Bian et al . 2025a] utilize high-quality synthetic datasets rendered using game engines. Similarly, MoCha [Xu et al . 2026b] also employs rendered paired videos to internalize complex light transport effects. In contrast, our method adopts a prior-driven data curation pipeline that eliminates the need for expensive rendering while preserving high visual fidelity. 
+
+## 3 Method 
+
+In this section, we detail the formalization, data curation strat-egy, and architectural design of our framework. We first formulate green-screen compositing as a tri-mask-guided generative task, fo-cusing on bidirectional character-environment interactions. Next, we describe our unified five-tuple training data structure and cre-ation, which enables the model to simultaneously learn physical interactions and lighting harmonization. Finally, we present our tri-mask-guided RGB-D diffusion architecture, along with a refer-ence injection mechanism designed for the precise and controllable generation of environments and interactive objects. 
+
+## 3.1 Problem Formulation 
+
+Given a green-screen video V𝑔𝑠 and a mask M𝑡 , our goal is to synthesize a composited video V𝑐𝑜𝑚𝑝 that integrates the char-acter into a newly generated environment while simultaneously enabling character-to-environment (C2E) physical interaction and environment-to-character (E2C) lighting harmonization. Xiang et al. (a) Real Props (b) Proxy Props (c) Virtual Props 
+
+> Input RGB
+> Input depth
+> Tri -mask
+> Masked input RGB
+> Masked input depth
+> Binary mask
+> Output RGB
+
+Figure 3: Multi-granularity foreground modeling. We visu-alize the input, condition and output of three scenarios: (a) Real Props (Red mask): Preserving and relighting existing physical objects. (b) Proxy Props (Blue mask): Replacing green-screen proxies with new objects; by utilizing sparse depth, the model ignores fine-grained materials textual de-tails to adapt to different objects during replacement.(c) Vir-tual Props (Green mask): Synthesizing entirely new interac-tive elements. 
+
+Standard binary masks used in inpainting enforce an all-or-nothing preserve-or-generate decision, which fails to capture the full complexity of real-world green-screen captures. For example, in practical shooting pipelines, props typically fall into three dis-tinct categories: real props to be preserved, green proxy props to be replaced, and virtual props to be generated. Standard binary masks cannot properly distinguish between these three cases, each requiring a fundamentally different processing strategy. To address this limitation, we introduce a tri-mask formulation as shown in Figure 3: 
+
+• M𝑡 = 1: Preserve-and-relight regions (e.g. character face, real props) where RGB content is retained but photometri-cally harmonized to match the target environment 
+
+• M𝑡 = 0: Geometry-preserving regions (e.g. green-screen proxy props) where depth anchors are kept while RGB appearance and material properties are fully regenerated 
+
+• M𝑡 = −1: Full-generation regions (e.g. background, vir-tual interactive props) where content is created entirely from scratch without physical capture counterpart This formulation supports three spatially adaptive generation modes, unifying all practical green-screen compositing cases in a single interface and offering flexibility for diverse shooting setups. The generation of the composited video V𝑐𝑜𝑚𝑝 is guided by the text prompt T , as well as optional reference images to specify de-sired environment or props. In our diffusion-based video generation framework, we introduce joint depth and RGB denoising to enhance the model’s spatial understanding and improve the synthesis of physically consistent interactions. Next, we introduce our train-ing data curation pipeline, followed by tri-mask-guided RGB-D diffusion, and reference injection methods. 
+
+## 3.2 Training Data Curation 
+
+The tri-mask formulation naturally defines each training sample as a five-tuple 
+
+X =  V𝑔𝑡 , V𝑟𝑒𝑙𝑖𝑡 , D, M𝑡 , T  , (1) where V𝑔𝑡 is the ground-truth video, V𝑟𝑒𝑙𝑖𝑡 is its multi-illumination counterpart, D is the video depth, M𝑡 is the tri-mask, and T is the text prompt. These five elements correspond directly to the three region types in Sec. 3.1: regions with M𝑡 = 1 use V𝑟𝑒𝑙𝑖𝑡 to learn relighting, regions with M𝑡 = 0 use D to learn physically plausible interaction while regenerating RGB appearance, and regions with 
+
+M𝑡 = −1 are mainly guided by T and the surrounding context for open-ended generation. 
+
+3.2.1 Overall Design. We construct the five-tuple from two com-plementary sources. A base subset built from HOIGen1M [Liu et al .2025b] provides realistic human motion and contact cues for C2E interaction modeling, while an additional multi-illumination subset 
+
+enriches the supervision for E2C harmonization. The former empha-sizes realistic interaction structure, whereas the latter expands the illumination distribution with more cinematic color cast, contrast, and lighting direction. Despite their different roles, both subsets are converted into the same representation so that the model always receives a unified training interface. Under this design, the five elements of X are aligned with the three tri-mask states. V𝑟𝑒𝑙𝑖𝑡 serves as direct supervision for regions that should be preserved but relit, D provides geometric guidance for regions whose depth remains trustworthy while RGB must be regenerated, and T mainly drives the open-ended generation regions. This organization allows the model to jointly learn physi-cally grounded composition and foreground lighting harmonization within a single data formulation. 
+
+3.2.2 Implementation Details. The base subset is curated from the large-scale dataset HOIGen1M with strict identity-preserving fil-ters. Since our task requires the character to remain temporally and semantically consistent, we retain only clips with a single stable foreground character, verified by face detection confidence, face pose, person detection consistency, and spatial agreement between face and person localization. After filtering, we obtain approxi-mately 2 × 10 5 valid clips, each trimmed to 81 frames to match the training setup of our backbone model. For each retained clip, we construct the supervision signals re-quired by the tri-mask formulation. We first generate V𝑟𝑒𝑙𝑖𝑡 using IC-Light [Zhang et al . 2025] conditioned on diverse background im-ages. We then parse the HOIGen1M captions with Qwen3-32B [Yang et al . 2025b] to identify interacted objects and segment them with Grounded SAM 2 [Liu et al . 2023; Ravi et al . 2024]. Hand masks are obtained in the same framework using the text prompt “hands”, and monocular video depth is estimated by Video Depth Anything [Yang et al . 2025a]. For each detected interaction object, we randomly assign one of the three tri-mask states, allowing the same object to be treated during training as a relit real prop, a proxy prop with reliable depth but regenerated RGB, or a fully generated object composited together with the background. To enrich illumination diversity beyond HOIGen1M, we further construct the multi-illumination subset from BG-20K [Li et al . 2022]. We first caption each background scene with BLIP-2 [Li et al . 2023], Cinematic Compositing Using Character-Environment-Harmonized Video Generation Models 
+
+and then use a large language model to generate prompts describ-ing a person performing a simple action under visually rich and cinematic lighting conditions. These prompts are fed into Wan 2.2 T2V A14B [WanTeam et al . 2025] to synthesize training videos with diverse illumination patterns. The generated clips are filtered with the same identity-preserving criteria as the base subset, together with an additional aesthetic-quality filtering [Schuhmann 2022], and then processed by the same annotation pipeline to obtain relit variants, person and hand masks, object masks, and video depth. The final five-tuple is assembled in the same way for both subsets: 
+
+V𝑔𝑡 comes from the original clip, V𝑟𝑒𝑙𝑖𝑡 comes from the relighting or multi-illumination pipeline, D comes from depth estimation, 
+
+M𝑡 is constructed from the segmentation results and sampled tri-mask labels, and T is derived from the scene or video caption. This temporally aligned representation is directly compatible with our tri-mask-guided diffusion model. 
+
+## 3.3 Tri-Mask-Guided RGB-D Diffusion 
+
+Recent video inpainting models such as VACE [Jiang et al . 2025] have demonstrated strong performance on mask-guided video gen-eration, making them a natural starting point for our task. However, they are not directly suitable for green-screen compositing for two reasons. First, their conditioning interface assumes a binary mask, which cannot express the three distinct foreground handling modes required in our setting. Second, they operate with RGB denoising only, and therefore cannot explicitly exploit depth cues that are crucial for modeling interaction geometry. To address the first limitation, we replace binary-mask condi-tioning with tri-mask-guided conditioning. As shown in Figure 3, the tri-mask is converted into modality-specific masks for RGB and depth. Let M𝑟𝑔𝑏 and M𝑑 denote the RGB-preservation mask and the depth-preservation mask, respectively. We define them from the tri-mask M𝑡 ∈ {− 1, 0, 1}𝑇 ×𝐻 ×𝑊 as 
+
+M𝑟𝑔𝑏 = I[M𝑡 = 1], M𝑑 = I[M𝑡 ≥ 0], (2) where I[·] is the indicator function. Therefore, regions with M𝑡 = 1
+
+preserve RGB and depth as relit foreground structure, regions with 
+
+M𝑡 = 0 regenerate RGB while retaining depth as a geometric anchor, and regions with M𝑡 = −1 regenerate both RGB and depth. The resulting masked inputs are written as 
+
+eV𝑟𝑔𝑏 = M𝑟𝑔𝑏 ⊙ V𝑔𝑠 , eD = M𝑑 ⊙ D, (3) where ⊙ denotes element-wise multiplication. In the proxy-prop case, the captured stand-in may have a material appearance that is inconsistent with the desired generated object. To reduce this material-text discrepancy, when the depth mask overlaps with the interaction object region M𝑜𝑏 𝑗 , we randomly drop a subset of valid depth entries and obtain a sparse depth mask 
+
+M𝑠 𝑑 = M𝑑 ⊙ ( 1 − R ⊙ M𝑜𝑏 𝑗 ), (4) where R is a random binary mask. The actual depth condition then becomes eD = M𝑠 𝑑 ⊙ D in those regions, which preserves coarse geometry without over-constraining the final appearance. To address the second limitation, we perform RGB-D joint de-noising rather than RGB-only denoising. Our network is built on a pre-trained text-to-video Diffusion Transformer with a parallel context branch inspired by VACE [Jiang et al . 2025]. The context branch encodes the tri-mask-conditioned RGB and depth inputs, while the base branch processes the noisy latent trajectory. Let 
+
+z𝑟𝑔𝑏 𝑡 ∈ R𝐿 ×𝐶 and z𝑑 𝑡 ∈ R𝐿 ×𝐶 denote the noisy RGB and depth la-tent sequences at diffusion step 𝑡 , where 𝐿 is the spatiotemporal token length of a single modality. We concatenate them along the sequence dimension to form the joint trajectory: 
+
+x𝑡 = Concat 𝑠𝑒𝑞 
+
+
+
+z𝑟𝑔𝑏 𝑡 , z𝑑 𝑡 
+
+
+
+∈ R2𝐿 ×𝐶 . (5) Similarly, after tri-mask decoupling, we obtain RGB and depth context sequences C𝑟𝑔𝑏 and C𝑑 , and build the joint condition as 
+
+C = Concat 𝑠𝑒𝑞 
+
+ C𝑟𝑔𝑏 , C𝑑 
+
+ ∈ R2𝐿 ×𝐶 𝑐 . (6) We do not concatenate the two modalities along channels, because doing so would alter the input dimensionality expected by the pre-trained backbone. Before patch embedding, we split the joint sequence back into two aligned halves, 
+
+x𝑟𝑔𝑏 𝑡 = x𝑡 [1: 𝐿 ], x𝑑 𝑡 = x𝑡 [𝐿 +1:2 𝐿 ], (7) and feed them through the same patch embedder separately: 
+
+h𝑟𝑔𝑏  
+
+> 0
+
+= E ( x𝑟𝑔𝑏 𝑡 ) + e𝑟𝑔𝑏 , h𝑑  
+
+> 0
+
+= E ( x𝑑 𝑡 ) + e𝑑 , (8) where E (·) denotes the patch embedding layer, and e𝑟𝑔𝑏 and e𝑑 are learnable modality embeddings. The RGB embedding is initialized to zero to preserve the original RGB prior, while the depth embed-ding is randomly initialized so the model can explicitly distinguish geometric tokens from visual tokens. We further modify 3D RoPE so that h𝑟𝑔𝑏  
+
+> 0
+
+and h𝑑  
+
+> 0
+
+share identical temporal positional indices. Af-ter embedding, the two streams are concatenated back along the sequence dimension, 
+
+h0 = Concat 𝑠𝑒𝑞 
+
+
+
+h𝑟𝑔𝑏  
+
+> 0
+
+, h𝑑 
+
+> 0
+
+
+
+, (9) and jointly denoised by the transformer blocks under condition C.This design preserves the pre-trained DiT interface while enabling unified reasoning over appearance and geometry in a single latent process. During training, we adopt a mask-guided RGB-D velocity loss that emphasizes foreground and interaction-critical regions without destabilizing the pre-trained optimization scale. Let ˆv = v𝜃 (x𝑡 , C, T ) 
+
+denote the predicted velocity for the concatenated RGB-D latent trajectory. We compute the squared velocity error and normalize it separately inside and outside the object-aware foreground mask, yielding 
+
+Lin =
+
+Í ℓ ( ˆv, v) ⊙ M𝑓 
+
+Í M𝑓 + 𝛿 , Lout =
+
+Í ℓ ( ˆv, v) ⊙ ( 1 − M𝑓 )
+
+Í(1 − M𝑓 ) + 𝛿 , (10) and combine them as 
+
+Lmask = 𝛼 Lin + ( 1 − 𝛼 ) L out , 𝛼 = 𝑠 
+
+1 + 𝑠 , (11) where 𝑠 is the foreground emphasis scale and 𝛿 = 10 −8. This for-mulation improves learning on character and interaction regions while keeping the overall loss magnitude well behaved. For efficient adaptation, we fully train the inserted context blocks and fine-tune the base DiT with LoRA modules [Hu et al. 2021]. Xiang et al. 
+
+## 3.4 Reference Injection 
+
+Unlike general reference-based generation, our setting often pro-vides not only the appearance of an object reference image but also its approximate spatial location in the first frame. We there-fore inject references with an explicit spatial prior instead of using appearance tokens alone. Each reference image is first encoded by the VAE encoder and then concatenated to the conditional token sequence. In addition, we introduce an RGB canvas token to explicitly represent the in-tended first-frame layout. The canvas is constructed by compositing elements from back to front according to depth order: we first place the background, then the foreground character, and finally each reference object at its first-frame location. The composed canvas is then encoded by the same VAE encoder and concatenated after the individual reference tokens. This design provides the network with both appearance cues and an explicit spatial anchor. As a result, the model can better disambiguate where each reference object should appear and how it should interact with the character and environment, leading to more precise reference controllability in green-screen compositing. 
+
+## 4 Experiments 4.1 Implementation Details 
+
+We build our model on top of Wan 2.1 VACE -14B [Jiang et al . 2025; WanTeam et al . 2025], which also serves as the pre -training initial-ization. The learning rate is set to 2 × 10 −5 with a total batch size of 8. We first train the model on 17-frame clips for 15K iterations, and after convergence, continue fine-tuning on 65-frame clips for another 2K iterations. The LoRA rank used in the DiT blocks is set to 32. During training, we sample the base dataset with probability 0.8 and the multi-illumination dataset with probability 0.2. The mask-guided velocity loss uses 𝑠 = 10 , and all training samples are resized to a spatial resolution of 480 × 832 .
+
+## 4.2 Benchmarks and Baselines 
+
+Benchmarks. We evaluate our method on two benchmarks. The first is a synthetic benchmark . Following the data - filtering criteria in Sec. 3.2, we sample 100 video clips from the base dataset and exclude them from the training set. These samples are constructed by extracting pseudo green -screen foregrounds from real videos, such that their original videos serve as ground truth for objective evaluation. Note that input videos of this benchmark are augmented using the same strategy introduced in Sec. 3.2 to test the model’s lighting - harmonization capability. The second is a real green - screen benchmark , consisting of 10 real green - screen videos. For each sam-ple, we use two AI - generated prompts describing distinct target scenes to guide the model in performing designated green - screen compositing. Since these samples lack paired ground - truth refer-ences, we conduct a user study for evaluation. 
+
+Baselines. Since existing video generation methods cannot directly fulfill the green-screen compositing task, we construct baselines by combining existing approaches. We compare our method against four baselines grouped into three categories: first - frame editing (Flux 2 [Labs 2025]) followed by animation (WanAnimate [Cheng et al . 2025] or MimicMotion [Zhang et al . 2024a]), video inpainting                             
+
+> Method Aesthetic ↑Identity ↑Foreground ↑Background ↑
+> FLUX 2+WanAni. 4.901 0.375 0.272 0.601 FLUX 2+MimicM. 4.732 0.275 0.251 0.573 VACE 4.827 0.606 0.539 0.688 VACE+Relighting 4.677 0.551 0.629 0.688 Ours 4.868 0.637 0.642 0.704
+
+Table 1: Quantitative comparison on synthetic benchmark. Bold and underlined numbers denote the best and second-best results, respectively. 
+
+(VACE [Jiang et al . 2025]), and cascaded video inpainting combined with relighting (VACE+Relighting). For the last baseline, we first use VACE to generate a composite result, remove foregrounds with Attentive Eraser [Sun et al . 2025] to obtain a clean background, and then apply IC - Light[Zhang et al . 2025] to relight the foreground to match the background. 
+
+## 4.3 Quantitative Comparison 
+
+For the synthetic benchmark, we adopt four complementary evalu-ation metrics. Aesthetic Score measures the overall visual quality of the generated video, covering character -scene harmony, lighting and interaction realism, and is computed using the LAION aes-thetic predictor on CLIP ViT - L/14 features [Radford et al . 2021]. Identity Preservation measures the cosine similarity between the main face in the ground -truth video and the detected faces in the generated video. Foreground Similarity evaluates the structural sim-ilarity (SSIM) within the foreground mask to quantify the accuracy of character relighting. Background Similarity removes the fore-ground region via gray filling and computes the semantic similarity between generated and ground - truth backgrounds using a video encoder (i.e., VideoCLIP [Xu et al . 2021]), reflecting the alignment between the generated scene and the prompt. Table 1 reports the quantitative comparison results. Our method achieves the best performance on Identity Preservation, Foreground Similarity, and Background Similarity, and obtains the second -best result on Aesthetic Score, with only a marginal gap behind FLUX 2 + WanAnimate. FLUX 2 + WanAnimate’s slight advantage in Aes-thetic Score stems from its powerful image - editing prior adopted in the first frame. However, this advantage cannot be propagated to subsequent frames by animation models (WanAnimate or Mimic-Motion), so first - frame editing baselines lag substantially in identity preservation and foreground similarity. The VACE baseline only inpaints the background without mod-ifying foreground lighting, leading to inconsistent visual results. Consequently, it performs poorly across Aesthetic Score, Identity Preservation, and Foreground Similarity metrics. The cascaded VACE+Relighting baseline improves Foreground Similarity over vanilla VACE, suggesting that post - hoc relighting partially allevi-ates illumination mismatch. Nevertheless, both its aesthetic quality and identity preservation degrade, as standalone relighting disturbs identity consistency and introduces additional artifacts. In contrast, our unified framework models bidirectional character - environment interaction, thus outperforming both baselines across all evaluation metrics. Cinematic Compositing Using Character-Environment-Harmonized Video Generation Models 
+
+> Green Screen RGB Mask Depth Mask FLUX 2 + WanAni. FLUX 2 + MimicM. VACE VACE+Relight Ours
+> A stylish performer adjusts his bright bucket hat on a concert stage, while dramatic magenta and golden spotlights sweep across the scene.
+> Green Screen RGB Mask Depth Mask FLUX 2 + WanAni. FLUX 2 + MimicM. VACE VACE+Relight Ours
+> A man in a business suit and red tie dives through a cyberpunk city at night, surrounded by electric blue and hot pink neon lights.
+
+Figure 4: Qualitative comparison on representative green-screen examples. Our method better preserves actor identity, interac-tion geometry, and lighting coherence than the baselines. 
+
+## 4.4 User Study 
+
+For the real - world green -screen benchmark without ground truth, we conduct a user study. We invite participants with prior knowl-edge in computer graphics and ask them to compare outputs from all methods for each sample. For each comparison, participants se-lect the best result according to five criteria: identity preservation, interaction realism, lighting realism, prompt alignment, and over-all quality. Table 2 summarizes the resulting preference ratios. As shown in the table, our method achieves the highest preference ra-tio across all five criteria. In particular, the margin over all baselines is substantial, indicating that users consistently favor our outputs empowered by bidirectional character - environment harmonization. 
+
+Identity Interaction Lighting Prompt Overall Method Preservation Realism Realism Alignment Quality FLUX 2+WanAni 2.86% 2.14% 2.14% 2.86% 2.14% FLUX 2+MimicM. 3.57% 4.29% 5.71% 6.43% 4.29% VACE 29.29% 24.29% 22.14% 23.57% 23.57% VACE+Relighting 2.86% 3.57% 2.86% 1.43% 0.71% Ours 61.43% 65.71% 67.14% 65.71% 69.29% 
+
+Table 2: User study results on the real green-screen bench-mark. Values represent preference percentages (%). 
+
+## 4.5 Qualitative Comparison 
+
+Figure 4 presents qualitative comparisons on representative real -world green -screen examples. FLUX 2 + WanAnimate and FLUX 2 + Mim-icMotion drive first - frame editing results with character motion, yet they struggle to preserve temporal consistency and are highly sensitive to motion estimation errors. This often leads to identity Xiang et al. 
+
+> Green Screen RGB+Depth Mask RGB Denoise RGB-D Denoise
+
+A woman in a kitchen places a baking tray into an oven, then closes the door and adjusts the control panel. 
+
+> Green Screen RGB+Depth Mask RGB Denoise RGB-D Denoise
+
+A man in a modern white kitchen retrieves an ornate gold menorah from an upper cabinet, closes the door, and stands near a sink and marble-patterned backsplash. 
+
+Figure 5: Qualitative ablation on RGB-only versus RGB-D de-noising. RGB-D denoising yields more realistic results when synthesizing backgrounds for complex interaction motions across representative examples. 
+
+degradation, character motion distortion, or blurry backgrounds. VACE can inpaint the background conditioned on foreground infor-mation but suffers from two key limitations for the green -screen compositing task. First, it leaves the foreground unchanged, result-ing in inconsistent lighting between foreground and background. Second, VACE only denoises RGB inputs and lacks depth awareness, leading to unrealistic interactions between generated characters and environments. These issues make the character appear suspended rather than naturally integrated with the environment. Although the cascaded VACE+Relighting baseline partially mitigates illumina-tion mismatch, its two -stage pipeline fails to achieve bidirectional character -environment harmonization and additionally introduces 
+
+> Green Screen RGB+Depth Mask w/o Lighting Data w/ Lighting Data
+
+A cheerful woman stands behind a bar counter and waves at the camera under dramatic blue and golden lighting. 
+
+Figure 6: Qualitative ablation on the training data composi-tion. Lighting data improves both the background aesthetic quality and the harmony between foreground relighting and background appearance.                 
+
+> Learning Method Aesthetic ↑Identity ↑Foreground ↑Background ↑
+> RGB-Only Denoise 4.866 0.638 0.636 0.694 RGB-D Joint Denoise 4.868 0.637 0.642 0.704
+
+Table 3: Ablation on RGB-only vs. joint RGB-D denoising. All other training and inference settings are kept fixed.                 
+
+> Training data Aesthetic ↑Identity ↑Foreground ↑Background ↑
+> Base Data 4.857 0.635 0.635 0.699 + Lighting Data 4.868 0.637 0.642 0.704
+
+Table 4: Ablation on the lighting data. Incorporating lighting data yields consistent improvements across all evaluation metrics. 
+
+identity drift and compositing artifacts. In contrast, our unified gen-erative framework simultaneously realizes C2E physical interaction and E2C lighting harmonization, and leverages RGB - D joint denois-ing to enhance the spatial and physical realism of interactions, thus producing the most natural compositing results. 
+
+## 4.6 Ablation Study 
+
+We ablate two key design choices in our framework: RGB -D de-noising instead of RGB -only denoising, and the multi - illumination dataset used in addition to the base dataset. In both ablation studies, we keep all other settings unchanged and modify only the ablated component. For each ablation, we report quantitative results on the synthetic benchmark using the same four metrics adopted in the main comparison, and provide qualitative comparisons on repre-sentative examples. 
+
+4.6.1 RGB-Only vs. RGB-D Denoising. We first investigate whether explicitly modeling depth improves performance. To this end, we Cinematic Compositing Using Character-Environment-Harmonized Video Generation Models   
+
+> Origin video frame Green Screen Video
+> Given Canvas Result
+
+Prompt: A man in glasses and a black shirt reviews orange shoes inside a warm modern shoe store. Wooden sneaker displays and golden retail lighting illuminate his face and the product.   
+
+> Origin video frame Green Screen Video
+> Given Canvas Result
+
+Prompt: A young woman with long wavy hair stands in a sunny park, holding a black gaming mouse. She smiles toward the camera against a bright green outdoor background.   
+
+> Origin video frame Green Screen Video
+> Given Canvas Result
+
+Prompt: A blonde woman in a striped tank top stands in a bright kitchen, holding a red box of Garden biscuits. She presents the product to the camera with kitchen decorations behind her.   
+
+> Origin video frame Green Screen Video
+> Given Canvas Result
+
+Prompt: A young man in a black sweatshirt presents a black graphics card inside a bright server room. Rows of server racks, cables, and blinking lights form a clean high-tech background. 
+
+Figure 7: Results with reference guidance. We present several examples where reference images guide the generation of specific objects. Note that prompts have been simplified for illustrative clarity. 
+
+compare a variant trained with RGB - only denoising against our full RGB - D denoising setting. As shown in Table 3, removing depth - aware denoising leads to a noticeable drop in Background Similarity from 0.704 to 0.694. This suggests that RGB - D denoising is particularly critical for C2E harmonization, i.e., generating the surrounding en-vironment to accommodate the character’s geometry and motion. An example shown in Figure 5 further demonstrates this: without depth guidance, artifacts appear at the interaction between the character’s hand and the oven, whereas RGB - D denoising produces more realistic interactions with explicit geometry awareness. 
+
+4.6.2 Base Data Only vs. Base + Multi-illumination Data. We next investigate the contribution of the multi -illumination dataset. Specif-ically, we compare a model trained only on the base dataset against our full training strategy that combines both datasets. As shown in Table 4, removing the multi - illumination dataset causes con-sistent degradation across all metrics. The most notable drops are on Aesthetic Score and Foreground Similarity, indicating that multi -illumination dataset facilitates E2C harmonization, i.e., re-lighting the character to faithfully capture how environmental illu-mination realistically casts onto it. Qualitative examples in Figure 6 further confirm this trend. Without multi - illumination data, the model fails to generate visually rich illumination effects, whereas with this dataset, character lighting naturally varies dynamically with the surrounding environment. 
+
+## 4.7 Reference-Guided Generation 
+
+In Figure 7, we show results with reference guidance, where user-provided reference images specify the target objects to be generated. For each example, we also show the pre-generation canvas, which visualizes both the provided reference images and the approximate object location in the first frame. These examples demonstrate that our model can incorporate visual references while preserving coherent object interactions and scene-level lighting. 
+
+## 4.8 Additional Results and Applications 
+
+Figure 8 shows additional results across diverse characters, motions, scenes, and lighting conditions, demonstrating the generality of our model. Figures 9 and 10 further show real-world video applications where different tri-masks enable flexible region preservation and replacement while maintaining C2E physical interaction and E2C lighting harmonization. 
+
+## 5 Conclusion 
+
+In this work, we present an end-to-end generative framework for cinematic green-screen video compositing, which unifies character-to-environment physical interaction and environment-to-character lighting harmonization in a single video diffusion model. Our frame-work incorporates a tri-mask-guided architecture for adaptive prop handling, an RGB-D joint denoising strategy for improved 3D spa-tial understanding, a prior-driven data curation pipeline for effi-cient multi-illumination training data generation, and a reference-conditioned mechanism for customizable environment and prop control. Extensive experiments demonstrate that our method achieves state-of-the-art performance in cinematic-quality dynamic com-positing. However, limited by computational resources, our cur-rent implementation cannot support 4K ultra-high-resolution or long-form video synthesis. Developing efficient architectures and scalable training strategies to enable high-resolution long-video compositing will be our primary future direction. Xiang et al. 
+
+## References 
+
+W. Bian et al . 2025a. RelightMaster: Precise Video Relighting with Multi-plane Light Images. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) .Yuxuan Bian, Zhaoyang Zhang, Xuan Ju, Mingdeng Cao, Liangbin Xie, Ying Shan, and Qiang Xu. 2025b. VideoPainter: Any-length Video Inpainting and Editing with Plug-and-Play Context Control. In SIGGRAPH Conference Papers .Gang Cheng, Xin Gao, Li Hu, Siqi Hu, Mingyang Huang, Chaonan Ji, Ju Li, Dechao Meng, Jinwei Qi, Penchong Qiao, et al . 2025. Wan-animate: Unified character animation and replacement with holistic replication. arXiv preprint arXiv:2509.14055 
+
+(2025). Ye Fang, Zeyi Sun, Shangzhan Zhang, Tong Wu, Yinghao Xu, Pan Zhang, Jiaqi Wang, Gordon Wetzstein, and Dahua Lin. 2025. RelightVid: Temporal-Consistent Diffusion Model for Video Relighting. arXiv preprint arXiv:2501.16330 (2025). Kai He, Ruofan Liang, Jacob Munkberg, Jon Hasselgren, Nandita Vijaykumar, Alexander Keller, Sanja Fidler, Igor Gilitschenski, Zan Gojcic, and Zian Wang. 2025. UniRelight: Learning Joint Decomposition and Synthesis for Video Relighting. In The Thirty-Ninth Annual Conference on Neural Information Processing Systems (NeurIPS) .Edward J. Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. 2021. LoRA: Low-Rank Adaptation of Large Language Models. arXiv preprint arXiv:2106.09685 (2021). Li Hu, Guangyuan Wang, Zhen Shen, Xin Gao, Dechao Meng, Lian Zhuo, Peng Zhang, Bang Zhang, and Liefeng Bo. 2025b. Animate Anyone 2: High-Fidelity Character Image Animation with Environment Affordance. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) .Tao Hu, Haoyang Peng, Xiao Liu, and Yuewen Ma. 2025a. EX-4D: EXtreme Viewpoint 4D Video Synthesis via Depth Watertight Mesh. arXiv preprint arXiv:2506.05554 
+
+(2025). Zeyinzi Jiang, Zhen Han, Chaojie Mao, Jingfeng Zhang, Yulin Pan, and Yu Liu. 2025. VACE: All-in-One Video Creation and Editing. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) .Black Forest Labs. 2025. FLUX.2: Frontier Visual Intelligence. https://bfl.ai/blog/flux-2. Junnan Li, Dongxu Li, Silvio Savarese, and Steven Hoi. 2023. BLIP-2: Bootstrapping Language-Image Pre-training with Frozen Image Encoders and Large Language Models. arXiv preprint arXiv:2301.12597 (2023). Jizhizi Li, Jing Zhang, Stephen J Maybank, and Dacheng Tao. 2022. Bridging composite and real: towards end-to-end deep image matting. International Journal of Computer Vision 130, 2 (2022), 246–266. Shanchuan Lin et al . 2022. Robust High-Resolution Video Matting with Temporal Guidance. In Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision (WACV) .Shanchuan Lin, Andrey Ryabtsev, Soumyadip Sengupta, Brian Curless, Steve Seitz, and Ira Kemelmacher-Shlizerman. 2021. Real-Time High-Resolution Background Matting. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) .Yehonathan Litman, Shikun Liu, Dario Seyb, Nicholas Milef, Yang Zhou, Carl Marshall, Shubham Tulsiani, and Caleb Leak. 2026. EditCtrl: Disentangled Local and Global Control for Real-Time Generative Video Editing. arXiv preprint arXiv:2602.15031 
+
+(2026). Bangya Liu, Xinyu Gong, Zelin Zhao, Ziyang Song, Yulei Lu, Suhui Wu, Jun Zhang, Suman Banerjee, and Hao Zhang. 2025a. ByteLoom: Weaving Geometry-Consistent Human-Object Interactions through Progressive Curriculum Learning. arXiv preprint arXiv:2512.22854 (2025). Kun Liu, Qi Liu, Xinchen Liu, Jie Li, Yongdong Zhang, Jiebo Luo, Xiaodong He, and Wu Liu. 2025b. Hoigen-1m: A large-scale dataset for human-object interaction video generation. In Proceedings of the Computer Vision and Pattern Recognition Conference . 24001–24010. Pengwei Liu, Hangjie Yuan, Bo Dong, Jiazheng Xing, Jinwang Wang, Rui Zhao, Wei-hua Chen, and Fan Wang. 2025d. UniLumos: Fast and Unified Image and Video Relighting with Physics-Plausible Feedback. In The Thirty-Ninth Annual Conference on Neural Information Processing Systems (NeurIPS) .Shilong Liu, Zhaoyang Zeng, Tianhe Ren, Feng Li, Hao Zhang, Jie Yang, Chunyuan Li, Jianwei Yang, Hang Su, Jun Zhu, et al . 2023. Grounding dino: Marrying dino with grounded pre-training for open-set object detection. arXiv preprint arXiv:2303.05499 
+
+(2023). Tianqi Liu, Zhaoxi Chen, Zihao Huang, Shaocong Xu, Saining Zhang, Chongjie Ye, Bohan Li, Zhiguo Cao, Wei Li, Hao Zhao, and Ziwei Liu. 2026. Light-X: Generative 4D Video Rendering with Camera and Illumination Control. In The Fourteenth International Conference on Learning Representations (ICLR) .Yang Liu, Chuanchen Luo, Zimo Tang, Yingyan Li, Yuran Yang, Yuanyong Ning, Lue Fan, Junran Peng, and Zhaoxiang Zhang. 2025c. TC-Light: Temporally Coherent Generative Rendering for Realistic World Transfer. In The Thirty-Ninth Annual Conference on Neural Information Processing Systems (NeurIPS) .Boxiao Pan, Zhan Xu, Chun-Hao P Huang, Krishna K Singh, Yang Zhou, Leonidas J Guibas, and Jimei Yang. 2024. Actanywhere: Subject-aware video background generation. Advances in Neural Information Processing Systems 37 (2024), 29754– 29776. Yizuo Peng, Xuelin Chen, Kai Zhang, and Xiaodong Cun. 2026. LightCtrl: Training-free Controllable Video Relighting. In The Fourteenth International Conference on Learning Representations (ICLR) .Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sand-hini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al .2021. Learning Transferable Visual Models from Natural Language Supervision. In 
+
+International Conference on Machine Learning (ICML) . PMLR, 1374–1385. Nikhila Ravi, Valentin Gabeur, Yuan-Ting Hu, Ronghang Hu, Chaitanya Ryali, Tengyu Ma, Haitham Khedr, Roman Rädle, Chloe Rolland, Laura Gustafson, Eric Mintun, Junting Pan, Kalyan Vasudev Alwala, Nicolas Carion, Chao-Yuan Wu, Ross Girshick, Piotr Dollár, and Christoph Feichtenhofer. 2024. SAM 2: Segment Anything in Images and Videos. arXiv:2408.00714 [cs.CV] https://arxiv.org/abs/2408.00714 Mengwei Ren, Wei Xiong, Jae Shin Yoon, Zhixin Shu, Jianming Zhang, HyunJoon Jung, Guido Gerig, and He Zhang. 2024. Relightful Harmonization: Lighting-aware Portrait Background Replacement. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) .Christoph Schuhmann. 2022. Improved Aesthetic Prediction using CLIP Embeddings and Hypernetwork. GitHub repository. https://github.com/christophschuhmann/ improved-aesthetic-predictor Yichen Sheng, Jianming Zhang, Julien Philip, Yannick Hold-Geoffroy, Xin Sun, He Zhang, Lu Ling, and Bedrich Benes. 2023. PixHt-Lab: Pixel Height Based Light Effect Generation for Image Compositing. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) .Wenhao Sun, Xue-Mei Dong, Benlei Cui, and Jingqun Tang. 2025. Attentive Eraser: Unleashing Diffusion Model’s Object Removal Potential via Self-Attention Redi-rection Guidance. In Proceedings of the AAAI Conference on Artificial Intelligence ,Vol. 39. 20734–20742. Ke Wang, Michaël Gharbi, He Zhang, Zhihao Xia, and Eli Shechtman. 2023. Semi-supervised Parametric Real-world Image Harmonization. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) .WanTeam, Ang Wang, Baole Ai, Bin Wen, Chaojie Mao, Chen-Wei Xie, Di Chen, Feiwu Yu, Haiming Zhao, Jianxiao Yang, et al . 2025. Wan: Open and Advanced Large-Scale Video Generative Models. arXiv preprint arXiv:2503.20314 (2025). Weiqing Xiao, Hong Li, Xiuyu Yang, Houyuan Chen, Yi Wen, Tianqi Liu, Shaocong Xu, Chongjie Ye, Hao Zhao, and Beibei Wang. 2026. Relit-LiVE: Relight Video by Jointly Learning Environment Video. arXiv preprint arXiv:2605.06658 (2026). Hu Xu, Gargi Ghosh, Po-Yao Huang, Dmytro Okhonko, Armen Aghajanyan, Florian Metze, Luke Zettlemoyer, and Christoph Feichtenhofer. 2021. VideoCLIP: Con-trastive Pre-training for Zero-shot Video-Text Understanding. In Proceedings of the 2021 conference on empirical methods in natural language processing . 6787–6800. Ziyi Xu, Ziyao Huang, Juan Cao, Yong Zhang, Xiaodong Cun, Qing Shuai, Yuchen Wang, Linchao Bao, and Fan Tang. 2026a. AnchorCrafter: Animate cyber-anchors selling your products via human-object interacting video generation. IEEE Transactions on Visualization and Computer Graphics (2026). Zhengbo Xu, Jie Ma, Ziheng Wang, Zhan Peng, Jun Liang, and Jing Li. 2026b. MoCha: End-to-End Video Character Replacement without Structural Guidance. In Pro-ceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) .An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chengen Huang, Chenxu Lv, et al . 2025b. Qwen3 technical report. 
+
+arXiv preprint arXiv:2505.09388 (2025). Lihe Yang, Bingyi Kang, Zilun Huang, Xin Xu, Jiashi Feng, and Hengshuang Zhao. 2025a. Video Depth Anything. arXiv preprint arXiv:2501.12375 (2025). Peiqing Yang, Shangchen Zhou, Kai Hao, and Qingyi Tao. 2026. MatAnyone 2: Scaling Video Matting via a Learned Quality Evaluator. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) .Peiqing Yang, Shangchen Zhou, Jixin Zhao, Qingyi Tao, and Chen Change Loy. 2025c. MatAnyone: Stable Video Matting with Consistent Memory Propagation. arXiv preprint arXiv:2501.14677 (2025). Mingshuai Yao et al . 2025. Beyond Static Scenes: Camera-controllable Background Generation for Human Motion. arXiv preprint arXiv:2504.02004 (2025). Lvmin Zhang, Anyi Rao, and Maneesh Agrawala. 2025. Scaling In-the-Wild Training for Diffusion-based Illumination Harmonization and Editing by Imposing Con-sistent Light Transport. In The Thirteenth International Conference on Learning Representations .Yuang Zhang, Jiaxi Gu, Li-Wen Wang, Han Wang, Junqi Cheng, Yuefeng Zhu, and Fangyuan Zou. 2024a. MimicMotion: High-Quality Human Motion Video Gen-eration with Confidence-aware Pose Guidance. arXiv preprint arXiv:2406.19680 
+
+(2024). Zhixing Zhang, Bichen Wu, Xiaoyan Wang, Yaqiao Luo, Luxin Zhang, Yinan Zhao, Peter Vajda, Dimitris Metaxas, and Licheng Yu. 2024b. Avid: Any-length video inpainting with diffusion model. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 7162–7172. Yujie Zhou, Jiazi Bu, Pengyang Ling, Pan Zhang, Tong Wu, Qidong Huang, Jinsong Li, Xiaoyi Dong, Yuhang Zang, Yuhang Cao, et al . 2025. Light-a-video: Training-free video relighting via progressive light fusion. In Proceedings of the IEEE/CVF International Conference on Computer Vision . 13315–13325. Cinematic Compositing Using Character-Environment-Harmonized Video Generation Models 
+
+> Green Screen Result
+
+Prompt: A bearded businessman walks toward the camera through a forest, while dappled sunlight through dense foliage casts shifting chartreuse highlights and deep leaf shadows across his face and suit. 
+
+> Green Screen Result
+
+Prompt: A man in a red long-sleeved outfit paints carefully at an easel inside a sleek penthouse studio, holding a palette while overlooking a neon-lit cyberpunk city at night. Electric blue and magenta lights reflect across chrome and glass surfaces as flying vehicles move between towering skyscrapers outside. Holographic displays flicker softly, blending traditional artistry with futuristic technology. 
+
+> Green Screen Result
+
+Prompt: A cheerful young woman with long dark hair, wearing a plaid shirt and green backpack, records a selfie video with her smartphone in front of a majestic river valley at dusk. She waves, smiles, and adjusts her hair playfully while golden sunset light casts warm highlights and soft shadows across the scene. The atmosphere feels serene, cinematic, and natural. 
+
+> Green Screen Result
+
+Prompt: A curious young boy in a blue denim shirt tosses an antique wooden chest with rusted iron latches inside a dusty attic filled with old books and relics. Shafts of light stream through a cobwebbed window, illuminating floating dust and mysterious surroundings. Moody cinematic lighting and deep shadows create a sense of wonder and historical discovery. 
+
+Figure 8: Additional qualitative results. We show more examples of our method. Our approach generates realistic backgrounds while maintaining physical interaction consistency and lighting harmonization. Xiang et al. 
+
+> Input Video RGB/Depth Mask Result
+
+Prompt: A male laboratory technician in protective gear sanitizes a high-tech metallic bioreactor capsule inside a brightly lit biological laboratory, with clean fluorescent lighting and misty disinfectant haze. 
+
+> Input Video RGB/Depth Mask Result
+
+Prompt: Two people with afro hairstyles sit on futuristic chairs inside a dark spaceship observation deck, facing a panoramic window filled with colorful nebulae and stars. 
+
+> Input Video RGB/Depth Mask Result
+
+Prompt: A man in elegant traditional Chinese robes carries carved wooden antique boxes through a grand ancient palace hall and places them on an ornate wooden table. 
+
+> Input Video RGB/Depth Mask Result
+
+Prompt: A man plays an advanced glowing cyberpunk electronic guitar on a dim concert stage, surrounded by sweeping magenta, cyan, and gold lights. 
+
+Figure 9: Applications on real-world videos. Given different tri-masks, our model can flexibly replace or preserve arbitrary regions of a video while maintaining strong C2E and E2C interaction consistency. Cinematic Compositing Using Character-Environment-Harmonized Video Generation Models 
+
+> Input Video RGB/Depth Mask Result
+
+Prompt: An elderly man in a sci-fi volcanologist suit pushes a heavy industrial wheelbarrow filled with glowing molten lava through a dramatic volcanic landscape. 
+
+> Input Video RGB/Depth Mask Result
+
+Prompt: A woman with a backpack and rolling suitcase stands on a fluffy magical cloud rising through a whimsical fairytale landscape with castles and floating islands. 
+
+> Input Video RGB/Depth Mask Result
+
+Prompt: Two men exchange a glowing magical parchment scroll inside a mystical ancient library filled with stone arches, manuscripts, shadows, and torchlight. 
+
+> Input Video RGB/Depth Mask Result
+
+Prompt: Inside a high-tech robotics laboratory, a cyberpunk mechanic lowers a hollow black geometric square frame over a reflective humanoid robot. 
+
+Figure 10: Applications on real-world videos. Given different tri-masks, our model can flexibly replace or preserve arbitrary regions of a video while maintaining strong C2E and E2C interaction consistency.

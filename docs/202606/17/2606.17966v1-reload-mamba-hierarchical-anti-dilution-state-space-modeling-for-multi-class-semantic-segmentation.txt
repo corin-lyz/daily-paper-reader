@@ -1,0 +1,865 @@
+Title: Reload-Mamba: Hierarchical Anti-Dilution State-Space Modeling for Multi-Class Semantic Segmentation
+
+URL Source: https://arxiv.org/pdf/2606.17966v1
+
+Published Time: Wed, 17 Jun 2026 01:19:01 GMT
+
+Number of Pages: 23
+
+Markdown Content:
+# Reload-Mamba: Hierarchical Anti-Dilution State-Space Modeling for Multi-Class Semantic Segmentation 
+
+## Sheng-Wei Chan a, Hsin-Jui Pan a and Jen-Shiun Chiang a,∗
+
+> a
+
+Department of Electrical and Computer Engineering, Tamkang University, No.151, Yingzhuan Rd., Tamsui Dist., New Taipei City, 251301, Taiwan 
+
+A R T I C L E I N F O 
+
+Keywords :semantic segmentation Mamba state space model local detail restoration hierarchical anti-dilution class-uncertainty-aware gating 
+
+A B S T R A C T 
+
+Mamba-based state space models offer linear-time long-range modeling for high-resolution dense prediction, but sequential state-space propagation can attenuate boundary-sensitive and detail-sensitive responses that are critical in multi-class semantic segmentation. We propose Reload-Mamba, a semantic segmentation framework that addresses this propagation-induced response dilution through three segmentation-specific designs: (i) a boundary-supervised local detail prior that is explicitly trained with ground-truth boundary masks to identify regions requiring response restoration; (ii) a class-uncertainty-aware Reload Gate that incorporates per-pixel class entropy from a pre-reload auxiliary head as an additional gating signal, a formulation that is informative only under multi-class dense prediction; and (iii) a hierarchical multi-level Reload mechanism that applies anti-dilution refinement at three decoder levels and fuses the restored representations top-down. Built upon a ConvNeXt-Tiny encoder with a multi-scale decoder and four-directional Mamba scanning with pixel-wise directional attention, Reload-Mamba achieves 47.9% single-scale ( 48.9% multi-scale) mIoU on ADE20K and 83.2% 
+
+single-scale mIoU on Cityscapes. With ResNet-101 + COCO pre-training under the standard DeepLab-style protocol, Reload-Mamba reaches 87.8% mIoU on PASCAL VOC 2012 val. Controlled ablations show that each of the three segmentation-specific designs contributes beyond a direct port of the prior anti-dilution architecture proposed for binarization, cumulatively improving over the direct-port baseline by +2 .2 mIoU on ADE20K. 
+
+## 1. Introduction 
+
+Semantic segmentation is a fundamental dense prediction task that assigns a semantic label to each pixel [30, 36, 4]. Unlike image-level recognition, semantic segmentation requires both global semantic understanding and local spatial precision. In particular, object boundaries, thin structures, and small semantic regions often rely on subtle local responses. Therefore, an effective segmentation model should balance long-range dependency modeling and fine-grained detail preservation. Recently, Mamba-based state space models have attracted increasing attention in vision tasks due to their efficient linear-time sequence modeling capability [13, 54, 27]. Compared with Transformer-based self-attention, Mamba provides a computationally efficient way to model long-range dependencies, making it attractive for high-resolution dense prediction [9, 28, 43]. However, direct state-space propagation may weaken local detail responses because features are sequentially mixed along scan paths. In semantic segmentation, such response attenuation may lead to blurred object boundaries, missed thin structures, or reduced sensitivity to small semantic regions. Sequential state-space propagation in Mamba-based dense prediction can attenuate boundary-sensitive and detail-sensitive responses, an effect we refer to as propagation-induced response dilution. In our prior work [2], we identified this phenomenon in the context of document image binarization and proposed a single-level anti-dilution refinement that restores weakened foreground responses through a learned gate. While that formulation is effective for binary stroke restoration, multi-class semantic segmentation imposes three additional requirements that a direct port of the single-level binarization design cannot satisfy. First, the regions that benefit from response restoration—class boundaries, thin structures, and small categories—are not uniquely identifiable from class probabilities alone, so an implicitly estimated detail prior provides only weak conditioning. Second, ambiguous pixels concentrate at semantic transitions and are best identified via per-pixel class entropy, a signal that is uninformative under binary prediction but discriminative when the number of classes exceeds two. Third, dilution affects different semantic scales differently, 
+
+> ∗
+
+Corresponding author 
+
+chiang@mail.tku.edu.tw (J. Chiang) 
+
+> ORCID
+
+(s): 0009-0002-3983-5163 (S. Chan) 
+
+S.W. Chan: Preprint submitted to Elsevier Page 1 of 23 
+
+> arXiv:2606.17966v1 [cs.CV] 16 Jun 2026 Reload-Mamba
+
+and refinement at a single decoder resolution cannot simultaneously serve large coherent regions, mid-scale objects, and thin boundary structures. In this paper, we propose Reload-Mamba, a semantic segmentation framework that addresses propagation-induced response dilution through three segmentation-specific designs. First, we explicitly supervise the local detail prior using ground-truth boundary masks at every decoder level, replacing the implicit prior estimation with a stable conditioning signal that reliably localizes detail-sensitive regions. Second, we attach a lightweight pre-reload auxiliary head to the directional fusion output and feed its per-pixel class entropy into the Reload Gate as a third input alongside the original feature and the propagation-induced feature change; this entropy term is fundamentally specific to multi-class prediction and provides a complementary signal to the prior. Third, we apply the Reload Gate at three decoder levels and fuse the restored representations top-down, so that anti-dilution refinement operates at the resolution most appropriate to each semantic scale. With a ConvNeXt-Tiny backbone, Reload-Mamba obtains 47.9% single-scale mIoU on ADE20K and 83.2% single-scale mIoU on Cityscapes; with ResNet-101 + COCO pre-training, it reaches 87.8% on PASCAL VOC val. Controlled ablations confirm that each of the three designs contributes beyond a direct port of the prior anti-dilution architecture. The main contributions of this paper are summarized as follows: 
+
+• We identify three concrete limitations that prevent a direct port of binarization-style anti-dilution from being effective in multi-class semantic segmentation, and propose Reload-Mamba, a segmentation framework whose hierarchical anti-dilution refinement is applied at three decoder levels rather than a single feature resolution. 
+
+• We design a class-uncertainty-aware Reload Gate that jointly considers the original decoder feature, the propagation-induced feature change, and the per-pixel class uncertainty derived from a pre-reload auxiliary head. This formulation is informative only when the number of classes exceeds two, and is therefore fundamentally specific to multi-class dense prediction. 
+
+• We introduce an explicit boundary-supervised local detail prior that uses ground-truth boundary masks to guide prior estimation across multiple decoder levels, providing a more reliable conditioning signal than the implicit prior used in the original binarization formulation. 
+
+• We conduct extensive experiments on ADE20K, Cityscapes, and PASCAL VOC. Reload-Mamba reaches 47.9% single-scale (48.9% multi-scale) mIoU on ADE20K, 83.2% on Cityscapes, and 87.8% on PASCAL VOC val. Controlled ablations show that the three segmentation-specific designs cumulatively contribute +2 .2 mIoU on ADE20K beyond a direct port of the prior anti-dilution architecture, and the resulting model matches or surpasses strong attention-based and dilation-based segmentation methods under comparable settings. 
+
+## 2. Related Work 
+
+2.1. Semantic Segmentation 
+
+Semantic segmentation is a fundamental dense prediction task that assigns a semantic label to each pixel in an image. Early deep learning-based approaches established the fully convolutional formulation by replacing fully connected layers with convolutional prediction heads, enabling end-to-end pixel-wise classification [30]. Following this direction, encoder-decoder architectures became widely adopted because they can combine high-level semantic representations with low-level spatial details. U-Net introduced a symmetric encoder-decoder structure with skip connections to recover fine-grained localization information [36]. Later segmentation models further improved context aggregation and boundary recovery. PSPNet exploited pyramid pooling to incorporate global scene-level context [52], while DeepLab series adopted atrous convolution and atrous spatial pyramid pooling to enlarge the effective receptive field without severely reducing spatial resolution [3, 4]. DeepLabv3+ further combined atrous spatial pyramid pooling with a decoder module, improving object boundary refinement [4]. Recent semantic segmentation methods increasingly rely on strong hierarchical backbones and an efficient decoding head. Transformer-based segmentation methods exploit self-attention for global context modeling, leading to strong performance in complex scenes [9, 28, 43]. Swin Transformer introduced shifted-window attention to reduce the cost of global self-attention while preserving hierarchical representations for dense prediction [28]. SegFormer further simplified the segmentation pipeline by using a hierarchical Transformer encoder and an efficient MLP decoder, showing strong accuracy-efficiency trade-offs on ADE20K and Cityscapes [43]. Despite their effectiveness, attention-based models often suffer from quadratic   
+
+> S.W. Chan: Preprint submitted to Elsevier Page 2 of 23 Reload-Mamba
+
+complexity with respect to token length, which motivates the exploration of more efficient long-range modeling mechanisms. 
+
+2.2. Efficient Backbones for Dense Prediction 
+
+Backbone design is critical for semantic segmentation because dense prediction requires both strong semantic abstraction and accurate spatial localization. Classical convolutional backbones such as VGG, ResNet, and ResNeXt have been widely used in segmentation frameworks due to their local inductive bias and efficient feature extraction [39, 18, 44]. More recently, ConvNeXt revisited the design of convolutional networks under modern training and architectural principles, demonstrating that pure ConvNets can remain competitive with Transformer-based backbones while preserving simplicity and efficiency [29]. This makes ConvNeXt a suitable backbone for segmentation systems that require stable multi-scale representations and efficient dense feature extraction. In dense prediction, multi-scale feature fusion is commonly used to recover spatial resolution and integrate semantic information across different stages [25, 4, 43]. Skip connections and decoder modules are especially important for restoring details that may be lost in deep hierarchical encoders [36, 1, 4]. Our work follows this principle by adopting a ConvNeXt-Tiny encoder and a multi-scale decoder to produce a compact yet effective segmentation backbone. Different from existing decoder-centric refinement strategies, our method introduces a Mamba-based directional context module together with hierarchical anti-dilution refinement to address the feature dilution problem caused by sequential state modeling. 
+
+2.3. State Space Models and Vision Mamba 
+
+State space models have recently attracted increasing attention as efficient alternatives to self-attention for long-sequence modeling. Structured state space models such as S4 demonstrated the potential of sequence modeling with long-range dependency capture and subquadratic complexity [14]. Mamba further improved this line of research by introducing selective state spaces and a hardware-aware implementation, enabling input-dependent sequence modeling with linear-time complexity [13]. Compared with Transformers, Mamba provides an efficient mechanism for modeling long-range dependencies, which is attractive for high-resolution vision tasks where token lengths can become very large. Several works have extended Mamba and state space models to vision tasks. Vision Mamba (Vim) introduced bidirectional state space modeling for visual representation learning and treated image patches as sequences, showing that SSM-based visual backbones can serve as efficient alternatives to attention-based models [54]. VMamba further proposed a visual state space backbone with 2D selective scanning, adapting Mamba to image data through spatial traversal strategies [27]. These works show that scan direction and spatial ordering are crucial when applying sequence models to two-dimensional images. Other studies have explored multi-scale or hierarchical visual Mamba designs to improve the trade-off between efficiency and accuracy [38, 37]. Mamba-based models have also been investigated for segmentation. SegMamba introduced Mamba for 3D medical image segmentation to capture long-range dependencies in volumetric features [45]. U-Mamba combined convolutional operations with Mamba blocks in an encoder-decoder segmentation framework, aiming to preserve local feature extraction while improving long-range dependency modeling [33]. Our prior work [2] examined response dilution under selective scanning in the binarization setting and proposed a single-level anti-dilution refinement to restore weakened stroke responses. While that formulation is effective for binary foreground restoration, the segmentation-specific designs and multi-level refinement required for multi-class dense prediction were not addressed in that study. The present work extends this line of investigation by reformulating anti-dilution refinement for multi-class semantic segmentation, where boundary identification, class ambiguity, and multi-scale dilution all need to be handled explicitly. Other studies demonstrate the potential of Mamba for dense prediction more broadly, especially when global context is required, but directly applying sequential scanning to segmentation may weaken local detail responses because features are repeatedly propagated and mixed along scan paths. 
+
+2.4. Detail Restoration and Boundary-Aware Refinement 
+
+Accurate semantic segmentation requires not only global context but also fine boundary localization. Many methods therefore introduce boundary-aware learning, auxiliary supervision, or detail refinement modules to improve segmentation quality near object contours [4, 41, 8, 23]. Gated-SCNN explicitly used shape information and a gating mechanism to refine boundaries [41], while other approaches explored semantic-flow alignment or boundary supervision to recover spatial details from high-level features [8, 23]. Auxiliary heads and deep supervision are also commonly used to stabilize intermediate representations and improve gradient propagation in segmentation networks [22, 52, 43]. Edge priors provide another effective way to enhance local structure. Classical operators such as Sobel   
+
+> S.W. Chan: Preprint submitted to Elsevier Page 3 of 23
+
+Reload-Mamba 
+
+filters capture gradient-based boundary cues and can be incorporated as additional detail information for segmentation refinement [40]. In modern deep segmentation models, edge-aware branches or boundary losses are often used to emphasize difficult pixels around class transitions [41, 8, 4]. In this work, we introduce a Sobel edge prior and a detail fusion branch to enhance boundary-aware representations. More importantly, we propose a hierarchical anti-dilution refinement mechanism to recover local responses after directional Mamba scanning at multiple decoder levels. This design complements existing boundary refinement strategies by addressing a specific limitation of Mamba-based segmentation: the multi-scale dilution of local details during long-range sequential propagation. 
+
+## 3. Overall Model Architecture 
+
+The overall architecture of Reload-Mamba is shown in Figure 1. The proposed network follows an encoder-decoder segmentation paradigm and introduces a hierarchical directional state-space modeling module together with a class-uncertainty-aware local detail restoration mechanism. Given an input image 𝐼 ∈ ℝ3× 𝐻 ×𝑊 , the network first extracts hierarchical visual representations using ConvNeXt-Tiny as the encoder backbone. These features are then passed to a lightweight multi-scale decoder, which fuses shallow spatial features and deep semantic features through top-down feature aggregation. After that, the proposed hierarchical Reload-Mamba module is applied at three decoder levels (𝐷 4, 𝐷 3, 𝐷 2) to perform directional state-space context modeling and class-uncertainty-aware anti-dilution refinement at multiple semantic scales. Finally, edge-guided detail fusion and a segmentation head are used to produce the final prediction map.                          
+
+> Input
+> Input Image
+> ConvNeXt-Tiny Encoder
+> 𝐹 1–𝐹 4
+> Sobel Edge Prior
+> Multi-scale Decoder
+> 𝐷 2, 𝐷 3, 𝐷 4
+> Hierarchical Reload-Mamba
+> (𝑙 ∈ {2 ,3,4} )
+> Detail Fuse
+> + Edge Prior
+> Segmentation Head
+> + Output Map
+> Output
+> Stage 1: Feature Extraction Stage 2: Hierarchical Context Modeling Stage 3: Refinement
+> Expanded view of the Hierarchical Reload-Mamba module (applied at 𝑙 ∈ {2 ,3,4} )GT Boundary 𝐵 (𝑙 )
+> 𝑔𝑡
+> Boundary-Supervised Detail Prior 𝑃 (𝑙 )
+> Detail Selection 𝑋 (𝑙 )
+> 𝑑
+> 4-Directional Scan Directional Fusion 𝑀 (𝑙 )
+> Class-Uncertainty-Aware Reload Gate Restored
+> 𝐷 (𝑙 )
+> 𝑚
+> Pre-reload Aux Head
+> 𝑌 (𝑙 )
+> 𝑢 →𝑈 (𝑙 )
+> Deep Supervision Top-Down Hierarchical Fusion
+> →𝐷 𝑚
+> 𝑝𝑟𝑖𝑜𝑟
+> Uncertainty 𝑈 (𝑙 )
+> for 𝑙 ∈ {2 ,3,4}
+
+Figure 1: Overall architecture of the proposed Reload-Mamba segmentation network. The upper part shows the main pipeline. The lower part expands the Hierarchical Reload-Mamba module, which is applied at three decoder levels 
+
+𝑙 ∈ {2 , 3, 4} and integrates three segmentation-specific designs: (i) a boundary-supervised detail prior (blue) trained with the ground-truth boundary mask 𝐵 (𝑙 )
+
+𝑔𝑡 via 𝑝𝑟𝑖𝑜𝑟 ; (ii) a class-uncertainty-aware Reload Gate (red) that takes a per-pixel entropy map 𝑈 (𝑙 ) produced by a pre-reload auxiliary head (orange) as an additional input; and (iii) a top-down hierarchical fusion (purple) that aggregates the restored features {𝐷 (2) 
+
+𝑚 , 𝐷 (3) 
+
+𝑚 , 𝐷 (4) 
+
+𝑚 } across decoder levels to produce the final 𝐷 𝑚 .
+
+3.1. Encoder-Decoder Backbone 
+
+The backbone of Reload-Mamba is built upon ConvNeXt-Tiny [29], which provides hierarchical feature maps at four different scales. Let the encoder outputs be denoted as 
+
+{𝐹 1, 𝐹 2, 𝐹 3, 𝐹 4} = 𝐸 (𝐼 ), (1) where 𝐹 1, 𝐹 2, 𝐹 3, and 𝐹 4 correspond to feature maps with channel dimensions 96, 192, 384, and 768, respectively. These multi-scale features contain both low-level spatial information and high-level semantic information. The decoder follows a U-shaped skip-fusion design. The deepest feature 𝐹 4 is first upsampled and concatenated with 𝐹 3, and the 
+
+S.W. Chan: Preprint submitted to Elsevier Page 4 of 23 Reload-Mamba 
+
+process is then repeated with 𝐹 2 and 𝐹 1:
+
+𝐷 4 = 𝜙 4([Up( 𝐹 4), 𝐹 3]) , (2) 
+
+𝐷 3 = 𝜙 3([Up( 𝐷 4), 𝐹 2]) , (3) 
+
+𝐷 2 = 𝜙 2([Up( 𝐷 3), 𝐹 1]) , (4) where [⋅, ⋅] denotes channel-wise concatenation, Up( ⋅) denotes transposed convolution-based upsampling, and 𝜙 𝑖 (⋅)
+
+denotes a convolutional refinement block. Unlike single-level Mamba refinement designs that operate only on the finest decoder feature, the three intermediate decoder features {𝐷 2, 𝐷 3, 𝐷 4} are all forwarded to the proposed hierarchical Reload-Mamba module (Section 3.5), so that anti-dilution refinement can be applied at three semantically distinct scales. 
+
+3.2. Sobel Edge Prior Branch 
+
+Since semantic segmentation requires accurate object boundaries, Reload-Mamba introduces an explicit Sobel edge prior branch. Given the input image 𝐼 , horizontal and vertical gradient responses are extracted using Sobel operators: 
+
+𝐺 𝑥 = Sobel 𝑥 (𝐼 ), 𝐺 𝑦 = Sobel 𝑦 (𝐼 ). (5) The original image and the absolute gradient responses are concatenated: 
+
+𝐸 𝑠 = 𝜓 𝑠 ([ 𝐼, |𝐺 𝑥 |, |𝐺 𝑦 |]) , (6) where 𝜓 𝑠 (⋅) denotes a convolutional projection module for transforming edge responses into boundary-aware features. The output edge prior 𝐸 𝑠 ∈ ℝ32× 𝐻 ×𝑊 provides low-level boundary cues for the final detail fusion stage, complement-ing the learned boundary-supervised prior introduced in the next subsection. 
+
+3.3. Boundary-Supervised Local Detail Prior and Directional Scanning 
+
+In our prior single-level anti-dilution architecture [2], the local detail prior is estimated implicitly from the decoder feature, relying on the downstream task loss to shape its spatial pattern. This implicit estimation is adequate for binary stroke restoration, where foreground pixels are by definition the regions to preserve. In multi-class semantic segmentation, however, the regions that need response restoration—class boundaries, thin structures, and small categories—are not uniquely identifiable from class probabilities alone. We therefore explicitly supervise the local detail prior using ground-truth boundary masks, providing a localized and stable conditioning signal independently of the downstream task loss landscape. Given a decoder feature 𝐷 𝑙 at level 𝑙 ∈ {2 , 3, 4} , the level-specific prior map is generated as 
+
+𝑃 (𝑙 ) = 𝜎 (𝜓 (𝑙 ) 
+
+> 𝑝
+
+(𝐷 𝑙 )) , (7) where 𝜓 (𝑙 ) 
+
+> 𝑝
+
+(⋅) is a level-specific convolutional projection and 𝜎 (⋅) is the sigmoid function. A binary boundary mask 𝐵 𝑔𝑡 is derived from the semantic label map 𝐺 , where 𝐵 𝑔𝑡,𝑖 = 1 if the 3 × 3 neighborhood centered at pixel 𝑖 contains different semantic labels, and 0 otherwise. The boundary mask is downsampled to the resolution of 𝑃 (𝑙 ) via max-pooling to preserve boundary signal under spatial downsampling, producing 𝐵 (𝑙 ) 
+
+> 𝑔𝑡
+
+. Each prior is then directly supervised by a binary cross-entropy loss: 
+
+(𝑙 ) 
+
+> 𝑝𝑟𝑖𝑜𝑟
+
+= − 1
+
+|Ω𝑙 |∑
+
+> 𝑖 ∈Ω 𝑙
+
+[
+
+𝐵 (𝑙 ) 
+
+> 𝑔𝑡,𝑖
+
+log 𝑃 (𝑙 ) 
+
+> 𝑖
+
++ (1 − 𝐵 (𝑙 )
+
+> 𝑔𝑡,𝑖
+
+) log(1 − 𝑃 (𝑙 ) 
+
+> 𝑖
+
+)
+
+]
+
+, (8) where Ω𝑙 is the set of valid pixels at level 𝑙 . The total prior loss aggregates across levels: 
+
+𝑝𝑟𝑖𝑜𝑟 = 13
+
+∑
+
+> 𝑙 ∈{2 ,3,4}
+
+(𝑙 )
+
+> 𝑝𝑟𝑖𝑜𝑟
+
+. (9)   
+
+> S.W. Chan: Preprint submitted to Elsevier Page 5 of 23
+
+Reload-Mamba 
+
+This explicit supervision ensures that 𝑃 (𝑙 ) reliably highlights boundary-sensitive and detail-sensitive regions, providing a stable conditioning signal for the downstream Reload Gate. Given the supervised prior, a detail-aware feature is constructed at each level as 
+
+𝑋 (𝑙 ) 
+
+> 𝑑
+
+= 𝐷 𝑙 ⊙ 𝑃 (𝑙 ) + 𝜆 𝑙𝑜𝑤 𝐷 𝑙 ⊙ (1 − 𝑃 (𝑙 )), (10) where ⊙ denotes element-wise multiplication and 𝜆 𝑙𝑜𝑤 retains a controlled amount of low-priority contextual responses. We set 𝜆 𝑙𝑜𝑤 = 0 .3 in our implementation. After detail-aware feature selection, 𝑋 (𝑙 ) 
+
+> 𝑑
+
+is processed by four directional Mamba scans. Each directional scan (𝑙 )∗
+
+is implemented as a selective state-space block following the Mamba formulation [13]. The feature map 𝑋 (𝑙 ) 
+
+> 𝑑
+
+is flattened into a 1D token sequence according to the corresponding traversal order (rightward, leftward, downward, or upward), processed by a Mamba block with input-dependent SSM parameters (𝐴, 𝐵, 𝐶, Δ) , and reshaped back to 2D. The four directional scans do not share parameters. Different from the 2D selective scan of VMamba [27], which interleaves multiple traversals into a unified token sequence inside the SSM kernel, Reload-Mamba treats each direction as a separate SSM pass and aggregates the outputs through pixel-wise directional attention. Specifically, 
+
+𝐻 (𝑙 ) 
+
+> 𝑟
+
+= (𝑙 ) 
+
+> 𝑟
+
+(𝑋 (𝑙 ) 
+
+> 𝑑
+
+), 𝐻 (𝑙 ) 
+
+> 𝑙
+
+= (𝑙 ) 
+
+> 𝑙
+
+(𝑋 (𝑙 ) 
+
+> 𝑑
+
+), (11) 
+
+𝐻 (𝑙 ) 
+
+> 𝑑
+
+= (𝑙 ) 
+
+> 𝑑
+
+(𝑋 (𝑙 ) 
+
+> 𝑑
+
+), 𝐻 (𝑙 ) 
+
+> 𝑢
+
+= (𝑙 ) 
+
+> 𝑢
+
+(𝑋 (𝑙 ) 
+
+> 𝑑
+
+). (12) The four directional features are then fused by pixel-wise directional attention: 
+
+𝐴 (𝑙 ) = Sof tmax( 𝜓 (𝑙 ) 
+
+> 𝑎
+
+([ 𝐻 (𝑙 ) 
+
+> 𝑢
+
+, 𝐻 (𝑙 ) 
+
+> 𝑑
+
+, 𝐻 (𝑙 ) 
+
+> 𝑙
+
+, 𝐻 (𝑙 ) 
+
+> 𝑟
+
+])) , (13) 
+
+𝑀 (𝑙 ) = 𝐴 (𝑙 ) 
+
+> 𝑢
+
+⊙ 𝐻 (𝑙 ) 
+
+> 𝑢
+
++ 𝐴 (𝑙 ) 
+
+> 𝑑
+
+⊙ 𝐻 (𝑙 ) 
+
+> 𝑑
+
++ 𝐴 (𝑙 ) 
+
+> 𝑙
+
+⊙ 𝐻 (𝑙 ) 
+
+> 𝑙
+
++ 𝐴 (𝑙 ) 
+
+> 𝑟
+
+⊙ 𝐻 (𝑙 ) 
+
+> 𝑟
+
+. (14) This design enables each pixel to adaptively select useful directional information before the Reload Gate restores detail-sensitive local responses. 
+
+3.4. Class-Uncertainty-Aware Reload Gate 
+
+Sequential state-space propagation may attenuate local responses, especially around object boundaries, thin structures, and small semantic regions. To address this issue, we introduce a class-uncertainty-aware Reload Gate. In our prior binarization architecture [2], the gate conditions only on the original feature and the propagation-induced feature change |𝐷 𝑙 − 𝑀 (𝑙 )|, treating each pixel uniformly regardless of its semantic ambiguity; this is sufficient when ambiguity is one-dimensional, as in binary foreground restoration. In multi-class segmentation, however, the regions most affected by propagation-induced dilution typically coincide with high per-pixel class entropy. We therefore additionally exploit per-pixel class uncertainty as a third gating input, a signal that is meaningful only when the number of classes exceeds two. At each decoder level 𝑙 , we first attach a lightweight pre-reload auxiliary head 𝜓 (𝑙 ) 
+
+> 𝑢
+
+(⋅) to the directional fusion output 
+
+𝑀 (𝑙 ) to produce preliminary semantic logits: 
+
+𝑌 (𝑙 ) 
+
+> 𝑢
+
+= 𝜓 (𝑙 ) 
+
+> 𝑢
+
+(𝑀 (𝑙 )), 𝑌 (𝑙 ) 
+
+> 𝑢
+
+∈ ℝ𝐶 ×𝐻 𝑙 ×𝑊 𝑙 . (15) This head is computed before the Reload Gate so that it does not introduce a circular dependency. The corresponding per-pixel normalized entropy is 
+
+𝑈 (𝑙 ) 
+
+> 𝑖
+
+= − 1log 𝐶 
+
+> 𝐶
+
+∑
+
+> 𝑐 =1
+
+𝑃 (𝑙 ) 
+
+> 𝑢,𝑐,𝑖
+
+log 𝑃 (𝑙 )
+
+> 𝑢,𝑐,𝑖
+
+, 𝑃 (𝑙 ) 
+
+> 𝑢
+
+= Sof tmax( 𝑌 (𝑙 ) 
+
+> 𝑢
+
+), (16) where 𝐶 is the number of semantic classes and the normalization by log 𝐶 ensures 𝑈 (𝑙 ) 
+
+> 𝑖
+
+∈ [0 , 1] . Higher 𝑈 (𝑙 ) 
+
+> 𝑖
+
+indicates greater per-pixel classification ambiguity, which empirically coincides with the regions most affected by propagation-induced dilution. 
+
+S.W. Chan: Preprint submitted to Elsevier Page 6 of 23 Reload-Mamba 
+
+The Reload Gate then jointly considers the original decoder feature, the propagation-induced feature change, and the class uncertainty: 
+
+𝐼 (𝑙 ) 
+
+> 𝑑
+
+= 𝜎 (𝜓 (𝑙 ) 
+
+> 𝑑
+
+([ 𝐷 𝑙 , |𝐷 𝑙 − 𝑀 (𝑙 )|, 𝑈 (𝑙 ) ])) , (17) where 𝜓 (𝑙 ) 
+
+> 𝑑
+
+(⋅) is a lightweight convolutional detector. This formulation is fundamentally specific to multi-class segmentation: in binary tasks, the entropy term collapses to a foreground–background uncertainty already captured by the prior, so the additional input becomes informative only when 𝐶 > 2.The restoration map is further modulated by the boundary-supervised prior: ̂𝐼 (𝑙 ) 
+
+> 𝑑
+
+= 𝛼 𝑃 (𝑙 ) ⊙ 𝐼 (𝑙 ) 
+
+> 𝑑
+
+, (18) where 𝛼 controls the maximum restoration strength. We set 𝛼 = 0 .7. The level-specific restored feature is computed as 
+
+𝐷 (𝑙 ) 
+
+> 𝑚
+
+= 𝑀 (𝑙 ) +̂ 𝐼 (𝑙 ) 
+
+> 𝑑
+
+⊙ (𝐷 𝑙 − 𝑀 (𝑙 )). (19) This bounded reloading step restores information from 𝐷 𝑙 when a location is both detail-sensitive ( 𝑃 (𝑙 ) large), shows large propagation-induced change ( |𝐷 𝑙 −𝑀 (𝑙 )| large), and is semantically ambiguous ( 𝑈 (𝑙 ) large). Otherwise, the model relies more on the Mamba-enhanced contextual representation 𝑀 (𝑙 ).
+
+3.5. Hierarchical Multi-Level Reload 
+
+The Reload Gate described above is applied independently at each decoder level 𝑙 ∈ {2 , 3, 4} using level-specific parameters. This hierarchical design extends single-level anti-dilution refinement, which applies the gate at a single feature resolution, and is motivated by the observation that propagation-induced dilution affects different semantic scales differently: large coherent regions are best refined at coarse resolutions, medium objects at 𝐷 3, and thin structures and boundaries at the finest level 𝐷 2.To control the parameter overhead introduced by additional Mamba blocks at 𝐷 3 and 𝐷 4, we use level-dependent channel widths: 𝐷 4 uses a reduced width of 𝑐 4, 𝐷 3 uses 𝑐 3, and 𝐷 2 uses the original 𝑐 2 = 96 . In our implementation, we set (𝑐 4, 𝑐 3, 𝑐 2) = (192 , 128 , 96) . Section 4.4.10 ablates this choice. The level-specific restored features {𝐷 (2)  
+
+> 𝑚
+
+, 𝐷 (3)  
+
+> 𝑚
+
+, 𝐷 (4)  
+
+> 𝑚
+
+} are progressively fused in a top-down manner, mirroring the decoder structure: ̃𝐷 3 = 𝜙 ℎ
+
+> 3
+
+([ Up( 𝐷 (4)  
+
+> 𝑚
+
+), 𝐷 (3) 
+
+> 𝑚
+
+]) , (20) 
+
+𝐷 𝑚 = 𝜙 ℎ
+
+> 2
+
+([ Up( ̃𝐷 3), 𝐷 (2) 
+
+> 𝑚
+
+]) , (21) where 𝜙 ℎ𝑙 (⋅) are lightweight depthwise-separable convolutional fusion blocks, and 𝐷 𝑚 ∈ ℝ96× 𝐻 ∕4× 𝑊 ∕4 is the hierarchical Reload-Mamba output forwarded to the downstream detail fusion stage. This cross-level fusion enforces consistency between restored responses at different resolutions, which is particularly useful for stabilizing predictions of small semantic categories. 
+
+3.6. Relation to Our Prior Anti-Dilution Architecture 
+
+Reload-Mamba extends the anti-dilution principle introduced in our prior work on Mamba-based document image binarization [2], which uses (i) an implicitly estimated local prior, (ii) a gate conditioned only on the original feature and the propagation-induced feature change, and (iii) refinement at a single decoder resolution. While that single-level design is effective for binary stroke restoration, multi-class semantic segmentation presents qualitatively different requirements that motivate the three segmentation-specific designs introduced in Sections 3.3–3.5. We summarize the technical differences below. 
+
+• Boundary-supervised vs. implicit prior. Our prior architecture estimates the prior implicitly from the decoder feature, shaping it through the downstream binarization loss alone. In multi-class segmentation, boundary regions are not uniquely identifiable from class probabilities, so we instead supervise the prior explicitly using ground-truth boundary masks (Eq. (8)). The empirical impact of this choice is reported in Section 4.4.8.   
+
+> S.W. Chan: Preprint submitted to Elsevier Page 7 of 23 Reload-Mamba
+
+• Class-uncertainty-aware vs. uncertainty-agnostic gate. The gate in our prior architecture conditions only on the feature change |𝐷 𝑙 − 𝑀 (𝑙 )|, which is sufficient when ambiguity is one-dimensional. In multi-class segmentation, regions that benefit from response restoration coincide with high per-pixel class entropy. We therefore incorporate normalized entropy of the pre-reload auxiliary logits into the gate input (Eq. (17)). This term is informative only when 𝐶 > 2 and is therefore fundamentally specific to multi-class dense prediction. 
+
+• Hierarchical multi-level vs. single-level Reload. Our prior architecture applies the anti-dilution gate at one decoder resolution. Reload-Mamba instead applies the gate at three decoder levels {𝐷 2, 𝐷 3, 𝐷 4} and fuses the restored responses top-down (Eq. (21)), addressing propagation-induced dilution across distinct semantic scales. The shared design ingredient between Reload-Mamba and our prior binarization architecture is the use of a comparison between pre-propagation and post-propagation features to estimate response attenuation. Beyond this shared ingredient, the prior, the gate input, and the placement of refinement are all redesigned for multi-class segmentation, and the cumulative effect of these design choices is verified in Section 4.4.3. 
+
+3.7. Edge Guided Detail Fusion and Segmentation Head 
+
+The hierarchical Reload-Mamba output 𝐷 𝑚 is upsampled back to the original spatial resolution: 
+
+𝐷 1 = Up 4× (𝐷 𝑚 ). (22) The upsampled feature is concatenated with the Sobel edge prior 𝐸 𝑠 defined in Section 3.2: 
+
+𝐷 𝑐 = [ 𝐷 1, 𝐸 𝑠 ]. (23) A detail fusion module then produces a boundary-aware feature: 
+
+𝐷 𝑓 = 𝜓 𝑓 (𝐷 𝑐 ), (24) where 𝜓 𝑓 (⋅) consists of convolutional and depthwise convolutional operations. Before final prediction, a gate is used to suppress noisy activations: 
+
+𝑃 𝑔 = 𝜎 (𝜓 𝑔 (𝐷 𝑓 )) , (25) ̂𝐷 𝑓 = 𝐷 𝑓 ⊙ (0 .5 + 0 .5 𝑃 𝑔 ). (26) The final segmentation logits are then produced by the segmentation head: 
+
+𝑌 = 𝜓 𝑠𝑒𝑔 (̂ 𝐷 𝑓 ), (27) where 𝑌 ∈ ℝ𝐶 ×𝐻 ×𝑊 and 𝐶 is the number of semantic classes (e.g., 𝐶 = 19 for Cityscapes). The pre-reload auxiliary logits {𝑌 (𝑙 ) 
+
+> 𝑢
+
+}𝑙 ∈{2 ,3,4} from Eq. (15) are upsampled to the original resolution and used as auxiliary predictions for deep supervision during training; only the final segmentation output 𝑌 is used at inference time. 
+
+3.8. Training Objective 
+
+Reload-Mamba is trained using a composite segmentation objective that combines hard-pixel cross-entropy, region-level IoU optimization, boundary-aware supervision, multi-level auxiliary deep supervision, and the prior supervision introduced in Section 3.3. Pixels with the ignore label are excluded from all loss computations. The total loss is defined as 
+
+𝑡𝑜𝑡𝑎𝑙 = 𝑜ℎ𝑒𝑚 + 𝜆 𝑙𝑜𝑣𝑎𝑠𝑧 𝑙𝑜𝑣𝑎𝑠𝑧 + 𝜆 𝑏𝑑 𝑏𝑑 + 𝜆 𝑎𝑢𝑥 𝑎𝑢𝑥 + 𝜆 𝑝𝑟𝑖𝑜𝑟 𝑝𝑟𝑖𝑜𝑟 . (28) We set 𝜆 𝑙𝑜𝑣𝑎𝑠𝑧 = 0 .8, 𝜆 𝑏𝑑 = 0 .1, 𝜆 𝑎𝑢𝑥 = 0 .4, and 𝜆 𝑝𝑟𝑖𝑜𝑟 = 0 .2.For pixel-wise semantic supervision, we first compute the cross-entropy loss for each valid pixel: 
+
+𝓁 𝑖 = − log exp( 𝑌 𝐺 𝑖 ,𝑖 )
+
+∑𝐶 𝑐 =1 exp( 𝑌 𝑐,𝑖 ) , 𝑖 ∈ Ω , (29)   
+
+> S.W. Chan: Preprint submitted to Elsevier Page 8 of 23 Reload-Mamba
+
+where Ω denotes the set of valid pixels. Online hard example mining is then applied: the valid pixel losses are sorted in descending order, and the top 𝜌 |Ω| pixels are retained, with 𝜌 = 0 .85 in our implementation. The OHEM loss is 
+
+𝑜ℎ𝑒𝑚 = 1
+
+|Ωℎ|∑
+
+> 𝑖 ∈Ω ℎ
+
+𝓁 𝑖 , (30) where Ωℎ is the selected hard-pixel set. To better align training with mIoU, we additionally use the Lovász-Softmax loss: 
+
+𝑙𝑜𝑣𝑎𝑠𝑧 = 1
+
+|𝑝 |∑
+
+> 𝑐 ∈𝑝
+
+ΔJaccard (𝑚 (𝑐 )) , (31) where 𝑝 denotes the set of classes present in the current batch, 𝑚 (𝑐 ) denotes the sorted prediction errors of class 𝑐 ,and ΔJaccard is the Lovász extension of the Jaccard loss. The boundary-weighted cross-entropy term emphasizes pixels near semantic transitions. The boundary mask 𝐵 is generated from the ground-truth label map as in Eq. (8) (without downsampling, at the full output resolution): 
+
+𝐵 𝑖 =
+
+{
+
+1, max 𝑗 ∈3(𝑖 ) 𝐺 𝑗 ≠ min 𝑗 ∈3(𝑖 ) 𝐺 𝑗 ,
+
+0, otherwise . (32) The boundary loss is then 
+
+𝑏𝑑 =
+
+∑𝑖 ∈Ω 𝐵 𝑖 𝓁 𝑖 
+
+∑𝑖 ∈Ω 𝐵 𝑖 + 𝜖 . (33) The multi-level auxiliary loss aggregates standard cross-entropy supervision on the three pre-reload auxiliary heads 
+
+{𝑌 (𝑙 ) 
+
+> 𝑢
+
+}:
+
+𝑎𝑢𝑥 = 13
+
+∑
+
+> 𝑙 ∈{2 ,3,4}
+
+1
+
+|Ω𝑙 |∑
+
+> 𝑖 ∈Ω 𝑙
+
+CE( 𝑌 (𝑙 ) 
+
+> 𝑢,𝑖
+
+, 𝐺 (𝑙 ) 
+
+> 𝑖
+
+), (34) where 𝐺 (𝑙 ) is the ground-truth label downsampled to the resolution of 𝑌 (𝑙 ) 
+
+> 𝑢
+
+via nearest-neighbor interpolation. This multi-level supervision stabilizes both the directional fusion outputs and the uncertainty estimates used inside the Reload Gate. The prior loss 𝑝𝑟𝑖𝑜𝑟 is defined in Eq. (9). All auxiliary losses are used only during training; at inference, only the final segmentation output 𝑌 is produced. 
+
+## 4. Experiments 
+
+4.1. Datasets 
+
+Cityscapes. Cityscapes is a widely used urban scene understanding benchmark for semantic segmentation [6]. It contains high-resolution street-view images with fine pixel-level annotations. Following the standard setting, we evaluate the model on 19 semantic classes. The dataset is challenging because it contains complex road scenes, thin objects, traffic signs, poles, pedestrians, and boundary-sensitive regions. Therefore, it is suitable for evaluating whether Reload-Mamba can preserve local details while modeling global context. 
+
+ADE20K. ADE20K is a large-scale scene parsing benchmark containing diverse indoor and outdoor scenes [53]. Compared with Cityscapes, ADE20K contains more semantic categories and more complex object layouts. We use ADE20K to evaluate the generalization ability of Reload-Mamba under multi-class semantic segmentation. The dataset is especially useful for testing whether the proposed Reload Gate can remain effective when the segmentation task involves diverse object scales and scene structures. 
+
+PASCAL VOC 2012. PASCAL VOC is a commonly used semantic segmentation benchmark [10]. Following common practice, we use the augmented training set composed of PASCAL VOC and the Semantic Boundaries Dataset (SBD) [16]. Compared with Cityscapes and ADE20K, PASCAL VOC contains more object-centric images and provides a complementary evaluation setting for validating the generality of Reload-Mamba.   
+
+> S.W. Chan: Preprint submitted to Elsevier Page 9 of 23 Reload-Mamba
+
+4.2. Implementation Details 
+
+All experiments are implemented using PyTorch [35] and conducted on a single NVIDIA RTX 5080 GPU. Reload-Mamba is evaluated under two backbone settings. For ADE20K and Cityscapes, we adopt ConvNeXt-Tiny as the encoder backbone [29], initialized with ImageNet-1K pretrained weights [7]. For PASCAL VOC, we adopt ResNet-101 with output stride 8 as the encoder backbone, following the common DeepLab-style PASCAL VOC training protocol [3, 4]. Specifically, the encoder is initialized with MS-COCO [26] pre-trained weights and then fine-tuned on the augmented PASCAL VOC training set composed of PASCAL VOC and SBD. This is consistent with the standard practice adopted by representative ResNet-101 based VOC segmentation methods such as DeepLabv3, EMANet [24], CFNet [51], and DeepLabv3+. For ADE20K and Cityscapes, no COCO pre-training is used; only ImageNet-1K [7] pre-trained weights are loaded into the encoder. Mapillary Vistas [34] is not used in any of our experiments. This allows us to evaluate the contribution of the proposed Reload Gate and directional state-space modeling modules without relying on extra segmentation pre-training. The model is optimized using the AdamW optimizer [31] with an initial learning rate of 1 × 10 −4 and a polynomial learning rate decay schedule with a power of 0.9. All models are trained for 200 epochs. The mini-batch size is set to 4. To stabilize optimization under single-GPU memory constraints, we use gradient accumulation with an accumulation step of 4. Therefore, the effective batch size is 16, while the forward pass operations are still computed with a mini-batch size of 4. For Cityscapes, the crop size is set to 768×768 . For ADE20K, the crop size is set to 512 × 512 . For PASCAL VOC, we train on the augmented training set composed of PASCAL VOC and the Semantic Boundaries Dataset (SBD), and the crop size is also set to 512 × 512 . The number of semantic classes is set according to each dataset. Specifically, Cityscapes contains 19 classes, ADE20K contains 150 classes, and PASCAL VOC contains 21 classes including background. During training, we apply common data augmentation strategies, including random scaling with a ratio between 0.5 and 2.0, random horizontal flipping, and random color jittering. Unless otherwise specified, all quantitative results are reported under single-scale inference without test-time augmentation. For multi-scale testing, we use scaling factors of {0 .5, 0.75 , 1.0, 1.25 , 1.5} with horizontal flipping. 
+
+4.3. Comparison with Existing Methods 
+
+We compare Reload-Mamba with representative semantic segmentation methods on ADE20K, Cityscapes, and PASCAL VOC. Since the available comparison protocols are not symmetric across datasets, we organize the comparisons according to the reliability and commonality of publicly reported results. ADE20K is used as the primary benchmark because ConvNeXt-Tiny, SegFormer, SegNeXt, and several Mamba-based models are commonly evaluated under comparable settings. Cityscapes is used as a secondary benchmark, where the results are more sensitive to crop size, training split, and single-scale or multi-scale inference. PASCAL VOC is reported as an additional benchmark because modern Transformer-based and Mamba-based segmentation models rarely report VOC results. For ADE20K and Cityscapes, Reload-Mamba uses a ConvNeXt-Tiny encoder. For PASCAL VOC, Reload-Mamba uses ResNet-101 with output stride 8 to follow the common ResNet-based VOC comparison setting. Therefore, VOC results should be interpreted as a complementary evaluation under a ResNet-101 segmentation setting, rather than a direct comparison with the ConvNeXt-Tiny results on ADE20K and Cityscapes. It is worth noting that parameter counts are not always directly comparable across different segmentation frameworks. For example, ADE20K results based on UPerNet usually report the parameters of both the backbone and the UPerNet decoder head, while SegFormer and SegNeXt often use lighter segmentation heads. Therefore, we focus primarily on models of similar practical scale and evaluation settings rather than comparing backbone-only parameter counts. 
+
+4.3.1. Results on ADE20K 
+
+ADE20K is the main comparison benchmark in this work. Table 1 reports the validation mIoU of representative compact and mid-scale segmentation models. Reload-Mamba is compared with CNN-based, Transformer-based, and Mamba-based methods under commonly reported single-scale and multi-scale settings. In particular, ConvNeXt-T, Swin-T, VMamba-T, MambaOut-T, and MambaVision-T provide meaningful references because they are commonly evaluated under comparable ADE20K segmentation settings. Reload-Mamba achieves 47.9% single-scale and 48.9% multi-scale mIoU with a ConvNeXt-Tiny backbone and 51M parameters. Compared with the ConvNeXt-T segmentation baseline (46.0% SS, 60M params), Reload-Mamba demonstrates that adding directional state-space propagation together with hierarchical anti-dilution refinement improves dense prediction by +1 .9 mIoU while using fewer parameters. Compared with VMamba-T (47.3–47.9% SS, 55–62M params), Reload-Mamba matches or slightly outperforms the upper end of the VMamba-T range while being noticeably smaller; this contrast suggests that explicitly addressing response dilution through hierarchical                                                                       
+
+> S.W. Chan: Preprint submitted to Elsevier Page 10 of 23 Reload-Mamba
+> Table 1
+> Comparison with existing methods on the ADE20K validation set. SS and MS denote single-scale and multi-scale inference, respectively. Parameter counts may include both backbone and segmentation head depending on the original implementation. Method Backbone Params mIoU SS / MS (%) SegFormer-B0 [43] MiT-B0 3.8M 37.4 / 38.0 SegNeXt-T [15] MSCAN-T 4.3M 41.1 / 42.2 SegFormer-B1 [43] MiT-B1 13.7M 42.2 / 43.1 SegNeXt-S [15] MSCAN-S 13.9M 44.3 / 45.8 SegFormer-B2 [43] MiT-B2 27.5M 46.5 / 47.5 SegNeXt-B [15] MSCAN-B 27.6M 48.5 / 49.9 Swin-T [28] Swin-T 60M 44.4 / 45.8 ConvNeXt-T [29] ConvNeXt-T 60M 46.0 / 46.7 Focal-T [46] Focal-T 62M 45.8 / – Vim-T [54] Vim-T 13M 41.0 / – Vim-S [54] Vim-S 46M 44.9 / – LocalMamba-T [19] LocalVim-T 36M 43.4 / 44.4 MambaOut-T [48] MambaOut-T 54M 47.4 / 48.6 MambaVision-T [17] MambaVision-T 55M 46.0 / – VMamba-T [27] VMamba-T 55–62M 47.3–47.9 / 48.8 Spatial-Mamba-T [42] Spatial-Mamba-T 57M 48.6 / 49.4 Spatial-Mamba-S [42] Spatial-Mamba-S 73M 50.6 / 51.4 SparX-Mamba-S [32] SparX-Mamba-S 77M 51.3 / 52.5 SegMAN-S [12] SegMAN Encoder-S 29.4M 51.3 / – SegMAN-B [12] SegMAN Encoder-B 51.8M 52.6 / – Reload-Mamba ConvNeXt-Tiny + multi-scale decoder 51M 47.9 /48.9
+
+Reload Gates is complementary to architectural improvements in selective scanning. Compared with SegFormer-B0/B1/B2, Reload-Mamba provides a different modeling strategy by replacing attention-based long-range modeling with directional state-space propagation and confirms the competitive accuracy–efficiency trade-off of Mamba-based segmentation models. Compared with the compact MambaOut-T (47.4%) and Mamba-based variants Vim-T/S and LocalMamba-T, Reload-Mamba explicitly focuses on the response dilution problem caused by sequential propagation and restores local details through a class-uncertainty-aware Reload Gate. We further include recent Mamba-based segmentation networks proposed in 2024–2025, namely Spatial-Mamba [42], SparX-Mamba [32], and SegMAN [12], in Table 1 for completeness. These methods explore design directions that are distinct from ours: Spatial-Mamba introduces structure-aware state fusion inside the backbone, SparX-Mamba designs a sparse cross-layer connection mechanism between backbone stages, and SegMAN integrates sliding local attention with state-space modules inside the encoder. As shown in the table, these backbone-level redesigns attain higher mIoU at comparable parameter budgets, with SegMAN-B reaching 52.6% at 51.8M parameters. We position our contribution as orthogonal to such backbone-level advances: rather than redesigning the visual state-space backbone itself, Reload-Mamba explicitly targets the propagation-induced response dilution that arises whenever sequential state-space scanning is applied to dense prediction, and instantiates this idea on top of a standard ConvNeXt-Tiny encoder with a multi-scale decoder. The proposed hierarchical Reload mechanism is therefore in principle compatible with these stronger Mamba-based backbones, and a systematic study of such integrations is left to future work. Accordingly, our ADE20K results should be interpreted as a controlled study of segmentation-specific anti-dilution refinement on a standard pipeline rather than as a SOTA-chasing comparison at the backbone level. 
+
+4.3.2. Results on Cityscapes 
+
+Table 2 reports the comparison on Cityscapes. Unlike ADE20K, Cityscapes does not provide a widely adopted official ConvNeXt-Tiny segmentation baseline. Moreover, Cityscapes results are highly sensitive to crop size, training split, and whether multi-scale testing or additional data is used. Therefore, we compare Reload-Mamba mainly with representative compact Transformer-based methods, CNN-based segmentation methods, and available Mamba-based results, while keeping the differences in training protocols explicit.                                                
+
+> S.W. Chan: Preprint submitted to Elsevier Page 11 of 23 Reload-Mamba
+> Table 2
+> Comparison with existing methods on the Cityscapes validation set. Results may differ due to crop size, training split, additional data, and inference protocol. Reload-Mamba is evaluated under single-scale inference on the validation set. Method Backbone Setting mIoU (%) SegFormer-B0 [43] MiT-B0 SS 76.2 SegFormer-B1 [43] MiT-B1 SS 78.5 SegFormer-B2 [43] MiT-B2 SS 81.0 SegNeXt-T [15] MSCAN-T SS 79.8 SegNeXt-S [15] MSCAN-S SS 81.3 SegNeXt-B [15] MSCAN-B SS 82.6 SegMAN-T [12] SegMAN Encoder-T SS 80.3 SegMAN-B [12] SegMAN Encoder-B SS 83.8 PSPNet [52] ResNet-101 val 78.5 DeepLabv3 [3] ResNet-101 val 79.3 CCNet [20] ResNet-101 val 81.3 OCRNet [49] ResNet-101 val 81.8 AlignSeg [21] ResNet-101 val 82.4 Reload-Mamba ConvNeXt-Tiny + multi-scale decoder SS, val 83.2
+
+Reload-Mamba reaches 83.2% single-scale mIoU on Cityscapes, outperforming SegNeXt-B (82.6%) and all listed ResNet-101 baselines including AlignSeg (82.4%). Given that Cityscapes contains many thin structures (poles, traffic signs) and dense boundary regions where propagation-induced dilution is most severe, this result provides additional evidence that hierarchical anti-dilution refinement is particularly suited for boundary-sensitive urban scene segmentation. The advantage is consistent with the design intent: the boundary-supervised prior concentrates restoration on boundary regions, the class-uncertainty-aware gate further amplifies it at ambiguous pixels, and the multi-level Reload aggregates these effects across decoder scales. 
+
+4.3.3. Results on PASCAL VOC 
+
+We follow the standard DeepLab-style PASCAL VOC training protocol with MS-COCO pre-training, which is the common setting for ResNet-101 based VOC segmentation methods. Table 3 reports the comparison. Reload-Mamba achieves 87.8% mIoU on the validation set with ResNet-101 + COCO pre-training, on par with EMANet [24] (87.7%) and DeepLabv3+ (Xception-65, 87.8%), and outperforming CFNet [51] (87.2%) and DFN [47] (86.2%) under the same protocol. These results suggest that directional state-space propagation with class-uncertainty-aware Reload Gate-based local response restoration can match or surpass attention-based and dilation-based context modeling under the standard PASCAL VOC training protocol. Since most recent compact Transformer-based and Mamba-based segmentation models do not report PASCAL VOC results, we treat this comparison as a cross-protocol evaluation against established ResNet-101 based segmentation methods. We note that PASCAL VOC results in Table 3 include both val and test splits depending on the original protocol of each baseline, as VOC test server access is no longer available for new submissions. We therefore report Reload-Mamba on the val split and place it alongside other ResNet-101 based methods to provide a consistent cross-method comparison. 
+
+4.4. Ablation Study 
+
+To analyze the effectiveness of Reload-Mamba, we conduct ablation studies on the architectural progression, the cumulative contribution of the three segmentation-specific designs, the Reload Gate composition, the directional scanning strategy, the loss components, the placement of hierarchical Reload, the boundary supervision, the auxiliary head placement, the per-level channel widths, backbone compatibility, hyperparameters, and inference strategies. Unless otherwise specified, all ablation experiments are conducted on ADE20K and evaluated under single-scale inference without horizontal flipping or multi-scale testing. Therefore, the full model in the ablation study corresponds to the 47.9% single-scale ADE20K result, while the 48.9% result in the main comparison table is obtained with multi-scale inference and horizontal flipping.                                                                        
+
+> S.W. Chan: Preprint submitted to Elsevier Page 12 of 23 Reload-Mamba
+> Table 3
+> Comparison on the PASCAL VOC 2012 benchmark. COCO denotes MS-COCO pre-training before fine-tuning on the PASCAL VOC augmented training set, which is the standard protocol for ResNet-based VOC segmentation methods. Reload-Mamba follows the same protocol on PASCAL VOC. Method Backbone COCO Split mIoU (%) FCN [30] VGG-16 –test 62.2 DeepLabv2 [3] ResNet-101 –val 74.9 DeepLabv3 [3] ResNet-101 –val 79.3 DeepLabv3+ [4] ResNet-50 –val 79.84 DANet [11] ResNet-101 –val 80.4 DeepLabv3 [3] ResNet-101 ✓val 82.7 PSPNet [52] ResNet-101 ✓test 85.4 EncNet [50] ResNet-101 ✓test 85.9 DFN [47] ResNet-101 ✓test 86.2 CFNet [51] ResNet-101 ✓test 87.2 EMANet [24] ResNet-101 ✓test 87.7 DeepLabv3+ [4] Xception-65 ✓test 87.8 RecoNet [5] ResNet-101 ✓test 88.5 Reload-Mamba ResNet-101 ✓val 87.8 Table 4
+> Default ablation setting on ADE20K. All ablation results are reported under single-scale inference without test-time augmentation. Inference Single-scale, no flip, no multi-scale Dataset ADE20K Backbone ConvNeXt-Tiny Crop size 512 × 512
+> Optimizer AdamW Initial learning rate 1 × 10 −4
+> Epochs 200 Batch size 4Gradient accumulation 4
+
+4.4.1. Ablation Protocol 
+
+For a fair comparison, all ablation experiments follow the same optimization setting, data augmentation strategy, crop size, and single-scale inference protocol summarized in Table 4. The baseline model adopts the same encoder-decoder structure but removes the entire hierarchical Reload-Mamba module (including the boundary-supervised prior, the class-uncertainty-aware gate, and multi-level Reload) as well as the Sobel edge prior. The full model corresponds to the final Reload-Mamba architecture evaluated under single-scale inference. 
+
+4.4.2. Architectural Progression of the Single-Level Reference Baseline 
+
+We first construct an architectural progression of a single-level, implicit-prior, uncertainty-agnostic anti-dilution variant applied to semantic segmentation. This serves as the reference baseline upon which the three segmentation-specific designs of Reload-Mamba are built. Table 5 shows that each conventional component (Sobel edge prior, four-directional scanning, single-level Reload Gate at 𝐷 2, auxiliary supervision) provides incremental gains, but the progression saturates at 45 .7% mIoU—the single-level reference point used in Section 4.4.3. 
+
+4.4.3. Cumulative Effect of Segmentation-Specific Designs 
+
+The central ablation of this work is reported in Table 6: we progressively add the three segmentation-specific designs on top of a single-level anti-dilution baseline ( 45 .7% ) to verify that each contributes beyond what a uniform single-level refinement provides. All settings share the same backbone, decoder, four-directional scanning, and training objective except for the three components under study.   
+
+> S.W. Chan: Preprint submitted to Elsevier Page 13 of 23
+
+Reload-Mamba 
+
+Table 5 
+
+Architectural progression of a single-level anti-dilution reference baseline on ADE20K under single-scale inference. The final row corresponds to a single-level configuration (implicit prior, no class uncertainty, refinement placement at 𝐷 2) and serves as the starting point of Table 6. Setting Configuration mIoU (%) Baseline Encoder-decoder only 43.3 + Edge Prior Baseline + Sobel edge prior 43.9 + Directional Scan Baseline + four-directional scan 44.8 + Scan + Edge Prior Directional scan + Sobel edge prior 45.1 + Single-level Reload Gate (no 𝑈 , implicit prior) Single-level refinement at 𝐷 2 45.5 + Aux Head Single-level baseline (implicit prior, no 𝑈 , 𝐷 2 placement) 45.7 Table 6 
+
+Cumulative contribution of the three segmentation-specific designs on ADE20K under single-scale inference. The first row corresponds to a single-level anti-dilution baseline ( 𝐷 2 placement, implicitly estimated prior, no class uncertainty in the gate). Setting Boundary-Sup. Prior Class-Unc. Gate Multi-Level Reload mIoU (%) Single-level baseline – – – 45.7 + Boundary-Sup. Prior ✓ – – 46.3 + Class-Unc. Gate ✓ ✓ – 47.0 + Multi-Level Reload (Full) ✓ ✓ ✓ 47.9 Table 7 
+
+Ablation study of the Reload Gate design on ADE20K under single-scale inference. The class uncertainty column 𝑈 (𝑙 ) is the key segmentation-specific extension; removing it reduces the gate to an uncertainty-agnostic formulation. Gate w/o gate scaling means 𝛼 = 1 (no bounded restoration). Setting 𝐷 𝑙 𝑀 (𝑙 ) |𝐷 𝑙 − 𝑀 (𝑙 )| Prior 𝑃 (𝑙 ) 𝑈 (𝑙 ) Scaling 𝛼 mIoU (%) Fused context only – ✓ – – – – 43.7 Naive residual addition ✓ ✓ – – – – 45.6 Uncertainty-agnostic gate ✓ ✓ ✓ ✓ – ✓ 47.4 Gate w/o prior modulation ✓ ✓ ✓ – ✓ ✓ 47.0 Gate w/o difference term ✓ ✓ – ✓ ✓ ✓ 46.8 Gate w/o gate scaling 𝛼 ✓ ✓ ✓ ✓ ✓ – 47.6 Full Reload Gate (Ours) ✓ ✓ ✓ ✓ ✓ ✓ 47.9 
+
+Table 6 shows that each of the three segmentation-specific designs contributes a measurable improvement beyond the single-level baseline. The boundary-supervised prior alone contributes +0 .6 mIoU, indicating that explicit boundary localization is beneficial in multi-class segmentation even before any gate modification. Adding the class-uncertainty-aware gate provides a further +0 .7, suggesting that the entropy signal from the pre-reload auxiliary head identifies dilution-vulnerable regions that the boundary prior alone does not capture. Finally, hierarchical multi-level Reload adds +0 .9, confirming that propagation-induced dilution operates at multiple semantic scales and is not addressable by a single-level gate. The cumulative improvement of +2 .2 mIoU establishes that the three designs are complementary rather than overlapping, and that a uniform single-level anti-dilution refinement leaves substantial performance on the table. 
+
+4.4.4. Reload Gate Design 
+
+We analyze the internal design of the Reload Gate, focusing on how the fused contextual feature 𝑀 (𝑙 ) is combined with the original decoder feature 𝐷 𝑙 to produce the restored feature 𝐷 (𝑙 ) 
+
+> 𝑚
+
+. The uncertainty-agnostic baseline removes the class uncertainty 𝑈 (𝑙 ) from the gate input (Eq. (17)), reducing the gate to the minimal formulation. We also include ablations that remove other gate components, including the prior modulation, the feature-change term, and the gate scaling 𝛼 .
+
+S.W. Chan: Preprint submitted to Elsevier Page 14 of 23 Reload-Mamba                                                        
+
+> Table 8
+> Ablation study of directional scanning strategies on ADE20K under single-scale inference. All settings use the same Reload Gate and training objective, while only the scan directions are changed. Scan Strategy Directions mIoU (%) Single scan 146.4 Horizontal scan Left + Right 46.8 Vertical scan Up + Down 46.9 Two-axis scan Horizontal + Vertical 47.3 Four-directional scan Left + Right + Up + Down 47.9 Table 9
+> Ablation study of loss function components on ADE20K. The architecture is fixed to the full Reload-Mamba model, and only the training objective is changed. Setting CE/OHEM Lovász Boundary Aux (multi-level) Prior 𝑝𝑟𝑖𝑜𝑟 mIoU (%) CE only CE ––––45.2 OHEM only OHEM ––––45.6 OHEM + Lovász OHEM ✓–––46.0 OHEM + Lovász + Boundary OHEM ✓✓––46.6 OHEM + Lovász + Bd + Aux OHEM ✓✓✓–47.5 Full objective (Ours) OHEM ✓✓✓✓47.9
+
+Table 7 confirms that all gate components are necessary. Removing the class uncertainty term (“uncertainty-agnostic gate”) causes a −0 .5 drop, the largest single-input effect among the segmentation-specific components, validating per-pixel entropy as the most impactful addition. Removing the prior modulation 𝑃 (𝑙 ) leads to a −0 .9 drop, indicating that boundary localization remains essential even when the uncertainty signal is present. Removing the feature-change term |𝐷 𝑙 − 𝑀 (𝑙 )| produces the largest single-component drop ( −1 .1), confirming that the propagation-induced change provides information not captured by either the prior or the uncertainty. Removing the gate scaling 𝛼 
+
+produces only a small drop ( −0 .3); unbounded restoration occasionally over-restores high-frequency noise, while the bounded version provides a more conservative and consistent improvement. The naive residual baseline ( 45 .6), which directly adds 𝐷 𝑙 and 𝑀 (𝑙 ) without any gating, demonstrates that learned gating substantially outperforms simple feature aggregation. 
+
+4.4.5. Directional Scanning Strategy 
+
+Since Reload-Mamba relies on directional state-space propagation, we evaluate different scanning strategies. In this experiment, the Reload Gate, local detail prior, edge prior, and training objective are kept unchanged, and only the scan directions are varied. Table 8 shows that increasing directional diversity monotonically improves segmentation quality, with the four-directional setting providing the best result. The single-direction setting achieves 46.4%, already a competitive number, but each additional axis provides a measurable gain ( +0 .4 for horizontal and +0 .5 for vertical, +0 .9 for both axes combined, and +1 .5 for full four-directional). The asymmetry between horizontal and vertical scanning is small, consistent with the observation that natural scenes contain semantic structures along both orientations. The four-directional configuration ( 47 .9) provides the strongest aggregation of structural context and is therefore adopted in the full model. 
+
+4.4.6. Loss Function Components 
+
+We study the effect of different loss components. In this experiment, the network architecture is fixed to the full Reload-Mamba model, and only the training objective is changed. We progressively add OHEM, Lovász-Softmax loss, boundary-weighted loss, multi-level auxiliary supervision, and prior supervision. Table 9 shows that every loss component contributes positively. Replacing CE with OHEM ( +0 .4) focuses gradients on hard pixels, particularly small categories and class boundaries. Adding Lovász-Softmax ( +0 .4) explicitly aligns training with the mIoU metric. Boundary-weighted cross-entropy ( +0 .6) further amplifies the supervision near semantic transitions, complementing the boundary-supervised prior in the architecture. Multi-level auxiliary supervision ( +0 .9) is the single largest contributor, which is consistent with its role in stabilizing both the directional                                                             
+
+> S.W. Chan: Preprint submitted to Elsevier Page 15 of 23 Reload-Mamba
+> Table 10
+> Ablation of single-level vs. hierarchical multi-level Reload on ADE20K under single-scale inference. The last row applies the Reload Gate at the full output resolution. Setting 𝐷 4𝐷 3𝐷 2mIoU (%) Single-level @ 𝐷 4(Coarse) ✓––46.0 Single-level @ 𝐷 3–✓–46.5 Single-level @ 𝐷 2(Finest) ––✓47.0 Two-level ( 𝐷 3+𝐷 2)–✓✓47.5 Two-level ( 𝐷 4+𝐷 2)✓–✓47.4 Three-level (Ours) ✓✓✓47.9
+> Post-upsampling reference
+> After final upsampling ( 𝐻 ×𝑊 )–––46.4
+> Table 11
+> Ablation of the boundary-supervised local detail prior on ADE20K under single-scale inference. Removing 𝑝𝑟𝑖𝑜𝑟 reproduces an implicit prior estimation in which 𝑃 (𝑙 )is shaped only by gradients from downstream losses. Setting Prior Supervision 𝜆 𝑝𝑟𝑖𝑜𝑟 mIoU (%) Implicit prior –0.0 47.5 Explicit boundary supervision (Ours) ✓0.2 47.9
+
+fusion outputs and the uncertainty estimates used inside the Reload Gate. Finally, the prior supervision loss 𝑝𝑟𝑖𝑜𝑟 adds another +0 .4, confirming that explicit prior supervision is complementary to the boundary-weighted loss applied on the segmentation output. 
+
+4.4.7. Hierarchical Multi-Level Placement 
+
+We compare single-level and multi-level Reload mechanisms. The single-level baselines apply the Reload Gate only at a fixed decoder level, matching a single-resolution anti-dilution placement. The multi-level variants apply the Reload Gate at multiple decoder levels and aggregate the restored representations through top-down hierarchical fusion (Eq. (21)). We additionally evaluate placing the Reload Gate after the final upsampling stage to verify that decoder-resolution refinement is preferable to post-upsampling refinement. Table 10 demonstrates that hierarchical multi-level Reload is consistently superior to any single-level placement. Among single-level variants, the finest level 𝐷 2 achieves the highest accuracy ( 47 .0), but it still falls 0.9 mIoU behind the three-level design. Two-level variants partially recover this gap, with 𝐷 3 + 𝐷 2 slightly outperforming 𝐷 4 + 𝐷 2,consistent with the intuition that mid-scale features ( 𝐷 3) carry more refinement-relevant information than the coarsest decoder feature ( 𝐷 4). Operating the Reload Gate at the final upsampled resolution ( 𝐻 × 𝑊 ) yields a lower accuracy (46 .4), confirming that anti-dilution refinement is most effective at decoder feature resolutions rather than at full output resolution: at full resolution the feature map has been smoothed by upsampling, so the propagation-induced change signal is muted and the gate loses much of its discriminative power. 
+
+4.4.8. Boundary-Supervised Local Detail Prior 
+
+We compare the implicit prior estimation used in our prior binarization architecture [2] with the explicit boundary supervision introduced in Section 3.3. The implicit setting removes 𝑝𝑟𝑖𝑜𝑟 from the total loss (Eq. (28)), so the prior 𝑃 (𝑙 )
+
+is shaped only by gradients flowing back from the downstream Reload Gate and segmentation heads. The architecture is otherwise identical across settings. Explicit boundary supervision yields a +0 .4 improvement over the implicit prior. Although the implicit setting can still learn a useful prior through gradients from the segmentation losses, the explicit boundary supervision provides a stronger and more localized training signal, especially in regions where class probabilities alone are insufficient to identify boundaries (e.g., adjacent classes with similar semantic features such as “wall” and “building”). The sensitivity study in Table 12 indicates that the segmentation accuracy is robust within a moderate range of 𝜆 𝑝𝑟𝑖𝑜𝑟 ∈ [0 .1, 0.4] ,with performance degrading on both ends. Over-weighting ( 𝜆 𝑝𝑟𝑖𝑜𝑟 = 0 .8) causes the prior projection to overfit to the boundary mask at the cost of feature representation quality, while 𝜆 𝑝𝑟𝑖𝑜𝑟 = 0 reproduces the implicit setting.                                      
+
+> S.W. Chan: Preprint submitted to Elsevier Page 16 of 23 Reload-Mamba
+> Table 12
+> Sensitivity of the prior supervision weight 𝜆 𝑝𝑟𝑖𝑜𝑟 on ADE20K under single-scale inference.
+> 𝜆 𝑝𝑟𝑖𝑜𝑟 mIoU (%) 0.0 47.5 0.1 47.7 0.2 47.9
+> 0.4 47.7 0.8 47.3
+> Table 13
+> Effect of auxiliary head placement on ADE20K. The pre-reload variant matches our final design; the post-reload variant uses gradient detachment on 𝑈 (𝑙 )to avoid the circular dependency, which weakens the supervision signal. Aux Head Placement Circular Dependency mIoU (%) Post-reload (stop-gradient on 𝑈 )avoided via detach 47.3 Pre-reload (Ours) avoided structurally 47.9 Table 14
+> Effect of per-level channel widths (𝑐 4, 𝑐 3, 𝑐 2)on ADE20K. Our default configuration (192 ,128 ,96) provides the best accuracy– parameter trade-off.
+> (𝑐 4, 𝑐 3, 𝑐 2)Params (M) mIoU (%) (96, 96, 96) 47 47.4 (192, 128, 96) 51 47.9
+> (256, 192, 96) 56 47.9 (384, 192, 96) 62 48.0
+
+4.4.9. Pre-reload vs. Post-reload Auxiliary Head Placement 
+
+The class uncertainty 𝑈 (𝑙 ) used inside the Reload Gate is derived from a pre-reload auxiliary head 𝜓 (𝑙 ) 
+
+> 𝑢
+
+(𝑀 (𝑙 ))
+
+attached to the directional fusion output. An alternative is to attach the auxiliary head to the post-reload feature 𝐷 (𝑙 ) 
+
+> 𝑚
+
+,mirroring conventional auxiliary supervision designs. However, since 𝐷 (𝑙 ) 
+
+> 𝑚
+
+depends on 𝑈 (𝑙 ) through the gate, this would create a circular dependency that requires either detaching gradients on 𝑈 (𝑙 ) or iterative inference. Table 13 compares the two designs. The post-reload variant requires explicit gradient detachment on 𝑈 (𝑙 ) to break the circular dependency, which weakens the supervision signal that shapes the auxiliary head and consequently degrades the quality of the uncertainty estimate. The pre-reload variant avoids this dependency by construction and produces a +0 .6 mIoU improvement. This confirms that the placement of the auxiliary head, not just its presence, is an important design choice in class-uncertainty-aware gating. 
+
+4.4.10. Per-Level Channel Widths in Hierarchical Reload 
+
+The hierarchical Reload mechanism uses level-dependent channel widths (𝑐 4, 𝑐 3, 𝑐 2) to control the parameter overhead from Mamba blocks at 𝐷 3 and 𝐷 4. Table 14 compares several configurations. The uniform (96 , 96 , 96) setting loses 0.5 mIoU compared to the default, likely because 𝐷 4-level Mamba scans cannot capture coarse semantic context effectively with only 96 channels. Widening the upper levels beyond the default yields marginal further gains while substantially increasing parameter count. The default (192 , 128 , 96) offers the best accuracy–parameter trade-off and is used throughout the paper. 
+
+4.4.11. Backbone Compatibility 
+
+To verify the compatibility of the proposed Reload-Mamba module, we evaluate it under different encoder backbones. The module only requires the original local feature and the propagated contextual feature at each decoder level, making it applicable to different encoder-decoder segmentation frameworks. The Reload-Mamba module consistently improves segmentation across all three backbones, with gains of +2 .3 on ResNet-50, +2 .3 on ResNet-101, and +4 .6 on ConvNeXt-Tiny. The larger gain on ConvNeXt-Tiny suggests that the   
+
+> S.W. Chan: Preprint submitted to Elsevier Page 17 of 23
+
+Reload-Mamba 
+
+Table 15 
+
+Backbone compatibility study on ADE20K under single-scale inference. “+ Reload-Mamba” applies our full hierarchical Reload-Mamba module (boundary-supervised prior, class-uncertainty-aware gate, multi-level Reload) on top of the encoder-decoder baseline. Backbone + Reload-Mamba mIoU (%) ResNet-50 – 42.4 ResNet-50 ✓ 44.7 ResNet-101 – 43.6 ResNet-101 ✓ 45.9 ConvNeXt-Tiny – 43.3 ConvNeXt-Tiny ✓ 47.9 Table 16 
+
+Hyperparameter sensitivity study on ADE20K under single-scale inference. The full model uses 𝛼 = 0 .7 and 𝜆 𝑙𝑜𝑤 = 0 .3.Hyperparameter Setting Value mIoU (%) 
+
+𝛼 0.3 47.3 
+
+𝛼 0.5 47.7 
+
+𝛼 0.7 47.9 
+
+𝛼 0.9 47.5 
+
+𝜆 𝑙𝑜𝑤 0.0 47.4 
+
+𝜆 𝑙𝑜𝑤 0.1 47.7 
+
+𝜆 𝑙𝑜𝑤 0.3 47.9 
+
+𝜆 𝑙𝑜𝑤 0.5 47.5 
+
+Table 17 
+
+Effect of inference strategy on ADE20K. The 47.9% single-scale result corresponds to the setting used in the ablation studies, while the 48.9% multi-scale + flip result corresponds to the value reported in Table 1. Inference Strategy Multi-scale Flip mIoU (%) Single-scale – – 47.9 Single-scale + Flip – ✓ 48.2 Multi-scale ✓ – 48.5 Multi-scale + Flip ✓ ✓ 48.9 
+
+module is particularly complementary to backbones with strong hierarchical multi-scale features, where the hierarchical Reload mechanism can fully exploit the rich decoder representations. This pattern is consistent with prior observations that modern hierarchical backbones benefit more from advanced refinement modules than the classical ResNet family. 
+
+4.4.12. Hyperparameter Sensitivity 
+
+We study the sensitivity of two key hyperparameters: the maximum Reload Gate value 𝛼 and the low-priority response coefficient 𝜆 𝑙𝑜𝑤 . The results in Table 16 show that Reload-Mamba is relatively stable around the selected settings. 
+
+4.4.13. Inference Strategy 
+
+Finally, we compare different inference strategies on ADE20K. All model parameters are kept unchanged, and only the test-time inference protocol is varied. 
+
+4.5. Efficiency Analysis 
+
+The full Reload-Mamba model contains approximately 51M parameters and requires approximately 215 GFLOPs for a 512 × 512 input under the ADE20K single-scale inference setting. Of the 51M parameters, the ConvNeXt-Tiny encoder accounts for approximately 28M, the multi-scale decoder for approximately 5M, the three-level Mamba blocks (with the channel configuration (192 , 128 , 96) ) and the associated directional attention, prior projections, and Reload Gates for approximately 14M, the three pre-reload auxiliary heads and the hierarchical fusion blocks for approximately 1.5M, and the edge prior branch and segmentation head for the remaining approximately 2.5M. Compared with the 
+
+S.W. Chan: Preprint submitted to Elsevier Page 18 of 23 Reload-Mamba 
+
+direct-port baseline that uses a single-level Reload Gate at 𝐷 2 only ( 47 M parameters, 207 GFLOPs), the hierarchical Reload mechanism increases parameter count by approximately 9% and FLOPs by approximately 4% in exchange for 
+
++2 .2 mIoU on ADE20K. Compared with ConvNeXt-T ( 60 M), VMamba-T ( 55 –62 M), and MambaVision-T ( 55 M), Reload-Mamba remains parameter-efficient. We do not use efficiency as the primary comparison criterion because FLOPs, latency, and memory usage can vary significantly with implementation details and hardware, but we report these numbers for completeness. 
+
+4.6. Qualitative Results 
+
+To further evaluate the visual behavior of Reload-Mamba, we present qualitative segmentation examples on ADE20K, Cityscapes, and PASCAL VOC 2012. Figure 2 shows qualitative results on ADE20K, which serves as the main scene parsing benchmark in this work. Each ADE20K example is arranged as the input image, the ground-truth annotation, and the Reload-Mamba prediction. Since ADE20K contains diverse object categories, complex indoor layouts, and fine-grained semantic regions, these examples are used to inspect whether the proposed model can produce coherent multi-class segmentation maps while preserving local semantic structures. Figure 3 provides Cityscapes visualizations for boundary-sensitive urban scene segmentation. Each Cityscapes example shows the ground-truth annotation, the Reload-Mamba prediction, and the overlay visualization. Since Cityscapes contains thin structures, road boundaries, vehicles, poles, and pedestrians, the overlay results help inspect the spatial alignment between predicted semantic regions and boundary-sensitive urban structures. Figure 4 provides qualitative segmentation results on PASCAL VOC 2012 for object-centric semantic segmentation, complementing the scene-centric visualizations on ADE20K and Cityscapes. 
+
+Figure 2: Qualitative segmentation results on ADE20K. Each example shows the input image, ground-truth annotation, and Reload-Mamba prediction. 
+
+Figure 3: Qualitative segmentation results on Cityscapes. Each example shows the ground-truth annotation, the Reload-Mamba prediction, and the overlay visualization. The overlay results help inspect the spatial alignment between predicted semantic regions and boundary-sensitive urban structures.   
+
+> S.W. Chan: Preprint submitted to Elsevier Page 19 of 23 Reload-Mamba
+
+Figure 4: Qualitative segmentation results on PASCAL VOC 2012 for object-centric semantic segmentation. 
+
+4.7. Limitations 
+
+Although Reload-Mamba achieves competitive performance on multiple semantic segmentation benchmarks, this work still has several limitations. First, most ablation studies are conducted on ADE20K because it provides the most comparable setting for compact CNN-based, Transformer-based, and Mamba-based segmentation models. Although the overall trend on Cityscapes and PASCAL VOC suggests that the proposed components transfer across datasets, the per-component effectiveness on these datasets has not been systematically verified. Second, the comparison protocols across datasets are not fully symmetric: ADE20K provides relatively consistent comparisons among ConvNeXt-Tiny, SegFormer, SegNeXt, and Mamba-based models, while Cityscapes is sensitive to crop size, training split, and inference protocol, and PASCAL VOC follows the ResNet-101 + COCO-pretrain DeepLab-family setting. Therefore, the per-dataset comparisons should be interpreted within each protocol family rather than as a fully unified cross-dataset ranking. Third, the directional scan order in the current implementation is fixed to rightward, leftward, downward, and upward. Learnable or content-adaptive scan paths could potentially provide stronger directional context aggregation, but exploring such designs is beyond the scope of this work. Finally, the proposed hierarchical Reload mechanism is designed to be compatible with different Mamba-based dense prediction frameworks. However, this paper only instantiates it within a ConvNeXt-Tiny-based encoder-decoder. Its effectiveness when inserted into other visual state-space backbones such as VMamba and Vim, or applied to other dense prediction tasks such as panoptic segmentation and depth estimation, remains to be further explored. 
+
+## 5. Conclusion 
+
+In this paper, we proposed Reload-Mamba, a semantic segmentation framework that addresses propagation-induced response dilution in Mamba-based dense prediction through three segmentation-specific designs: a boundary-supervised local detail prior trained with ground-truth boundary masks, a class-uncertainty-aware Reload Gate that incorporates per-pixel class entropy from a pre-reload auxiliary head, and a hierarchical multi-level Reload mechanism that applies anti-dilution refinement at three decoder levels and fuses the restored representations top-down. Together, these designs reformulate the anti-dilution principle for multi-class dense prediction rather than reusing a direct port of the binarization architecture. Reload-Mamba achieves 47.9% single-scale (48.9% multi-scale) mIoU on ADE20K, 83.2% on Cityscapes, and 87.8% on PASCAL VOC val. Controlled ablations confirm that each of the three designs contributes beyond a direct port of the prior anti-dilution architecture, with a cumulative improvement of +2 .2 mIoU on ADE20K. These results suggest that propagation-induced dilution in Mamba-based dense prediction is best addressed through task-specific gate conditioning, explicit prior supervision, and multi-scale refinement, rather than through direct task adaptation alone.   
+
+> S.W. Chan: Preprint submitted to Elsevier Page 20 of 23
+
+Reload-Mamba 
+
+## CRediT authorship contribution statement 
+
+Sheng-Wei Chan: Conceptualization, Methodology, Software, Validation, Investigation, Visualization, Writing – original draft. Hsin-Jui Pan: Software, Validation, Data curation, Investigation. Jen-Shiun Chiang: Conceptualiza-tion, Supervision, Project administration, Funding acquisition, Writing – review & editing. 
+
+## Declaration of competing interest 
+
+The authors declare that they have no known competing financial interests or personal relationships that could have appeared to influence the work reported in this paper. 
+
+## Data availability 
+
+This work uses publicly available benchmark datasets: ADE20K, Cityscapes, PASCAL VOC 2012, and the Semantic Boundaries Dataset (SBD). No new data were generated in this study. Source code will be made available upon reasonable request to the corresponding author. 
+
+## Declaration of generative AI and AI-assisted technologies in the writing process 
+
+During the preparation of this work, the authors used Claude (Anthropic) to assist with formatting checks and drafting the Highlights. After using this tool, the authors reviewed and edited the content as needed and take full responsibility for the content of the publication. 
+
+Acknowledgments 
+
+This research work is partially supported by National Science and Technology Council, Taiwan, under grant number: 114-2221-E-032-011-. 
+
+## References 
+
+[1] Badrinarayanan, V., Kendall, A., Cipolla, R., 2017. Segnet: A deep convolutional encoder-decoder architecture for image segmentation, in: IEEE Transactions on Pattern Analysis and Machine Intelligence, pp. 2481–2495. [2] Chan, S.W., Wang, Y.C., Pan, H.J., Lin, C.M., Chiang, J.S., 2026. Deepmine-mamba: Mitigating information dilution in mamba-based state space models for document image binarization. arXiv preprint arXiv:2606.08781 . [3] Chen, L.C., Papandreou, G., Schroff, F., Adam, H., 2017. Rethinking atrous convolution for semantic image segmentation. arXiv preprint arXiv:1706.05587 . [4] Chen, L.C., Zhu, Y., Papandreou, G., Schroff, F., Adam, H., 2018. Encoder-decoder with atrous separable convolution for semantic image segmentation, in: Proceedings of the European Conference on Computer Vision, pp. 801–818. [5] Chen, W., Zhu, X., Sun, R., He, J., Li, R., Shen, X., Yu, B., 2020. Tensor low-rank reconstruction for semantic segmentation, in: European Conference on Computer Vision, pp. 52–69. [6] Cordts, M., Omran, M., Ramos, S., Rehfeld, T., Enzweiler, M., Benenson, R., Franke, U., Roth, S., Schiele, B., 2016. The cityscapes dataset for semantic urban scene understanding, in: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, pp. 3213–3223. [7] Deng, J., Dong, W., Socher, R., Li, L.J., Li, K., Fei-Fei, L., 2009. Imagenet: A large-scale hierarchical image database, in: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, pp. 248–255. [8] Ding, H., Jiang, X., Liu, A.Q., Magnenat-Thalmann, N., Wang, G., 2019. Boundary-aware feature propagation for scene segmentation, in: Proceedings of the IEEE/CVF International Conference on Computer Vision, pp. 6819–6829. [9] Dosovitskiy, A., Beyer, L., Kolesnikov, A., Weissenborn, D., Zhai, X., Unterthiner, T., Dehghani, M., Minderer, M., Heigold, G., Gelly, S., Uszkoreit, J., Houlsby, N., 2021. An image is worth 16x16 words: Transformers for image recognition at scale, in: International Conference on Learning Representations. [10] Everingham, M., Van Gool, L., Williams, C.K.I., Winn, J., Zisserman, A., 2010. The pascal visual object classes (voc) challenge. International Journal of Computer Vision 88, 303–338. [11] Fu, J., Liu, J., Tian, H., Li, Y., Bao, Y., Fang, Z., Lu, H., 2019. Dual attention network for scene segmentation, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pp. 3146–3154. [12] Fu, Y., Lou, M., Yu, Y., 2025. SegMAN: Omni-scale context modeling with state space models and local attention for semantic segmentation, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. [13] Gu, A., Dao, T., 2023. Mamba: Linear-time sequence modeling with selective state spaces. arXiv preprint arXiv:2312.00752 . [14] Gu, A., Goel, K., Ré, C., 2022. Efficiently modeling long sequences with structured state spaces, in: International Conference on Learning Representations. [15] Guo, M.H., Lu, C.Z., Hou, Q., Liu, Z., Cheng, M.M., Hu, S.M., 2022. Segnext: Rethinking convolutional attention design for semantic segmentation, in: Advances in Neural Information Processing Systems, pp. 1140–1156. [16] Hariharan, B., Arbelaez, P., Bourdev, L., Maji, S., Malik, J., 2011. Semantic contours from inverse detectors, in: Proceedings of the IEEE International Conference on Computer Vision, pp. 991–998. 
+
+S.W. Chan: Preprint submitted to Elsevier Page 21 of 23 Reload-Mamba 
+
+[17] Hatamizadeh, A., Kautz, J., 2025. Mambavision: A hybrid mamba-transformer vision backbone, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. [18] He, K., Zhang, X., Ren, S., Sun, J., 2016. Deep residual learning for image recognition, in: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, pp. 770–778. [19] Huang, T., Pei, X., You, S., Wang, F., Qian, C., Xu, C., 2024. Localmamba: Visual state space model with windowed selective scan. arXiv preprint arXiv:2403.09338 . [20] Huang, Z., Wang, X., Huang, L., Huang, C., Wei, Y., Liu, W., 2019. Ccnet: Criss-cross attention for semantic segmentation, in: Proceedings of the IEEE/CVF International Conference on Computer Vision, pp. 603–612. [21] Huang, Z., Wei, Y., Wang, X., Liu, W., Huang, T.S., Shi, H., 2022. Alignseg: Feature-aligned segmentation networks. IEEE Transactions on Pattern Analysis and Machine Intelligence 44, 550–557. [22] Lee, C.Y., Xie, S., Gallagher, P., Zhang, Z., Tu, Z., 2015. Deeply-supervised nets, in: Proceedings of the Eighteenth International Conference on Artificial Intelligence and Statistics, pp. 562–570. [23] Li, X., You, A., Zhu, Z., Zhao, H., Yang, M., Yang, K., Tong, Y., 2020. Semantic flow for fast and accurate scene parsing, in: European Conference on Computer Vision, Springer. pp. 775–793. [24] Li, X., Zhong, Z., Wu, J., Yang, Y., Lin, Z., Liu, H., 2019. Expectation-maximization attention networks for semantic segmentation, in: Proceedings of the IEEE/CVF International Conference on Computer Vision, pp. 9167–9176. [25] Lin, T.Y., Dollár, P., Girshick, R., He, K., Hariharan, B., Belongie, S., 2017. Feature pyramid networks for object detection, in: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, pp. 2117–2125. [26] Lin, T.Y., Maire, M., Belongie, S., Hays, J., Perona, P., Ramanan, D., Dollár, P., Zitnick, C.L., 2014. Microsoft coco: Common objects in context, in: European Conference on Computer Vision, Springer. pp. 740–755. [27] Liu, Y., Tian, Y., Zhao, Y., Yu, H., Xie, L., Wang, Y., Ye, Q., Jiao, J., Liu, Y., 2024. Vmamba: Visual state space model, in: Advances in Neural Information Processing Systems. [28] Liu, Z., Lin, Y., Cao, Y., Hu, H., Wei, Y., Zhang, Z., Lin, S., Guo, B., 2021. Swin transformer: Hierarchical vision transformer using shifted windows, in: Proceedings of the IEEE/CVF International Conference on Computer Vision, pp. 10012–10022. [29] Liu, Z., Mao, H., Wu, C.Y., Feichtenhofer, C., Darrell, T., Xie, S., 2022. A convnet for the 2020s, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pp. 11976–11986. [30] Long, J., Shelhamer, E., Darrell, T., 2015. Fully convolutional networks for semantic segmentation, in: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, pp. 3431–3440. [31] Loshchilov, I., Hutter, F., 2019. Decoupled weight decay regularization, in: International Conference on Learning Representations. [32] Lou, M., Fu, Y., Yu, Y., 2024. SparX: A sparse cross-layer connection mechanism for hierarchical vision mamba and transformer networks. arXiv preprint arXiv:2409.09649 . [33] Ma, J., Li, F., Wang, B., 2024. U-mamba: Enhancing long-range dependency for biomedical image segmentation. arXiv preprint arXiv:2401.04722 . [34] Neuhold, G., Ollmann, T., Rota Bulo, S., Kontschieder, P., 2017. The mapillary vistas dataset for semantic understanding of street scenes, in: Proceedings of the IEEE International Conference on Computer Vision, pp. 4990–4999. [35] Paszke, A., Gross, S., Massa, F., Lerer, A., Bradbury, J., Chanan, G., Killeen, T., Lin, Z., Gimelshein, N., Antiga, L., Desmaison, A., Kopf, A., Yang, E., DeVito, Z., Raison, M., Tejani, A., Chilamkurthy, S., Steiner, B., Fang, L., Bai, J., Chintala, S., 2019. Pytorch: An imperative style, high-performance deep learning library, in: Advances in Neural Information Processing Systems. [36] Ronneberger, O., Fischer, P., Brox, T., 2015. U-net: Convolutional networks for biomedical image segmentation, in: Medical Image Computing and Computer-Assisted Intervention, Springer. pp. 234–241. [37] Ruan, J., Xiang, S., 2024. Vm-unet: Vision mamba unet for medical image segmentation. arXiv preprint arXiv:2402.02491 . [38] Shi, Y., Dong, M., Xu, C., 2024. Multi-scale vmamba: Hierarchy in hierarchy visual state space model. arXiv preprint arXiv:2405.14174 . [39] Simonyan, K., Zisserman, A., 2015. Very deep convolutional networks for large-scale image recognition, in: International Conference on Learning Representations. [40] Sobel, I., Feldman, G., 1968. An isotropic 3x3 image gradient operator. Presented at the Stanford Artificial Intelligence Project. [41] Takikawa, T., Acuna, D., Jampani, V., Fidler, S., 2019. Gated-scnn: Gated shape cnns for semantic segmentation, in: Proceedings of the IEEE/CVF International Conference on Computer Vision, pp. 5229–5238. [42] Xiao, C., Li, M., Zhang, Z., Meng, D., Zhang, L., 2024. Spatial-Mamba: Effective visual state space models via structure-aware state fusion. arXiv preprint arXiv:2410.15091 . [43] Xie, E., Wang, W., Yu, Z., Anandkumar, A., Alvarez, J.M., Luo, P., 2021. Segformer: Simple and efficient design for semantic segmentation with transformers, in: Advances in Neural Information Processing Systems, pp. 12077–12090. [44] Xie, S., Girshick, R., Dollár, P., Tu, Z., He, K., 2017. Aggregated residual transformations for deep neural networks, in: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, pp. 1492–1500. [45] Xing, Z., Ye, T., Yang, Y., Liu, G., Zhu, L., 2024. Segmamba: Long-range sequential modeling mamba for 3d medical image segmentation, in: Medical Image Computing and Computer Assisted Intervention, Springer. pp. 578–588. [46] Yang, J., Li, C., Zhang, P., Dai, X., Xiao, B., Yuan, L., Gao, J., 2021. Focal self-attention for local-global interactions in vision transformers, in: Advances in Neural Information Processing Systems, pp. 30008–30022. [47] Yu, C., Wang, J., Peng, C., Gao, C., Yu, G., Sang, N., 2018. Learning a discriminative feature network for semantic segmentation, in: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, pp. 1857–1866. [48] Yu, W., Wang, X., 2025. Mambaout: Do we really need mamba for vision?, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. [49] Yuan, Y., Chen, X., Wang, J., 2020. Object-contextual representations for semantic segmentation, in: European Conference on Computer Vision, Springer. pp. 173–190. 
+
+S.W. Chan: Preprint submitted to Elsevier Page 22 of 23 Reload-Mamba 
+
+[50] Zhang, H., Dana, K., Shi, J., Zhang, Z., Wang, X., Tyagi, A., Agrawal, A., 2018. Context encoding for semantic segmentation, in: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, pp. 7151–7160. [51] Zhang, H., Zhang, H., Wang, C., Xie, J., 2019. Co-occurrent features in semantic segmentation, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pp. 548–557. [52] Zhao, H., Shi, J., Qi, X., Wang, X., Jia, J., 2017. Pyramid scene parsing network, in: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, pp. 2881–2890. [53] Zhou, B., Zhao, H., Puig, X., Fidler, S., Barriuso, A., Torralba, A., 2017. Scene parsing through ade20k dataset, in: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, pp. 633–641. [54] Zhu, L., Liao, B., Zhang, Q., Wang, X., Liu, W., Wang, X., 2024. Vision mamba: Efficient visual representation learning with bidirectional state space model. arXiv preprint arXiv:2401.09417 . 
+
+S.W. Chan: Preprint submitted to Elsevier Page 23 of 23

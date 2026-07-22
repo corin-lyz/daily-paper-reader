@@ -1,0 +1,854 @@
+XCT-SAM: Sequential Parameter-Efficient Domain
+Adaptation of SAM for Industrial XCT Defect
+Segmentation
+Md Mahedi Hasan1,*, Md Mushfiqur Rahaman2,3,*, Alan Pachkovskiy1,
+Imtiaz Ahmed2, Jeremy Dawson1, Srinjoy Das1,2,3
+1Lane Department of Computer Science & Electrical Engineering
+2Department of Industrial and Management Engineering
+3School of Mathematical and Data Sciences
+West Virginia University, Morgantown, WV
+{mh00062, mr00131, ap00076}@mix.wvu.edu, {imtiaz.ahmed, jeremy.dawson, srinjoy.das}@mail.wvu.edu
+Abstract—Defect
+segmentation
+in
+additive
+manufacturing
+(AM) X-ray computed tomography (XCT) images remains chal-
+lenging due to severe class imbalance and large distribution shifts
+across scan conditions. Although recent foundation models such
+as the Segment Anything Model (SAM) provide strong general-
+purpose segmentation priors, their natural-image pre-training
+transfers poorly to the AM XCT domain, where defects appear as
+subtle non-semantic microstructural anomalies. Moreover, adapt-
+ing SAM to the AM domain is further limited by the large domain
+gap and scarcity of labeled real XCT data. We present XCT-
+SAM, a sequential parameter-efficient adaptation framework for
+AM XCT defect segmentation. Instead of adapting SAM directly
+from natural images to XCT data, we first fine-tune Conv-LoRA
+adapters on an alloy-microstructure dataset and subsequently
+transfer the adapted model to XCT images, progressively bridg-
+ing the domain gap. Using Conv-LoRA adapters with rank r = 2,
+the framework injects convolutional spatial inductive bias into
+SAM’s backbone while training approximately 4.15M parameters
+and keeping over 99% of the model frozen. We evaluate XCT-
+SAM on out-of-distribution CycleGAN-XCT benchmarks and
+real-world NIST XCT scans. Across both settings, XCT-SAM
+consistently outperforms zero-shot SAM and other domain-
+adapted SAM baselines, achieving the best overall IoU and Dice
+scores. These results demonstrate the effectiveness of interme-
+diate domain adaptation with parameter-efficient adapters for
+industrial XCT defect segmentation. The source code is publicly
+available at https://github.com/Mahedi-61/XCT-SAM.git.
+Index Terms—Additive manufacturing, Defect segmentation,
+Segment anything model, Domain adaptation
+I. INTRODUCTION
+Additive manufacturing (AM) has emerged as a transfor-
+mative manufacturing paradigm for producing geometrically
+complex, lightweight, and functionally optimized parts across
+aerospace, automotive, and biomedical applications [1]. In
+contrast to conventional subtractive manufacturing, AM builds
+parts layer by layer directly from digital models, enabling high
+*Equal contribution. Corresponding author: srinjoy.das@mail.wvu.edu
+This paper has been accepted to the IAPR Workshop on Machine Vision for
+Industrial Inspection (MVI2) at the 28th International Conference on Pattern
+Recognition (ICPR 2026), Lyon, France.
+design flexibility and reduced material waste [2]. These bene-
+fits make AM particularly suitable for high-value engineering
+parts with complex internal geometries [2], [3].
+However, despite these advantages, the layer-wise nature of
+AM also introduces significant challenges in process stability
+and part quality. For instance, variations in laser power, scan
+speed, melt-pool dynamics, and environmental conditions can
+induce internal defects, including pores, cracks, lack-of-fusion
+regions, and inclusions [4], [5]. These defects are typically
+microscopic, sparsely distributed, and irregular in shape [6]
+and can severely affect mechanical strength and structural
+reliability [7], [8]. Since such defects are embedded within
+the part, they cannot be reliably identified through surface
+inspection alone [9], [10]. As a result, accurate internal defect
+segmentation is critical for AM quality assurance and certifi-
+cation. To address this challenge, X-ray computed tomography
+(XCT) has emerged as a widely adopted non-destructive test-
+ing (NDT) modality in AM [11], [12], [13]. XCT enables high-
+resolution 3D visualization of internal structures and supports
+accurate segmentation of internal defects.
+For automated defect segmentation in AM XCT images,
+traditional image-processing techniques such as thresholding
+and region growing often require extensive expert tuning and
+struggle to generalize across datasets with out-of-distribution
+materials [14], [15]. In contrast, deep learning approaches can
+learn complex fine-grained defect patterns from sufficiently
+diverse training data [16]. More recently, foundation models
+have emerged as a promising direction for AM defect seg-
+mentation [17], [18], [19], [20]. In particular, the Segment
+Anything Model (SAM) [21], [22], [23], [24] and its variants
+have demonstrated strong capability in learning generalizable
+defect representations.
+However, adapting SAM to the AM domain presents a core
+challenge due to a substantial distribution gap between the
+pre-training and target domains. SAM was originally trained
+on SA-1B, which contains color-rich images with high-level
+semantic structure [21]. In contrast, AM XCT images consist
+arXiv:2607.14287v1  [cs.CV]  15 Jul 2026
+
+
+XCT-SAM (ours)
+Ground Truth
+Input XCT
+SAM (zero-shot)
+Pores
+Inclusions
+GAN-generated
+dataset
+SAM exhibits 
+limited
+generalization 
+Fig. 1: SAM exhibits limited generalization on AM XCT defect segmentation due to a significant domain gap. Our XCT-
+SAM addresses this through sequential domain adaptation combined with parameter-efficient fine-tuning on limited XCT data,
+achieving enhanced performance and efficiency with only 0.647% of trainable parameters.
+of subtle low-contrast defect anomalies; inclusions are particu-
+larly sparse, occupying less than 0.4% of the image area, while
+pore density varies considerably across datasets. In addition,
+directly fine-tuning SAM on AM XCT data is computationally
+expensive [18], making it impractical for industrial real-world
+deployment.
+The high cost of directly fine-tuning SAM arises from its
+image encoder (ViT-H), which alone comprises 636M param-
+eters, and fine-tuning such a large model on limited training
+data risks overfitting. This motivates parameter-efficient fine-
+tuning (PEFT) methods, where lightweight trainable modules
+are injected into a frozen backbone while the majority of
+parameters remain fixed. A prominent PEFT approach is Low-
+Rank Adaptation (LoRA) [25], which approximates weight
+updates through low-rank projections, substantially reducing
+the number of trainable parameters. Conv-LoRA [26] extends
+this framework by augmenting each low-rank update with
+parallel convolutional experts, introducing spatial inductive
+bias that standard LoRA lacks, thereby enabling the model to
+capture fine-grained spatial details such as pore and inclusion
+boundaries. Conv-LoRA has recently been applied to AM
+XCT defect segmentation in [18], demonstrating that synthetic
+supervision can be used to fine-tune SAM for this domain.
+However, adapting Conv-LoRA to the AM domain remains
+challenging due to the large distribution shift from SAM’s
+natural-image pre-training, the need to represent fine-grained
+XCT defect patterns within a constrained low-rank space,
+irregular morphology, and severe class imbalance of AM
+defects.
+To address these challenges, we propose XCT-SAM, a
+curriculum-inspired, sequentially adapted, parameter-efficient
+framework that progressively bridges the domain gap between
+natural images and AM XCT defect data for segmenting di-
+verse defect types. In the first stage, we fine-tune Conv-LoRA
+SAM on alloy-microstructure data before transitioning to XCT
+data. These microstructures share key properties with XCT
+images, including homogeneous textures and sparse, point-
+like defects. This stage shifts the LoRA parameters toward
+a feature space better aligned with AM characteristics. In
+the second stage, we initialize the Conv-LoRA-adapted SAM
+with the alloy-adapted weights. This warm start reduces the
+effective domain gap, enabling the limited XCT data to drive
+more stable optimization, faster convergence, and improved
+generalization.
+The main contributions of this work are summarized as
+follows:
+• We introduce a two-stage material-to-XCT adapta-
+tion strategy that first adapts SAM on real alloy-
+microstructure and then transfers it to AM XCT defect
+data. This decomposes the large natural-image-to-XCT
+shift into two smaller adaptation steps, improving stability
+under scarce and highly imbalanced supervision.
+• We instantiate this strategy as XCT-SAM by using Conv-
+LoRA adapters within a frozen SAM ViT-H backbone and
+optimizing their rank for AM XCT defect segmentation.
+The best configuration uses r = 2 with eight convo-
+lutional experts, fine-tuning only 4.15M parameters, or
+0.647% of the full model.
+• We validate XCT-SAM on both synthetic and real-world
+Out of Distribution (OoD) benchmarks, where it consis-
+tently outperforms zero-shot SAM and competitive fine-
+tuned baselines across defect segmentation tasks.
+II. RELATED WORK
+1) XCT Defect Segmentation in AM: Prior works on AM
+XCT defect segmentation have shown that segmentation qual-
+ity plays a critical role in downstream defect analysis. It was
+shown in [6] that XCT segmentation quality strongly affects
+
+
+defect detectability and size estimation in laser powder bed
+fusion parts. Their results indicate that U-Net-based segmen-
+tation can improve defect detection and sizing over commonly
+used thresholding methods such as Otsu in several settings.
+However, supervised segmentation models still depend on la-
+beled XCT data and may require additional post-processing to
+recover irregular or fragmented defect patterns [13]. Moreover,
+their performance can degrade under variations in material,
+scan configuration, noise level, and defect morphology, moti-
+vating more data-efficient and domain-adaptive segmentation
+methods.
+2) SAM for AM XCT Segmentation: Medical adaptations
+such as MedSAM [23] and SAM-Med2D [24] show that
+domain-specific fine-tuning can improve SAM on low-contrast
+images, and we include them as transfer baselines. How-
+ever, AM XCT defect segmentation differs substantially from
+medical lesion segmentation: defects are sparse, low-contrast,
+non-semantic, and highly sensitive to material composition,
+scan parameters, reconstruction quality, and defect morphol-
+ogy. Recent studies have begun adapting SAM to AM XCT
+defect segmentation. Era et al. [17] proposed an unsuper-
+vised prompt-generation framework for SAM-based porosity
+segmentation, reducing the need for manual annotation but
+remaining prompt-dependent under noisy backgrounds, heavy-
+tailed defect distributions, and complex morphologies. Tabas-
+sum and Ziabari [18] adapted SAM with Conv-LoRA on
+CycleGAN-generated XCT data and trained separate binary
+models for material, pore, and inclusion segmentation. Their
+study showed that synthetic XCT supervision improves over
+a 2.5D U-Net baseline [27]; however, generalization remains
+limited under out-of-distribution settings, and multiclass defect
+segmentation remains challenging under severe class imbal-
+ance.
+III. METHODOLOGY
+A. Framework Overview
+Figure 2 illustrates the overall architecture of the proposed
+XCT-SAM framework for defect segmentation in XCT images.
+Our approach builds upon a SAM backbone based on the
+ViT-H image encoder (∼636M parameters), which provides
+a strong visual representation. We hypothesize that adapting
+SAM to the AM domain can be achieved through a low-
+dimensional domain-specific shift, where the model’s attention
+is redirected from semantic objects to fine-grained defect pat-
+terns. The proposed XCT-SAM framework incorporates Conv-
+LoRA [26], a lightweight convolutional low-rank adaptation
+module, into each transformer block of the frozen ViT-H
+encoder. We keep the ViT-H backbone entirely frozen during
+training to preserve its learned pre-trained representations.
+Within the Conv-LoRA adapter, a set of convolutional expert
+gates is introduced between the encoder (WE) and decoder
+projection (WD) layers. Specifically, for each adapted layer,
+the embedding update is computed as:
+H = W0x + WD
+ N
+X
+i=1
+gi(x) Ei(WEx)
+!
+,
+where W0 denotes the frozen backbone weight, WE and
+WD denote the trainable low-rank projection matrices, Ei(·)
+represents the ith convolutional expert i = 1, . . . , N, and gi(x)
+is the gating weight assigned by the gating network. Here,
+the rank r ≪min(Cin, Cout) controls the trade-off between
+parameter efficiency and adaptation capacity. In this study, we
+evaluate three rank configurations, r ∈{2, 4, 8}, to investigate
+this trade-off for AM defect segmentation.
+Since fine-tuning is performed on a relatively small dataset
+(∼1K images), higher ranks may increase the risk of over-
+fitting or unstable minority-class adaptation. We therefore
+hypothesize that lower-rank adaptations are sufficient to cap-
+ture the domain-specific shift while preserving generalization.
+Experimental results support this hypothesis, with r = 2
+achieving the best average segmentation performance across
+all evaluation benchmarks. Furthermore, this lower-rank con-
+figuration substantially reduces the number of trainable param-
+eters while maintaining similar inference latency and memory
+consumption because computation is dominated by the frozen
+SAM backbone. To mitigate the severe class imbalance inher-
+ent in AM XCT images, we train two independent binary seg-
+mentation models, dedicated to pore and inclusion detection,
+respectively. We adopt this multi-model formulation because
+prior work reported that joint multi-class training under ex-
+treme imbalance leads to reduced generalization performance,
+particularly under out-of-distribution settings [18].
+B. Objective Functions
+In this study, we evaluate multiple objective functions, treat-
+ing loss design as a component of domain adaptation rather
+than a purely generic segmentation choice. This is important
+because AM XCT defects are not only statistically rare, but
+also physically meaningful structures whose missed detection,
+boundary distortion, or fragmentation can affect downstream
+defect analysis. Unlike prior Conv-LoRA-based SAM adap-
+tation for AM XCT, which primarily used a structure loss
+combining BCE and IoU terms [18], we explicitly study
+objectives that encode different defect-segmentation priorities
+under extreme class imbalance. We first consider binary cross-
+entropy (BCE) loss, which optimizes each pixel independently.
+However, in AM XCT images, BCE is heavily dominated by
+the vast number of background pixels, thereby diminishing the
+learning signal associated with rare and tiny defect regions.
+We also optimize XCT-SAM with Dice loss [28], which
+normalizes overlap by the combined size of predicted and
+ground-truth regions, improving robustness to class imbalance.
+Focal Tversky loss [29], [30] extends the Dice formulation by
+introducing asymmetric penalties for false positives and false
+negatives using the Tversky index, while its focal exponent
+emphasizes hard examples. This is especially relevant for AM
+inspection, where missing a small pore or inclusion may be
+more consequential than modest over-segmentation. We fur-
+ther evaluate the Lovász-Softmax loss [31], which directly op-
+timizes a differentiable surrogate of the IoU objective through
+a convex extension of its set-based formulation. This objective
+is included to assess whether directly targeting region-overlap
+
+
+Prompt 
+Encoder
+❄
+Mask 
+Decoder
+Image 
+Emb.
+Prompt Emb.
+Image Encoder (ViT-H)
+Segmented 
+Mask
+XCT Input
+    Conv-LoRA
+  Wo
+❄
+    Conv-LoRA
+  Wo
+❄
+    Conv-LoRA
+  Wo
+❄
+Conv-LoRA-SAM
+(Pre-trained)
+Conv-LoRA-SAM
+(Stage-I)
+XCT-SAM
+(Stage-II)
+Source Domain
+Target Domain
+Intermediate Domain
+(Alloy Steel Images)
+(XCT Defect Images)
+(Finetune)
+(Finetune)
+Decoder
+E1
+Conv
+E3
+Conv
+E2
+Conv
+En
+Conv
+Encoder
+Gating Function
+Mixture-of-Experts 
+   (MoE) 
+(a)
+(b)
+(c)
+Fig. 2: Overview of XCT-SAM. Conv-LoRA adapters are inserted into the frozen SAM ViT-H encoder, first adapted on
+alloy-microstructure images and then transferred to AM XCT defect segmentation.
+quality improves defect boundary recovery under sparse and
+irregular masks.
+Finally, we adopt the Dice-Focal loss [28], [32], which com-
+bines region-overlap optimization with hard-example mining.
+The focal loss reduces the contribution of easy background
+pixels and focuses training on sparsely distributed defect
+regions. Together, the Dice and focal terms provide stable
+gradients from defect pixels, even when they occupy only
+a tiny fraction of the image. Thus, our objective-function
+study connects the statistical challenge of class imbalance
+with the physical requirements of XCT defect segmentation:
+detecting small rare defects, preserving irregular morphology,
+and improving robustness across domain-shifted XCT data.
+IV. EXPERIMENTS
+A. Datasets
+In our experiments, we use both CycleGAN-generated syn-
+thetic XCT data [18] and real NIST XCT data [33]. The
+CycleGAN-XCT dataset is generated by translating physics-
+based simulated XCT volumes into realistic XCT images
+while preserving pore and inclusion labels. Since only the
+translated synthetic images and corresponding annotations are
+publicly available, we use this dataset as the primary source
+for fine-tuning SAM to XCT defect segmentation. Moreover,
+the synthetic dataset provides a controllable alternative to real
+XCT data, which remains scarce and often fails to capture the
+full diversity of defect characteristics [18].
+To evaluate cross-distribution generalization on real XCT
+images, we use the NIST XCT dataset from the CoCr
+laser powder bed fusion study as described in [33]. This
+dataset contains XCT scans of AM specimens acquired under
+varying process parameters, leading to diverse pore distribu-
+tions and morphologies. Since manually annotated ground-
+NIST Dataset
+Fig. 3: Comparison of volumetric defect density of the XCT
+data. In the training data, pore density reaches up to 3%,
+whereas inclusion density remains below 1%. Across all test
+sets, inclusion density is consistently lower than 0.3% while
+pore density reaches up to 5% in the GAN-generated data and
+up to 55% in the NIST data.
+truth defect masks are not publicly available, we generate
+threshold-derived binary reference masks following the image-
+processing pipeline of
+[33]. As the NIST dataset contains
+only pore defects, inclusion segmentation evaluation is not
+applicable and is therefore omitted from the NIST benchmark
+results.
+Figure 3 illustrates variation in defect-density statistics
+across the training and evaluation sets. In the GAN-generated
+synthetic training data, pore density reaches up to approx-
+imately 3%, whereas inclusion density remains below 1%.
+Across the test sets, inclusions become even sparser, below
+0.3% across all sets, while pore density varies considerably
+and reaches up to approximately 5%. In contrast, pore density
+in the NIST dataset reaches up to 55%. This wide variation
+in defect density introduces severe class imbalance and makes
+
+
+6
+Fig. 4: t-SNE visualisation of ViT-B/16 feature distributions across datasets.
+AM XCT segmentation fundamentally different from natural
+object segmentation, where target objects typically occupy
+larger and semantically coherent regions.
+We further analyze the feature-space distributions of the
+GAN-generated and NIST XCT datasets using the t-SNE
+visualization in Fig. 4. As shown in Fig. 4, Train-1, Train-
+2, and Test-3 cluster closely due to similar material properties
+and scan settings [18], motivating the use of Test-3 as the
+validation set. In contrast, the remaining GAN-generated test
+sets are more dispersed, indicating synthetic out-of-distribution
+shifts caused by variations in scan settings and noise character-
+istics [18]. The NIST test sets form separate clusters far from
+the GAN-XCT data, highlighting a stronger synthetic-to-real
+domain gap caused by differences in acquisition protocol, and
+label-generation procedure. Accordingly, we use the remaining
+GAN-generated sets, Test-1, Test-2, and Test-4–Test-6, and
+all NIST sets as synthetic and real-world OoD benchmarks,
+respectively.
+For Stage-I adaptation, we use an alloy-microstructure
+dataset [34] as an intermediate domain between natural im-
+ages and AM defect data. Although not AM-specific, this
+dataset exposes the model to real metallic texture and mi-
+crostructural patterns before final adaptation to AM XCT
+defects.
+B. Baseline Models for Comparison
+We compare XCT-SAM against five baselines spanning su-
+pervised convolutional segmentation, zero-shot SAM, medical-
+domain SAM adaptation, and parameter-efficient SAM fine-
+tuning: UNet++, SAM, MedSAM, SAM-Med2D, and Conv-
+LoRA-SAM. UNet++ [16] serves as a supervised CNN base-
+line with nested dense skip connections between encoder and
+decoder layers. We also evaluate the original SAM [21] in a
+zero-shot setting without any XCT-specific adaptation. Conv-
+LoRA-SAM [26] integrates convolutional low-rank adaptation
+modules into SAM for efficient domain adaptation. Following
+the direct synthetic-XCT adaptation setting of [18], we fine-
+tune this baseline on GAN-generated XCT images without the
+intermediate alloy-microstructure [34] adaptation stage used
+in XCT-SAM. For fair comparison, all trainable baselines are
+optimized using the same XCT training data, preprocessing
+pipeline, and post-processing procedures where applicable.
+SAM is evaluated in a zero-shot setting, while all prompt-
+based methods use an identical prompt protocol across exper-
+iments.
+C. Evaluation Metrics
+We evaluate XCT-SAM using pixel-level metrics to measure
+segmentation accuracy. We first report Intersection over Union
+(IoU), which measures overlap quality while penalizing both
+over- and under-segmentation. As IoU is sensitive to small
+boundary shifts, we also compute Precision and Recall to
+quantify false positives and false negatives. We further report
+Tolerance-F1, which considers predictions within a 5-pixel
+radius of the ground truth as correct. Finally, to better handle
+severe class imbalance in defect segmentation, we compute
+the Dice coefficient, which provides a more robust measure of
+partial overlap.
+D. Implementation Details of XCT-SAM
+We fine-tune XCT-SAM in two stages using AdamW with
+polynomial learning-rate decay. The ViT-H SAM backbone
+is adapted via Conv-LoRA with rank r
+= 2 and eight
+convolutional experts, and trained using the Dice–Focal loss.
+In Stage 1, we perform intermediate domain adaptation on the
+alloy dataset [34] using a learning rate of 2 × 10−4, a batch
+size of 8, and trained for up to 15 epochs. In Stage 2, we
+further adapt the model to the target AM XCT domain using
+a reduced learning rate of 8×10−5 for an additional 20 epochs
+while keeping the same batch size.
+
+
+Pores on NIST XCT dataset
+Pores on synthetic XCT dataset
+Inclusions on synthetic 
+XCT dataset
+Fig. 5: Comparison of segmentation performance across fine-tuned foundation models: SAM-Med2D, MedSAM, Conv-LoRA-
+SAM, and our XCT-SAM on GAN-generated XCT and NIST datasets. The top row shows mean IoU, while the bottom row
+shows the mean F1. The shaded blue region represents the NIST evaluation sets, and the error bars indicate ±1 std.
+E. Quantitative Evaluation
+We evaluate XCT-SAM against five competitive baseline
+models across both GAN-generated and real NIST evaluation
+datasets, as illustrated in Fig. 5 and summarized in Table I. Our
+XCT-SAM achieves the best IoU and Dice performance across
+the three evaluation settings: pore segmentation on GAN-
+generated XCT, inclusion segmentation on GAN-generated
+XCT, and pore segmentation on real NIST XCT. This demon-
+strates improved generalization under both synthetic and real
+XCT imaging conditions.
+For pore segmentation on synthetic images, XCT-SAM
+achieves the highest scores across all evaluation metrics,
+outperforming the next best method, Conv-LoRA-SAM, by
+a substantial margin of +0.0472 IoU, +0.0549 Dice, and
++0.0726 F1. In contrast, the pre-trained SAM model in its
+zero-shot setting performs poorly on GAN-generated pores.
+This result highlights the significant domain gap between nat-
+ural and XCT images. UNet++ [16], fine-tuned MedSAM [23],
+and fine-tuned SAM-Med2D [24] provide only marginal im-
+provements over zero-shot SAM. These results indicate that
+these direct fine-tuned baselines remain limited in capturing
+the low-contrast characteristics of AM defect pores.
+XCT-SAM also achieves the best overall performance for
+inclusion segmentation on the GAN-generated XCT evaluation
+sets. A notable observation is the substantial performance
+degradation of Conv-LoRA-SAM on inclusions (IoU: 0.2407,
+F1: 0.2494), despite its relatively strong pore segmentation
+results. This suggests that the original Conv-LoRA formulation
+overfits to the dominant class and fails to generalize effectively
+to rare defects. Similarly, UNet++ exhibits severe performance
+collapse on inclusions, likely due to the heavy class imbalance
+in the training data. Although zero-shot SAM, fine-tuned
+MedSAM, and fine-tuned SAM-Med2D achieve moderate in-
+clusion IoU scores, their F1 scores remain comparatively lower
+than XCT-SAM, indicating limited segmentation consistency.
+Finally, on the real NIST benchmark, XCT-SAM achieves the
+best IoU and Dice scores among all baselines. Interestingly,
+zero-shot SAM attains a relatively competitive IoU score,
+likely due to the more distinguishable pore morphology in real
+XCT scans. In contrast, UNet++ degrades significantly under
+this distribution shift, highlighting its limited cross-domain
+generalization.
+F. Ablation Study
+1) Effect of Conv-LoRA Rank: Table II presents an ablation
+study examining the effect of Conv-LoRA rank on param-
+
+
+TABLE I: Quantitative comparison of mean segmentation performance computed across all test sets for pore and inclusion
+detection on GAN-generated XCT and NIST benchmark datasets.
+Methods
+Pores(GAN)
+Inclusions (GAN)
+Pores (NIST)
+IoU
+Dice
+F1
+IoU
+Dice
+F1
+IoU
+Dice
+F1
+SAM [21]
+0.1427 0.1567 0.1713 0.2951 0.3017 0.3221 0.4942 0.6549 0.8887
+UNet++ [16]
+0.1403 0.2138 0.3395 0.1017 0.1600 0.3472 0.1340 0.2153 0.3512
+MedSAM [23]
+0.1630 0.2464 0.3511 0.3248 0.3287 0.3371 0.3381 0.4607 0.6577
+SAM-Med2D [24]
+0.1868 0.2648 0.3687 0.3597 0.3972 0.4773 0.5776 0.6978 0.9116
+Conv-LoRA-SAM [26] 0.2773 0.3701 0.4841 0.2407 0.2443 0.2494 0.5460 0.6886 0.8959
+XCT-SAM (ours)
+0.3245 0.4250 0.5567 0.3639 0.4055 0.5513 0.5849 0.7288 0.9051
+TABLE II: Ablation study on the effect of Conv-LoRA rank selection for parameter-efficient adaptation on the GAN-
+generated synthetic dataset. We evaluate different low-rank configurations in terms of trainable parameters, inference efficiency,
+and segmentation performance. Results show that the r=2 configuration achieves the best trade-off between efficiency and
+performance.
+Rank Train.
+Percent
+Infer.
+Infer.
+Pores (GAN)
+Inclusions (GAN)
+Params
+Train.
+(s/img) Memory
+IoU
+Dice
+F1
+IoU
+Dice
+F1
+r=8
+5.27 M 0.821%
+3.571
+2450MB 0.3171 0.4068 0.5342 0.1991 0.2436 0.4216
+r=4
+4.50 M 0.702%
+3.690
+2447MB 0.3101 0.4010 0.5305 0.1848 0.2273 0.4022
+r=2
+4.15M 0.647%
+3.656
+2445MB 0.3245 0.4250 0.5567 0.3639 0.4055 0.5513
+TABLE III: Ablation study comparing various state-of-the-art objective functions for pore and inclusion segmentation. Reported
+values represent mean segmentation performance averaged across all test sets.
+Objective
+Pores (GAN)
+Inclusions (GAN)
+Pores (NIST)
+Function
+IoU
+Dice
+F1
+IoU
+Dice
+F1
+IoU
+Dice
+F1
+BCE
+0.3189 0.4111 0.5516 0.2193 0.2524 0.3555 0.5026 0.6464 0.8365
+Dice
+0.3329 0.4285 0.5645 0.3000 0.3200 0.3900 0.3990 0.5253 0.7524
+Lovász-Softmax [31]
+0.3219 0.4158 0.5604 0.2291 0.2728 0.4134 0.3868 0.5150 0.7454
+Focal Tversky [29], [30] 0.3390 0.4334 0.5686 0.3452 0.3671 0.4569 0.5400 0.6767 0.9093
+Dice-Focal (ours)
+0.3245 0.4250 0.5567 0.3639 0.4055 0.5513 0.5849 0.7288 0.9051
+eter efficiency and segmentation accuracy. In this study, we
+evaluate three rank configurations: r ∈{8, 4, 2}. For each
+configuration, we also measure trainable parameter count,
+inference latency, and memory consumption. From Table II,
+we observe that as the rank decreases, the number of trainable
+parameters drops from 5.27M (0.821%) at r = 8 to 4.15M
+(0.647%) at r = 2. In contrast, inference time and memory
+consumption remain nearly unchanged, with less than 3%
+variation across ranks. This is expected since the LoRA
+adapters account for less than 1% of the total parameters,
+while computation is dominated by the frozen SAM backbone.
+Overall, the experimental results show that r = 2 achieves
+the best trade-off between model efficiency and segmentation
+performance. In contrast, higher ranks lead to a noticeable
+drop in inclusion-segmentation accuracy, suggesting that over-
+parameterized LoRA adaptation may reduce generalization.
+2) Effect of Objective Function: Table III reports the effect
+of different loss functions for defect segmentation. The results
+yield several key observations. First, binary cross-entropy
+(BCE) achieves competitive performance on the majority class
+(pore). However, its performance degrades significantly on
+the minority class (inclusion), achieving only 0.2193 IoU
+and 0.3555 F1 score on the GAN-generated dataset. This
+behavior highlights the well-known sensitivity of BCE to
+severe class imbalance. Second, Dice loss improves inclusion
+segmentation compared to BCE by directly optimizing region
+overlap. However, this gain comes at the cost of degraded pore
+performance on the NIST dataset. Third, although Lovász-
+Softmax is designed to optimize IoU, it underperforms across
+all evaluation benchmarks in our experiments. In contrast,
+Focal Tversky loss achieves substantially enhanced inclusion
+segmentation by explicitly emphasizing minority classes, im-
+proving the inclusion IoU to 0.3452. Nevertheless, its Dice
+and F1 scores for inclusions remain lower than those obtained
+with Dice-Focal objective.
+Among all loss functions, Dice-Focal provides the most
+balanced performance across evaluation benchmarks and met-
+rics. On the GAN-generated dataset, it achieves the best
+inclusion segmentation results, outperforming Focal Tversky
+by +0.0187 IoU and +0.0944 F1 score. On the NIST dataset,
+it also achieves the highest pore-segmentation performance
+with 0.5849 IoU and 0.7288 Dice. Overall, these results
+indicate that Dice-Focal provides robust generalization across
+out-of-distribution evaluation sets.
+G. Visualization
+We visualize sample segmentation results of XCT-SAM
+and representative SAM-based baselines on synthetic and real
+
+
+MedSAM
+Ground Truth
+Input 
+XCT-SAM 
+Test-1 
+Test-2 
+Test-4 
+Test-5 
+Test-6 
+Fig. 6: Qualitative comparison on GAN-generated XCT test sets. Yellow and red denote pores and inclusions, respectively.
+XCT-SAM better matches the reference masks than MedSAM across the shown OoD examples.
+XCT scans in Fig. 6 and Fig. 7, respectively. As shown in
+Fig. 6, MedSAM often under-segments defects, whereas XCT-
+SAM produces predictions that remain well-aligned with the
+reference masks. For example, in Test-2, MedSAM captures
+only a subset of dense pore regions and fails to recover
+many smaller pores. In contrast, XCT-SAM reconstructs a
+substantially larger portion of the pore distribution with en-
+hanced spatial coverage and fewer false negatives. Similarly,
+in Test-6, XCT-SAM better preserves fine defect structures
+than competing methods. Figure 7 further demonstrates the
+robustness of XCT-SAM under cross-distribution evaluation
+on real XCT scans. In Test-2, MedSAM produces incomplete
+masks for fine defects, while SAM-Med2D introduces spurious
+detections. In contrast, XCT-SAM generates spatially accurate
+segmentations that better preserve defect structures. In Test-
+5, XCT-SAM also correctly segments sparse pores without
+false merging. Overall, XCT-SAM produces predictions that
+more closely align with reference masks across datasets, defect
+types, and imaging conditions.
+V. CONCLUSIONS
+We present XCT-SAM, a sequential parameter-efficient do-
+main adaptation framework for defect segmentation in AM
+XCT images. In the first stage, we adapt Conv-LoRA modules
+on alloy microstructure images using a lightweight configu-
+ration with rank r=2 and eight convolutional experts, while
+keeping over 99% of SAM parameters frozen. In the second
+stage, we further adapt the model using GAN-generated XCT
+data, progressively bridging the gap between natural-image
+pre-training and XCT defect segmentation. Experimental re-
+sults show that XCT-SAM outperforms strong baselines such
+as UNet++, MedSAM, SAM-Med2D, and direct Conv-LoRA-
+SAM on synthetic OoD and real NIST XCT benchmarks, par-
+ticularly in IoU and Dice performance. These results suggest
+that intermediate material-domain adaptation can improve the
+generalization of parameter-efficient foundation-model adapta-
+tion under limited and imbalanced XCT supervision. Current
+limitations include the additional cost of two-stage training,
+reduced robustness under severe noise and contrast shifts, and
+reliance on 2D slice-wise binary models. Future work will
+explore continual cross-material adaptation, full 3D volumetric
+modeling, and unified multiclass defect segmentation. Overall,
+XCT-SAM provides a scalable framework for AM XCT defect
+segmentation in data-scarce settings.
+
+
+Test-6 
+Test-5 
+Test-4 
+Test-3 
+Test-2 
+MedSAM
+Ground Truth
+Input 
+SAM -Med2D
+XCT-SAM
+Fig. 7: Qualitative comparison on NIST XCT test sets. The row marked Ground Truth denotes threshold-derived reference
+masks. XCT-SAM more closely matches the reference masks across varying defect densities.
+ACKNOWLEDGMENT
+This work was supported by a gift from Qualcomm Incor-
+porated. The authors would also like to acknowledge the
+Pacific Research Platform, NSF Project ACI-1541349, and
+Larry Smarr (PI, Calit2 at UCSD) for providing the computing
+infrastructure used in some of the experiments.
+REFERENCES
+[1] T. D. Ngo, A. Kashani, G. Imbalzano, K. T. Nguyen, and D. Hui,
+“Additive manufacturing (3d printing): A review of materials, methods,
+applications and challenges,” Composites Part B: Engineering, vol. 143,
+pp. 172–196, 2018.
+[2] S. Wang, L. Zhou, S. Zhong, G. Li, L. Zhang, X. Wang, Z. Li, and J. Lu,
+“Recent advances in metal additive manufacturing: Materials design and
+artificial intelligence applications,” Engineering, 2026.
+[3] B. Blakey-Milner, P. Gradl, G. Snedden, M. Brooks, J. Pitot, E. Lopez,
+M. Leary, F. Berto, and A. Du Plessis, “Metal additive manufacturing in
+aerospace: A review,” Materials & Design, vol. 209, p. 110008, 2021.
+[4] M. M. H. Tusher and A. Ince, “Comprehensive review of fabrication
+process parameters influencing defect formation in laser powder bed
+fused (l-pbf) al-si alloys,” Materials & Design, p. 114374, 2025.
+[5] R. Haribaskar and T. S. Kumar, “Defects in metal additive manu-
+facturing: formation, process parameters, postprocessing, challenges,
+economic aspects, and future research directions,” 3D Printing and
+Additive Manufacturing, vol. 11, no. 4, pp. 1629–1655, 2024.
+[6] A. Poudel, M. S. Yasin, J. Ye, J. Liu, A. Vinel, S. Shao, and N. Sham-
+saei, “Feature-based volumetric defect classification in metal additive
+manufacturing,” Nature Communications, vol. 13, no. 1, p. 6369, 2022.
+[7] L. Wang, S. Feng, Y. Wang, X. Zhao, J. Ge, T. Gao, and F. Di, “Porosity
+defects in additively manufactured metal materials: Formation mecha-
+nisms, impact on performance and regulation,” International Materials
+Reviews, vol. 71, no. 2, pp. 97–128, 2026.
+[8] T. Zhan, K. Xu, Z. Fan, H. Xiang, C. Xu, T. Mei, Y. Wei, W. Chen,
+and L. Li, “Assessment of the effect of the process-induced porosity
+defects on the fatigue properties of wire arc additive manufactured al–
+si–mg alloy,” Journal of Materials Research and Technology, vol. 35,
+pp. 777–791, 2025.
+[9] C. Lapre, D. Brouczek, M. Schwentenwein, K. Neumann, N. Benson,
+C. Petersen, O. Bang, and N. Israelsen, “Rapid non-destructive inspec-
+tion of sub-surface defects in 3D printed alumina through 30 layers with
+7 µm depth resolution,” Open Ceramics, vol. 18, p. 100611, 2024.
+[10] M. V. Bimrose, T. Hu, D. J. McGregor, J. Wang, S. Tawfick, C. Shao,
+Z. Liu, and W. P. King, “Detecting and classifying hidden defects in
+additively manufactured parts using deep learning and x-ray computed
+tomography,” Journal of Intelligent Manufacturing, vol. 36, no. 5, pp.
+
+
+3465–3479, 2025.
+[11] X. Sun, L. Huang, B. Xiao, Q. Zhang, J. Li, and Y. e. a. Ding, “X-ray
+computed tomography in metal additive manufacturing: A review on pre-
+vention, diagnostic, and prediction of failure,” Thin-Walled Structures,
+vol. 207, p. 112736, 2025.
+[12] G. Jones, V. Sundar, R. Reed, M. Stecko, and J. Keist, “Validation
+of x-ray computed tomography detection limits for stochastic flaws in
+additively manufactured ti-6al-4 v,” Journal of Materials Engineering
+and Performance, vol. 34, no. 10, pp. 8683–8690, 2025.
+[13] S. Baig, A. Jam, S. Beretta, S. Shao, and N. Shamsaei, “Non-destructive
+detection of critical defects in additive manufacturing,” Scientific Re-
+ports, vol. 15, no. 1, p. 6740, 2025.
+[14] D. Perghem, B. Salehnasab, S. Beretta, S. Shao, and N. Shamsaei, “Ml-
+based detection of critical defects in additively manufactured parts via
+x-ray computed tomography,” Materials & Design, p. 115184, 2025.
+[15] T. Ledwaba, C. Steenkamp, A. Chmielewska-Wysocka, B. Wysocki,
+and A. du Plessis, “Development of ai crack segmentation models
+for additive manufacturing,” Tomography of Materials and Structures,
+vol. 7, p. 100053, 2025.
+[16] Z. Zhou, M. M. R. Siddiquee, N. Tajbakhsh, and J. Liang, “UNet++:
+Redesigning skip connections to exploit multiscale features in image
+segmentation,” IEEE transactions on medical imaging, vol. 39, no. 6,
+pp. 1856–1867, 2019.
+[17] I. Z. Era, I. Ahmed, Z. Liu, and S. Das, “An unsupervised approach
+towards promptable porosity segmentation in laser powder bed fusion
+by segment anything,” npj Advanced Manufacturing, vol. 2, no. 1, p. 10,
+2025.
+[18] A. Tabassum and A. Ziabari, “Adapting segment anything model (sam)
+to experimental datasets via fine-tuning on gan-based simulation: A
+case study in additive manufacturing,” arXiv preprint arXiv:2412.11381,
+2024.
+[19] R. Gruber, S. Rüger, and T. Wittenberg, “Adapting the segment any-
+thing model for volumetric x-ray data-sets of arbitrary sizes,” Applied
+Sciences, vol. 14, no. 8, p. 3391, 2024.
+[20] X. Ma, Y. Zhang, C. Wang, and W. Xu, “Alloy microstructure segmenta-
+tion through sam and domain knowledge without extra training,” Scripta
+Materialia, vol. 260, p. 116581, 2025.
+[21] A. Kirillov, E. Mintun, N. Ravi, H. Mao, C. Rolland, L. Gustafson,
+T. Xiao, S. Whitehead, A. C. Berg, W.-Y. Lo et al., “Segment anything,”
+in IEEE/CVF International Conference on Computer Vision, 2023, pp.
+4015–4026.
+[22] N. Ravi, V. Gabeur, Y.-T. Hu, R. Hu, C. Ryali, T. Ma, and et al.,
+“Sam 2: Segment anything in images and videos,” arXiv preprint
+arXiv:2408.00714, 2024.
+[23] J. Ma, Y. He, F. Li, L. Han, C. You, and B. Wang, “Segment anything in
+medical images,” Nature communications, vol. 15, no. 1, p. 654, 2024.
+[24] J. Cheng, J. Ye, Z. Deng, J. Chen, T. Li, H. Wang, and et al., “SAM-
+Med2D,” arXiv preprint arXiv:2308.16184, 2023.
+[25] E. J. Hu, Y. Shen, P. Wallis, Z. Allen-Zhu, Y. Li, S. Wang, L. Wang,
+W. Chen et al., “Lora: Low-rank adaptation of large language models.”
+Iclr, vol. 1, no. 2, p. 3, 2022.
+[26] Z. Zhong, Z. Tang, T. He, H. Fang, and C. Yuan, “Convolution meets
+lora: Parameter efficient finetuning for segment anything model,” in
+International Conference on Learning Representations, 2024.
+[27] A. Cheniour, A. K. Ziabari, and Y. Le Pape, “A mesoscale 3d model
+of irradiated concrete informed via a 2.5 u-net semantic segmentation,”
+Construction and Building Materials, vol. 412, p. 134392, 2024.
+[28] F. Milletari, N. Navab, and S.-A. Ahmadi, “V-net: Fully convolutional
+neural networks for volumetric medical image segmentation,” in 2016
+fourth international conference on 3D vision (3DV), 2016, pp. 565–571.
+[29] S. S. M. Salehi, D. Erdogmus, and A. Gholipour, “Tversky loss function
+for image segmentation using 3d fully convolutional deep networks,” in
+International workshop on machine learning in medical imaging, 2017,
+pp. 379–387.
+[30] N. Abraham and N. M. Khan, “A novel focal tversky loss function with
+improved attention u-net for lesion segmentation,” in 2019 IEEE 16th
+international symposium on biomedical imaging (ISBI 2019), 2019, pp.
+683–687.
+[31] M. Berman, A. R. Triki, and M. B. Blaschko, “The lovász-softmax
+loss: A tractable surrogate for the optimization of the intersection-over-
+union measure in neural networks,” in Computer Vision and Pattern
+Recognition, 2018, pp. 4413–4421.
+[32] T.-Y. Lin, P. Goyal, R. Girshick, K. He, and P. Dollár, “Focal loss for
+dense object detection,” in ICCV, 2017, pp. 2980–2988.
+[33] F. H. Kim, S. P. Moylan, E. J. Garboczi, and J. A. Slotwinski, “In-
+vestigation of pore structure in cobalt chrome additively manufactured
+parts using x-ray computed tomography and three-dimensional image
+analysis,” Additive Manufacturing, vol. 17, pp. 23–38, 2017.
+[34] K. A. Rozman, Ö. N. Do˘gan, R. Chinn, P. D. Jablonksi, M. Detrois, and
+M. C. Gao, “Dataset for machine learning of microstructures for 9% cr
+steels,” Data in Brief, vol. 45, p. 108714, 2022.

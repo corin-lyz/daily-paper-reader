@@ -1,0 +1,443 @@
+Title: VGP-Nav: Metric-Aware Visual Geometric Perception for Robot Navigation
+
+URL Source: https://arxiv.org/pdf/2606.09268v1
+
+Published Time: Tue, 09 Jun 2026 02:00:25 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# VGP-Nav: Metric-Aware Visual Geometric Perception for Robot Navigation 
+
+Hewei Pan 1∗, Weiye Zhu 1∗, Zekai Zhang 1, Zitong Huang 1, Rongtao Xu 2, Jinbao Wang 3,†, Feng Zheng 1,4,†
+
+Abstract — Reliable robotic navigation necessitates the seam-less integration of accurate global localization and dense, metric-consistent obstacle perception. A common strategy to achieve these capabilities involves integrating diverse sensing modalities: cameras offer rich visual features for localization, while active sensors like LiDAR provide direct metric measure-ments. However, such multi-sensor configurations necessitate complex spatial-temporal calibration and increase deployment overhead. Although vision-only approaches offer a low-cost and scalable alternative, existing monocular visual systems typically struggle to simultaneously achieve efficient, globally consistent localization and dense, metric-consistent geometric perception. To bridge this gap, we propose VGP-Nav, a unified framework for Metric-Aware Visual Geometric Perception that relies solely on monocular RGB input to jointly support metric localiza-tion and obstacle perception. Our key insight is to anchor localization-grounded visual geometry to physically meaningful scale constraints derived from ground-plane geometry, thereby providing a reliable metric reference for monocular percep-tion. VGP-Nav resolves monocular scale ambiguity online and produces localization-grounded, metric obstacle representations that are directly applicable to downstream planning. Extensive experiments demonstrate strong generalization across diverse environments and successful deployment on real mobile robots, highlighting the practicality of our approach for scalable, low-cost, and safe autonomous navigation. 
+
+I. INTRODUCTION Humans navigating a familiar environment rely predom-inantly on vision to answer two fundamental questions: “where am I?” and “how can I move safely?” Even when the scene changes, such as moved furniture or newly ap-peared obstacles, we can simultaneously localize ourselves and perceive surrounding geometry to adapt our motion. Inspired by this capability, an autonomous robotic system ideally would integrate localization and geometric perception within a unified visual framework, enabling scalable and cost-effective navigation. However, many robotic navigation systems usually adopt a multi-sensor paradigm [1], [2], combining cameras with ac-tive sensors such as LiDAR. Cameras provide rich visual fea-tures that can be used for location [3], [4], [5], while LiDAR offers direct metric measurements to perceive obstacles and the surrounding geometry. While generally effective, these   
+
+> ∗Equal Contribution.
+> †Corresponding authors.
+> 1Hewei Pan, Weiye Zhu, Zekai Zhang, Zitong Huang and Feng Zheng are with Southern University of Science and Technology, Shenzhen, China.
+> 2Rongtao Xu is with MBZUAI, Abu Dhabi, UAE.
+> 3Jinbao Wang is with Shenzhen University, Shenzhen, China.
+> 4Feng Zheng is also with SpatialTemporal AI, Shenzhen, China. lidar camera imu
+> odom
+> Decoupled Method
+> Ours
+> rgb camera
+
+Localization 
+
+Perception 
+
+Metric-Aware Visual Geometric Perception 
+
+Navigation 
+
+Navigation         
+
+> Module 2
+> Module 1
+> Module 1
+> Fig. 1. Conceptual comparison between the conventional decoupled navigation pipeline and our proposed framework. Top: Decoupled navigation pipelines typically separate localization from perception. Bottom: Our framework unifies localization and metric perception into a single module, enabling robust navigation using only a monocular RGB camera.
+
+multi-sensor configurations introduce additional calibration, synchronization, and hardware complexity. These challenges are further amplified on highly dynamic platforms such as humanoid robots, where mechanical vibrations and torso oscillations complicate cross-sensor alignment. In such sce-narios, vision-only pipelines using a single camera provide a conceptually streamlined alternative. However, even these vision-only navigation systems often remain architecturally decoupled, handling global localization and metric geometric perception with separate models. This separation limits the ability to reason jointly about pose and geometry, motivating fully unified vision-only frameworks that integrate localiza-tion and dense, metric-aware geometric perception. Recently, feed-forward 3D reconstruction techniques [6], [7], [8], [9] have shown great potential toward a unified visual solution for both localization and obstacle perception. Trained on large-scale multi-view data, these models can efficiently predict multi-view camera poses and dense 3D ge-ometry in a single forward pass. By jointly inferring pose and structure within a shared representation, they overcome the limitations of architecturally decoupled pipelines, enabling coherent reasoning about camera motion and scene geometry. However, applying such models to robot navigation faces a core technical barrier: Scale Ambiguity . Unlike stereo or lidar systems, the output of monocular reconstruction lacks a physical metric scale, making it directly unusable for the precise distance measurements required by robot controllers. To address these challenges, we propose VGP-Nav , a unified framework for Metric-Aware Visual Geometric Per-ception . Our key insight is to anchor localization-grounded 
+
+> arXiv:2606.09268v1 [cs.RO] 8 Jun 2026
+
+visual geometry to physically meaningful scale constraints derived from ground-plane geometry. Specifically, we lever-age geometry-aware retrieval strategy and weighted mo-tion averaging to generate globally consistent pose priors. These priors serve as the bridge to project and anchor feed-forward visual reconstructions onto the ground plane, thereby providing a reliable metric reference for monocular perception. This design resolves the inherent scale ambiguity and enables the construction of metric-accurate occupancy maps for downstream navigation. Our main contributions are summarized as follows:  
+
+> •
+
+We propose VGP-Nav , a unified framework for Metric-Aware Visual Geometric Perception that jointly sup-ports metric visual localization and geometric obstacle sensing within a single perception pipeline, enabling metric-accurate navigation solely using a monocular RGB camera.  
+
+> •
+
+We introduce a tightly coupled localization–perception paradigm that enables robust scale recovery. By anchor-ing feed-forward visual geometry to the ground-plane structure via global pose priors, our approach effectively resolves monocular scale ambiguity and ensures metric-consistent obstacle reconstruction.  
+
+> •
+
+We achieve state-of-the-art performance across multiple benchmarks and further validate the robustness of VGP-Nav by successful real-world robotic deployments, indi-cating its practical readiness for autonomous navigation. II. R ELATE WORK 
+
+A. Visual Localization 
+
+Structure-based visual localization methods rely on pre-built 3D scene representations [4], [10]. Traditional pipelines typically establish 2D-3D correspondences by matching query features [11], [12] against a pre-built Structure-from-Motion (SfM) model [13], subsequently solving for the cam-era pose via Perspective-n-Point (PnP) and RANSAC [14]. In contrast, learning-based alternatives encode scene infor-mation implicitly within neural networks. Scene Coordi-nate Regression (SCR) predicts per-pixel 3D scene coordi-nates [15], [16], whereas Absolute Pose Regression (APR) directly regresses the global 6-DoF camera pose [3], [17], [18]. Despite their different formulations, these approaches are inherently scene-specific, requiring dedicated mapping or training for each environment. Such dependency limits cross-scene generalization and scalability, making large-scale deployment costly and inflexible. In contrast, structureless visual localization avoids explicit 3D scene representations and models the environment as a database of geo-referenced images. Visual Place Recog-nition (VPR) [19], [20] retrieves visually similar reference images to localize the query, and Relative Pose Regression (RPR) [21], [22], [23] localizes the query by predicting the relative 6-DoF transformation between image pairs. By re-moving the need for pre-built 3D models, these methods are scene-agnostic and easy to maintain, but primarily estimate sparse camera poses without recovering dense scene geom-etry. Building on the flexibility of structureless localization, our method further incorporates dense visual geometry to achieve more accurate and reliable localization. 
+
+B. Feed-Forward Reconstruction Models 
+
+Recent advances in Vision Transformers have enabled feed-forward reconstruction models that directly predict cam-era poses and dense 3D geometry, core perceptual com-ponents for safe autonomous navigation. Methods such as Dust3R [6] and MASt3R [24] recover relative poses and dense structure from image pairs, while more recent models like VGGT [7] extend this paradigm to true multi-view settings with globally consistent predictions. Despite their impressive geometric reasoning, a fundamental barrier to their robotic deployment is the inherent scale ambiguity. As these models are typically supervised by relative geometric objectives, they recover 3D structures only up to an arbitrary scale, rendering them unsuitable for direct metric navigation. In this work, we bridge the gap between relative geometry and metric geometric perception, enabling reliable real-world localization and obstacle sensing. 
+
+C. Metric Geometric Perception 
+
+Perceiving the dense metric geometry of the environment is fundamental for robot interaction. In the domain of monoc-ular perception, research has evolved from predicting relative depth maps to recovering absolute metric depth. Recent state-of-the-art models like MoGe-2 [25] have shown the capa-bility to infer dense metric depth directly from single view by learning from large-scale datasets. Beyond single-view estimation, multi-view reconstruction model such as Ma-pAnything [26] leverage temporal consistency across video sequences to generate coherent metric 3D representations. While these advancements provide powerful tools for dense geometry perception, they are typically designed as standalone perception tasks, decoupled from the global lo-calization problem. In contrast, VGP-Nav unifies metric per-ception with structureless global localization. By anchoring feed-forward geometry to the ground plane, we achieve metric-aware perception that is strictly aligned with the robot’s navigation coordinate system. III. METHODOLOGY 
+
+A. Problem Formulation 
+
+We consider a robot navigating in a known environment represented by a structureless database D = {(Ii, Twi )}Mi=1 .Our objective is to achieve Metric-Aware Visual Geometric Perception, providing the spatial understanding required for autonomous motion. Given a monocular query image Iq at time t, VGP-Nav aims to solve for a navigation-ready state St = {Twc , Ow},which satisfies:  
+
+> •
+
+Global Pose Alignment ( Twc ∈ SE (3) ): Accurately aligning the camera C of query frame to the world frame W to determine the robot’s location.  
+
+> •
+
+Metric Obstacle Representation ( Ow ⊂ R3): Produc-ing a dense, metric-consistent geometric point map of the query frame with absolute scale, enabling collision-free planning. Weighted Motion Averaging Query Frame Database Frames   
+
+> Geometry-Aware Retrieval Strategy
+> Feed-Forward Reconstruction Model
+> ground
+> Inintal Robot Camera Height
+> Query
+> 1m
+> Metric Perception
+> Goal
+> New Obstacle
+> Navigation
+> Ground-Anchored Scale Recovery
+> Database
+> Visual Localization Fig. 2. Architecture overview. The system selects diverse reference images via Geometry-Aware Retrieval Strategy, then generates multi-view constraints using a Feed-Forward Reconstruction backbone. These are processed through Weighted Motion Averaging for 6-DoF global localization, while a Ground-Anchored Scale Recovery module resolves metric scale against the physical ground plane. This unified pipeline enables concurrent global positioning and metric obstacle perception for safe navigation.
+
+B. Overall Architecture 
+
+As illustrated in Fig. 2, VGP-Nav is a unified framework that orchestrates concurrent visual localization and metric obstacle sensing for robot navigation. The system builds on an efficient feed-forward reconstruction backbone augmented with explicit geometric constraints. Given a query image, the pipeline first retrieves relevant images from the database using a Geometry-Aware Retrieval Strategy . These images are processed by the feed-forward reconstruction backbone to yield relative poses and dense geometry. To ensure metric accuracy for navigation, we implement a dual-constraint refinement process: a Weighted Motion Averaging module aggregates the cameras of multi-view constraints to robustly estimate the global 6-DoF pose of the query image, while a Ground-Anchored Scale Recovery mechanism resolves the metric scale by aligning the reconstructed geometry with the global ground plane. This mechanism utilizes a calibrated height prior to initialize the ground reference and continuously enforces consistency between the perceived and actual ground height by optimizing the camera extrinsics. As a result, this design enables the scale-ambiguous point cloud to be instantaneously projected into a metric occupancy rep-resentation. This allows the robot to concurrently determine “where I am” and “how to move safely”. 
+
+C. Geometry-Aware Retrieval Strategy 
+
+In hierarchical visual localization pipelines [4], [23], the coarse localization stage typically selects the top-k reference images directly based on visual similarity scores from a VPR module. However, visually similar images in large-scale databases often exhibit substantial overlap, corresponding to clustered camera poses or even near-identical duplicates. Directly using such a spatially redundant set results in a collapsed field-of-view that lacks sufficient viewpoint di-versity and effective geometric baselines. This not only degrades the precision of downstream pose estimation but also limits the spatial extent of the reconstructed geometry, Query image     
+
+> Selected Databse Images Geometry-Aware Retrieval Strategy Direct Image Retrieval Strategy
+> Ground
+> Same
+> No Ground
+> Fig. 3. Qualitative comparison of point cloud reconstruction under different retrieval strategies. Left (Direct Retrieval): Clustered poses result in a redundant and restricted field-of-view, often failing to capture the ground plane. Right (Ours): Our strategy ensures a diverse and expansive camera distribution, securing sufficient ground observations to anchor the reconstruction in metric space.
+
+frequently failing to capture critical ground-plane structures, the essential metric anchors for scale recovery (Fig. 3). To address this issue, we propose a Geometry-Aware Retrieval Strategy (see Algorithm 1). The process operates in two stages: 1) Spatial Outlier Rejection: We first retrieve a larger pool of candidate reference images by selecting the top-
+
+N matches, with N greater than k, and compute the median of their camera translations. Candidates that deviate significantly from this median are discarded as likely perceptual aliasing errors, while the best-matching candidate is explicitly retained. 2) Diversity-Driven Selection: From the valid candidates, we select a subset of k images using a greedy strategy inspired by Farthest Point Sampling. We iteratively select the candidate that maximizes a combined score of visual similarity and spatial distance (considering both translation and viewing direction) relative to the already selected set. Overall, this geometry-aware retrieval strategy ensures a well-conditioned reference set by balancing visual similarity with viewpoint diversity. This not only improves localization accuracy but also maximizes environmental coverage, pro-viding the critical ground observations necessary for stable, metric-consistent reconstruction. 
+
+Algorithm 1 Geometry-Aware Retrieval Strategy Require: Query image Iq ; Database D = {(Ii, T i)}; Target number k; Search pool size N (N = 4k); Weights 
+
+λpos = 0 .2, λ ang = 0 .6, λ sim = 0 .2.
+
+Ensure: Selected reference set S. 
+
+> 1:
+
+Phase 1: Spatial Outlier Rejection  
+
+> 2:
+
+Retrieve top-N candidates Cinit based on VPR similarity 
+
+S(Iq , I i). 
+
+> 3:
+
+Ibest ← arg max I∈C init S(Iq , I ). 
+
+> 4:
+
+Compute geometric median pose ¯T of Cinit . 
+
+> 5:
+
+Compute distances di = ∥ti − t ¯T ∥2 for all i ∈ C init . 
+
+> 6:
+
+Threshold τ ← Percentile ({di}, 95%) . 
+
+> 7:
+
+Cvalid ← { Ii ∈ C init | di ≤ τ } ∪ { Ibest }. 
+
+> 8:
+
+Phase 2: Diversity-Driven Selection  
+
+> 9:
+
+Initialize selected set S ← { Ibest }. 
+
+> 10:
+
+Normalize VPR scores in Cvalid to [0 , 1] . 
+
+> 11:
+
+while |S| < k and |S| < |C valid | do  
+
+> 12:
+
+c∗ ← None , Score max ← −∞  
+
+> 13:
+
+for each candidate c ∈ C valid \ S do  
+
+> 14:
+
+Compute min-distance to selected set:  
+
+> 15:
+
+δcs ← λpos ∥tc−ts∥ 
+
+> Lscale
+
++ λang θ(vc,vs) 
+
+> π
+> 16:
+
+Dgeo (c, S) = min s∈S δcs  
+
+> 17:
+
+Compute combined score:  
+
+> 18:
+
+J(c) = Dgeo (c, S) + λsim · Snorm (c) 
+
+> 19:
+
+if J(c) > Score max then  
+
+> 20:
+
+Score max ← J(c), c∗ ← c 
+
+> 21:
+
+end if  
+
+> 22:
+
+end for  
+
+> 23:
+
+S ← S ∪ { c∗} 
+
+> 24:
+
+end while  
+
+> 25:
+
+return S
+
+D. Weighted Motion Averaging 
+
+To robustly aggregate the k reference poses {Twi } and predicted relative poses {Tic } from a feed-forward recon-struction model, we design a two-stage weighted motion averaging strategy that decouples the estimation of rotation and translation. 
+
+a) Rotation Averaging with Consistency Modeling: 
+
+We first compute absolute rotation hypotheses {R(i) 
+
+> wc
+
+=
+
+Rwi Riq }, representing them in quaternion space. To mitigate the influence of erroneous estimates, we identify a dominant consensus based on mutual angular consistency. Hypotheses deviating significantly from this consensus are suppressed, and the final global rotation R∗ 
+
+> wc
+
+is obtained via weighted averaging. The confidence weight w(i) 
+
+> rot
+
+is a monotonically decreasing function of the angular deviation from the con-sensus, reflecting the reliability of each rotational estimate. 
+
+b) Translation Averaging via Multi-Factor IRLS: Given the condition of R∗
+
+> wc
+
+, we recover the camera center twc by addressing a robust multi-view triangulation problem. Each reference pose provides a ray constraint in the world frame. We approach the translation estimation as an Iteratively Reweighted Least Squares (IRLS) [27] optimization, which aims to minimize the weighted orthogonal distance from the camera center to these rays. 
+
+t∗ 
+
+> wc
+
+= arg min 
+
+> t
+> k
+
+X
+
+> i=1
+
+Ωi · ∥ (I − vivTi )( t − ci)∥2, (1) where ci is the reference center and vi is the viewing direction. The composite weight Ωi = w(i) 
+
+> rot
+
+· w(i) 
+
+> geo
+
+· w(i)
+
+> res
+
+integrates three complementary priors:  
+
+> •
+
+Rotation Consistency ( wrot ): Propagates the reliability score from the rotation stage by assigning weights through a Gaussian kernel based on angular deviations, ensuring that rotationally accurate hypotheses guide the translation  
+
+> •
+
+Geometric Conditioning ( wgeo ): Optimizes the trian-gulation configuration by weighting each ray based on the mean sine of its angular separation from other rays. This explicitly promotes large-baseline and non-parallel intersections, thereby minimizing geometric uncertainty in the reconstructed query position.  
+
+> •
+
+Residual Robustness ( wres ): Adaptively downweights spatial outliers via robust M-estimation during IRLS iterations. By jointly enforcing rotational coherence and geometric robustness, this process yields a globally consistent query pose T∗ 
+
+> wc
+
+that is resilient to individual estimation errors. 
+
+E. Ground-Anchored Scale Recovery 
+
+In navigation-centric environments, the ground plane serves as a static and globally consistent geometric reference that remains invariant to camera jitter induced by robotic motion or varying viewpoints across different camera con-figurations. This inherent stability provides a natural metric anchor for resolving the scale ambiguity in monocular visual reconstructions. We exploit this constraint to recover the metric scale by anchoring the reconstructed geometry to the ground plane in the world coordinate system. To minimize geometric overhead and accelerate inference, we represent the scene in a gravity-aligned world frame, where the ground plane is inherently orthogonal to the gravity vector. By applying the globally optimized trans-fer T∗
+
+> wc
+
+, the reconstructed point cloud ˆP is canonicalized into this coordinate system, effectively aligning the scene’s vertical axis with gravity. This alignment, coupled with the broad spatial extent secured by our geometry-aware retrieval, transforms ground estimation into a highly efficient statisti-cal problem. Rather than resorting to expensive per-frame plane fitting, we exploit the dense, wide-context ground observations to resolve the ground height via vertical point distribution analysis. Specifically, the ground plane manifests as the dominant peak in the height statistics along the gravity axis(lower than camera height), providing a robust metric anchor with minimal computational cost. 
+
+a) Ground Height Initialization: At the start of naviga-tion, the robot remains stationary and estimates the ground height in the gravity-aligned world frame. This predicted ground height is aligned to the true physical ground using a known geometric prior: the fixed distance between the cam-era and the robot base, obtained from calibration. This one-time initialization anchors the reconstructed ground plane to its metric height and determines the global ground height. 
+
+b) Online Scale Maintenance: During navigation, the recovered scale is maintained by continuously aligning the reconstructed geometry to the anchored ground height. As long as the robot operates on the same dominant support surface, the metric scale remains stable without additional optimization or refinement. With the metric scale recovered, geometric thresholds become physically meaningful. Points of the query frame in Pw are categorized according to their height relative to the anchored ground plane. Points close to the ground are labeled as traversable, while points between 
+
+0.15 m above the ground and the camera height are projected onto the ground plane to form a 2D obstacle occupancy map. This direct conversion from visual reconstruction to metric navigation primitives allows the planner to generate collision-free trajectories. IV. EXPERIMENTS 
+
+A. Overview 
+
+We evaluate VGP-Nav on three complementary fronts: (1) standard visual localization indoor and outdoor benchmarks to verify pose accuracy; (2) high-fidelity simulation environ-ments to quantify metric perception performance under scene changes; and (3) real-world robot deployment to demonstrate navigation capabilities. VGP-Nav is implemented in PyTorch and evaluated on a workstation equipped with an NVIDIA RTX 5090 GPU. We employ VGGT [7] as the feed-forward reconstruction back-bone. Following the retrieval configuration of Reloc3r [23], we adopt NetVLAD [19] as the retrieval model, with the number of retrieved database frames set to k = 10 .
+
+B. Visual Localization 
+
+Datasets: We evaluate VGP-Nav on the widely used 7-Scenes [28] and Cambridge Landmarks [3] datasets. The 7-Scenes dataset consists of seven indoor, room-scale en-vironments, each featuring multiple dense video sequences. The Cambridge Landmarks, which comprises five large-scale urban scenes representing suburban-scale environments. We compare our method against state-of-the-art baselines from the categories discussed in section II-A, including absolute pose regression (APR), scene coordinate regression (SCR) and relative pose regression (RPR). 
+
+Results: We report the median absolute translation error (m) and absolute rotation error ( ◦). As presented in Table I and Table II, VGP-Nav achieves new state-of-the-art perfor-mance among all RPR methods in both indoor and outdoor environments, demonstrating the high precision and robust-ness of our proposed pipeline. Compared to APR, our method achieves comparable accuracy to DFNet [17]+NeFeS [30], which requires several days of training, in indoor environ-ments, and surpasses all APR methods in outdoor scenarios, demonstrating the scalability of our approach. Compared Home(Database) Hospital(Database)       
+
+> Home(Query) Hospital(Query)
+> Scene-id: MVUCSQAKTKJ5EAABAAAAABA8 Scene-id: MV4AFHQKTKJZ2AABAAAAADQ8
+> Fig. 4. Benchmarking metric perception performance under scene changes using automatically generated camera trajectories (red curves).
+> Left: Home scene; Right: Hospital scene. Top: Reference database; Bottom: Query runs with modified layouts and new objects.
+
+to SCR, although slightly less accurate, VGP-Nav has a significant advantage in generalization ability. ACE [16] and DSAC* [15] require scene-specific training, while our method requires no training. This allows VGP-Nav to be deployed quickly in different environments. 
+
+C. Metric Perception 
+
+Simulation Setup: We use 2 open-source scenes from In-ternScenes [36]. To simulate the “Perception Gap”, we gen-erate distinct Database and Query trajectories: (1) Database Run: A trajectory in the static base scene; (2) Query Run: 
+
+A trajectory in a modified scene with altered furniture layouts and added new obstacles (e.g., humans). Ground truth trajectories are generated by converting the scene mesh to point clouds, filtering by height to create an occupancy map, and automatically planning a coverage path that traverses the entire environment. As illustrated in Fig. 4, the synthesized trajectories incorporate significant viewpoint variations to test the robustness of VGP-Nav:  
+
+> •
+
+Camera Height: The database camera is positioned at 
+
+1.5 ± 0.1 m, while the query camera is lowered to 1.2 ±
+
+0.05 m.  
+
+> •
+
+Camera Orientation: The pitch angle is constrained within [15 ◦, 30 ◦] downward from the horizontal. This setup mimics the standard downward-looking per-spective of mobile robots used for navigation and traversability analysis. 
+
+Results: We evaluate the quality of the reconstructed metric point cloud Pw using Accuracy (Acc), Complete-ness (Comp), and Overall scores. We benchmark VGP-Nav against two state-of-the-art metric geometry models: MoGe-2 (single-view) [25] and MapAnything (multi-view) [26]. As shown in Table III, VGP-Nav achieves superior performance TABLE I VISUAL LOCALIZATION RESULTS ON THE 7-S CENES DATASET [28]. W E REPORT THE MEDIAN TRANSLATION ERROR (m) AND ROTATION ERROR (◦ )
+
+FOR EACH SCENE . T HE BEST RESULT WITHIN EACH CATEGORY IS HIGHLIGHTED IN BOLD .
+
+Methods Chess Fire Heads Office Pumpkin RedKitchen Stairs Average Dataset-specific training time 
+
+> APR
+
+PMNet [29] 0.03 / 1.26 0.04 / 1.76 0.02 / 1.68 0.06 / 1.69 0.07 / 1.96 0.08 / 2.23 0.11 / 2.97 0.06 / 1.93 Days / scene DFNet [17]+NeFeS [30] 0.02 / 0.57 0.02 / 0.74 0.02 / 1.28 0.02 / 0.56 0.02 / 0.55 0.02 / 0.57 0.05 / 1.28 0.02 / 0.79 Days / scene Marepo [18] 0.02 / 1.24 0.02 / 1.39 0.02 / 2.03 0.03 / 1.26 0.04 / 1.48 0.04 / 1.71 0.06 / 1.67 0.03 / 1.54 15min / scene SCR  DSAC* [15] 0.019 / 1.11 0.019 / 1.24 0.011 / 1.82 0.026 / 1.18 0.042 / 1.41 0.030 / 1.70 0.042 / 1.42 0.027 / 1.41 Hours / scene ACE [16] 0.019 / 0.7 0.019 / 0.9 0.009 / 0.6 0.027 / 0.8 0.042 / 1.1 0.042 / 1.3 0.039 / 1.1 0.028 / 0.93 5min / scene RPR CamNet [31] 0.04 / 1.73 0.03 / 1.74 0.05 / 1.98 0.04 / 1.62 0.04 / 1.64 0.04 / 1.63 0.04 / 1.51 0.04 / 1.69 Hours Map-free (Match) [22] 0.10 / 2.93 0.12 / 4.95 0.11 / 5.40 0.12 / 3.01 0.16 / 3.19 0.14 / 3.45 0.21 / 4.50 0.14 / 3.92 None Map-free (Regress) [22] 0.09 / 2.66 0.13 / 4.54 0.11 / 4.81 0.11 / 2.77 0.16 / 3.11 0.14 / 3.48 0.18 / 4.70 0.13 / 3.72 None ExReNet (SN) [32] 0.06 / 2.15 0.09 / 3.20 0.04 / 3.30 0.07 / 2.17 0.11 / 2.65 0.09 / 2.57 0.33 / 7.34 0.11 / 3.34 None ExReNet (SUNCG) [32] 0.05 / 1.63 0.07 / 2.54 0.03 / 2.71 0.06 / 1.75 0.07 / 2.04 0.07 / 2.10 0.19 / 4.87 0.08 / 2.52 None Reloc3r-512 [23] 0.03 / 0.88 0.03 / 0.81 0.01 / 0.95 0.04 / 0.88 0.06 / 1.10 0.04 / 1.26 0.07 / 1.26 0.04 / 1.02 None 
+
+VGP-Nav(Ours) 0.02 / 0.70 0.02 / 0.88 0.01 / 0.73 0.03 / 0.73 0.04 / 1.05 0.04 / 1.20 0.03 / 0.72 0.03 / 0.86 None 
+
+TABLE II VISUAL LOCALIZATION RESULTS ON THE CAMBRIDGE LANDMARKS DATASET [3]. W E REPORT THE MEDIAN TRANSLATION ERROR (m) AND ROTATION ERROR (◦ ) FOR EACH SCENE . T HE BEST RESULT WITHIN EACH CATEGORY IS HIGHLIGHTED IN BOLD .
+
+Methods GreatCourt KingsCollege OldHospital ShopFacade StMarysChurch Average (4) Average Dataset-specific training time 
+
+> APR
+
+LENS [33] - 0.33 / 0.50 0.44 / 0.90 0.27 / 1.60 0.53 / 1.60 0.39 / 1.20 - Days / scene PMNet [29] - 0.31 / 0.55 0.44 / 0.79 0.17 / 0.86 0.31 / 0.96 0.31 / 0.79 - Days / scene DFNet [17]+NeFeS [30] - 0.37 / 0.54 0.52 / 0.88 0.15 / 0.53 0.37 / 1.14 0.35 / 0.77 - Days / scene SCR  DSAC* [15] 0.34 / 0.2 0.18 / 0.3 0.21 / 0.4 0.05 / 0.3 0.15 / 0.6 0.14 / 0.4 0.19 / 0.4 Hours / scene ACE [16] 0.43 / 0.2 0.28 / 0.4 0.31 / 0.6 0.05 / 0.3 0.18 / 0.6 0.20 / 0.4 0.25 / 0.4 5min / scene RPR AnchorNet [34] - 0.57 / 0.88 1.21 / 2.55 0.52 / 2.27 1.04 / 2.69 0.84 / 2.10 - Hours Map-free (Match) [22] 9.09 / 5.33 2.51 / 3.11 3.89 / 6.44 1.04 / 3.61 3.00 / 6.14 2.61 / 4.83 3.90 / 4.93 None Map-free (Regress) [22] 8.40 / 4.56 2.44 / 2.54 3.73 / 5.23 0.97 / 3.17 2.91 / 5.10 2.51 / 4.01 3.69 / 4.12 None ExReNet (SN) [32] 10.97 / 6.52 2.48 / 2.92 3.47 / 3.90 0.90 / 3.27 2.60 / 4.98 2.36 / 3.77 4.08 / 4.32 None ExReNet (SUNCG) [32] 9.79 / 4.46 2.33 / 2.48 3.54 / 3.49 0.72 / 2.41 2.30 / 3.72 2.22 / 3.03 3.74 / 3.31 None ImageNet+NCM [35] - - - - - 0.83 / 1.36 - None Reloc3r-512 [23] 1.22 / 0.73 0.42 / 0.36 0.62 / 0.55 0.13 / 0.58 0.34 / 0.58 0.38 / 0.52 0.55 / 0.56 None 
+
+VGP-Nav(Ours) 0.62 / 0.49 0.40 /0.33 0.50 /0.50 0.14/ 0.26 0.22 /0.43 0.31 /0.38 0.46 / 0.40 None 
+
+TABLE III METRIC PERCEPTION RESULT ON HOME AND HOSPITAL SCENES .                                
+
+> View Known GT Camera Method Home Hospital
+> Acc. ↓Comp. ↓Overall ↓Acc. ↓Comp. ↓Overall ↓
+> Single ✓MoGe-2 0.18 0.15 0.16 0.15 0.13 0.14 Multi ✓MapAnything 0.10 0.07 0.08 0.11 0.08 0.09
+> ✗VGP-Nav (Ours) 0.08 0.03 0.05 0.10 0.08 0.09
+
+TABLE IV PER -FRAME COMPUTATIONAL TIME BREAKDOWN OF VGP-N AV .
+
+Module Time (s) 
+
+Geometry-Aware Retrieval Strategy 0.027 VGGT 0.420 Weighted Motion Averaging 0.005 Ground-Anchored Scale Recovery 0.040 
+
+Total System (VGP-Nav) 0.492 
+
+across all metrics in both simulation environments. VGP-Nav significantly outperforms the monocular baseline MoGe-2, demonstrating the necessity of multi-view constraints for scale stability. Notably, while MapAnything relies on full Ground-Truth (GT) camera parameters, VGP-Nav achieves better results with only a coarse estimate of the initial robot camera height above the ground. In the Home scene, our method shows dominant performance, particularly in Completeness (0.03 vs. 0.07). In the Hospital scene, which presents more significant layout variations, the increased localization challenges result in a slight degradation of metric perception. While VGP-Nav still maintains higher Accuracy (0.10) and matches the Overall score of 0.09. These results validate that utilizing the ground plane as a physical anchor 
+
+TABLE V ABLATION RESULTS OF OUR APPROACH ON THE 7-S CENES DATASET FOR VISUAL LOCALIZATION .
+
+Geometry-Aware Retrieval Strategy Weighted Motion Averaging Translation Error(cm) ↓
+
+Rotation Error ( ◦) ↓
+
+✗ ✗ 11.3 0.90 
+
+✓ ✗ 10.8 0.87 
+
+✗ ✓ 3.4 0.89 
+
+✓ ✓ 3.0 0.86 
+
+effectively mitigates domain-induced scale drift and provides more stable geometric sensing than direct regression, even when the estimated camera poses are suboptimal. 
+
+D. Real World 
+
+Setup: To validate the practical applicability of VGP-Nav, we deployed the framework on a Unitree G1 humanoid robot equipped with an external Intel RealSense D455 camera (rgb only). The experiments were conducted in a cluttered office environment. Prior to navigation, we utilized a handheld scanner to collect database images, corresponding camera poses, and a coarse occupancy map for global reference. We randomly sampled 20 pairs of start and goal positions to evaluate the autonomous navigation capability of VGP-Nav. The path planner we use A ∗ algorithm [37]. 
+
+Quantitative and Qualitative Analysis: As summarized in Table IV, we report the computational time of each module. VGP-Nav achieved a success rate of 13/20. The qualitative results in Fig. 5 demonstrate that benefiting from First-Person Perspective                      
+
+> Occupancy map
+> Third-Person Perspective
+> rgb only
+> Unitree G1 with D455
+> Reach Goal Fig. 5. Real-world experiment. The Unitree G1 performs safe point-goal navigation in the presence of unseen obstacles using only RGB input from an Intel RealSense D455. In occupany map, the current robot state is represented by a blue point with a directional arrow, indicating its 2.5D pose ( x, y, θ ). The solid blue point denotes the subsequent target waypoint, while the red line illustrates the global trajectory generated by the A ∗algorithm [37] on the metric occupancy grid. TABLE VI ABLATION RESULTS ON THE HOME SCENE FOR METRIC PERCEPTION .
+> Weighted Motion Averaging Ground-Anchored Scale Recovery Geometry-Aware Retrieval Strategy Acc. ↓/ Comp. ↓
+> ✗✗✗1.74 / 2.68
+> ✓✗✗0.61 / 1.12
+> ✓✓✗0.09 / 0.05
+> ✓✓✓0.08 / 0.03
+
+the synergy between precise visual localization and the stable ground-anchored scale recovery, VGP-Nav provides consistent pose estimates and a stable metric reconstruction of surrounding obstacles. Even during the characteristic torso oscillations and mechanical vibrations of the humanoid gait, our method effectively maintains a steady geometric reference. This allows for the continuous update of the 2D occupancy map within the robot’s field of view, successfully guiding the platform to its target while ensuring safety in cluttered office environments. 
+
+Failure case Analysis: We observed that failure cases primarily occurred in narrow passages. During maneuvers to bypass obstacles in close proximity to walls, the camera often directly faced textureless surfaces. This restricted field of view, combined with the scarcity of discriminative visual features, led to a loss of localization and subsequent naviga-tion failure. Future work will focus on integrating temporal consistency to mitigate such cases. 
+
+E. Ablation Studies 
+
+We evaluate the impact of our core modules, namely Geometry-Aware Retrieval, Weighted Motion Averaging, and Ground-Anchored Scale Recovery through two sets of abla-tion experiments. 
+
+Impact on Visual Localization: Table V highlights how our geometric strategies refine pose estimation accuracy. Weighted Motion Averaging is the most critical component for translation accuracy. Comparing the first and third rows, this module reduces the translation error significantly from 
+
+11 .3 cm to 3.4 cm. This improvement demonstrates that our motion averaging successfully aligns discrete relative pose estimates into a consistent global coordinate system. Fur-thermore, the Geometry-Aware Retrieval strategy provides a secondary boost (Row 3 vs. Row 4), achieving the best performance of 3.0 cm /0.86 ◦. By ensuring that the trian-gulation process utilizes diverse, wide-baseline views, this strategy further improves the geometric conditioning of the final pose estimation. 
+
+Impact on Metric Perception: Table VI demonstrates the necessity of each module for metric perception. Comparing the first and second rows, the significant improvement in Acc./Comp. (from 1.74 / 2.68 to 0.61 / 1.12) underscores that accurate pose estimation is the prerequisite for metric geometry perception. Despite the improved alignment, the reconstruction still lacks absolute scale. The introduction of Ground-Anchored Scale Recovery (Row 3) results in a dramatic error reduction to 0.09 / 0.05. This validates the module’s role as the primary mechanism for anchoring the feed-forward reconstruction to the real-world metric space. The full pipeline (Row 4) achieves the highest precision (0.08 / 0.03). Beyond its contribution to localization, the Geometry-Aware Retrieval strategy ensures a more diverse set of viewpoints. As shown in Fig. 3, this enhanced diversity provides better observation of the ground plane from various angles, allowing for a more robust scale estimation. V. CONCLUSIONS In this work, we present VGP-Nav, a unified monocular framework that bridges global localization and dense metric perception without relying on multi-sensor fusion or com-plex calibration. By anchoring localization-grounded visual geometry to physically meaningful ground-plane constraints, VGP-Nav effectively resolves monocular scale ambiguity, providing a reliable metric reference for obstacle sensing and downstream planning. Extensive experiments in diverse simulated and real-world environments demonstrate that our approach achieves competitive performance and robust generalization, highlighting its potential for scalable, low-cost autonomous navigation. Future work will explore the integration of temporal consistency and semantic under-standing, alongside optimizing system inference speed, to further enhance the stability and real-time efficiency of the navigation pipeline. REFERENCES [1] X. Zuo, P. Geneva, W. Lee, Y. Liu, and G. Huang, “Lic-fusion: Lidar-inertial-camera odometry,” in 2019 IEEE/RSJ International Confer-ence on Intelligent Robots and Systems (IROS) . IEEE, 2019, pp. 5848–5854. [2] D. Zhang, J. Zhang, Y. Sun, T. Li, H. Yin, H. Xie, and J. Yin, “Towards robust sensor-fusion ground slam: A comprehensive benchmark and a resilient framework,” in 2025 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) . IEEE, 2025, pp. 8894–8901. [3] A. Kendall, M. Grimes, and R. Cipolla, “Posenet: A convolutional net-work for real-time 6-dof camera relocalization,” in IEEE International Conference on Computer Vision (ICCV) , 2015, pp. 2938–2946. [4] P.-E. Sarlin, C. Cadena, R. Siegwart, and M. Dymczyk, “From coarse to fine: Robust hierarchical localization at large scale,” in IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) ,2019, pp. 12 716–12 725. [5] G. Sidorov, M. Mohrat, D. Gridusov, R. Rakhimov, and S. Kolyubin, “Gsplatloc: Grounding keypoint descriptors into 3d gaussian splatting for improved visual localization,” in 2025 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) . IEEE, 2025, pp. 12 601–12 607. [6] S. Wang, V. Leroy, Y. Cabon, B. Chidlovskii, and J. Revaud, “Dust3r: Geometric 3d vision made easy,” in IEEE/CVF Conference on Com-puter Vision and Pattern Recognition (CVPR) , 2024, pp. 20 697– 20 709. [7] J. Wang, M. Chen, N. Karaev, A. Vedaldi, C. Rupprecht, and D. Novotny, “Vggt: Visual geometry grounded transformer,” in 
+
+IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2025, pp. 5294–5306. [8] Y. Wang, J. Zhou, H. Zhu, W. Chang, Y. Zhou, Z. Li, J. Chen, J. Pang, C. Shen, and T. He, “ π3: Permutation-equivariant visual geometry learning,” arXiv preprint arXiv:2507.13347 , 2025. [9] Q. Wang, Y. Zhang, A. Holynski, A. A. Efros, and A. Kanazawa, “Continuous 3d perception model with persistent state,” in IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) ,2025, pp. 10 510–10 522. [10] H. Wang, L. Zhao, X. Xu, J. Lu, and H. Yan, “igaussian: Real-time camera pose estimation via feed-forward 3d gaussian splatting inversion,” in 2025 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) . IEEE, 2025, pp. 13 720–13 727. [11] D. DeTone, T. Malisiewicz, and A. Rabinovich, “Superpoint: Self-supervised interest point detection and description,” in IEEE/CVF Conference on Computer Vision and Pattern Recognition Workshops (CVPRW) , 2018, pp. 224–236. [12] P.-E. Sarlin, D. DeTone, T. Malisiewicz, and A. Rabinovich, “Su-perglue: Learning feature matching with graph neural networks,” in 
+
+IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2020, pp. 4938–4947. [13] J. L. Schonberger and J.-M. Frahm, “Structure-from-motion revisited,” in IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2016, pp. 4104–4113. [14] M. A. Fischler and R. C. Bolles, “Random sample consensus: a paradigm for model fitting with applications to image analysis and automated cartography,” Communications of the ACM , vol. 24, no. 6, pp. 381–395, 1981. [15] E. Brachmann and C. Rother, “Visual camera re-localization from rgb and rgb-d images using dsac,” IEEE Transactions on Pattern Analysis and Machine Intelligence (TPAMI) , vol. 44, no. 9, pp. 5847–5865, 2021. [16] E. Brachmann, T. Cavallari, and V. A. Prisacariu, “Accelerated coordi-nate encoding: Learning to relocalize in minutes using rgb and poses,” in IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2023, pp. 5044–5053. [17] S. Chen, X. Li, Z. Wang, and V. A. Prisacariu, “Dfnet: Enhance absolute pose regression with direct feature matching,” in European Conference on Computer Vision (ECCV) . Springer, 2022, pp. 1–17. [18] S. Chen, T. Cavallari, V. A. Prisacariu, and E. Brachmann, “Map-relative pose regression for visual re-localization,” in IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) ,2024, pp. 20 665–20 674. [19] R. Arandjelovic, P. Gronat, A. Torii, T. Pajdla, and J. Sivic, “Netvlad: Cnn architecture for weakly supervised place recognition,” in IEEE Conference on Computer Vision and Pattern Recognition (CVPR) ,2016, pp. 5297–5307. [20] J. Revaud, J. Almaz´ an, R. S. Rezende, and C. R. d. Souza, “Learning with average precision: Training image retrieval with a listwise loss,” in IEEE/CVF International Conference on Computer Vision (ICCV) ,2019, pp. 5107–5116. [21] V. Balntas, S. Li, and V. Prisacariu, “Relocnet: Continuous metric learning relocalisation using neural nets,” in European conference on computer vision (ECCV) , 2018, pp. 751–767. [22] E. Arnold, J. Wynn, S. Vicente, G. Garcia-Hernando, A. Monszpart, V. Prisacariu, D. Turmukhambetov, and E. Brachmann, “Map-free visual relocalization: Metric pose relative to a single image,” in 
+
+European Conference on Computer Vision (ECCV) . Springer, 2022, pp. 690–708. [23] S. Dong, S. Wang, S. Liu, L. Cai, Q. Fan, J. Kannala, and Y. Yang, “Reloc3r: Large-scale training of relative camera pose regression for generalizable, fast, and accurate visual localization,” in IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) ,2025, pp. 16 739–16 752. [24] V. Leroy, Y. Cabon, and J. Revaud, “Grounding image matching in 3d with mast3r,” arXiv preprint arXiv:2406.09756 , 2024. [25] R. Wang, S. Xu, Y. Dong, Y. Deng, J. Xiang, Z. Lv, G. Sun, X. Tong, and J. Yang, “Moge-2: Accurate monocular geometry with metric scale and sharp details,” arXiv preprint arXiv:2507.02546 , 2025. [26] N. Keetha, N. M¨ uller, J. Sch¨ onberger, L. Porzi, Y. Zhang, T. Fischer, A. Knapitsch, D. Zauss, E. Weber, N. Antunes, et al. , “Mapany-thing: Universal feed-forward metric 3d reconstruction,” arXiv preprint arXiv:2509.13414 , 2025. [27] A. Chatterjee and V. M. Govindu, “Efficient and robust large-scale rotation averaging,” in IEEE International Conference on Computer Vision (ICCV) , 2013, pp. 521–528. [28] J. Shotton, B. Glocker, C. Zach, S. Izadi, A. Criminisi, and A. Fitzgib-bon, “Scene coordinate regression forests for camera relocalization in rgb-d images,” in IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2013, pp. 2930–2937. [29] J. Lin, J. Gu, B. Wu, L. Fan, R. Chen, L. Liu, and J. Ye, “Learn-ing neural volumetric pose features for camera localization,” arXiv preprint arXiv:2403.12800 , 2024. [30] S. Chen, Y. Bhalgat, X. Li, J.-W. Bian, K. Li, Z. Wang, and V. A. Prisacariu, “Neural refinement for absolute pose regression with fea-ture synthesis,” in IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2024, pp. 20 987–20 996. [31] M. Ding, Z. Wang, J. Sun, J. Shi, and P. Luo, “Camnet: Coarse-to-fine retrieval for camera re-localization,” in IEEE/CVF International Conference on Computer Vision (ICCV) , 2019, pp. 2871–2880. [32] D. Winkelbauer, M. Denninger, and R. Triebel, “Learning to localize in new environments from synthetic training data,” in 2021 IEEE International Conference on Robotics and Automation (ICRA) . IEEE, 2021, pp. 5840–5846. [33] A. Moreau, N. Piasco, D. Tsishkou, B. Stanciulescu, and A. de La Fortelle, “Lens: Localization enhanced by nerf synthesis,” in 
+
+Conference on Robot Learning (CoRL) . PMLR, 2022, pp. 1347–1356. [34] S. Saha, G. Varma, and C. Jawahar, “Improved visual relocalization by discovering anchor points,” arXiv preprint arXiv:1811.04370 , 2018. [35] Q. Zhou, T. Sattler, M. Pollefeys, and L. Leal-Taixe, “To learn or not to learn: Visual localization from essential matrices,” in 2020 IEEE International Conference on Robotics and Automation (ICRA) . IEEE, 2020, pp. 3319–3326. [36] W. Zhong, P. Cao, Y. Jin, L. Li, W. Cai, J. Lin, Z. Lyu, T. Wang, B. Dai, X. Xu, and J. Pang, “Internscenes: A large-scale interactive indoor scene dataset with realistic layouts,” in arXiv , 2025. [37] P. E. Hart, N. J. Nilsson, and B. Raphael, “A formal basis for the heuristic determination of minimum cost paths,” IEEE transactions on Systems Science and Cybernetics , vol. 4, no. 2, pp. 100–107, 1968.

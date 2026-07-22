@@ -1,0 +1,778 @@
+Title: FrequencyFormer: A Co-Designed Sensor-to-Processor Pipeline for Frequency-Domain Vision Transformer Inference
+
+URL Source: https://arxiv.org/pdf/2606.19574v1
+
+Published Time: Fri, 19 Jun 2026 00:17:22 GMT
+
+Number of Pages: 9
+
+Markdown Content:
+# FrequencyFormer: A Co-Designed Sensor-to-Processor Pipeline for Frequency-Domain Vision Transformer Inference 
+
+## Chengwei Zhou 1, Ovishake Sen 2, Xuming Chen 1, Rishith Paramasivam 2, Shaahin Angizi 3,Swarup Bhunia 2, Baibhab Chatterjee 2, and Gourav Datta 1
+
+> 1
+
+Case Western Reserve University, USA 2University of Florida, USA 3New Jersey Institute of Technology, USA 
+
+{chengwei.zhou,xuming.chen,gourav.datta}@case.edu {ovishake.sen,rparamasivam,swarup,chatterjee.b}@ufl.edu shaahin.angizi@njit.edu 
+
+ABSTRACT 
+
+The deployment of vision transformers (ViTs) on sensor-edge sys-tems is fundamentally bottlenecked not by on-device computation alone, but by the energy and bandwidth cost of transmitting high-dimensional image data from sensor to processor. In-sensor and near-sensor computing paradigms aim to address this by perform-ing early feature extraction at the sensor, yet existing approaches achieve only modest compression ratios, limiting their practical impact. We observe that the frequency domain offers a natural and highly compact representation of visual information, and that this compactness can be exploited at the sensor level to dramatically reduce the volume of data that must traverse the sensor-processor interface. Building on this insight, we present FrequencyFormer, a co-designed sensor-to-processor pipeline for efficient ViT infer-ence comprising three tightly integrated components: (1) a multi-scale discrete cosine transform (DCT) tokenizer that compresses a 224x224 input image into a compact set of frequency-domain tokens, achieving up to 128x reduction in off-chip data volume with modest accuracy loss on standard benchmarks; (2) a look-up table (LUT)-based hardware realization of the tokenizer on a near-sensor logic chip, leveraging the fixed-coefficient structure of DCT to en-able precomputed, energy-efficient, and area-efficient inference without multipliers; and (3) a modified Mobile Industry Processor Interface (MIPI)-based low-power communication architecture that further reduces energy per bit of the compressed data transfer, yield-ing multiplicative savings on top of the bandwidth reduction. Fre-quencyFormer operates as a drop-in replacement for the standard ViT patch embedding, preserving compatibility with pretrained backbones across classification, detection, and segmentation tasks. FrequencyFormer achieves 28.8 TOPS/W, while maintaining accu-racy. The full pipeline reduces communication energy by ≈230 ×
+
+and total sensor-side energy by 2.22 × compared to conventional ar-chitectures, establishing frequency-domain tokenization as a viable foundation for scalable in-sensor ViT deployment. 
+
+KEYWORDS 
+
+Vision Transformer, LUT-based Accelerator, Frequency-Domain, Inference, Tokenization 
+
+1 INTRODUCTION 
+
+Vision transformers (ViT) have become the dominant architecture for high-performance image understanding, achieving state-of-the-art results across classification, detection, and segmentation tasks [ 14 , 47 ]. Their success, however, comes at the cost of substan-tial computational and memory requirements, making deployment on resource-constrained edge platforms challenging. Recent work has focused on reducing the compute of transformer inference, via quantization [ 21 , 48 ], pruning [ 17 , 29 ], and token reduction [ 5, 43 ], but a critical and often underappreciated bottleneck remains: the energy and bandwidth cost of moving raw image data from the sensor to the processor. In a typical edge vision system, the image sensor and the inference engine reside on separate chips, so the full-resolution frame must be transmitted across an off-chip interface before any computation can begin. For a standard 360 × 360 RGB image at 8-bit precision, this corresponds to roughly 3.1 megabits per frame. At the data rates and frame rates required by real-time applications, the energy spent on this communication link can rival or even exceed the energy of the inference itself, particularly once the backbone has been aggressively optimized for edge deployment, as illustrated in Fig. 1(a). The paradigm of in-/near-sensor computing has emerged as a re-sponse to this challenge [ 8, 36 , 55 ]. Rather than transmitting the full image and processing it remotely, in-sensor computing performs early-stage neural network operations directly at the pixel array or on a co-integrated logic chip adjacent to the sensor, transmitting only a compressed intermediate representation to the downstream processor. Recent work has demonstrated in-sensor implementa-tions of simple multi-layer perceptron as well as convolutional layers within pixel arrays [ 2, 12 ]. While these efforts represent meaningful progress, they share a common limitation: the compres-sion ratios they achieve are modest, typically ranging up to 10 ×.At these levels, the bandwidth savings may not justify the added complexity and silicon cost of integrating compute logic with or near the sensor. For in-sensor computing to deliver on its promise, the compression achieved at the sensor must be dramatic enough to fundamentally alter the system energy balance. We argue that the frequency domain is a natural representa-tion for addressing sensor–processor bottlenecks. The discrete cosine transform (DCT) concentrates most visual energy into a small set of low-frequency coefficients—a property long exploited in JPEG [ 50 ] and validated for machine learning, where sparse DCT inputs achieve competitive accuracy [ 16 , 54 ]. Unlike learned compression (e.g., autoencoders), DCT provides aggressive dimen-sionality reduction via a fixed, lightweight linear transform with no learned parameters or iterative encoding, making it well-suited for near-sensor implementation under strict area and power con-straints. Its fixed basis also enables hardware specialization at fabri-cation time. Building on this insight, we propose FrequencyFormer ,a co-designed sensor-to-processor pipeline comprising three tightly coupled components as shown in Fig. 1(b). 
+
+Multi-scale DCT tokenizer. The first component decomposes the input image (YCbCr) at three spatial scales ( 8×8, 32 ×32 , and global    
+
+> arXiv:2606.19574v1 [eess.IV] 17 Jun 2026 2) LUT Hardware
+> Backend Hardware
+> 1) DCT tokenizer
+> 3) Low power
+> interface
+> 3D  integration
+> Logic Chip
+> (a) (b)
+
+Figure 1: (a) Energy breakdown for edge vision backbones on 360 ×360 frames shows that as models are optimized (ResNet-50 FP32 → MobileNet-v2 INT8/INT4 → EfficientFormer-L1 INT4), compute energy decreases while communication (MIPI) remains constant, increasing its share of total energy. Estimates use ASIC-level models including compute and memory. (b) Pro-posed 3D-integrated pipeline with a stacked CMOS sensor and near-sensor logic performing LUT-based DCT tokenization, transmitting compact tokens via a low-power interface. 
+
+224 ×224 ) using block-wise DCT, followed by channel selection to retain the most informative frequency coefficients. The multi-resolution features are fused into a compact token sequence for standard ViTs, achieving up to 128 × data reduction. Since channel indices are fixed after training (via Gumbel-Softmax [ 22 ] or zigzag ordering), inference uses only fixed-coefficient operations. 
+
+LUT-based hardware realization. This fixed structure enables efficient LUT-based acceleration. DCT coefficients are constants, al-lowing coefficient-pixel products to be hardwired into ROM-backed LUTs, eliminating multipliers and SRAM overhead. We adopt a divide-and-conquer LUT design [ 46 ] and further reduce cost via mixed precision: low-frequency components use INT8, while high-frequency components use INT4. Learned weights are stored in a smaller SRAM-backed LUT datapath, yielding significant energy and area savings. 
+
+Low-power communication interface. The communication link is co-designed with the compressed representation. The tokenizer reduces data volume by 128 ×, while a modified MIPI interface achieves an additional 1.8× per-bit energy reduction. We adopt an asymmetric architecture that shifts complexity to the receiver (FPGA/custom), which employs integrating detection to achieve low BER, while keeping the sensor-side lightweight and energy-efficient. Together, these three components form a complete pipeline from sensor to processor. The image sensor captures the scene; the near-sensor logic chip performs DCT decomposition, channel selection, convolution, and optional cross-attention fusion using LUT-based hardware; the compressed token stream is transmitted over the optimized communication link; and the main processor runs the standard ViT backbone on the received tokens. We evaluate FrequencyFormer on image classification (CIFAR-10, Tiny-ImageNet, VWW) and dense prediction (object detection and instance segmentation on COCO [ 30 ]), using ViT-Tiny, ViT-Base, Swin-Tiny, and EfficientFormer-L1 backbones. Our experi-ments demonstrate that the multi-scale DCT tokenizer preserves near-baseline accuracy across all tasks while reducing off-chip data volume by up to 128 ×. The LUT-based realization with HAQ achieves 28.8 TOPS/W—2.5 × higher energy efficiency than prior in-/near-sensor work. The combined pipeline reduces communication energy by ≈230 × and total sensor-side energy by 2.22 × relative to a conventional baseline. BN                       
+
+> BN
+> BN
+> Conv2d
+> k=4, s=4
+> Conv2d
+> k=1, s=1
+> Conv2d
+> k=28, s=28
+> →7x7x24
+> →7x7x24
+> →8x8x24
+> pi ck 96  Cross
+> Atten.
+> Fine
+> (8 ×8)
+> Medium
+> (32 ×32)
+> Send to
+> backbone
+> Y
+> Cb
+> Cr
+> Y
+> Cb
+> 𝑄 𝐾 !
+> Cr
+> C!!" X!!" ×!!" C!!"
+> $
+> C%! C%!
+> $
+> X%! ×%!
+> &'()*+,
+> C-C-
+> $
+> X-×-
+> &'()*+,
+> Global DCT
+> 32 X32 block DCT
+> 8X8 block DCT
+> 𝜎
+> Q
+> K
+> Q
+> Reshape to
+> 7x7x144
+> Reshape
+> to 1x1x24
+> Reshape to
+> 28 x28x24 Q
+> QQ
+> QQ
+> Q
+> Channel Selection
+> 𝑉 Q⨁
+> V
+> Cross Atten.
+> Q
+> K/V
+> QConv2d can absorb BN during deploy -
+> ment , with both weights quantized.
+> Q
+> Conv2d
+> k=16, s=16
+> BN
+> Send to
+> backbone
+> →14 x14 x192
+> 224 x224 x3
+> ViT -Tiny
+> Tokenizer
+> FrequencyFormer  Tokenizer
+> 7x7x24
+> 14 x14 x192
+> Quantized YCbCr inputs are reshaped and
+> stacked into 𝑏 ×𝑏 blocks to perform block DCT.
+> 𝜎
+> Q
+> Softmax
+> Quantization
+> YCb Cr Input
+> Row
+> harmonics
+> Column
+> harmonics
+> Coarse
+> (224 ×224)
+> ×
+> Channel Selection
+> Row
+> harm.
+> Column
+> harm.
+> Channel Selection
+> pick  24
+> pick  24
+> pick  5
+> pi ck 14
+> pick 5
+> Y
+> Cb
+> Cr pick  5
+> pick 5
+> pi ck 14
+> RGB Input
+
+Figure 2: Overview of the FrequencyFormer tokenizer. The input YCbCr image is decomposed via multi-scale block-wise and global DCT. At each scale, selected frequency coefficients are quantized and projected through BN-fused strided convolutions into compact spatial tokens. A cascaded cross-attention module fuses the three branches before forwarding to the backbone. All weights and activations are integer-quantized. Feature dimensions in or-ange correspond to the 7×7, 24-channel output configuration. 
+
+2 RELATED WORK 
+
+Frequency-Domain Representations for Visual Recognition :Frequency-domain representations (e.g., DCT) compactly encode images by concentrating energy in a few coefficients [ 50 ]. Prior work shows neural networks can operate directly on such represen-tations, including frequency-domain CNNs [ 10 , 16 ] and ImageNet-scale models with reduced input dimensionality [ 15 , 54 ]. Recent transformer-based approaches incorporate spectral processing—e.g., replacing MHSA with Fourier mixing (FNet [ 25 ]) or integrating fre-quency components into attention (FcaNet [ 41 ], SpectFormer [ 39 ]), as well as DCT-based tokenization and attention compression [24, 26 , 38 ]. While learned compression methods [ 3 , 4] and token re-duction techniques (DynamicViT [ 43 ], ToMe [ 5]) reduce compute, they either require significant preprocessing or operate after full image transmission, limiting their applicability at the sensor. 
+
+LUT Acceleration : LUT-based neural acceleration has been ex-plored to improve energy efficiency by replacing conventional MAC operations with precomputed memory accesses. This has been shown in the context of systolic arrays [ 32 ], in-cache processing framework for neural workloads [ 42 ], programmable compute-in-memory (CiM) fabric [ 13 ], as well as scalable neural accelerators using a divide-and-conquer (D&C) strategy [ 46 ], achieving signifi-cant reductions in power and power-area product in each scenario. 
+
+Low-power Communication Interface : Recent work on ultra-low-power camera-to-processor communication has moved from conventional high-speed sensor readout toward co-designed sens-ing, compression, and interface architectures that minimize the number of bits leaving the focal plane [ 7]. Both electrical and op-tical domain processing with communication [ 9, 37 , 51 ] results in roughly 1-20 pJ-per-pixel cost for state-of-the-art sensing/blind-compression pipelines, with >1 nJ-per-pixel for communicating the data. However, most of these works focus on optimizing computation-communication trade-offs, without providing much insight on if the communication link itself can be made much lower-power. 
+
+3 PROPOSED METHOD 
+
+FrequencyFormer is a three-component sensor-to-processor pipeline for ViT inference in bandwidth-constrained systems. The pipeline partitions the inference task across two physical domains: a near-sensor logic chip and an off-chip main processor. On the near-sensor   
+
+> 22
+> X!"#$%&'()
+> X
+> =××
+> C,-"$()
+> C,-"$( )
+> .
+> 8
+> 4
+> K=14
+> Rows used:5/8
+> Cols used 4/8
+> 8
+> 4
+> Quantize the activation after the
+> row -harmonics matrix multiplication
+> 8 Spatial
+> block
+
+Figure 3: 8×8 Selection-Aware DCT Pruning with Harmonic-Aware Quanti-zation. C8 is pruned to 5 rows and C8⊤ to 4 columns needed by the 𝐾 =14 zigzag coefficients, reducing to a 5×4 output tile. Bit-widths decrease from INT8 to INT4 per row/column; the intermediate result Cpruned X is requantized before the column-harmonic multiplication. The resulting 5 × 4 coefficient matrix 
+
+> Y, where each cell shows its effective precision (min of row and column bit-widths), overlaid with the zigzag scan order and frequency-band annotations.
+
+chip, a multi-scale DCT tokenizer (Section 3.1) transforms the raw image into a compact frequency-domain token sequence, imple-mented using energy-efficient LUT-based hardware (Section 3.2). The compressed tokens are then transmitted to the main processor over a low-power communication interface (Section 3.3), where a standard ViT backbone performs classification or dense prediction on the received tokens. The architectural split is governed by a simple principle: operations whose coefficients are fixed or can be hardened after training belong on the sensor chip, where they ben-efit from LUT-based precomputation; the remaining learned trans-former layers, which require programmable and higher-precision computation, execute on the main processor. 
+
+3.1 Multi-Scale Frequency-Domain Tokenizer 
+
+The tokenizer converts a 224 ×224 RGB image into a short sequence of frequency tokens through four components (as shown in Fig. 2). All weights and activations are represented in integer precision to enable efficient LUT-based precomputation, while softmax re-mains in FP16. Each components addresses a specific bottleneck: (i) multi-scale DCT decomposes the image into complementary spatial-frequency features (Section 3.1.1); (ii) Selection-Aware DCT Pruning (Section 3.1.2); (iii) harmonic-aware quantization allocates precision proportional to spectral importance (Section 3.1.3); and (iv) multi-branch fusion merges the multi-scale representations into a unified token sequence (Section 3.1.4). 
+
+3.1.1 Multi-Scale DCT Decomposition. The input is first converted to YCbCr color space; following standard practice [ 20 , 50 ]. For an 
+
+𝑁 ×𝑁 spatial block X, the 2-D DCT computes the coefficient matrix 
+
+Y = C X C ⊤, (1) where C ∈ R𝑁 ×𝑁 is the orthonormal DCT basis with entries 
+
+𝐶 𝑘,𝑖 = 𝑤 𝑘 cos 
+
+ 𝜋 (2𝑖 +1)𝑘 
+
+> 2𝑁
+
+
+
+, 𝑤 𝑘 =
+
+(√︁ 
+
+1/𝑁 𝑘 = 0,√︁ 
+
+2/𝑁 𝑘 > 0. (2) The tokenizer processes YCbCr through three parallel branches at different block sizes to capture complementary spatial-frequency features. 
+
+Branch 1 (Local features, 8 × 8 blocks). The Y, Cb, and Cr channels are each partitioned into non-overlapping 8 × 8 blocks, and the 2D DCT is applied independently to each block. This block size is chosen for compatibility with the JPEG standard and captures fine-grained local texture and edge information. For a 𝐻 ×𝑊 single-channel image, 8 × 8 block-wise DCT produces a grid of 𝐻  
+
+> 8
+
+× 𝑊 
+
+> 8
+
+blocks, each containing 64 frequency coefficients. After channel selection (described below), we retain 𝑘 𝑦 , 𝑘 𝑐𝑏 , and 𝑘 𝑐𝑟 coefficients from Y, Cb, and Cr respectively, yielding a feature map of size  
+
+> 𝐻
+> 8
+
+×𝑊  
+
+> 8
+
+×( 𝑘 𝑦 +𝑘 𝑐𝑏 +𝑘 𝑐𝑟 ). A 2D convolution with kernel size 𝑘 and stride 𝑠 then reduces the spatial resolution to 𝐻  
+
+> 8·𝑠
+
+× 𝑊  
+
+> 8·𝑠
+
+, producing a token map of shape 𝐻  
+
+> 8·𝑠
+
+× 𝑊  
+
+> 8·𝑠
+
+× ( 𝑘 𝑦 +𝑘 𝑐𝑏 +𝑘 𝑐𝑟 ).
+
+Branch 2 (Medium-scale structure, 32 × 32 blocks). The same YCbCr channels are partitioned into 32 × 32 blocks and transformed via block-wise DCT. The larger block size captures medium-scale struc-tural patterns such as object boundaries and semantic regions that span multiple 8 × 8 blocks but remain local relative to the full image. After channel selection, the resulting feature map is passed through batch normalization followed by a 2D convolution (kernel size 1, stride 1) to project the selected coefficients into a 24- or 48-channel embedding, depending on the channel configuration described in Section 4.1. This produces tokens of shape 𝐻  
+
+> 32
+
+× 𝑊  
+
+> 32
+
+× 24 /48 .
+
+Branch 3 (Global semantics, full-image DCT). Unlike the first two branches, Branch 3 applies the 2D DCT globally to the 𝐻 ×𝑊 image for each of the Y, Cb, and Cr channels, capturing the global fre-quency structure including overall illumination, color distribution, and large-scale layout. The resulting 𝐻 × 𝑊 × 3 coefficient map is processed through a batch normalization and a 2D convolution layer with kernel size 28 and stride 28, which performs a form of learned pooling in the frequency domain, reducing the spatial extent to 𝐻  
+
+> 28
+
+× 𝑊  
+
+> 28
+
+× 3. Channel selection then retains the most in-formative global coefficients ( 𝑘 𝑦 from Y, 𝑘 𝑐𝑏 from Cb, and 𝑘 𝑐𝑟 from Cr), producing a token map of shape 1 × 1 × ( 𝑘 𝑦 +𝑘 𝑐𝑏 +𝑘 𝑐𝑟 ).The three branches are deliberately designed to span complemen-tary frequency features. Branch 1 captures high-to-mid frequency local detail (textures, edges, fine patterns). Branch 2 captures mid-frequency structural information (object contours, part boundaries). Branch 3 captures low-frequency global information (scene lay-out, illumination gradients). This multi-scale decomposition in the frequency domain is analogous to the spatial multi-scale feature pyramids used in convolutional architectures, but operates on fre-quency coefficients rather than pixel activations. Within each branch, a subset of 𝐾 DCT coefficients is retained via the JPEG zigzag scan, which traverses the coefficient matrix from low to high frequency along diagonal paths, providing an effective fixed selection priority without learnable parameters. As an alter-native, we evaluate learnable selection via Gumbel-Softmax [ 22 ], where a soft mask 𝑚 𝑖 = 𝜎  (𝑔 𝑖 + log 𝛼 𝑖 )/ 𝜏  is applied to each coeffi-cient, with 𝑔 𝑖 drawn from a Gumbel distribution, 𝛼 𝑖 the learnable logit, and 𝜏 the temperature. The masks are jointly optimized dur-ing training and hardened to fixed indices at inference. Although this yields up to 0.2% accuracy improvement, the resulting non-contiguous coefficient positions prevent the row/column pruning mentioned in Section 3.1.2 , negating computational savings. We therefore adopt zigzag ordering as the default selection strategy. In both cases, the selection reduces to address routing at inference and incurs zero additional computation. 
+
+3.1.2 Selection-Aware DCT Pruning. Regardless of how the 𝐾 re-tained coefficients are chosen (via zigzag ordering or learned selec-tion), each selected coefficient occupies a position (𝑢, 𝑣 ) in the 2-D frequency grid and therefore requires only row 𝑢 of C and column 𝑣 
+
+of C⊤. Collecting the distinct row indices into R and the distinct column indices into S across all 𝐾 positions, we have 𝑅 = |R| rows 
+
+> 3
+
+and 𝑆 = |S| columns that are actually needed. We prune C in Eq. 1 to retain these 𝑅 rows, and C⊤ to retain these 𝑆 columns, yielding: 
+
+Y[𝐾 ] = Crow X C ⊤
+
+> col
+
+, Crow ∈ R𝑅 ×𝑁 , Ccol ∈ R𝑆 ×𝑁 , (3) reducing the complexity from O( 𝑁 3) to O(( 𝑅 +𝑆 )· 𝑁 2), with the output being an 𝑅 ×𝑆 tile from which the 𝐾 coefficients are read directly. For 𝑁 =8 and 𝐾 =14 , the selected positions occupy 𝑅 =5 rows and 𝑆 =4 columns (Fig. 3), producing a compact 5×4 output. 
+
+3.1.3 Harmonic-Aware Quantization(HAQ). Uniform quantization across all harmonic rows ignores their energy hierarchy. Empiri-cally, we find that aggressively quantizing high-frequency harmon-ics (e.g., to 4-bit) causes negligible accuracy loss, confirming that the semantic content of DCT representations is primarily concentrated in the low-frequency components. Motivated by this observation, we assign linearly decreasing bit-widths to the rows of Crow accord-ing to harmonic order 𝑘 :
+
+𝑏 𝑘 = round 
+
+
+
+𝑏 max − (𝑏 max − 𝑏 min ) 𝑘 𝑡 
+
+
+
+, 𝑘 = 0, . . . , 𝑅 −1, (4) with 𝑏 𝑘 = 𝑏 min for 𝑘 > 𝑡 , where 𝑏 max is maximum bit width, 𝑏 min is the minimum bit width, and 𝑡 is a transition harmonic index. Each row is independently quantized via symmetric uniform quantiza-tion: 
+
+e𝐶 𝑘, · = Δ𝑘 ·clip 
+
+  𝐶 𝑘, ·
+
+Δ𝑘 
+
+
+
+, −2𝑏 𝑘 −1, 2𝑏 𝑘 −1−1
+
+
+
+, Δ𝑘 = ∥𝐶 𝑘, · ∥∞
+
+2𝑏 𝑘 −1 − 1 . (5) 
+
+Matched-precision multiplication via bit-truncation. To fully exploit the reduced bit-widths, we enforce matched-precision arithmetic: the 𝑘 -th harmonic row e𝐶 𝑘, · at 𝑏 𝑘 bits is multiplied with X also at 𝑏 𝑘 
+
+bits, so the MAC unit operates as INT 𝑏 𝑘 ×INT 𝑏 𝑘 (e.g., INT8 ×INT8 for DC, INT4 ×INT4 for high-frequency harmonics), enabling nar-rower, more energy-efficient multipliers for high-frequency rows. This does not require storing multiple copies of X at different pre-cisions: since X is already quantized to INT 𝑏 max , each row simply reads the upper 𝑏 𝑘 bits of the stored representation, with the ef-fective scale factor Δ𝑥 𝑘 = Δ𝑥 · 2𝑏 max −𝑏 𝑘 absorbed as a compile-time constant into the dequantization step. In hardware, this amounts with zero additional storage or arithmetic overhead. The intermediate result 𝐼 𝑘, · = e𝐶 𝑘, · 𝑋 (𝑏 𝑘 ) 
+
+> int
+
+(INT 𝑏 𝑘 ×INT 𝑏 𝑘 ) is re-quantized to 𝑏 𝑘 bits before the column-harmonic multiplication 
+
+Y[𝐾 ] =eI eC⊤
+
+> col
+
+, keeping the entire two-stage computation at matched low precision. Truncation error is incurred only for high-frequency harmonics whose basis vectors have small magnitude, so the prod-uct error is suppressed by the decaying spectral energy; DC and low-frequency rows use 𝑏 𝑘 = 𝑏 max and lose no precision. This design aligns hardware cost with spectral importance (Fig. 3, left). 
+
+3.1.4 Multi-Branch Fusion. The outputs of the three branches must be combined into a unified token sequence for the downstream ViT backbone. We propose a sequential cross-attention fusion that hier-archically distills information across frequency scales. Let T1, T2,and T3 denote the token outputs of Branches 1, 2, and 3, respectively. The fusion proceeds in two successive cross-attention stages [ 49 ]. In the first stage, T1 serves as the query and T2 provides the keys and values: 
+
+T12 = softmax ©«
+
+T1W(1)
+
+> 𝑄
+
+
+
+T2W(1)
+
+> 𝐾
+
+⊤
+
+√𝑑 𝑘 
+
+ª®®¬
+
+T2W(1) 
+
+> 𝑉
+
+, (6) allowing the local fine-grained tokens of Branch 1 to attend over the medium-scale structural tokens of Branch 2. In the second stage, 
+
+T12 queries against the global token T3:
+
+Tout = softmax ©«
+
+T12 W(2)
+
+> Q
+
+
+
+T3W(2)
+
+> K
+
+⊤
+
+√dk
+
+ª®®¬
+
+T3W(2) 
+
+> V
+
+, (7) modulating the fused local-structural representation with scene-level frequency context. The final output Tout encodes all three frequency scales into a single compact token sequence, which is passed to the downstream backbone after a learned linear projection to the backbone embedding dimension 𝑑 . Since the token counts and projection dimensions are small, the two cross-attention operations add negligible compute overhead relative to the bandwidth savings of the tokenizer. 
+
+3.1.5 Integration with Vision Transformer Backbones. Frequency-Former is designed to be fully compatible with pretrained vision transformer ecosystem, as a drop-in replacement for the standard patch embedding layer, enabling backbones to be used without ar-chitectural changes. The frequency-domain tokens produced by the tokenizer are upsampled to match the input dimensions expected by the first transformer block. A lightweight linear projection maps the tokenizer output to the backbone embedding dimension (e.g., 192 for ViT-Tiny, 768 for ViT-Base), and interpolation-based spatial upsampling restores the standard token count. Standard positional embeddings are added, and the tokens are passed directly into the pretrained transformer blocks. Quantization-aware training (QAT) is employed to ensure compatibility with LUT-based deployment. Importantly, the projection is performed on the processor side, after the compressed tokens are transmitted. The sensor–processor interface carries only the compact frequency representation, pre-serving the full bandwidth savings of the tokenizer. To bridge the domain gap between projected frequency tokens and the backbone’s spatial expectations, we introduce a tokenizer knowledge distillation (T-KD) loss: LT-KD = Tfreq _proj − sg (Tvanilla ) 2,where the vanilla patch embedding is frozen as a reference and 
+
+sg (·) denotes the stop-gradient operator. The total loss is L =
+
+LCE + 𝜆 LT-KD , with 𝜆 controlling the distillation weight. 
+
+3.2 LUT-Based Hardware Realization 
+
+Conventional multiplier-based MAC units dominate energy and area in neural accelerators. LUT-based computation replaces multi-plications with precomputed memory lookups, reducing dynamic power and hardware complexity [ 46 ]. To address the exponential storage growth of traditional LUTs with bit precision, we adopt the divide-and-conquer (D&C) strategy from [ 46 ], which decom-poses high-precision multiplications into low-precision sub-LUT operations combined via shift-and-add. We extend this framework beyond general-purpose acceleration by exploiting the specific structure of the FrequencyFormer tokenizer, whose compute de-composes into three operation classes with distinct LUT mapping characteristics. 
+
+3.2.1 DCT Kernel Mapping. The DCT basis matrix C ∈ R𝑁 ×𝑁 is defined entirely by the cosine function (Eq. 2) and is therefore math-ematically fixed for a given block size. Unlike general DNN weights, which must be reprogrammed whenever the model changes, the                             
+
+> 4Image
+> Sensor
+> (a)
+> MIPI
+> (b)
+> (c)
+> Transmitter
+> /Driver
+> Terminated
+> Channel
+> Dynamic
+> Comparator
+> as Receiver
+> Clk
+> VREF
+> (d)
+> Transmitter
+> /Driver
+> Terminated
+> Channel
+> VREF
+> Dynamic
+> Integrator
+> Front -End
+> Clk+ 𝝓 𝛥
+> VREF
+> Dynamic
+> Comparator
+> Clk
+> (e)
+> Sampling
+> Clk Edge
+> VREF
+> Sampling
+> Clk Edge
+> Integration
+> up t o
+> Clk +𝝓 𝛥
+> VREF
+> Signal
+> Noise
+> Signal
+> Noise
+> Transmitter
+> Application
+> Pixel to Byte
+> Packing Format s
+> Low Level Protocol
+> Lane Management
+> Layer
+> Pixel Control
+> Pixel Control
+> Data Control
+> Data Control
+> Data Control
+> Data Control
+> PHY Layer
+> 8-bits
+> 8-bits
+> (Nx8) -bits
+> Receiver
+> Application
+> Pixel to Byte
+> Packing Format s
+> Low Level Protocol
+> Lane Management
+> Layer
+> Pixel Control
+> Pixel Control
+> Data Control
+> Data Control
+> Data Control
+> Data Control
+> PHY Layer
+> 8-bits
+> 8-bits
+> (Nx8) -bits
+> High -Speed Unidirectional Clock
+> Lane 1 -High -Speed Unidirectional Data
+> Lane N -High -Speed Unidirectional Data
+> 1. Generation and Detection of
+> Packet Start and stop signaling
+> 2. Serializer/ Deserializer
+> 3. Clock Generation/Recovery (CDR)
+> 4. Electrical Laye r
+> Lane Distribution/Lane Mergin g
+> 1. Packet Based Protocol
+> 2. Arbitrary Data Support
+> 1 pixel →6/7/8/10/12/14/15/16/18/24 bits
+
+Figure 4: (a) MIPI-CSI example; (b) Tx and Rx Architecture in MIPI [ 40 ] ; (c) Conventional Implementation of the Physical layer of the Tx/Rx, which is implemented with a simple inverter-based driver in the Tx and with a dynamic comparator at the Rx; (d) Proposed/Modified Implementation of the Physical layer of the Tx/Rx: the Tx remain unchanged, while the dynamic comparator at the Rx is preseded by a dynamic integrator; (e) eye-diagram representaion of the signal and noise for the scenario with just the dynamic comparator as the Rx (red), and for the scenario with the dynamic integrator+comparator as the Rx (green), showing an improved signal to noise ratio (SNR) for the integrator+comparator. This means that for iso-SNR scenario, the TX signal (and power) can be reduced for the integrator+comparator implementation. 
+
+DCT coefficients are universal constants: the same entries apply to every image, every task, and every deployment. This invariance has a direct hardware consequence. In a conventional LUT-based accel-erator, the weight side of each multiplication is stored in SRAM and must be loaded from off-chip memory at initialization. For the DCT kernels, the LUT contents can instead be permanently hardwired into ROM or mask-programmed during fabrication, eliminating SRAM write circuitry, refresh logic, and the associated leakage power. For the 8 × 8 block-wise DCT with selection-aware pruning to 𝑅 =5 rows, each row of Crow contains 𝑁 =8 fixed coefficients. Un-der D&C with 2-bit sub-problems, each coefficient–input product decomposes into sub-LUTs of 22=4 entries, requiring only 4 storage cells per sub-table. The total ROM footprint for the row-harmonic stage of a single 8 × 8 block is 𝑅 × 𝑁 × 4 = 160 entries, a negligible overhead that fits comfortably within the peripheral logic of a sen-sor die. Furthermore, Harmonic-Aware Quantization (Section 3.1.3) directly reduces the LUT hardware cost per harmonic row. High-frequency rows quantized to INT4 require only 4b × 4b sub-LUTs (4 entries of 8-bit products), whereas DC and low-frequency rows at INT8 use 4b × 2b sub-tables under D&C decomposition. Since the number of high-frequency rows exceeds that of low-frequency rows in the pruned basis, the average LUT storage and multiplexer cost per block is substantially below the uniform full-precision case. This tight coupling between the spectral precision schedule and hardware cost is unique to the frequency-domain setting: in a gen-eral DNN layer, mixed precision must be determined via expensive sensitivity analysis, whereas in the DCT the energy hierarchy of harmonics provides a training-free guide for precision allocation. 
+
+3.2.2 Convolution and Cross-Attention Mapping. The strided 2D convolutions following channel selection involve learned weights that are fixed after training and quantized via QAT. These weights are programmed into SRAM-backed LUTs during deployment us-ing the same D&C decomposition as in [ 46 ]. Because the convo-lution kernels are small (e.g., 4 × 4 with 24 output channels for Branch 1), the total number of unique weight values is modest, and the SRAM cost is dominated by the DCT stages. Batch nor-malization parameters are folded into the convolution weights at deployment time, eliminating BN as a separate operation and fur-ther reducing the in-sensor compute footprint. The cross-attention projection weights W𝑄 , W𝐾 , W𝑉 are fixed after training, quantized, and stored in SRAM-backed LUTs; the input-dependent tokens serve as the data operands that index into these tables at runtime. The softmax nonlinearity is implemented in FP16 using a small dedicated functional unit, as it accounts for negligible area relative to the MAC-dominated projections. Since the token dimensions are compact ( 49 × 24 ), the total number of MACs in the fusion stage is small (on the order of 10 4), and the corresponding LUT area is a minor fraction of the overall in-sensor hardware budget. 
+
+3.3 Low-Power Communication Interface 
+
+We propose a low-power, asymmetric MIPI-based communication interface that shifts complexity from the transmitter (Tx) to the receiver (Rx) to efficiently transmit compressed frequency-domain representations to the back-end hardware for downstream infer-ence processing. While MIPI [ 40 ] already provides a high-speed and energy-efficient interface (up to 14 Gbps with CSI-3), conven-tional PHY implementations rely on inverter-based Tx drivers and dynamic-comparator-based Rx detection [ 44 ], which require rel-atively high signal swing at the transmitter to maintain low bit error rate (BER). To address this, we modify the Rx architecture by introducing a dynamic integrator before the comparator [ 35 ]. In this integrating receiver (IR), the input signal is accumulated over the bit period, converting constant logic levels into ramps with positive or negative slopes depending on the transmitted bit. This temporal integration improves the effective signal-to-noise ratio (SNR), allowing reliable detection even with reduced input ampli-tude. As a result, for a given BER target, the Tx signal swing—and hence Tx power—can be significantly reduced. The proposed design uses fully dynamic (clocked) integrator and comparator circuits, eliminating static power consumption. Due to precharge and eval-uation phases, the effective integration time is half the bit period; however, this naturally enables dual data rate (DDR) operation [ 35 ], maintaining high throughput. Overall, this asymmetric architecture enables substantial energy savings at the sensor-side transmitter while preserving robust high-speed communication, and can be readily integrated with FPGA or custom backends for downstream processing. 
+
+4 EXPERIMENTAL RESULTS 4.1 Experimental Setup 
+
+We evaluate on CIFAR-10 [ 23 ], Tiny-ImageNet-200 [ 18 ], and Vi-sual Wake Words (VWW) [ 11 ] for image classification, and on COCO [ 31 ] for object detection and instance segmentation. All images are resized to 224 ×224 .We pair our DCT tokenizer with several pretrained backbones: ViT-Tiny/16, ViT-Base/16, Swin-Tiny [ 33 ], and EfficientFormer-L1 [ 27 ]. Each serves as both a standalone baseline and the backbone 
+
+> 5
+
+for its FrequencyFormer variant, in which the standard patch em-bedding is replaced by our multi-scale DCT tokenizer. We evaluate two tokenizer sizes: the small (24-channel) tokenizer selects ( 𝑘 𝑌 ,
+
+𝑘 𝐶𝑏 , 𝑘 𝐶𝑟 ) = (14, 5, 5) coefficients in Branch 1 and Branch 3; the large (48-channel) selects ( 𝑘 𝑌 , 𝑘 𝐶𝑏 , 𝑘 𝐶𝑟 ) = (28,10,10). Branch 2 always ex-tracts (96,24,24) coefficients and adjusts only the output projection dimension by a convolutional layer to match channel size. For the 
+
+14 ×14 high-resolution mode (Tiny-ImageNet and VWW), Branch 1 replaces its strided convolution with 𝑘 =2, 𝑠 =2; Branches 2 and 3 remain unchanged. When HAQ is applied, the transition harmonic index is set to 𝑡 =4 for the 8×8 block DCT (Branch 1), 𝑡 =12 for the 
+
+32 ×32 block DCT (Branch 2), and 𝑡 =56 for the full-image DCT (Branch 3). The minimum precision 𝑏 min is set to INT4. All backbone weights are initialised from ImageNet-21k pre-trained checkpoints (ImageNet-1k for EfficientFormer-L1); the DCT tokenizer is randomly initialised. For classification, we train with AdamW [ 34 ] (lr 1e −4, weight decay 1e −3, batch size 512) using cosine annealing with a 10-epoch warm-up, for 200 epochs on CIFAR-10 and Tiny-ImageNet and 100 epochs on VWW. For detec-tion and segmentation, we integrate proposed FrequencyFormer tokenizer into ViTDet [ 28 ] with Mask R-CNN [ 19 ] architecture and train for 20 epochs with AdamW (lr 1e −6). Standard random-resized cropping and horizontal flipping are applied during training; validation uses a centre crop. For FrequencyFormer models, images are converted to YCbCr for the DCT, while the frozen vanilla patch embedding layer receives ImageNet-normalised RGB. For the T-KD loss, we sweep 𝜆 ∈ { 1, 10 , 100 } and select the best value per dataset. 
+
+4.2 Main Results 
+
+Table 1: Classification accuracy (%) on CIFAR-10, Tiny-ImageNet, and VWW. “INT 𝑛 ” denotes uniform 𝑛 -bit quantization; “INT 𝑛 -HAQ” applies Harmonic-Aware Quantization with linear bit-width scheduling from INT 𝑛 down to INT4.                                                                                                                                                                     
+
+> CIFAR-10 Tiny-IN VWW Configs ViT-Ti EF-l1 Sw-Ti ViT-B EF-l1 Sw-Ti ViT-Ti EF-l1 Sw-Ti Vanilla, FP16 95.23 94.98 96.94 84.75 85.19 84.61 91.19 91.03 92.45
+> 48-channel  INT9, incl. DCT 94.01 94.28 96.31 83.21 83.89 83.08 89.43 90.51 91.34 INT8, incl. DCT 93.77 94.01 96.11 82.56 83.69 82.17 89.21 90.23 90.99 INT7, incl. DCT 93.32 93.24 96.28 82.39 82.95 80.96 88.23 89.89 90.54 INT6, incl. DCT 92.44 92.58 93.88 82.41 80.17 79.56 88.13 89.11 89.86 INT9-HAQ 93.91 93.89 96.11 83.20 83.70 83.14 89.29 90.31 91.17 INT8-HAQ 93.72 93.77 96.24 82.62 83.72 82.18 89.16 89.73 90.74 INT7-HAQ 93.30 93.10 96.22 82.29 82.56 81.12 88.12 89.12 90.41 INT6-HAQ 92.83 91.63 93.68 81.79 80.02 79.34 87.81 88.89 88.83
+> 24-channel  INT9, incl. DCT 93.24 93.11 95.97 82.11 82.37 82.76 88.79 89.58 90.64 INT8, incl. DCT 92.85 92.55 95.58 82.01 81.96 82.02 88.38 89.87 90.22 INT7, incl. DCT 92.44 92.21 94.14 81.16 80.47 81.01 88.23 89.08 89.16 INT6, incl. DCT 91.78 91.91 93.79 79.02 79.69 79.22 87.38 88.39 88.32 INT9-HAQ 93.20 93.23 95.71 82.18 82.44 82.79 88.59 89.20 90.41 INT8-HAQ 92.89 92.37 95.54 81.79 81.79 81.74 88.35 89.66 90.02 INT7-HAQ 92.42 92.13 94.45 81.24 80.41 79.78 88.01 89.03 88.93 INT6-HAQ 91.93 91.67 93.45 79.11 79.50 79.21 87.80 88.45 88.16
+
+Table 2: Comparison with SOTA In-/Near-sensor work.                                              
+
+> Method Task Res. Network TOPS/W Acc.
+> Senputing [53] MNIST 28 22-layer MLP 4.7 93.76 SCAMP [6] MNIST 256 22-layer CNN 0.535 93.0 MR-PIPA [1] MNIST 256 23-layer CNN 1.89 97.26 DPCE [52] CIFAR10 32 2LeNet-5 11.49 87.20 PIPSIM [45] CIFAR10 64 2LeNet-5 4.12 90.05 P2M [12] VWW 224 2MobileNetV2 0.4 84.3 Ours (24ch, INT6-HAQ) CIFAR10 224 2ViT-Ti 28.8 91.93
+> Ours (24ch, INT6-HAQ) VWW 224 2ViT-Ti 28.8 87.80
+
+Table 3: Average Precision (AP) metrics on the COCO valida-tion set using Mask R-CNN with vanilla ViTDet and proposed FrequencyFormer backbone.                                      
+
+> Det. Seg.
+> Backbone AP AP 50 AP 75 AP AP 50 AP 75
+> ViTDet 30.35 46.98 32.24 27.12 44.17 28.26 FrequencyFormer (48ch, INT8) 30.27 47.21 31.78 27.22 42.42 28.58
+> FrequencyFormer (24ch, INT8) 27.89 44.93 29.50 26.10 41.37 27.19 FrequencyFormer (48ch, INT8-HAQ) 30.18 46.71 32.17 27.02 44.38 28.11 FrequencyFormer (24ch, INT8-HAQ) 27.32 44.61 28.89 26.37 41.53 27.12
+
+4.2.1 Image Classification. Table 1 reports classification accuracy across three datasets and quantization configurations. Accuracy degrades gracefully under quantization (93.77% at INT8, 92.44% at INT6), and HAQ consistently stays within 0.4% of uniform quantiza-tion, confirming that reducing precision on high-frequency harmon-ics introduces negligible accuracy loss. Swin-Tiny, EfficientFormer-L1, and results on Tiny-ImageNet and VWW follow consistent trends. The 24-channel tokenizer further halves transmitted co-efficients at modest cost comparing to 48-channel(e.g., 92.89% vs. 93.72% at INT8-HAQ on CIFAR-10). 
+
+4.2.2 Comparison with Prior In-/Near-Sensor Work. Table 2 com-pares FrequencyFormer against prior in-/near-sensor approaches across accuracy and energy efficiency (TOPS/W). Prior methods ei-ther operate at low resolution with shallow networks—Senputing [ 53 ]and SCAMP [ 6] on MNIST with 2-layer MLPs/CNNs, DPCE [ 52 ]and PIPSIM [ 45 ] on CIFAR-10 with LeNet-5—or scale to full resolu-tion but with limited accuracy, as P 2M [ 12 ] achieves only 84.3% on VWW with MobileNetV2 at 0.4 TOPS/W. FrequencyFormer surpasses all prior methods in both accuracy and energy efficiency. With the 24-channel INT6-HAQ configura-tion, it achieves 91.93% on CIFAR-10 and 87.80% on VWW at 28.8 TOPS/W , exceeding the best prior CIFAR-10 accuracy (PIPSIM, 90.05%) by 1.88% and the best prior energy efficiency (DPCE, 11.49 TOPS/W) by 2.5 ×. Notably, FrequencyFormer is the first in-/near-sensor approach to deploy a vision transformer backbone at full 
+
+224 ×224 resolution while simultaneously achieving state-of-the-art accuracy and energy efficiency under integer-only quantization. 
+
+4.2.3 Object Detection and Instance Segmentation. Table 3 evalu-ates FrequencyFormer on COCO using Mask R-CNN with ViTDet. The 48-channel INT8 variant with HAQ achieves 30.18 box AP and 27.02 mask AP, closely matching the vanilla baseline (30.35 / 27.12), confirming that spatial precision is well preserved through the frequency-domain pipeline. The 24-channel configuration in-curs a larger drop (27.32 / 26.37), as dense prediction relies more heavily on fine-grained spatial detail. Nevertheless, the 48-channel variant demonstrates that FrequencyFormer can serve as a drop-in backbone for detection and segmentation without architectural modification. 
+
+4.2.4 Ablation Study. Frequency-domain vs. spatial tokenization. 
+
+Table 4(a) compares FrequencyFormer against a vanilla ViT-Tiny (both in FP16) patch embedding compressed to the same bottleneck shape ( 7×7×24 /48 ) via strided convolution, with T-KD applied in both cases. FrequencyFormer outperforms the spatial bottleneck by 4.37% (24ch) and 3.13% (48ch), demonstrating that the DCT basis preserves substantially more task-relevant information than learned spatial downsampling at equivalent compression ratios. 
+
+> 6
+
+Table 4: Ablation studies on CIFAR-10. 
+
+(a) Tokenizer 
+
+Method 24ch 48ch ViT-Ti 88.89 91.04 FF 93.26 94.17 (b) Multi-scale branches 
+
+Br.1 Br.2 Br.3 24ch 48ch 
+
+✓ 90.27 91.03 
+
+✓ ✓ 91.41 93.29 
+
+✓ ✓ ✓ 92.85 93.77 (c) Channel selection 
+
+24ch 48ch Method Acc. FLOPs Acc. FLOPs Gumbel 93.03 54.9M 93.87 55.2M Zigzag 92.85 47.2M 93.77 47.8M LANA 
+
+> (9bx9b)
+> Traditional
+> LUT
+> Array
+> Multiplier
+> Wallace Tree
+> Out_Channel 48
+> Out_Channel 24
+> 10 3
+> 10 0
+> Scaled Area  29.54 X
+> 1.24 X
+> 10 1
+> 10 2
+
+(a) LANA  
+
+> (9bx9b)
+> Traditional
+> LUT
+> Array
+> Multiplier
+> Wallace Tree
+> Out_Channel 48
+> Out_Channel 24
+> 10 1
+> 10 0
+> 3.34X
+> 1.8X
+> Energy (μJ)
+
+(b) 
+
+Figure 5: (a) Area overhead for uniform INT9 tokenizer multiplication showing our LUT implementation significantly reduces area compared to Traditional LUT ( ≈29.54 ×) and Array Multiplier ( ≈1.24 ×). (b) Energy per in-ference comparison, where our LUT achieves up to ≈3.34 × and ≈1.8 × energy savings over Traditional LUT and Wallace Tree, respectively, demonstrating improved efficiency. 
+
+Multi-scale branches. Table 4(b) isolates the contribution of each frequency branch on CIFAR-10 (INT8-HAQ). Branch 1 alone yields 90.27% / 91.03% (24ch / 48ch). Adding Branch 2 raises accuracy to 91.41% / 93.29%, and incorporating Branch 3 further improves it to 92.85% / 93.77%. 
+
+Channel selection strategy. Table 4(c) compares zigzag ordering against Gumbel-Softmax selection (INT8-HAQ applied). Gumbel-Softmax yields modest accuracy gains (+0.18% for 24ch, +0.10% for 48ch), but produces non-contiguous coefficient indices that prevent the row/column pruning (Section 3.1.2), increasing DCT FLOPs by 16% (54.9M vs. 47.2M for 24ch). We therefore adopt zigzag ordering as the default, trading a marginal accuracy gap for substantial computational savings. 
+
+4.2.5 LUT Area and Energy Analysis. Fig. 5(a)–(b) evaluate the proposed LUT architecture for uniform INT9 tokenizer multipli-cation. Hardware overhead is derived from prior LUT-based de-signs [ 13 , 46 ]. Our LUT implementation significantly reduces area by avoiding costly multiplier trees and large lookup structures, and lowers energy per inference through reduced computation and switching activity. Even without mixed precision, it offers a strong area–energy baseline. Compared to uniform INT9, INT9-HAQ achieves additional reductions of up to 45.9% and 42.7% in area (for the 24-channel and 48-channel configurations, respectively), and 40.9% and 45.9% in energy, by leveraging smaller LUTs, simpler datapaths, and reduced computation and memory activity. These gains come with minimal accuracy loss ( < 1% –2% ) across CIFAR-10, Tiny ImageNet, and VWW, indicating that much of the hardware cost of uniform-precision DCT multiplication can be eliminated without degrading performance. Overall, these results show that our method provides an efficient tokenizer multiplication frame-work across both uniform-precision and mixed-precision modes. The INT9 design already offers strong area and energy benefits, while HAQ variants scaling further enhances these savings with negligible accuracy loss, making the approach highly attractive for energy- and area-constrained edge intelligence systems. 
+
+4.2.6 Sensor Communication Energy Reduction. To compute the communication energy at the sensor for the two scenarios (1. com-parator only - i.e. without IR, and 2. integrator+comparator, i.e. IR), LANA (9b) -
+
+> >(4b)
+> Traditional
+> LUT
+> Array
+> Multiplier
+> Wallace Tree
+> Out_Channel 48
+> Out_Channel 24
+> 10 3
+> 10 0
+> Scaled Area
+> 12.8 2X
+> 1. 19 X
+> 10 1
+> 10 2
+
+(a) LANA (9b) - 
+
+> >(4b)
+> Traditional
+> LUT
+> Array
+> Multiplier
+> Wallace Tree
+> Out_Channel 48
+> Out_Channel 24
+> 10 3
+> 10 0
+> Scaled Area
+> 19.8 9X
+> 1.2 8X
+> 10 1
+> 10 2
+
+(b) LANA (7b) 
+
+> ->(4b)
+> Traditional
+> LUT
+> Array
+> Multiplier
+> Wallace
+> Tree
+> Out_Channel 48
+> Out_Channel 24
+> 10 4
+> 10 2
+> 2.1 2X
+> 1. 25 X
+> Energy  (mJ)
+> 10 3
+
+(c) LANA (9b)  
+
+> ->(4b)
+> Traditional
+> LUT
+> Array
+> Multiplier
+> Wallace
+> Tree
+> Out_Channel 48
+> Out_Channel 24
+> 10 4
+> 10 3
+> 2.6 1X
+> 1. 47 X
+> Energy  (mJ)
+
+(d) 
+
+Figure 6: (a) Area overhead for INT7-HAQ tokenizer multiplication, where our LUT implementation achieves significant area reduction over Traditional LUT ( ≈12.82 ×) and Array Multiplier ( ≈1.19 ×). (b) Area overhead for INT9-HAQ configuration, showing up to ≈19.89 × and ≈1.28 × area savings over Traditional LUT and Wallace Tree, respectively. (c) Energy per inference for INT7-HAQ, demonstrating ≈2.12 × and ≈1.25 × energy savings over Traditional LUT and Wallace Tree. (d) Energy per inference for INT9-HAQ, where our LUT implementation achieves up to ≈2.61 × and ≈1.47 × energy reduction compared to Traditional LUT and Wallace Tree, respectively. (b)              
+
+> Tx PHY with
+> Clock
+> Tx Scan chain Rx PHY
+> Rx Scan chain
+> RX
+> Clock
+> Output Buf Transmitter
+> (0.12 mm 2)
+> Receiver
+> (0.32 mm 2)
+> (a)
+> Tx Power
+> Consumption
+> ~2.7 μW
+> ~300nW
+> Comm.
+> Architecture
+> Without IR With IR
+> ~7.2pJ/bit without IR
+> ~0.8pJ/b with IR (IR: Integrating Receiver)
+> Rx Power
+> Consumption
+> ~1.8 μW~2.2 μW
+> Comm.
+> Architecture
+> Without IR With IR
+> ~5pJ/bit without IR
+> ~6pJ/b with IR (IR: Integrating Receiver)
+> DR = 360 kbps
+
+Figure 7: (a) 65nm test-chip micrograph for the communication PHY; (b) Power consumption at the Tx and Rx with IR (integrator+comparator) and without IR (comparator only). 
+
+we demonstrate measured results from a 65nm test chip for same SNR at the input of the comparator. At 30 fps frame rate ( ≈36 Mbps raw data rate, which reduces to <360 kbps through the Frequen-cyFormer processing pipeline), we have ≈ 2.77/2 = 1.38 𝜇 s time to perform the integration. We set the integrator’s time-domain gain (configurable in the test chip) in a way that the SNR at the compara-tor input is > 20 dB (for BER <10 −4) for both scenarios (with and without integrator). This allows for aggressive voltage scaling at the Tx PHY ( ≈ 0.4V) with IR, whereas for the conventional scenario (without IR), we use 1.2V supply as per standard MIPI operations. With this, the Tx driver’s energy efficiency is found to be ≈ 0.8pJ/bit with IR, and ≈ 7.2pJ/bit without IR (baseline). The Rx front-end energy efficiency is ≈ 6pJ/bit with IR, and ≈ 5pJ/bit without IR (baseline), with clocking power included in both. Fig. 7 shows the chip micrograph and power consumption near 360 kbps data rates. 
+
+4.2.7 System-Level Energy Analysis. We analyze the sensor-side energy budget, covering all costs incurred before tokens enter the 
+
+> 7
+
+Table 5: System-level energy breakdown per frame ( 𝜇 J) for ViT-Tiny on CIFAR-10 at 30 fps. “Sensor” = in-sensor tok-enizer compute; “Comm.” = Tx + Rx link energy; . Best values in bold.                                            
+
+> Energy ( 𝜇 J) ID Configuration Sensor MAC/LUT Comm. Total Reduction
+> S1 Baseline (raw + std. MIPI) 9.57 —14.69 24.26 1.00 ×
+> S2 Raw + proposed MIPI 9.57 —8.19 17.76 1.37 ×
+> S3 FF (MAC) + std. MIPI 9.57 2.22 0.115 11.91 2.04 ×
+> S4 FF (MAC) + prop. MIPI 9.57 2.22 0.064 11.85 2.05 ×
+> S5 FF (LUT) + std. MIPI 9.57 1.3 0.115 11.00 2.21 ×
+> S6 Full pipeline 9.57 1.3 0.064 10.93 2.22 ×
+> Comm. energy: S1/S3/S5 use 12.2 pJ/bit; S2/S4/S6 use 6.8 pJ/bit. S1–S2 transmit 1,204,224 bits; S3–S6 transmit 9,408 bits (128 ×reduction).
+
+backbone: sensor readout, tokenizer computation, and sensor-to-processor communication. The backbone inference cost is excluded as it is identical across all configurations—FrequencyFormer acts as a drop-in replacement for the patch embedding and does not alter the transformer blocks. Table 5 reports the breakdown across six configurations that progressively activate each contribution. The baseline system transmits a raw 224 ×224 ×3 image (1,204,224 bits at INT8) over a standard MIPI-CSI link to the processor that executes the full ViT-Tiny backbone. In-sensor compute energy for the digital MAC baseline is estimated using 45 nm synthesis results for array multipliers [ 46 ], while our LUT estimates use the D&C architecture from Section 3.2. Communication energy uses the mea-sured Tx and Rx efficiencies from Section 4.4: for the standard MIPI link, 𝐸 Tx =7.2 pJ/bit and 𝐸 Rx =5.0 pJ/bit (total 12.2 pJ/bit); for the pro-posed asymmetric link with integrating receiver, 𝐸 Tx =0.8 pJ/bit and 
+
+𝐸 Rx =6.0 pJ/bit (total 6.8 pJ/bit). All FrequencyFormer configurations use the 48-channel INT8-HAQ tokenizer unless otherwise noted. Table 5 reports the energy breakdown across six system config-urations: 
+
+S1 Baseline : raw image → standard MIPI → processor (ViT-Tiny). 
+
+S2 Baseline + proposed comm. : raw image → proposed MIPI →
+
+processor (ViT-Tiny). Isolates the communication interface contribution alone. 
+
+S3 FF tokenizer (digital MAC) + standard MIPI : FrequencyFormer tokenizer implemented with conventional array multipliers in-sensor → standard MIPI → processor. Isolates the band-width reduction from frequency-domain compression. 
+
+S4 FF tokenizer (digital MAC) + proposed MIPI : same as S3 but with the proposed low-power link. Combines bandwidth reduction and communication efficiency. 
+
+S5 FF tokenizer (LUT) + standard MIPI : FrequencyFormer tok-enizer with D&C LUT hardware → standard MIPI → pro-cessor. Combines bandwidth reduction and energy-efficient in-sensor compute. 
+
+S6 Full proposed pipeline : FrequencyFormer tokenizer with LUT hardware → proposed MIPI → processor backbone. All three contributions active. The communication energy column reveals the multiplicative interaction between the two communication-facing contributions. Frequency-domain compression alone (S3 vs. S1) reduces commu-nication energy by 128 × by shrinking the data volume from 1.2 Mb to 9.4 kb per frame. The proposed MIPI interface alone (S2 vs. S1) achieves a 1.8× reduction by lowering the energy per bit from 
+
+Table 6: Per-component energy reduction factors, computed by toggling each contribution independently.            
+
+> Component Comparison Reduction
+> Freq.-domain compression (comm.) S3 vs. S1 128 ×
+> Proposed MIPI interface (comm.) S4 vs. S3 1.8×
+> Combined comm. savings S6 vs. S1 ≈230 ×
+> LUT vs. digital MAC (sensor) S5 vs. S3 1.71 ×
+
+12.2 to 6.8 pJ/bit through aggressive Tx voltage scaling enabled by the integrating receiver. When both are combined (S6 vs. S1), the communication energy drops by approximately 230 × (128 × 1.8), from 14.69 𝜇 J to 0.064 𝜇 J per frame. This demonstrates that the two contributions are complementary: bandwidth reduction makes the low-power interface practical (the lower data rate relaxes timing margins and enables deeper voltage scaling), while the interface op-timization extracts additional savings from the already-compressed stream. On the sensor side, comparing S5 against S3 isolates the ben-efit of LUT-based computation over conventional array multipliers for the tokenizer. The LUT realization achieves 1.71 × lower sensor compute energy, consistent with the per-MAC savings reported in Fig. 5(b) and amplified by the HAQ precision schedule that reduces the effective bit-width (and hence LUT size) for high-frequency harmonics. The energy breakdown in Table 5 shows that communication dominates the baseline (S1, 65% of total), but becomes negligible after frequency-domain compression (S3–S6, <1%). Table 6 dis-aggregates the per-component contributions: frequency-domain compression provides the largest single reduction (128 × in com-munication), LUT-based hardware lowers the cost of in-sensor tok-enization (1.71 × over array multipliers), and the low-power MIPI interface provides multiplicative savings on the already-compressed stream. Together, the full pipeline (S6) achieves 2.22 × total energy reduction over the baseline, while maintaining 93.72% accuracy on CIFAR-10 (within 1.51% of the vanilla FP16 baseline). 
+
+5 CONCLUSION 
+
+We presented FrequencyFormer, a co-designed sensor-to-processor pipeline that enables practical deployment of vision transformers on bandwidth-constrained edge systems. The pipeline comprises three tightly integrated components: a multi-scale DCT tokenizer that compresses raw images into compact frequency-domain to-kens with up to 128 × data reduction, a LUT-based hardware re-alization that exploits the fixed-coefficient structure of DCT for energy-efficient near-sensor computation, and a low-power MIPI-based communication interface that further reduces energy per bit through aggressive voltage scaling and asymmetric transceiver de-sign. Together, the full pipeline achieves 2.22 × sensor-side energy reduction and ≈230 × communication energy reduction over the conventional baseline, while attaining 28.8 TOPS/W—2.5 × higher energy efficiency than SOTA work. By operating as a drop-in re-placement for the standard patch embedding, FrequencyFormer pre-serves compatibility with pretrained ViT backbones and generalizes across classification, detection, and segmentation tasks with mini-mal accuracy degradation. Our results establish frequency-domain tokenization as a principled and hardware-friendly foundation for pushing vision transformer inference to the point of image capture. 
+
+> 8
+
+REFERENCES 
+
+[1] Minhaz Abedin et al . 2022. Mr-pipa: An integrated multilevel rram (hfo x)-based processing-in-pixel accelerator. IEEE Journal on Exploratory Solid-State Computational Devices and Circuits 8, 2 (2022), 59–67. [2] Ahalapitiya Adibi, Muhammad Firdausi, et al . 2022. In-sensor image memo-rization and encoding via optical neurons for neuromorphic sensing. Nature Communications 13, 1 (2022), 6812. [3] Johannes Ballé, Valero Laparra, and Eero P. Simoncelli. 2017. End-to-end opti-mized image compression. arXiv preprint arXiv:1611.01704 (2017). [4] Johannes Ballé, David Minnen, Saurabh Singh, Sung Jin Hwang, and Nick John-ston. 2018. Variational image compression with a scale hyperprior. arXiv preprint arXiv:1802.01436 (2018). [5] Daniel Bolya et al . 2023. Token merging: Your ViT but faster. In International Conference on Learning Representations .[6] Laurie Bose et al . 2020. Fully embedding fast convolutional networks on pixel processor arrays. In European Conference on Computer Vision . Springer, 488–503. [7] Ningyuan Cao et al . 2022. A 65 nm Wireless Image SoC Supporting On-Chip DNN Optimization and Real-Time Computation-Communication Trade-Off via Actor-Critical Neuro-Controller. IEEE Journal of Solid-State Circuits 57, 8 (2022), 2545–2559. https://doi.org/10.1109/JSSC.2022.3159473 [8] Yang Chai. 2023. In-sensor visual perception and inference. Intelligent Computing 
+
+2 (2023). [9] Denis Guangyin Chen et al . 2014. A 12 pJ/Pixel Analog-to-Information Converter Based 816 × 640 Pixel CMOS Image Sensor. IEEE Journal of Solid-State Circuits 
+
+49, 5 (2014), 1210–1222. https://doi.org/10.1109/JSSC.2014.2307063 [10] Wenlin Chen et al . 2016. Packing convolutional neural networks in the frequency domain. In NeurIPS Workshop .[11] Aakanksha Chowdhery, Pete Warden, Jonathon Shlens, Andrew Howard, and Rocky Rhodes. 2019. Visual wake words dataset. arXiv preprint arXiv:1906.05721 
+
+(2019). [12] Gourav Datta et al . 2022. A processing-in-pixel-in-memory paradigm for resource-constrained tinyml applications. Scientific Reports 12, 1 (2022), 14396. [13] Peyman Dehghanzadeh, Ovishake Sen, Baibhab Chatterjee, and Swarup Bhunia. 2025. LUNA-CiM: A Programmable Compute-in-Memory Fabric for Neural Network Acceleration. IEEE Trans. Comput. 74, 4 (2025), 1348–1361. [14] Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xi-aohua Zhai, Thomas Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Sylvain Gelly, et al . 2020. An image is worth 16x16 words: Transformers for image recognition at scale. arXiv preprint arXiv:2010.11929 (2020). [15] Max Ehrlich and Larry S. Davis. 2019. Deep residual learning in the JPEG transform domain. arXiv preprint arXiv:1901.07758 (2019). [16] Lionel Gueguen, Alex Sergeev, Ben Kadlec, Rosanne Liu, and Jason Yosinski. 2018. Faster neural networks straight from JPEG. In Advances in Neural Information Processing Systems , Vol. 31. [17] Song Han, Huizi Mao, and William J. Dally. 2016. Deep compression: Compressing deep neural networks with pruning, trained quantization and Huffman coding. 
+
+arXiv preprint arXiv:1510.00149 (2016). [18] Lucas Hansen. 2015. Tiny ImageNet challenge submission. CS 231N (2015). [19] Kaiming He, Georgia Gkioxari, Piotr Dollár, and Ross Girshick. 2017. Mask r-cnn. In Proceedings of the IEEE international conference on computer vision . 2961–2969. [20] Noor A. Ibraheem, Mokhtar M. Hasan, Rafiqul Z. Khan, and Pramod K. Mishra. 2012. Understanding color models: A review. ARPN Journal of Science and Technology 2, 3 (2012), 265–275. [21] Benoit Jacob et al . 2018. Quantization and training of neural networks for efficient integer-arithmetic-only inference. In IEEE Conference on Computer Vision and Pattern Recognition . 2704–2713. [22] Eric Jang, Shixiang Gu, and Ben Poole. 2017. Categorical reparameterization with Gumbel-softmax. arXiv preprint arXiv:1611.01144 (2017). [23] Alex Krizhevsky, Vinod Nair, and Geoffrey Hinton. [n. d.]. CIFAR-10 (Canadian Institute for Advanced Research). ([n. d.]). http://www.cs.toronto.edu/~kriz/cifar. html [24] Seonghyeon Lee, Beomsik Kang, and Chang D. Yoo. 2024. DCT-ViT: High-frequency pruned vision transformer with discrete cosine transform. IEEE Access 
+
+12 (2024), 80386–80396. [25] James Lee-Thorp, Joshua Ainslie, Ilya Eckstein, and Santiago Ontanon. 2022. FNet: Mixing tokens with Fourier transforms. In Conference of the North American Chapter of the Association for Computational Linguistics . 4296–4313. [26] Xinyu Li, Yanyi Zhang, Jianbo Yuan, Hanlin Lu, and Yushi Zhu. 2023. Discrete Cosin TransFormer: Image modeling from frequency domain. In IEEE/CVF Winter Conference on Applications of Computer Vision . 3169–3178. [27] Yanyu Li et al . 2022. Efficientformer: Vision transformers at mobilenet speed. 
+
+Advances in neural information processing systems 35 (2022), 12934–12949. [28] Yanghao Li, Hanzi Mao, Ross Girshick, and Kaiming He. 2022. Exploring plain vision transformer backbones for object detection. In European conference on computer vision . Springer, 280–296. [29] Tailin Liang, John Glossner, Lei Wang, Shaobo Shi, and Xiaotong Zhang. 2021. Pruning and quantization for deep neural network acceleration: A survey. Neu-rocomputing 461 (2021), 370–403. [30] Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Dollár, and C. Lawrence Zitnick. 2014. Microsoft COCO: Common objects in context. In European Conference on Computer Vision . Springer, 740–755. [31] Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Dollár, and C Lawrence Zitnick. 2014. Microsoft coco: Common objects in context. In European conference on computer vision . Springer, 740–755. [32] Min Liu, Yifan He, and Hailong Jiao. 2022. An LUT-based multiplier array for systolic array-based convolutional neural network accelerator. In 2022 IEEE Asia Pacific Conference on Circuits and Systems (APCCAS) . IEEE, 55–59. [33] Ze Liu et al . 2021. Swin transformer: Hierarchical vision transformer using shifted windows. In Proceedings of the IEEE/CVF international conference on computer vision . 10012–10022. [34] Ilya Loshchilov and Frank Hutter. 2017. Decoupled weight decay regularization. 
+
+arXiv preprint arXiv:1711.05101 (2017). [35] Shovan Maity et al . 2019. BodyWire: A 6.3-pJ/b 30-Mb/s -30-dB SIR-Tolerant Broadband Interference-Robust Human Body Communication Transceiver Using Time Domain Interference Rejection. IEEE Journal of Solid-State Circuits 54, 10 (2019), 2892–2906. https://doi.org/10.1109/JSSC.2019.2932852 [36] Lukas Mennel et al . 2020. Ultrafast machine vision with 2D material neural network image sensors. Nature 579, 7797 (2020), 62–66. [37] Chihiro Okada et al . 2021. 7.6 A High-Speed Back-Illuminated Stacked CMOS Image Sensor with Column-Parallel kT/C-Cancelling S&H and Delta-Sigma ADC. In 2021 IEEE International Solid-State Circuits Conference (ISSCC) , Vol. 64. 116–118. https://doi.org/10.1109/ISSCC42613.2021.9366024 [38] Hongyi Pan et al . 2024. Discrete cosine transform based decorrelated attention for vision transformers. arXiv preprint arXiv:2405.13901 (2024). [39] Badri Narayana Patro et al . 2025. SpectFormer: Frequency and attention is what you need in a vision transformer. In IEEE/CVF Winter Conference on Applications of Computer Vision . 3745–3755. [40] Prabu Kumar, CTO, e-con Systems (2026)). [n. d.]. What is a MIPI Cam-era? How does MIPI Camera Work? [Online]. Available: https://www.e-consystems.com/blog/camera/technology/what-is-a-mipi-camera-how-does-mipi-camera-work/. Accessed: 04/13/2026. [41] Zequn Qin et al . 2021. FcaNet: Frequency channel attention networks. In IEEE/CVF International Conference on Computer Vision . 783–792. [42] Akshay Krishna Ramanathan et al . 2020. Look-up table based energy efficient processing in cache support for neural network acceleration. In 2020 53rd Annual IEEE/ACM International Symposium on Microarchitecture (MICRO) . IEEE, 88–101. [43] Yongming Rao et al . 2021. DynamicViT: Efficient vision transformers with dy-namic token sparsification. In Advances in Neural Information Processing Systems ,Vol. 34. 13937–13949. [44] Behzad Razavi. 2015. The StrongARM Latch [A Circuit for All Seasons]. IEEE Solid-State Circuits Magazine 7 (2015), 12–17. https://api.semanticscholar.org/ CorpusID:9477992 [45] Arman Roohi et al . 2023. Pipsim: A behavior-level modeling tool for CNN processing-in-pixel accelerators. IEEE Transactions on Computer-Aided Design of Integrated Circuits and Systems 43, 1 (2023), 141–150. [46] Ovishake Sen et al . 2025. Look-Up Table based Energy-Efficient Architecture for Neural Accelerators (LANA). IEEE Transactions on Computer-Aided Design of Integrated Circuits and Systems (2025). [47] Hugo Touvron et al . 2021. Training data-efficient image transformers & distilla-tion through attention. In International Conference on Machine Learning . PMLR, 10347–10357. [48] Karlo Vasquez, Yeshwanth Venkatesha, Anurag Bhattacharjee, Abhiroop Moitra, and Priyadarshini Panda. 2021. Activation density based mixed-precision quan-tization for energy efficient neural networks. In Design, Automation & Test in Europe Conference . 1360–1365. [49] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Łukasz Kaiser, and Illia Polosukhin. 2017. Attention is all you need. In Advances in Neural Information Processing Systems , Vol. 30. [50] Gregory K. Wallace. 1992. The JPEG still picture compression standard. IEEE Transactions on Consumer Electronics 38, 1 (1992), xviii–xxxiv. [51] Xiao Wang et al . 2024. Integrated photonic encoder for low power and high-speed image processing. Nature Communications 15, 1 (2024), 4510. https: //doi.org/10.1038/s41467-024-48099-2 [52] Han Xu et al . 2020. Utilizing direct photocurrent computation and 2D kernel scheduling to improve in-sensor-processing efficiency. In 2020 57th ACM/IEEE Design Automation Conference (DAC) . IEEE, 1–6. [53] Han Xu et al . 2021. Senputing: An ultra-low-power always-on vision perception chip featuring the deep fusion of sensing and computing. IEEE Transactions on Circuits and Systems I: Regular Papers 69, 1 (2021), 232–243. [54] Kai Xu et al . 2020. Learning in the frequency domain. In IEEE/CVF Conference on Computer Vision and Pattern Recognition . 1740–1749. [55] Fei Zhou and Yang Chai. 2020. Near-sensor and in-sensor computing. Nature Electronics 3, 11 (2020), 664–671.

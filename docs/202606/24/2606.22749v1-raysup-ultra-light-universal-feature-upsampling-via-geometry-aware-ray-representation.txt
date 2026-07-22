@@ -1,0 +1,581 @@
+Title: RaysUp: Ultra-light Universal Feature Upsampling via Geometry-Aware Ray Representation
+
+URL Source: https://arxiv.org/pdf/2606.22749v1
+
+Published Time: Tue, 23 Jun 2026 02:31:50 GMT
+
+Number of Pages: 30
+
+Markdown Content:
+# RaysUp: Ultra-light Universal Feature Upsampling via Geometry-Aware Ray Representation 
+
+Yuchuan Ding ∗ , Linfei Li ∗ , Lin Zhang † , and Ying Shen 
+
+School of Computer Science and Technology, Tongji University, Shanghai, China 
+
+{2534061,cslinfeili,cslinzhang,yingshen}@tongji.edu.cn 
+
+Abstract. Pre-trained Vision Foundation Models (VFMs) have become central to modern computer vision due to their powerful semantic rep-resentations and strong generalization ability. However, their patchified or pooled outputs are inherently low-resolution, limiting their effective-ness in tasks requiring fine-grained, pixel-level reasoning. Existing fea-ture upsampling approaches either degrade semantic fidelity or rely on VFM-specific retraining and heavy architectures, hindering efficiency and scalability. To address these challenges, we propose RaysUp, an ultra-lightweight, task-agnostic, and VFM-agnostic feature upsampling frame-work that reconstructs high-resolution feature maps at arbitrary resolu-tions. Unlike conventional 2D interpolation or attention-based schemes, RaysUp lifts feature reconstruction into a geometry-aware ray domain. Specifically, we introduce a Spatially Decoupled Guidance Encoder for direction-aware guidance encoding, an Any-Resolution Cross-Attention mechanism for resolution-flexible reconstruction, and a novel Ray Posi-tional Encoding (RayPE) that injects implicit 3D geometric priors via 6D Plücker ray coordinates. Finally, A Geometry-Aware Neighborhood Attention module further ensures content-adaptive bilateral aggregation while preserving geometric consistency. Extensive experiments across di-verse dense prediction tasks demonstrate that RaysUp achieves state-of-the-art performance while using only 16% of the parameters of AnyUp and delivering approximately 7 × faster inference. These results highlight a substantially improved accuracy–efficiency trade-off and establish Ray-sUp as a practical and scalable solution for universal feature upsampling. Code is available at https://github.com/MAP-RaysUp/RaysUp. 
+
+Keywords: Feature upsampling · Deep features · Ray representation 
+
+## 1 Introduction 
+
+Pre-trained Vision Foundation Models (VFMs), such as the DINO family [7, 39, 47], the CLIP series [9, 42, 58], the SigLIP series [51, 61], PE Spatial [5], and MAE [22], have emerged as central components in modern computer vision due  
+
+> ∗
+
+Equal contributions (Co-first authors).  
+
+> †
+
+Corresponding author. 
+
+> arXiv:2606.22749v1 [cs.CV] 22 Jun 2026
+
+2 Ding et al. RGB  Bilinear Low Resolution  RaysUp (Ours)  AnyUp  JAFAR  LoftUp  FeatUp   
+
+> (a) (b) (c)
+> (d)
+
+Fig. 1: We propose RaysUp, an (a) ultra-lightweight, (b) task-agnostic, and (c) VFM-agnostic upsampling framework, capable of upsampling backbone features to arbitrary resolutions while preserving (d) high semantic fidelity and geometric consistency. 
+
+to their large-scale pretraining on diverse datasets, which endows them with high-level semantic representations and strong generalization capability. These models are capable of extracting transferable and task-agnostic visual features, making them highly suitable as either frozen or fine-tuned backbone networks. Conse-quently, they have been extensively adopted across a wide range of downstream applications, including depth estimation [8,32,59,60], open-vocabulary semantic segmentation [3, 24, 45, 56], 3D semantic field reconstruction [25, 26, 30, 41], and the evaluation of generative models [1, 57]. However, due to patchification or aggressive pooling operations in VFMs, their output features often have low spatial resolution, limiting their applica-bility in tasks that require fine-grained, pixel-level understanding. Traditional upsampling methods [16, 37], such as bilinear interpolation, are computation-ally efficient but often result in the loss of semantic information. More recently, learned upsampling methods, such as LiFT [50], FeatUp [20], LoftUp [23], and JAFAR [11], have demonstrated task-agnostic generalization. However, they re-quire retraining for different VFMs or additional optimization at inference time, which restricts their broader applicability. A more recent approach, AnyUp [54], introduces an encoder-agnostic upsampling framework that generalizes across different VFMs, but its reliance on a heavy network architecture makes it diffi-cult to balance generalization capability with inference efficiency. To address the aforementioned challenges, we propose RaysUp, an ultra-lightweight, task-agnostic, and encoder-agnostic universal feature upsampling framework that enables feature maps extracted from arbitrary Vision Foundation Models to be reconstructed at any target resolution. From a methodological perspective, RaysUp builds upon the classical Joint Bilateral Upsampling (JBU) [28] paradigm while introducing structural gen-eralizations. Specifically, instead of directly employing the raw RGB image as guidance, RaysUp adopts a lightweight Spatially Decoupled Guidance Encoder to generate guidance features. This encoder captures multi-scale spatial seman-RaysUp: Ultra-light Universal Feature Upsampling 3
+
+tics and provides more informative structural priors than pixel-level color dif-ferences. Conditioned on these guidance representations, RaysUp formulates an Any-Resolution Cross-Attention mechanism, enabling adaptive reconstruction of backbone features at arbitrary output resolutions. To overcome the limitations imposed by fixed 2D local neighborhoods in JBU and to enhance the spatial kernel’s capacity to model underlying geometric structures, we further introduce Ray Positional Encoding (RayPE). Inspired by neural radiance field formulations [38], RayPE encodes guidance features using 6D Plücker ray coordinates, thereby implicitly injecting 3D geometric priors into the attention module. This mechanism generalizes conventional joint bilateral upsampling into a geometry-aware reconstruction process, effectively alleviating boundary blurring and structural drift. Finally, RaysUp adopts Geometry-Aware Neighborhood Attention as a learn-able bilateral aggregation operator, performing localized cross-attention between RayPE-encoded high-resolution guidance features and low-resolution input fea-tures. This design preserves the locality property of JBU while enabling content-adaptive learning of upsampling weights, achieving a favorable balance among geometric fidelity, semantic consistency, and computational efficiency. As illustrated in Fig. 1, owing to our carefully designed architecture, Ray-sUp enables task-agnostic and VFM-agnostic feature upsampling with geometry-aware ray representations at arbitrary resolutions. Compared to the state-of-the-art method AnyUp, RaysUp achieves superior performance across multiple dense prediction tasks while using only approximately 16% of the parameters. More-over, it attains an approximately 7 × improvement in inference efficiency, sub-stantially reducing both computational and memory overhead, thereby demon-strating an advantageous trade-off between accuracy and efficiency. In summary, our contributions are as follows: 
+
+– We propose RaysUp, an ultra-lightweight, task-agnostic, and VFM-agnostic framework for universal feature upsampling at arbitrary resolutions. 
+
+– A lightweight Spatially Decoupled Guidance Encoder is proposed to extract direction-aware spatial semantic guidance features. Building upon this, Ray-sUp employs an Any-Resolution Cross-Attention mechanism to enable adap-tive reconstruction of backbone features at arbitrary resolutions. 
+
+– We propose Ray Positional Encoding (RayPE), which injects implicit 3D geometric priors via 6D Plücker ray coordinates, extending classical JBU into a geometry-aware reconstruction process that enhances boundary fidelity and mitigates structural drift. 
+
+– Extensive experiments demonstrate that, with only about 1/5 of the pa-rameters of baseline methods, RaysUp achieves state-of-the-art performance across multiple dense prediction tasks and delivers approximately 7 × faster inference, significantly reducing both computational and memory costs while balancing accuracy and practical efficiency. 4 Ding et al. 
+
+## 2 Related Work 
+
+Feature upsampling aims to recover the spatial resolution of intermediate rep-resentations in deep neural networks and serves as a fundamental component in dense prediction tasks such as semantic segmentation [3, 24, 45, 56] and depth estimation [8,32,59,60]. Existing approaches can be broadly categorized into two paradigms: Discrete Reconstruction methods and Continuous Mapping methods. 
+
+Discrete Reconstruction. This category of methods primarily relies on interpolation, filtering, or convolutional decoding mechanisms to explicitly re-construct high-resolution features from low-resolution inputs. Classical interpo-lation strategies [16,37], such as nearest-neighbor and bilinear, are computation-ally efficient and flexible across scales; however, they lack content adaptivity and often result in boundary blurring and loss of fine details. To enhance structural preservation, Joint Bilateral Upsampling (JBU) [28] introduces a high-resolution guidance image and performs structure-aware reconstruction through the joint weighting of spatial and range kernels. Subsequently, adaptive filtering principles were incorporated into neural network frameworks. For instance, CARAFE [52] dynamically predicts content-aware reassembly kernels for feature reconstruc-tion; SAPA [36] improves spatial semantic consistency via similarity modeling; and FADE [35] enhances representational capacity by introducing a semi-shift operator into the decoding structure. In addition, IndexNet [34] and A2U [12] have demonstrated strong performance in task-specific scenarios such as im-age matting. Despite these advances, such approaches typically depend on en-coder–decoder architectures and downstream supervision, and are often tailored to specific backbones or fixed upsampling ratios, thereby limiting their general-ization capability. Moreover, the classical JBU formulation remains constrained by fixed 2D neighborhoods and RGB-difference-based range kernels, which are insufficient to model complex semantic relationships and underlying geometric structures. In contrast, RaysUp revisits the classical JBU framework and systematically reformulates its spatial and range kernels to overcome the limitations of fixed 2D neighborhoods and RGB-based range modeling. By introducing a spatially decoupled guidance encoder and an attention-based cross-scale interaction, Ray-sUp unifies filter-style local aggregation with adaptive feature interaction. This design enables resolution-flexible feature upsampling while improving structural fidelity and semantic expressiveness. 
+
+Continuous Mapping. This line of research formulates feature upsampling as a resolution-agnostic continuous function approximation or cross-scale inter-action problem, with an emphasis on enhancing representational capacity and scale flexibility. Inspired by implicit neural representations [31, 38], LiFT [50] models image reconstruction as a coordinate-conditioned continuous function, enabling arbitrary-resolution prediction. Building upon this paradigm, FeatUp [20] proposes a task-agnostic feature upsampling framework; however, its high-performance variant relies on per-image optimization, leading to complex train-ing objectives and substantial deployment overhead. More recent approaches, such as JAFAR [11] and LoftUp [23], cast the upsampling process as cross-scale RaysUp: Ultra-light Universal Feature Upsampling 5VFMs      
+
+> (DINO/CLIP...)
+> Geometry-Aware Neighborhood Cross-Attention
+> 1x1 Conv
+> 1x3 Conv
+> 3x1 Conv
+> 2x2 Conv
+> Spatially Decoupled
+> Guidance Encoder
+> Any-Resolution Mechanism
+> Concat Pool
+> RayPE: Ray Positional Encoding
+> Ray Parameters Rotational Modulation
+> Partition & Rotate Modulated
+> Feature
+> Input Feat. Ray Origin
+> Ray Direction
+> Harmonic Encoding
+> Log-spaced
+> Frequencies
+> Rotational Phases
+> Cross-Resolution Alignment
+> Coarse
+> Fine Cross-Resolution
+> Consistency
+> RayPE
+> RayPE
+> Aligned
+> Aligned
+> Interpolation
+> Guidance Feature
+
+Fig. 2: Overview of RaysUp. Given an image I and a low-resolution VFM fea-ture map Flr , RaysUp reconstructs a high-resolution feature map Fhr at an arbi-trary target resolution. A lightweight Spatially Decoupled Guidance Encoder first ex-tracts direction-aware guidance features Fg , which are adaptively pooled to generate target-resolution queries Qg and VFM-resolution keys Kg . After RayPE, the resulting geometry-aware ray representations Qray and Kray inject implicit 3D spatial priors into the attention computation. Finally, a geometry-aware Neighborhood Cross-Attention module aggregates low-resolution features Flr as values to produce the reconstructed high-resolution features, ensuring cross-resolution spatial consistency while preserving underlying 3D geometric structure. 
+
+attention or coordinate-based mapping between high-resolution queries and low-resolution features, thereby achieving resolution-independent feature reconstruc-tion. Although these methods improve expressiveness and scale generalization, they typically require retraining for specific visual encoders. Extending JAFAR, AnyUp [54] demonstrates that by constraining the receptive field of attention, a universal upsampling paradigm can be constructed, allowing a single trained upsampler to generalize across multiple vision encoders with different feature dimensions without retraining. Following this attention-based trajectory, RaysUp introduces a lightweight architecture containing only 0.14M parameters, which can be seamlessly inte-grated with arbitrary vision encoders and supports universal feature upsampling at arbitrary resolutions. Notably, RaysUp achieves approximately 7 × faster in-ference than AnyUp, while substantially reducing memory consumption. 
+
+## 3 RaysUp 
+
+3.1 Overview 
+
+As illustrated in Fig. 2, given an input RGB image I ∈ R3×Hin ×Win and a low-resolution feature map Flr ∈ RDf ×Hlr ×Wlr extracted from a Vision Foundation Model (VFM), where Df denotes the feature dimension and (Hlr , W lr ) are typ-ically small (e.g., 16 × 16 or 32 × 32 ), the goal of RaysUp is to reconstruct a high-resolution feature map Fhr ∈ RDf ×Hany ×Wany at an arbitrary target resolu-tion (Hany , W any ). To achieve this, RaysUp first employs a lightweight Spatially Decoupled Guidance Encoder to extract direction-aware guidance features from 6 Ding et al. 
+
+the input image, producing Fg ∈ RDg ×Hin ×Win , where Dg denotes the dimen-sionality of the guidance features. Then, an adaptive average pooling operation generates a target-resolution query Qg ∈ RDg ×Hany ×Wany and a VFM-resolution key Kg ∈ RDg ×Hlr ×Wlr . Both Qg and Kg are subsequently encoded via Ray Positional Encoding (RayPE) to produce geometry-aware ray representations 
+
+Qray and Kray , which embed implicit 3D spatial priors. Finally, a geometry-aware Neighborhood Cross-Attention mechanism aggregates the low-resolution features Flr (acting as the value V) into the high-resolution positions, yield-ing the reconstructed feature map Fhr . This process ensures spatial consistency across resolutions while preserving the underlying 3D geometric structure. 
+
+3.2 Lightweight Spatially Decoupled Guidance Encoder 
+
+Guidance encoders for dense feature extraction conventionally adopt standard 
+
+1 × 1 or 3 × 3 convolutional operators [11, 23, 54]. However, statistical analysis of the learned 3 × 3 convolutional kernels in JAFAR [11] reveals a markedly anisotropic spatial distribution (Appendix A). Specifically, the average kernel magnitude matrix exhibits consistently larger weights at the four corner posi-tions, while the central cross region (i.e., horizontal and vertical axes) shows relatively smaller magnitudes. This observation indicates that local feature ag-gregation is not spatially isotropic. Motivated by this empirical regularity, we design a lightweight spatially de-coupled guidance encoder to enhance directional interpretability and structural disentanglement. Concretely, we decompose the implicit receptive field into mul-tiple orthogonal directional components and model them in parallel. The total output channel dimension Dg is evenly divided across branches, such that each branch is responsible for learning only Dg /4 channels. Given an input image 
+
+I ∈ R3×Hin ×Win , the branch-wise formulations are defined as: 
+
+Fcg = ϕ
+
+
+
+GN 
+
+
+
+Conv Dg /41×1 (I)
+
+ 
+
+, Fhg = ϕ
+
+
+
+GN 
+
+
+
+Conv Dg /41×3 (I)
+
+ 
+
+,
+
+Fvg = ϕ
+
+
+
+GN 
+
+
+
+Conv Dg /43×1 (I)
+
+ 
+
+, Fdiag g = ϕ
+
+
+
+GN 
+
+
+
+Conv Dg /42×2,d =2 (I)
+
+ 
+
+,
+
+(1) where Conv Dg /4 
+
+> k×k
+
+denotes a convolution with Dg /4 output channels, and Conv 2×2,d =2 
+
+represents a 2 × 2 dilated convolution with dilation rate 2. GN( ·) denotes Group Normalization [55], and ϕ(·) is the SiLU activation function [18]. To further en-hance representational capacity, each branch adopts a shallow residual structure: 
+
+˜Fbg = X b + ϕ  GN  Conv b(X b) , b ∈ { c, h, v, diag }, (2) where X b denotes the output of the first convolution in branch b. Finally, the directional features are concatenated along the channel dimension to form the guidance feature representation: 
+
+Fg (I) = Concat( ˜Fcg , ˜Fhg , ˜Fvg , ˜Fdiag g ) ∈ RDg ×Hin ×Win . (3) RaysUp: Ultra-light Universal Feature Upsampling 7
+
+From a parameterization standpoint, a standard 3 × 3 convolution contains 
+
+27 Dg parameters, whereas our proposed spatially decoupled encoder requires only 3 · Dg 
+
+> 4
+
+(1 + 3 + 3 + 4) = 8 .25 Dg . Accordingly, the spatially decoupled guid-ance encoder not only substantially enhances anisotropic modeling capability but also reduces parameter overhead by approximately 69.4%, demonstrating clear advantages in both parameter efficiency and computational cost. 
+
+3.3 Any-Resolution Cross-Attention Mechanism 
+
+To enable feature upsampling at arbitrary resolutions, we adopt a resolution-decoupled cross-attention mechanism [11]. Specifically, the guidance encoded features Fg (I) are used to construct multi-scale attention inputs. Queries Qg ∈
+
+RDg ×Hany ×Wany are generated at the upsampled resolution: 
+
+Qg = AdaptiveAvgPool (Fg (I), H any , W any ), (4) while keys Kg ∈ RDg ×Hlr ×Wlr are produced at the backbone feature resolution: 
+
+Kg = AdaptiveAvgPool (Fg (I), H lr , W lr ), (5) and the value features are taken directly from the output of VFMs: 
+
+V = Flr ∈ RDf ×Hlr ×Wlr . (6) This mechanism enables high-resolution queries to aggregate information from semantically aligned low-resolution features without requiring explicit in-terpolation, thereby supporting flexible cross-resolution feature propagation. 
+
+3.4 RayPE: Ray Positional Encoding 
+
+Traditional feature upsampling methods [11,20,23,50,54] operate within the 2D image grid, implicitly assuming that Euclidean proximity reflects 3D geometric consistency. However, under perspective projection, adjacent pixels in the image may correspond to spatially distant 3D points (e.g., at depth discontinuities), whereas distant pixels may lie on the same physical surface. Therefore, spatial interpolation in image space cannot guarantee geometric consistency. Inspired by Neural Radiance Fields (NeRF) [38], RaysUp lifts feature recon-struction into a projective ray domain by associating each pixel with its camera ray. Let each pixel correspond to a ray r(x) = ( o, d(x)) , where o is the camera origin and d(x) is the normalized direction. In this formulation, the upsampling can then be interpreted as transporting features from a coarse sampling of rays (backbone resolution) to a denser sampling (target resolution). However, directly adopting a NeRF-style rendering pipeline incurs substan-tial computational cost. To address this, RaysUp introduces Ray Positional En-coding (RayPE), which encodes guidance features by mapping camera geometry into a high-dimensional rotational space. This modulation aligns features along 8 Ding et al. 
+
+the 3D ray manifold during upsampling. Unlike conventional 2D positional en-codings [48, 49], RayPE explicitly binds feature aggregation to the underlying 3D ray geometry rather than relying on pixel-plane proximity. 
+
+Ray Geometry Parameterization. Given a pixel x = [ i, j, 1] T in guid-ance features Qg ∈ RDg ×Hany ×Wany or Kg ∈ RDg ×Hlr ×Wlr , the corresponding 3D ray is uniquely determined by the camera intrinsic matrix M and extrinsic parameters T = [ R|t]. The ray origin (camera center) and normalized direction in world coordinates are defined as: 
+
+o = t, d(x) = RM −1x
+
+∥RM −1x∥2
+
+. (7) Then, the origin and direction are concatenated to form a unified ray descriptor: 
+
+r = Concat (o, d(x)) ∈ R6. (8) This parameterization provides a resolution-independent 3D geometric refer-ence shared across feature maps. 
+
+Multi-band Harmonic Phase Encoding. To capture geometric variations at multiple spatial scales, we construct a log-spaced frequency set {ωf }N −1  
+
+> f=0
+
+:
+
+ωf = exp log 2πλmax 
+
++ fN − 1
+
+
+
+log 2πλmin 
+
+− log 2πλmax 
+
+!
+
+, (9) where N denotes the total number of frequency bands, index f ∈ { 0, . . . , N − 1}
+
+specifies the f -th frequency level, and λmax and λmin represent the maximum and minimum spatial wavelengths, which determine the lowest and highest angular frequencies in the encoding. For each spatial location, the rotational phase Θ ∈
+
+RN ×6 is computed by multiplying each frequency ωf with the corresponding component rd of ray descriptor r:
+
+Θf,d = ωf rd, f = 0 , . . . , N − 1, d = 1 , . . . , 6. (10) Then, the frequency and coordinate axes are flattened into a phase vector: 
+
+θ = Flatten( Θ) ∈ R6N , (11) which encodes multi-scale geometric information along the ray, providing a uni-fied reference for aligning high- and low-resolution features in 3D space. 
+
+Ray-driven Rotational Modulation. For each attention-head guidance feature tensor Fh ∈ {Q g , Kg } with dimensionality dhead , we first split the feature into two halves: 
+
+Fh = [ F1, F2], F1, F2 ∈ R⌊dhead /2⌋. (12) To accommodate the rotate-half structure of attention heads, we require 6N ≤⌊dhead /2⌋, where 6N corresponds to the number of flattened RayPE phases. If 
+
+6N < ⌊dhead /2⌋, the remaining feature dimensions are padded with zero phase, equivalent to an identity rotation. Following the idea of RoPE [48], Ray-driven RaysUp: Ultra-light Universal Feature Upsampling 9
+
+rotational modulation is applied element-wise to each pair of feature dimensions: 
+
+ ˜F1
+
+˜F2
+
+
+
+=
+
+cos θ − sin θ
+
+sin θ cos θ
+
+  F1
+
+F2
+
+
+
+. (13) Finally, the RayPE encoded feature is obtained by concatenation: 
+
+˜Fh = Concat ( ˜F1, ˜F2). (14) As the rotation angles are computed from the 3D ray coordinates and multi-scale harmonic frequencies, RayPE extends RoPE [48] from 1D sequential positions to 3D geometric positions, ensuring alignment of cross-resolution features along the shared 3D ray manifold and enforcing geometric consistency during upsampling. 
+
+3.5 Geometry-Aware Neighborhood Cross-Attention 
+
+To reconstruct dense features while preserving geometric consistency, we employ geometry-aware Neighborhood Cross-Attention [21]. Instead of global attention, each high-resolution query aggregates information from a local neighborhood defined in the low-resolution feature space. Let Qray and Kray denote RayPE-modulated queries and keys, respectively, and V the value features (VFM fea-tures). For a query position (i, j ), feature reconstruction is formulated as: 
+
+Fhr i,j = X
+
+> (u,v )∈N i,j
+
+Softmax (Qray )⊤ 
+
+> i,j
+
+(Kray )u,v 
+
+√d
+
+!
+
+Vu,v , (15) where Ni,j denotes a k × k local neighborhood centered at the correspond-ing key location. To bridge resolution discrepancies between high-resolution 
+
+(Hany , W any ) queries and low-resolution (Hlr , W lr ) keys, dilation factors are de-fined as: 
+
+dh = max(1 , ⌊Hany /H lr ⌋), d w = max(1 , ⌊Wany /W lr ⌋). (16) The dilated neighborhood induces a locally consistent sampling on the under-lying ray manifold, ensuring that attention is performed among rays with simi-lar orientations. Consequently, feature aggregation respects angular consistency, preventing interactions between geometrically unrelated rays while maintaining cross-resolution correspondence. Under a local planar approximation, this process can be interpreted as dis-crete feature propagation along smoothly varying ray directions, enabling geometry-consistent cross-resolution information transfer. Meanwhile, the computational complexity is reduced from global attention O(Hany Wany ·Hlr Wlr ) to O(Hany Wany ·
+
+k2), thereby improving efficiency while preserving geometric consistency. 
+
+3.6 Training Objective 
+
+Following standard practices for feature upsampling [11, 54], RaysUp is trained with a reconstruction objective. Given a high-resolution image Ihr , a low-resolution 10 Ding et al. 
+
+counterpart Ilr is generated by downsampling Ihr with a random scale fac-tor s ∈ [2 , 4] . Both images are then fed into a frozen vision encoder to ob-tain the target high-resolution features Ftgt ∈ RDf ×Hany ×Wany and the source low-resolution features Flr ∈ RDf ×Hlr ×Wlr . Conditioned on Flr and the high-resolution guidance image Ihr , the RaysUp upsampler predicts the reconstructed high-resolution feature map ˆFhr ∈ RDf ×Hany ×Wany .To enforce feature consistency, the training loss L is defined as a combination of cosine similarity loss Lcos and L2 distance loss LL2:
+
+L = Lcos ( ˆFhr , Ftgt ) + LL2( ˆFhr , Ftgt ). (17) 
+
+## 4 Experiments 
+
+4.1 Experimental Setup Implementation. RaysUp was trained on the standard ImageNet dataset [13]. The model was optimized using the AdamW optimizer for 100,000 iterations with a batch size of 4 and an initial learning rate of 2 × 10 −4. To construct training pairs, target high-resolution images were uniformly resized to a spatial resolution of 448 × 448 . For improved training efficiency, the guidance input to the upsampler was downsampled to 224 × 224 . Owing to the adopted training strategy and the lightweight architectural design, the entire training process completed in approximately one hour on a single NVIDIA A100 GPU. Additional implementation details were provided in the supplementary material. 
+
+Baselines. To comprehensively evaluate the performance and generaliza-tion capability of RaysUp, it was systematically compared against several rep-resentative methods, including: traditional interpolation (e.g., Bilinear), fixed-ratio task-agnostic methods requiring encoder-specific retraining (e.g., FeatUp [20], LoftUp [23]), arbitrary-resolution encoder-dependent methods (e.g., JA-FAR [11]), and arbitrary-resolution encoder-agnostic methods (e.g., AnyUp [54]). 
+
+4.2 Task-agnostic Performance 
+
+Following the baseline protocol [11, 20, 23, 54], RaysUp employed DINOv2-S [39] as the default backbone for both training the upsampler and extracting features for downstream tasks. 
+
+Semantic Segmentation. Following the experimental protocol of JAFAR [11], RaysUp employed a 1 × 1 convolutional layer as a linear probe for semantic label prediction. Evaluation was conducted on COCO-Stuff [6], ADE20K [62], Pascal-VOC [19], and Cityscapes [10] datasets. Performance was reported in terms of mean Intersection over Union (mIoU) and pixel accuracy (Acc). 
+
+Depth and Surface Normal Estimation. Following Probe3D [17], Ray-sUp was evaluated on dense geometric prediction tasks using NYUv2 [46]. For both normal and depth estimation, RMSE served as the primary metric. For normals, we additionally reported accuracy under angular thresholds of 11 .25 ◦,RaysUp: Ultra-light Universal Feature Upsampling 11 
+
+Table 1: Task-agnostic Performance. Semantic Segmentation 
+
+Method COCO-Stuff [6] Pascal-VOC [19] ADE20K [62] Cityscape [10] mIoU ↑ Acc ↑ mIoU ↑ Acc ↑ mIoU ↑ Acc ↑ mIoU ↑ Acc ↑
+
+Bilinear 59.58 79.42 81.70 95.44 40.47 74.13 59.72 92.55 FeatUp [20] 61.89 81.10 83.37 96.01 42.33 75.65 60.18 93.05 LoftUp [23] 62.23 81.38 84.50 96.30 42.17 75.79 62.09 93.54 JAFAR [11] 61.79 81.11 83.89 96.11 42.16 75.56 61.40 93.47 AnyUp [54] 62.14 81.38 84.18 96.20 42.15 75.71 60.62 93.26 
+
+RaysUp 62.32 81.47 84.64 96.34 42.34 75.81 61.88 93.64 Surface Normal and Depth Estimation 
+
+Method Surface Normal Depth (Abs) Depth (Rel) RMSE ↓ 11 .25 ◦ ↑ 22 .5◦ ↑ 30 ◦ ↑ RMSE ↓ δ1 ↑ RMSE ↓ δ1 ↑
+
+Bilinear 28.23 0.4933 0.6974 0.7718 0.4789 0.7987 0.3348 0.9243 FeatUp [20] 28.94 0.4846 0.6888 0.7619 0.4781 0.8117 0.3393 0.9205 LoftUp [23] 28.45 0.4861 0.6931 0.7689 0.4828 0.7958 0.3353 0.9221 JAFAR [11] 27.80 0.4948 0.6986 0.7740 0.4693 0.8071 0.3255 0.9301 AnyUp [54] 27.83 0.4962 0.7014 0.7767 0.4781 0.8019 0.3244 0.9306 
+
+RaysUp 27.69 0.4986 0.7030 0.7775 0.4658 0.8103 0.3195 0.9309 Video Object Segmentation and Open-Vocabulary Segmentation 
+
+Video Obj. Seg. Open-Voc Seg. Method J ↑ F ↑ J &F ↑ COCO-Stuff [6] Pascal-VOC [19] ADE20K [62] Cityscape [10] mIoU ↑ Acc ↑ mIoU ↑ Acc ↑ mIoU ↑ Acc ↑ mIoU ↑ Acc ↑
+
+Bilinear 63.21 66.53 64.87 25.73 47.91 59.71 85.87 19.60 42.32 34.91 58.52 FeatUp [20] 65.45 72.03 68.74 26.67 48.13 54.96 84.02 19.78 43.09 35.23 57.44 LoftUp [23] 67.32 74.53 70.92 27.54 48.38 65.21 87.89 21.10 43.28 38.25 59.95 JAFAR [11] 67.18 74.62 70.90 27.13 48.47 63.52 87.43 20.57 42.76 38.00 60.32 
+
+AnyUp [54] 67.55 74.42 70.98 27.30 48.62 63.67 87.50 20.67 42.77 37.56 60.03 
+
+RaysUp 68.14 74.81 71.47 27.11 48.57 63.28 87.34 20.54 42.71 37.24 59.68 
+
+22 .5◦, and 30 ◦. For depth, we reported the δ1 metric, which measured the pro-portion of pixels with a prediction-to-ground-truth ratio below 1.25 .
+
+Video Object Segmentation and Open-Vocabulary Segmentation. 
+
+RaysUp was evaluated on the DAVIS [40] dataset for video object segmentation. Specifically, the first-frame object mask was propagated temporally by comput-ing dense cross-frame feature similarities. Performance was measured using J
+
+Mean (region similarity IoU), F Mean (boundary contour accuracy), and their combined metric, J &F Mean, providing a comprehensive assessment of regional consistency and boundary reconstruction quality. For zero-shot open-vocabulary segmentation, the upsampled features were integrated into the ProxyCLIP [29] framework. By leveraging spatial correspondences from pre-trained vision en-coders to enhance CLIP [42] representations, we evaluated segmentation perfor-mance on COCO-Stuff [6], Cityscapes [10], ADE20K [62], and Pascal-VOC [19]. 
+
+Analysis. The quantitative results (Tab. 1) indicate that, owing to our Geometry-Aware Ray Representation, RaysUp achieves the best or second-best performance across most metrics, with particularly strong results in dense ge-ometric prediction tasks such as surface normal and depth estimation. In com-parison, LoftUp [23] shows slightly superior performance in certain semantic 12 Ding et al. RGB  Bilinear LR / GT  AnyUp  JAFAR  LoftUp  FeatUp 
+
+> PCA Feature
+> RaysUp (Ours)
+> Semantic Seg. Depth Normal
+
+Fig. 3: Qualitative Results for Task-agnostic Performance. Leveraging the geometry-aware Ray representation, RaysUp demonstrates enhanced geometric con-sistency and achieves superior performance across downstream tasks. 
+
+segmentation and open-vocabulary tasks, primarily due to the incorporation of SAM [27] masks as auxiliary supervision during training. Qualitative analysis (Fig. 3) further demonstrates that, unlike AnyUp [54], JAFAR [11], and Fea-tUp [20] which exhibit holes, or LoftUp [23] which produces blurred boundaries, RaysUp better preserves geometric consistency. Overall, even without additional segmentation supervision, RaysUp maintains overall superior performance, with pronounced advantages in geometric consistency and video tasks, highlighting its stronger task-agnostic generalization capability. 
+
+4.3 VFM-agnostic Performance 
+
+Among the baseline methods, only AnyUp [54] possesses VFM-agnostic capa-bility. Therefore, it was selected as the primary comparison. Consistent with AnyUp, RaysUp was trained on DINOv2-S and evaluated for its generaliza-tion across different VFMs (DINOv2 [39], DINOv3 [47], SigLIP2 [51], and PE Spatial [5]) and various model scales (ViT-S, ViT-M, and ViT-L). As shown in Tab. 2, RaysUp consistently outperforms AnyUp across all tested architec-tures and model sizes, demonstrating that the proposed ray-based upsampling approach effectively preserves high-level semantic information and fine-grained spatial structures without relying on the underlying backbone network. 
+
+4.4 Ultra-lightweight Performance 
+
+Tab. 3 presents a comprehensive evaluation of computational efficiency, memory footprint, and inference speed for RaysUp in comparison with existing upsam-RaysUp: Ultra-light Universal Feature Upsampling 13 
+
+Table 2: VFM-agnostic Performance. Semantic segmentation results (mIoU/Acc) on Pascal-VOC [19] and depth estimation results (RMSE) on NYUv2 [46]. DINOv2 DINOv3 Size Method mIoU (Acc) ↑ RMSE (abs/rel) ↓ mIoU (Acc) ↑ RMSE (abs/rel) ↓
+
+ViT-S AnyUp [54] 84.18 (96.20) 0.478 (0.324) 81.97 (95.77) 0.506 (0.345) 
+
+RaysUp 84.64 (96.34) 0.465 (0.319) 82.60 (95.97) 0.502 (0.342) 
+
+ViT-M AnyUp [54] 85.44 (96.57) 0.415 (0.289) 86.51 (96.84) 0.455 (0.296) 
+
+RaysUp 86.03 (96.70) 0.400 (0.276) 87.20 (97.02) 0.452 (0.289) 
+
+ViT-L AnyUp [54] 85.47 (96.56) 0.393 (0.259) 87.48 (97.07) 0.402 (0.257) 
+
+RaysUp 86.33 (96.81) 0.376 (0.256) 88.07 (97.20) 0.398 (0.255) 
+
+SigLIP2 † PE Spatial Size Method mIoU (Acc) ↑ RMSE (abs/rel) ↓ mIoU (Acc) ↑ RMSE (abs/rel) ↓
+
+ViT-B AnyUp [54] 78.70 (94.60) 0.845 (0.522) 77.41 (94.63) 0.726 (0.461) 
+
+RaysUp 79.37 (94.84) 0.843 (0.519) 77.47 (94.69) 0.706 (0.448) 
+
+ViT-L AnyUp [54] 79.16 (94.73) 0.726 (0.474) 82.23 (95.87) 0.635 (0.404) 
+
+RaysUp 80.10 (94.97) 0.725 (0.472) 82.75 (95.98) 0.613 (0.388)  
+
+> †
+
+A ViT-S version of SigLIP2 is unavailable. 
+
+Table 3: Ultra-lightweight Performance. Comparison of Parameters (M), GFLOPs, GPU memory (GB), and inference FPS at various upsampling resolutions.                                                                                       
+
+> 224 ×224 448 ×448 896 ×896 2K×2K
+> Method Params (M) GFLOPs ↓Mem ↓FPS ↑GFLOPs ↓Mem ↓FPS ↑GFLOPs ↓Mem ↓FPS ↑FPS ↑
+> FeatUp [20] 0.17 31.79 1.73 48 127.02 4.08 14 507.95 15.49 2OOM LoftUp [23] 4.30 397.32 2.88 71970.70 6.39 4OOM OOM OOM OOM JAFAR [11] 0.62 91.88 2.01 16 366.52 5.98 11 1465.08 21.86 2OOM AnyUp [54] 0.87 84.21 2.19 11 328.55 6.73 51306.27 24.85 1OOM
+> RaysUp 0.14 10.17 1.26 55 40.67 2.69 27 162.68 8.47 81
+
+pling methods across multiple resolutions. RaysUp demonstrates a clear advan-tage in all metrics. At a standard input resolution of 224 × 224 , RaysUp requires only 0.14M parameters, consumes 10.17 GFLOPs, and uses 1.26GB of GPU memory, achieving 55 FPS, substantially outperforming alternatives such as Fea-tUp [20], LoftUp [23], JAFAR [11], and AnyUp [54]. As the target resolution scales to 448 × 448 and 896 × 896 , RaysUp maintains a low computational bur-den while delivering high inference speeds (27 and 8 FPS, respectively), whereas other methods experience dramatic slowdowns or run out of memory (OOM) at higher resolutions. Even at extreme resolutions of 2K × 2K, RaysUp remains runnable (1 FPS), highlighting its scalability. These results confirm that RaysUp achieves an ultra-lightweight design that balances parameter efficiency, computational cost, and high-speed inference, making it suitable for dense prediction tasks across a wide range of resolutions while maintaining practical usability on modern GPUs. 14 Ding et al. 
+
+Table 4: Ablation Study. Default settings of RaysUp are marked with an asterisk(*). DINOv2 SigLIP2 PE Spatial DINOv3 Avg. Params (M)                                                                                                                                    
+
+> Guidance Encoder
+> Single-Branch 84.37 79.17 77.34 86.63 81.87 0.266 Dual-Branch 84.49 79.25 77.39 87.02 82.03 0.66 Multi-Branch 84.52 79.33 77.42 87.11 82.09 0.268 Decoupled-Branch * 84.64 79.37 77.47 87.20 82.17 0.14 Guidance Feature Dim
+> Dg= 128 84.26 79.72 77.35 86.78 82.02 0.06
+> Dg= 256 *84.64 79.37 77.47 87.20 82.17 0.14
+> Dg= 512 84.61 79.46 77.49 87.24 82.20 0.40
+> Dg= 768 84.59 79.41 77.50 87.26 82.19 0.89
+> Guidance Conv Blocks
+> L= 1 *84.64 79.37 77.47 87.20 82.17 0.14
+> L= 2 84.66 79.59 77.53 87.42 82.30 0.19
+> L= 3 84.64 79.68 77.95 87.51 82.44 0.27
+> L= 4 84.40 79.60 78.08 87.66 82.43 0.36
+> Positional Encoding
+> None 83.51 77.70 76.47 86.54 81.05 0.14 RoPE [48] 84.43 78.89 77.24 87.15 81.92 0.14 SinRays [49] 84.12 78.45 76.81 86.98 81.59 0.47 RayPE * 84.64 79.37 77.47 87.20 82.17 0.14 Image Pose (T)Identity * 84.64 79.37 77.47 87.20 82.17 0.14
+> DA3-Small [32] 84.69 79.46 77.85 87.65 82.41 0.14 DA3-Base [32] 84.87 79.21 77.90 87.78 82.44 0.14 DA3-Large [32] 84.76 79.06 78.03 87.84 82.42 0.14
+
+4.5 Ablation Study 
+
+We conducted a series of ablation experiments to evaluate the effectiveness of the core components within the RaysUp framework. All experiments were sys-tematically performed across four representative VFMs, including DINOv2 [39], SigLIP2 [51], PE Spatial [5], and DINOv3 [47]. 
+
+Effectiveness of Spatially Decoupled Guidance Encoder. As shown in Tab. 4, compared to Single-Branch, Dual-Branch, and Multi-Branch designs, the proposed Decoupled-Branch achieves the highest performance across all four VFMs, with an average of 82.17%, while drastically reducing the parameter count to only 0.14M. This indicates that decoupled modeling of spatial guidance fea-tures not only more effectively captures multi-scale spatial semantic information but also enables an ultra-lightweight design, substantially improving efficiency for downstream tasks. Regarding the guidance feature dimension and the number of convolutional blocks, performance varies across different VFMs; considering the trade-off between accuracy and efficiency, RaysUp adopts a guidance feature dimension of Dg = 256 with a single convolutional block. 
+
+Effectiveness of RayPE. As shown in Tab. 4, omitting positional encod-ing leads to a significant drop in performance (average 81.05%). While existing methods such as RoPE [48] and SinRays [49] provide moderate improvements, RayPE achieves the highest performance across all VFMs without introducing additional parameters. This indicates that RayPE effectively injects implicit 3D geometric priors, enhancing geometric consistency, boundary fidelity, and struc-RaysUp: Ultra-light Universal Feature Upsampling 15 
+
+tural reconstruction. Moreover, incorporating DA3 [32] pose information can further improve performance in certain scenarios; however, considering compu-tational efficiency, RaysUp adopts an Identity pose configuration. 
+
+## 5 Conclusion 
+
+We introduced RaysUp, an ultra-lightweight, task-agnostic, and encoder-agnostic framework for universal feature upsampling, capable of reconstructing backbone features at arbitrary resolutions. By integrating a Spatially Decoupled Guid-ance Encoder, an Any-Resolution Cross-Attention mechanism, and Ray Posi-tional Encoding (RayPE), RaysUp injects implicit 3D geometric priors to achieve geometry-aware high-resolution feature reconstruction. Extensive experiments demonstrate that RaysUp delivers superior performance across multiple dense prediction tasks, using only about 1/5 of the parameters of baseline methods and achieving approximately 7 × faster inference, while effectively balancing accuracy and computational efficiency. 
+
+## Acknowledgements 
+
+This work was supported in part by the New Generation Artificial Intelligence-National Science and Technology Major Project under Grant 2025ZD0123701, in part by the National Natural Science Foundation of China under Grant 62476202 and 62272343, and in part by the Fundamental Research Funds for the Central Universities. 
+
+## References 
+
+1. Asim, M., Wewer, C., Wimmer, T., Schiele, B., Lenssen, J.E.: MEt3R: Measuring Multi-View Consistency in Generated Images. In: CVPR. pp. 6034–6044 (2025) 2. Bae, G., Budvytis, I., Cipolla, R.: Estimating and Exploiting the Aleatoric Uncer-tainty in Surface Normal Estimation. In: ICCV (2021) 3. Barsellotti, L., Bianchi, L., Messina, N., Carrara, F., Cornia, M., Baraldi, L., Falchi, F., Cucchiara, R.: Talking to DINO: Bridging Self-Supervised Vision Backbones with Language for Open-Vocabulary Segmentation. In: ICCV. pp. 22025–22035 (2025) 4. Bhat, S.F., Alhashim, I., Wonka, P.: AdaBins: Depth Estimation Using Adaptive Bins. In: CVPR (2020) 5. Bolya, D., Huang, P.Y., Sun, P., Cho, J.H., Madotto, A., Wei, C., Ma, T., Zhi, J., Rajasegaran, J., Rasheed, H., et al.: Perception Encoder: The Best Visual Em-beddings Are Not at the Output of the Network. arXiv preprint arXiv:2504.13181 (2025) 6. Caesar, H., Uijlings, J., Ferrari, V.: COCO-Stuff: Thing and Stuff Classes in Con-text. In: CVPR. pp. 1209–1218 (2018) 7. Caron, M., Touvron, H., Misra, I., Jégou, H., Mairal, J., Bojanowski, P., Joulin, A.: Emerging Properties in Self-Supervised Vision Transformers. In: ICCV. pp. 9650–9660 (2021) 16 Ding et al. 8. Chen, S., Guo, H., Zhu, S., Zhang, F., Huang, Z., Feng, J., Kang, B.: Video Depth Anything: Consistent Depth Estimation for Super-Long Videos. In: CVPR. pp. 22831–22840 (2025) 9. Chuang, Y.S., Li, Y., Wang, D., Yeh, C.F., Lyu, K., Raghavendra, R., Glass, J.R., HUANG, L., Weston, J.E., Zettlemoyer, L., Chen, X., Liu, Z., Xie, S., tau Yih, W., Li, S.W., Xu, H.: Meta CLIP 2: A Worldwide Scaling Recipe. In: NeurIPS (2025) 10. Cordts, M., Omran, M., Ramos, S., Rehfeld, T., Enzweiler, M., Benenson, R., Franke, U., Roth, S., Schiele, B.: The Cityscapes Dataset for Semantic Urban Scene Understanding. In: CVPR. pp. 3213–3223 (2016) 11. Couairon, P., Chambon, L., Serrano, L., HAUGEARD, J.E., Cord, M., THOME, N.: JAFAR: Jack up Any Feature at Any Resolution. In: NeurIPS (2025) 12. Dai, Y., Lu, H., Shen, C.: Learning Affinity-Aware Upsampling for Deep Image Matting. In: CVPR. pp. 6841–6850 (2021) 13. Deng, J., Dong, W., Socher, R., Li, L.J., Li, K., Fei-Fei, L.: ImageNet: A Large-Scale Hierarchical Image Database. In: CVPR. pp. 248–255 (2009) 14. Ding, X., Guo, Y., Ding, G., Han, J.: ACNet: Strengthening the Kernel Skeletons for Powerful CNN via Asymmetric Convolution Blocks. In: ICCV. pp. 1911–1920 (2019) 15. Ding, X., Zhang, X., Ma, N., Han, J., Ding, G., Sun, J.: RepVGG: Making VGG-style ConvNets Great Again. In: CVPR. pp. 13733–13742 (2021) 16. Duchon, C.E.: Lanczos Filtering in One and Two Dimensions. Journal of Applied Meteorology 18 (8), 1016–1022 (1979) 17. El Banani, M., Raj, A., Maninis, K.K., Kar, A., Li, Y., Rubinstein, M., Sun, D., Guibas, L., Johnson, J., Jampani, V.: Probing the 3D Awareness of Visual Foundation Models. In: CVPR. pp. 21795–21806 (2024) 18. Elfwing, S., Uchibe, E., Doya, K.: Sigmoid-Weighted Linear Units for Neural Net-work Function Approximation in Reinforcement Learning. Neural Networks 107 ,3–11 (2018) 19. Everingham, M., Eslami, S.M., Gool, L., Williams, C.K., Winn, J., Zisserman, A.: The Pascal Visual Object Classes Challenge: A Retrospective. IJCV 111 (1), 98–136 (2015) 20. Fu, S., Hamilton, M., Brandt, L.E., Feldmann, A., Zhang, Z., Freeman, W.T.: FeatUp: A Model-Agnostic Framework for Features at Any Resolution. In: ICLR (2024) 21. Hassani, A., Walton, S., Li, J., Li, S., Shi, H.: Neighborhood Attention Transformer. In: CVPR. pp. 6185–6194 (2023) 22. He, K., Chen, X., Xie, S., Li, Y., Dollár, P., Girshick, R.: Masked Autoencoders Are Scalable Vision Learners. In: CVPR. pp. 16000–16009 (2022) 23. Huang, H., Chen, A., Havrylov, V., Geiger, A., Zhang, D.: LoftUp: Learning a Coordinate-Based Feature Upsampler for Vision Foundation Models. In: ICCV (2025) 24. Jose, C., Moutakanni, T., Kang, D., Baldassarre, F., Darcet, T., Xu, H., Li, D., Szafraniec, M., Ramamonjisoa, M., Oquab, M., et al.: DINOv2 Meets Text: A Unified Framework for Image- and Pixel-Level Vision-Language Alignment. In: CVPR. pp. 24905–24916 (2025) 25. Jun-Seong, K., Kim, G., Yu-Ji, K., Wang, Y.C.F., Choe, J., Oh, T.H.: Dr. Splat: Directly Referring 3D Gaussian Splatting via Direct Language Embedding Regis-tration. In: CVPR. pp. 14137–14146 (2025) 26. Kerr, J., Kim, C.M., Goldberg, K., Kanazawa, A., Tancik, M.: LERF: Language Embedded Radiance Fields. In: ICCV. pp. 19729–19739 (2023) RaysUp: Ultra-light Universal Feature Upsampling 17 27. Kirillov, A., Mintun, E., Ravi, N., Mao, H., Rolland, C., Gustafson, L., Xiao, T., Whitehead, S., Berg, A.C., Lo, W.Y., et al.: Segment Anything. In: ICCV. pp. 4015–4026 (2023) 28. Kopf, J., Cohen, M.F., Lischinski, D., Uyttendaele, M.: Joint Bilateral Upsampling. ACM Trans. Graph. 26 (3), 96 (2007) 29. Lan, M., Chen, C., Ke, Y., Wang, X., Feng, L., Zhang, W.: ProxyCLIP: Proxy Attention Improves CLIP for Open-Vocabulary Segmentation. In: ECCV. pp. 70– 88 (2024) 30. Li, L., Zhang, L., Wang, Z., Shen, Y.: GS3LAM: Gaussian Semantic Splatting SLAM. In: ACM MM. p. 3019–3027 (2024) 31. Li, L., Zhang, L., Wang, Z., Zhang, F., Li, Z., Shen, Y.: Representing sounds as neural amplitude fields: A benchmark of coordinate-mlps and a fourier kolmogorov-arnold framework. AAAI 39 (23), 24458–24466 (2025) 32. Lin, H., Chen, S., Liew, J.H., Chen, D.Y., Li, Z., Zhao, Y., Peng, S., Guo, H., Zhou, X., Shi, G., Feng, J., Kang, B.: Depth Anything 3: Recovering the Visual Space from Any Views. In: ICLR (2026) 33. Loshchilov, I., Hutter, F.: Decoupled Weight Decay Regularization. In: ICLR (2019) 34. Lu, H., Dai, Y., Shen, C., Xu, S.: Index Networks. IEEE TPAMI 44 (1), 242–255 (2022) 35. Lu, H., Liu, W., Fu, H., Cao, Z.: FADE: Fusing the Assets of Decoder and Encoder for Task-Agnostic Upsampling. In: ECCV. pp. 231–247 (2022) 36. Lu, H., Liu, W., Ye, Z., Fu, H., Liu, Y., Cao, Z.: SAPA: Similarity-Aware Point Affiliation for Feature Upsampling. In: NeurIPS (2022) 37. McKinley, S., Levine, M.: Cubic Spline Interpolation. College of the Redwoods 
+
+45 (1), 1049–1060 (1998) 38. Mildenhall, B., Srinivasan, P.P., Tancik, M., Barron, J.T., Ramamoorthi, R., Ng, R.: NeRF: Representing Scenes as Neural Radiance Fields for View Synthesis. In: ECCV. pp. 405–421 (2020) 39. Oquab, M., Darcet, T., Moutakanni, T., Vo, H.V., Szafraniec, M., Khalidov, V., Fernandez, P., Haziza, D., Massa, F., El-Nouby, A., Assran, M., Ballas, N., Galuba, W., Howes, R., Huang, P., Li, S., Misra, I., Rabbat, M., Sharma, V., Synnaeve, G., Xu, H., Jégou, H., Mairal, J., Labatut, P., Joulin, A., Bojanowski, P.: DINOv2: Learning Robust Visual Features without Supervision. TMLR (2024) 40. Pont-Tuset, J., Perazzi, F., Caelles, S., Arbeláez, P., Sorkine-Hornung, A., Van Gool, L.: The 2017 DAVIS Challenge on Video Object Segmentation. arXiv preprint arXiv:1704.00675 (2017) 41. Qin, M., Li, W., Zhou, J., Wang, H., Pfister, H.: LangSplat: 3D Language Gaussian Splatting. In: CVPR. pp. 20051–20060 (2024) 42. Radford, A., Kim, J.W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., Krueger, G., Sutskever, I.: Learning Transfer-able Visual Models from Natural Language Supervision. In: ICML. pp. 8748–8763 (2021) 43. Radford, A., Kim, J.W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., Krueger, G., Sutskever, I.: Learning transferable visual models from natural language supervision. In: ICLR (2021) 44. Ranftl, R., Bochkovskiy, A., Koltun, V.: Vision Transformers for Dense Prediction. In: ICCV (2021) 45. Shin, H., Kim, C., Hong, S., Cho, S., Arnab, A., Seo, P.H., Kim, S.: Towards Open-Vocabulary Semantic Segmentation Without Semantic Labels. NeurIPS 37 ,9153–9177 (2024) 18 Ding et al. 46. Silberman, N., Hoiem, D., Kohli, P., Fergus, R.: Indoor Segmentation and Support Inference from RGBD Images. In: ECCV. pp. 746–760 (2012) 47. Siméoni, O., Vo, H.V., Seitzer, M., Baldassarre, F., Oquab, M., Jose, C., Khalidov, V., Szafraniec, M., Yi, S., Ramamonjisoa, M., Massa, F., Haziza, D., Wehrstedt, L., Wang, J., Darcet, T., Moutakanni, T., Sentana, L., Roberts, C., Vedaldi, A., Tolan, J., Brandt, J., Couprie, C., Mairal, J., Jégou, H., Labatut, P., Bojanowski, P.: DINOv3. arXiv preprint arXiv:2508.10104 (2025) 48. Su, J., Ahmed, M., Lu, Y., Pan, S., Bo, W., Liu, Y.: RoFormer: Enhanced Trans-former with Rotary Position Embedding. Neurocomputing 568 , 127063 (2024) 49. Sun, C., Yuan, Z., Xu, K., Mai, L., N, S., Chen, S., Marina, M.K.: Learning High-Frequency Functions Made Easy with Sinusoidal Positional Encoding. In: ICML (2024) 50. Suri, S., Walmer, M., Gupta, K., Shrivastava, A.: LiFT: A Surprisingly Simple Lightweight Feature Transform for Dense ViT Descriptors. In: ECCV. pp. 110–128 (2024) 51. Tschannen, M., Gritsenko, A., Wang, X., Naeem, M.F., Alabdulmohsin, I., Parthasarathy, N., Evans, T., Beyer, L., Xia, Y., Mustafa, B., et al.: SigLIP 2: Multilingual Vision-Language Encoders with Improved Semantic Understanding, Localization, and Dense Features. arXiv preprint arXiv:2502.14786 (2025) 52. Wang, J., Chen, K., Xu, R., Liu, Z., Loy, C.C., Lin, D.: CARAFE: Content-Aware ReAssembly of FEatures. In: ICCV. pp. 3007–3016 (2019) 53. Wang, X., Yu, K., Dong, C., Loy, C.C.: Recovering Realistic Texture in Image Super-Resolution by Deep Spatial Feature Transform. In: CVPR (2018) 54. Wimmer, T., Truong, P., Rakotosaona, M.J., Oechsle, M., Tombari, F., Schiele, B., Lenssen, J.E.: AnyUp: Universal Feature Upsampling. In: ICLR (2026) 55. Wu, Y., He, K.: Group Normalization. In: ECCV. pp. 3–19 (2018) 56. Wysoczańska, M., Siméoni, O., Ramamonjisoa, M., Bursuc, A., Trzciński, T., Pérez, P.: CLIP-DINOiser: Teaching CLIP a few DINO Tricks for Open-Vocabulary Semantic Segmentation. In: ECCV. pp. 320–337 (2024) 57. Xie, X., Lessen, J.E., Pons-Moll, G.: MVGBench: A Comprehensive Benchmark for Multi-view Generation Models. In: ICCV. pp. 8207–8218 (2025) 58. Xu, H., Xie, S., Tan, X.E., Huang, P.Y., Howes, R., Sharma, V., Li, S.W., Ghosh, G., Zettlemoyer, L., Feichtenhofer, C.: Demystifying CLIP Data. arXiv preprint arXiv:2309.16671 (2023) 59. Yang, L., Kang, B., Huang, Z., Xu, X., Feng, J., Zhao, H.: Depth Anything: Un-leashing the Power of Large-Scale Unlabeled Data. In: CVPR. pp. 10371–10381 (2024) 60. Yang, L., Kang, B., Huang, Z., Zhao, Z., Xu, X., Feng, J., Zhao, H.: Depth Anything V2. NeurIPS 37 , 21875–21911 (2024) 61. Zhai, X., Mustafa, B., Kolesnikov, A., Beyer, L.: Sigmoid Loss for Language Image Pre-Training. In: ICCV. pp. 11941–11952 (2023) 62. Zhou, B., Zhao, H., Puig, X., Xiao, T., Fidler, S., Barriuso, A., Torralba, A.: Semantic Understanding of Scenes through the ADE20K Dataset. IJCV 127 (3), 302–321 (2019) RaysUp: Ultra-light Universal Feature Upsampling 19 
+
+# RaysUp: Ultra-light Universal Feature Upsampling via Geometry-Aware Ray Representation 
+
+## — Supplementary Material — 
+
+## A Motivation of Spatially Decoupled Guidance Encoder 
+
+As demonstrated by ACNet [14] and RepVGG [15], trained convolutional ker-nels often exhibit sparsity patterns with distinct structural characteristics. In semantic-continuous visual foundation models, uneven spatial distributions of image-guided features may lead to discontinuities in upsampled backbone fea-tures. To investigate this phenomenon, as shown in Fig. 4, we visualized the weight distribution of 3 × 3 convolutional kernels in JAFAR [11]. The results indicate that conventional 3 × 3 convolutions assign relatively low weights to the center ( 0.78 ), while corners and certain edges receive higher weights ( 0.97 −0.99 ). This imbalance may hinder effective channel mixing at the center pixels, poten-tially explaining the appearance of holes in the upsampled features and semantic segmentation outputs in JAFAR (see Fig. 3). In contrast, our Spatially Decoupled Guidance Encoder effectively addresses this limitation: the central weights are substantially increased to the normalized maximum of 1.00, facilitating channel interactions analogous to a 1 × 1 con-volution. Simultaneously, independent horizontal ( 1 × 3), vertical ( 3 × 1), and corner convolutional branches maintain high spatial sensitivity in peripheral re-gions ( 0.89 −0.99 ), enhancing the overall spatial consistency of the features. This continuous and uniform feature structure ensures that, during cross-attention, high-resolution guidance query features Qray can interact with low-resolution key features Kray and visual foundation model features V while preserving spa-tial semantic continuity. 0.97  0.85  0.97          
+
+> 0.84 0.78 0.84
+> 0.99 0.86 0.99
+> 1.00
+> 0.99 0.89 0.97 0.94
+> 0.90
+> 0.99
+> 0.94 0.97
+> 0.96 0.99
+
+Spatially Decoupled Guidance Encoder 3×3 Kernel     
+
+> in JAFAR Center Horizontal Vertical Corners
+
+Fig. 4: Visualization of convolutional kernel weights. Conventional kernels in JAFAR [11] assign lower weights to the center and higher weights to corners and edges, potentially reducing central channel mixing and causing holes in upsampled features. In contrast, the Spatially Decoupled Guidance Encoder increases central weights to 1.00 and employs independent horizontal, vertical, and corner branches, enhancing spatial consistency and preserving semantic continuity during cross-attention. 20 Ding et al. Source  RoPE  RayPE (Ours)  
+
+> Query Pixel
+> Fig. 5: Attention bias map from the query pixel ( ×).
+
+## B Implicit Geometric Injection in RayPE 
+
+RoPE is defined on a planar isotropic 2D Euclidean grid, where the positional phase is linearly associated with pixel coordinates (i, j ): θRoPE (i, j ) = [ iω, jω ]T
+
+(ω denotes the frequency). In contrast, RayPE implicitly encodes 3D spatial positions using normalized camera rays. Assuming an identity camera extrinsic matrix , the positional phase is:           
+
+> θRayPE (i, j ) = ω·[i, j, f ]T
+> pi2+j2+f2,
+
+where f denotes the focal length. During upsampling, the positional phase in RoPE shifts with increasing coordinates, requiring additional interpolation for alignment. In contrast, RayPE preserves geometric feature consistency under identical viewing directions, thereby naturally achieving scale equivariance. As shown in Fig. 5, RayPE extends positional encoding from a 2D image grid to the unit viewing sphere, enabling the attention mechanism to model angular consistency rather than pixel-distance consistency. 
+
+## C Further Implementation Details 
+
+C.1 Hyperparameter Settings 
+
+The key hyperparameters of our model were set as follows. The dimensionality of the guidance features was Dg = 256 , and the total number of frequency bands used in Ray Positional Encoding was N = 5 . For the ray origin, the maximum and minimum spatial wavelengths were set to λmax = 4 .0 and λmin =4.0/81 , respectively, determining the lowest and highest angular frequencies. For the ray direction, the maximum and minimum spatial wavelengths were set to 
+
+λmax = 8 .0 and λmin = 8 .0/81 , respectively. In the cross-attention mechanism, the feature dimensionality of each attention head was dhead = 4 . Within the Neighborhood Cross-Attention module, a k × k local neighborhood centered at each correspondence was considered, with k = 6 .RaysUp: Ultra-light Universal Feature Upsampling 21 
+
+C.2 Task Settings Semantic Segmentation. In our semantic segmentation experiments, the pre-trained parameters were retained, and linear classifiers were trained exclusively on the extracted features. Models were optimized using a cross-entropy loss, with both input and target images uniformly resized to 448 × 448 . Parameter updates were performed using the AdamW [33] optimizer in conjunction with a cosine annealing learning rate schedule, maintaining a fixed learning rate of 
+
+5 × 10 −4 across all datasets. Each model was trained for 20 epochs on the Pascal VOC [19] (21 classes), ADE20K [62] (151 classes), Cityscapes [10] (19 classes), and COCO [6] (27 classes) benchmarks. 
+
+Depth and Surface Normal Estimation. We conducted monocular depth and surface normal estimation on the NYUv2 [46] dataset. For the depth range of 0 to 10 meters, the AdaBins [4] model was applied with 256 bins, and opti-mization was performed by combining scale-invariant sigmoid loss with gradient matching loss. For the surface normal task, the model predicted orthogonal unit vectors and output an associated uncertainty scalar, utilizing the robust loss function proposed by Bae et al. [2]. For both tasks, multi-scale features ex-tracted from three stages of the backbone network were first upsampled before being input to the DPT decoder [44]. The terminal network produced a 256-dimensional output for the depth probability distribution and a 4-dimensional output for the surface normals. During training, both models were configured with the AdamW optimizer [33] (initial learning rate 0.001 , weight decay 0.01 )and trained for 10 epochs. 
+
+Video object segmentation. For the semi-supervised video object segmen-tation task, the models were evaluated on the DAVIS 2017 validation set [40] at 480p resolution. Dense features were extracted with an upsampling factor of 2. During mask prediction, a non-parametric label propagation strategy was employed, in which target features were matched against a memory queue con-taining the initial frame and the seven preceding frames. To improve robustness, feature matching was restricted to a local spatial neighborhood of 12 pixels, re-taining only the top five affinity values for each target pixel. The final segmenta-tion masks were generated by multiplying the source masks with the normalized affinity matrix, followed by bilinear upsampling and an argmax operation. 
+
+Open-Vocabulary Segmentation. During the open-vocabulary segmentation inference phase, we followed the configuration of ProxyCLIP [29] with a key modification: instead of using traditional bilinear interpolation, the extracted features were upsampled to 4 × resolution using our proposed upsampling mod-ule. For dense inference, the extracted patch representations were first projected into the aligned vision-language feature space. Corresponding textual represen-tations were constructed by inputting prompts of the form “a photo of a {label name}.” into the CLIP [43] text encoder. Patch-level classification was then 22 Ding et al. 
+
+performed by computing the cosine similarity between visual and textual rep-resentations within the shared latent space, and each patch was assigned the semantic label corresponding to the text prompt with the highest similarity. Fi-nally, the predicted patch labels were reshaped and upsampled to generate the final segmentation map for the entire image. 
+
+C.3 Baselines FeatUp [20] FeatUp proposed two feature upsampling variants: a feedfor-ward Joint Bilateral Upsampling (JBU) network [28] and an image-specific im-plicit multi-layer perceptron, both supervised using a multi-view consistency loss across transformed low-resolution feature views. As the official repository only provided pre-trained weights for the JBU variant, our evaluation was conducted exclusively on this architecture. Consequently, spatial enhancement was limited to fixed integer scales through sequential cascading of JBU blocks. 
+
+LoftUp [23] LoftUp employed a coordinate-based cross-attention Transformer, constructing queries from high-resolution images and spatial coordinates, while using low-resolution VFM features as keys and values. Training involved an ini-tial feature refinement phase supervised by SAM-generated [27] class-agnostic masks, followed by a self-distillation phase in which an EMA-updated teacher model guided the student network. LoftUp supported only fixed-scale upsam-pling to match the original input image size. In our evaluation, we utilized the officially released pre-trained weights of LoftUp. 
+
+JAFAR [11] JAFAR is a task-agnostic feature upsampler that employed a cross-attention mechanism to restore low-resolution features to arbitrary target resolutions. The framework derived asymmetric queries and keys from a shared high-resolution guidance image, with keys further modulated via Spatial Fea-ture Transform (SFT) [53] to incorporate semantic context. During training, the model was optimized using a combination of cosine and L2 losses applied to multi-resolution image views at low upsampling factors. For evaluation, we directly employed the officially released pre-trained weights of JAFAR. 
+
+AnyUp [54] Similar to JAFAR [11], AnyUp is an attention-based feature up-sampler that utilizes a feature-agnostic convolutional layer to map inputs of varying dimensionality into a canonical format by independently convolving and averaging all channels. The architecture implements a local window attention mechanism computed relative to the feature map size, rather than standard global attention. During training, the model employed a crop-based strategy, learning to match upsampled features from a downsampled image to target features extracted from randomly sampled high-resolution local crops. The op-timization objective combined cosine similarity and L2 loss, supplemented by self-consistency and input-consistency regularization. This training procedure RaysUp: Ultra-light Universal Feature Upsampling 23 
+
+required approximately 5 hours. In our evaluation, we directly employed the officially released pre-trained weights of AnyUp. 
+
+## D Additional Ablation Study 
+
+D.1 Ablation Study Implementation Details Guidance Encoder. For the single-branch encoder, we adopted the archi-tecture used in AnyUp [54], consisting of a 1 × 1 convolution. The dual-branch encoder incorporated parallel 1×1 and 3×3 convolutions, with their outputs con-catenated along the channel dimension. The multi-branch encoder extended this design further by employing four convolutional branches ( 1 × 1, 1 × 3, 3 × 1, and 
+
+3 × 3), whose outputs were similarly concatenated channel-wise. In all variants, each basic encoder block comprised two consecutive GroupNorm [55], SiLU [18], and convolution operations. 
+
+Guidance Feature Dimensionality. We investigated the impact of guidance feature dimensionality in our ablation studies. The results indicated that the 768-dimensional setting underperformed relative to the 512-dimensional config-uration on downstream tasks, and neither setting yielded a notable improve-ment over the 256-dimensional configuration. In contrast, the 256-dimensional representation consistently and substantially outperformed the 128-dimensional baseline. These findings suggest that 256 dimensions provide sufficient represen-tational capacity for the four branches of our decoupled encoder to learn robust and effective guidance features. 
+
+Positional Encoding. In the ablation study on positional encoding, RoPE [48] was implemented following the protocol established by JAFAR [11] and AnyUp [54]. For SinRays [49], ray origins and ray directions were treated as independent components and concatenated with features extracted from the image encoder. A sine activation was subsequently applied to capture high-frequency details, and the resulting representation was projected to the target hidden dimensionality via a convolutional layer. 
+
+Image Pose. Under the identity-pose setting, the extrinsic matrix was set to the identity matrix, while the intrinsic parameters followed a simplified pinhole camera model. The training durations for DA3-Small, DA3-Base, and DA3-Large were approximately 5, 9, and 55 hours, respectively. 
+
+D.2 Ablation Study on Training Strategy 
+
+Following the training paradigm of existing feature upsampling methods [54], RaysUp also employed a lightweight training strategy based on local image crops. 24 Ding et al. 
+
+Table 5: Ablation Study on Training Strategy. The experiments were conducted on semantic segmentation tasks. COCO [6] PASCAL-VOC [19] ADE20k [62] Cityscape [10] mIoU ( ↑) Acc( ↑) mIoU ( ↑) Acc( ↑) mIoU ( ↑) Acc ( ↑) mIoU ( ↑) Acc( ↑)Bilinear 59.58 79.42 81.70 95.44 40.47 74.13 59.72 92.55 FeatUp [20] 61.89 81.10 83.37 96.01 42.33 75.65 60.18 93.05 LoftUp [23] 62.23 81.38 84.50 96.30 42.17 75.79 62.09 93.54 JAFAR [11] 61.79 81.11 83.89 96.11 42.16 75.56 61.40 93.47 AnyUp [54] 62.14 81.38 84.18 96.20 42.15 75.71 60.62 93.26 
+
+RaysUp (w/o Crop) 62.32 81.47 84.64 96.34 42.34 75.81 61.88 93.64 
+
+RaysUp (w/ Crop) 62.47 81.55 84.74 96.38 42.60 75.87 63.04 93.95 
+
+Table 6: Upsampling from Any to Any Resolution. The experiments were con-ducted on Pascal-VOC [19] dataset.                                                                                          
+
+> 16 →112 16 →448 16 →896 32 →112 32 →224 32 →896
+> mIoU ( ↑) Acc ( ↑) mIoU ( ↑) Acc ( ↑) mIoU ( ↑) Acc ( ↑) mIoU ( ↑) Acc ( ↑) mIoU ( ↑) Acc ( ↑) mIoU ( ↑) Acc ( ↑)Bilinear 75.91 93.71 75.76 93.69 75.66 93.65 81.56 95.40 81.42 95.38 81.71 95.43 FeatUp [20] 78.13 94.50 78.24 94.54 78.25 94.54 83.23 95.97 83.36 96.01 83.37 96.01 LoftUp [23] 79.87 95.05 79.68 94.88 79.56 94.83 84.41 96.28 84.64 96.32 84.45 96.30 JAFAR [11] 81.35 95.43 80.85 95.30 80.81 95.28 84.49 96.27 84.40 96.25 OOM OOM AnyUp [54] 80.00 95.10 79.79 95.04 OOM OOM 84.64 96.31 84.56 96.31 84.08 96.16
+> RaysUp 80.44 95.17 80.37 95.18 80.33 95.16 84.76 96.35 84.81 96.37 84.67 96.35
+
+Specifically, given a high-resolution image Ihr ∈ R3×Hin ×Win , a smaller local im-age crop I′ 
+
+> hr
+
+∈ R3×Hcrop ×Wcrop was randomly sampled spatially. Simultaneously, the original image Ihr was downsampled to the same spatial dimensions as I′ 
+
+> hr
+
+,yielding a low-resolution image Ilr ∈ R3×Hcrop ×Wcrop . Features were then ex-tracted from both images using a frozen vision encoder: the low-resolution source features Flr = e(Ilr ) ∈ RDf ×Hlr ×Wlr were obtained from the downsampled im-age, while the high-resolution target features Ftgt = e(I′ 
+
+> hr
+
+) ∈ RDf ×Hlr ×Wlr were extracted from the local crop to serve as the supervisory signal. Subsequently, RaysUp upsampled Flr to reconstruct the full high-resolution feature map ˆFhr = f (Ihr , Flr ) ∈ RDf ×Hhr ×Whr . To ensure precise local align-ment, a feature sub-region ˆFhr crop ∈ RDf ×Hlr ×Wlr was cropped from ˆFhr to cor-respond exactly to the spatial location of I′ 
+
+> hr
+
+, matching the scale of Ftgt . The reconstruction loss was then computed by jointly measuring the cosine similarity and L2 distance between these local feature regions: 
+
+L( ˆFhr crop , Ftgt ) = 1 − cos( ˆFhr crop , Ftgt ) + ∥ ˆFhr crop − F tgt ∥22. (18) With approximately 4 hours of training, the results in Tab. 5 demonstrated consistent performance improvements, further validating the effectiveness and scalability of the proposed model. 
+
+D.3 Upsampling from Any to Any Resolution. 
+
+Following our semantic segmentation configurations, we evaluated the general-ization capability of each model for upsampling arbitrary input resolutions to RaysUp: Ultra-light Universal Feature Upsampling 25 
+
+arbitrary target resolutions on the Pascal-VOC [19] dataset. Since the JBU [28] variant of FeatUp [20] is restricted to a fixed 16 × upsampling factor through stacked JBU blocks, and LoftUp [23] only supports upsampling to the original image resolution, we applied bilinear interpolation to align their outputs with the target resolutions. The quantitative results are summarized in Tab. 6. As observed, our pro-posed RaysUp consistently achieved the best or second-best performance across a wide range of resolution pairs. Notably, JAFAR [11], although theoretically supporting any-to-any upsampling, demonstrated competitive performance pri-marily at lower resolutions (e.g., 16 → 112 and 16 → 448 ). At higher resolutions, the model encountered memory limitations (OOM), preventing evaluation at the largest scales. In contrast, RaysUp maintained strong performance across all res-olutions, consistently surpassing AnyUp [54], a comparable method designed to handle arbitrary Vision Foundation Models (VFMs) and arbitrary output res-olutions. These results highlight the scalability and robustness of RaysUp in practical high-resolution scenarios, demonstrating its ability to generalize effec-tively to unseen resolution combinations while maintaining superior semantic accuracy. 
+
+## E Further Qualitative Experiments 26 Ding et al. RGB  LR  RaysUp  AnyUp  JAFAR  LoftUp  FeatUp  Bilinear 
+
+Fig. 6: Additional pca visualizations on ImageNet. For consistent visualization, a uniform PCA basis is utilized across all methods. The results demonstrate that only RaysUp, AnyUp, and JAFAR yield distinctly sharp PCA projections, successfully maintaining the underlying feature space during upsampling. RaysUp: Ultra-light Universal Feature Upsampling 27 RGB  GT  RaysUp  AnyUp  JAFAR  LoftUp  FeatUp  Bilinear 
+
+Fig. 7: Additional depth estimation visualizations on NYUv2. Compared with baseline methods, RaysUp preserves sharper object boundaries and produces predic-tions that are more closely aligned with the ground truth. 28 Ding et al. RGB  GT  RaysUp  AnyUp  JAFAR  LoftUp  FeatUp  Bilinear 
+
+Fig. 8: Additional surface normal estimation visualizations on NYUv2. In some cases (e.g., rows 2 and 5), RaysUp produces predictions that are visually more coherent than the provided ground truth, whereas competing methods tend to intro-duce noticeable artifacts in challenging regions (e.g., row 6). RaysUp: Ultra-light Universal Feature Upsampling 29 RGB  GT  RaysUp  AnyUp  JAFAR  LoftUp  FeatUp  Bilinear 
+
+Fig. 9: Additional semantic segmentation visualizations on VOC. Compared to AnyUp, RaysUp yields more complete segmentation masks with sharper boundaries, as observed in the third and sixth rows. Furthermore, in certain instances, our results exhibit finer details than even the ground truth annotations (e.g., the second row). 30 Ding et al. RGB  LR  RaysUp  AnyUp  JAFAR  LoftUp  FeatUp  Bilinear 
+
+Fig. 10: Additional video semantic segmentation visualizations on the DAVIS dataset. We provide qualitative segmentation results for the 8th , 11 th , 24 th ,
+
+28 th , 37 th , and 43 rd frames of the dogs-jump video sequence. As illustrated, RaySup demonstrates superior performance in video semantic segmentation compared to exist-ing methods. Specifically, our approach yields significantly sharper object boundaries and maintains highly robust inter-frame temporal consistency.

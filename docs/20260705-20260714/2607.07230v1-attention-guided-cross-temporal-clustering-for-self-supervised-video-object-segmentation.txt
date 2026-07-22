@@ -1,0 +1,683 @@
+Title: `Attention-Guided Cross-Temporal Clustering for Self-Supervised Video Object Segmentation
+
+URL Source: https://arxiv.org/pdf/2607.07230v1
+
+Published Time: Thu, 09 Jul 2026 00:43:58 GMT
+
+Number of Pages: 34
+
+Markdown Content:
+# Attention-Guided Cross-Temporal Clustering for Self-Supervised Video Object Segmentation 
+
+# Waqas Arshid 1, Mohammad Awrangjeb 1* ,Alan Wee-Chung Liew 1, Yongsheng Gao 2
+
+> 1
+
+School of Information and Communication Technology, Griffith University, Brisbane, QLD, Australia. 
+
+> 2
+
+School of Engineering and Built Environment – Electrical and Electronic Engineering, Griffith University, Brisbane, QLD, Australia. *Corresponding author(s). E-mail(s): mohammad.awrangjeb@griffith.edu.au; Contributing authors: waqas.arshid@griffith.edu.au; a.liew@griffith.edu.au; yongsheng.gao@griffith.edu.au; 
+
+Abstract 
+
+Video object segmentation (VOS) is a fundamental task in video understand-ing, requiring accurate delineation and consistent tracking of objects across frames. While supervised methods achieve strong performance, they depend on densely annotated datasets that are costly to obtain and limited in domain cov-erage. Self-supervised learning offers a promising alternative by removing the need for manual labels; however, existing approaches often struggle to jointly maintain spatial accuracy and temporal coherence, particularly in unconstrained multi-object scenarios. Many rely on optical flow, synthetic motion cues, or task-specific pretraining, limiting scalability and generalisation. We propose a self-supervised framework, Cross-Temporal Consistency and Clustering (CTC 2), that learns mid-level, part-aware representations by combining attention-guided token selection with lightweight temporal clustering. Instead of operating at the pixel or whole-object level, the method aligns soft part assignments across time using a saliency-weighted symmetric consistency objective. The framework leverages a frozen transformer backbone with lightweight modules for adaptive token selection and multi-offset temporal alignment, enabling efficient scaling across resolutions and motion patterns. CTC 2 achieves competitive performance among recent self-supervised methods while maintaining real-time throughput, without relying on motion cues or domain-specific adaptation. It further demon-strates stable behaviour under cross-dataset evaluation and can be extended 
+
+1arXiv:2607.07230v1 [cs.CV] 8 Jul 2026 to a semi-supervised setting using a first-frame mask. These results suggest that attention-guided token selection combined with temporal clustering offers a practical and scalable direction for label-free video segmentation.   
+
+> Keywords: video object segmentation, self-supervised learning, unsupervised representation learning, vision transformers, saliency-guided attention, part-level representation, temporal consistency
+> Accepted for publication in Machine Intelligence Research . DOI: 10.1007/s11633-026-1648-7.
+
+# 1 Introduction 
+
+Understanding how objects evolve over time—how they move, deform, interact, or become occluded—is central to visual intelligence. Video Object Segmentation (VOS) supports applications such as autonomous navigation, intelligent video editing, aug-mented reality, and human–robot interaction [1, 2]. While supervised methods achieve strong performance using dense per-frame annotations [3, 4], they scale poorly: pixel-accurate labels remain costly to obtain at scale, and large annotated datasets are not always available for new domains or rare categories. This bottleneck limits deployment in settings with privacy constraints, long-tail categories, or rapidly changing domains. To mitigate annotation dependence, recent work has increasingly explored self-supervised VOS, which aims to learn spatiotemporal representations directly from unlabeled videos [5–7]. Many methods replace human labels with intrinsic signals from temporal coherence, motion consistency, or appearance regularities. However, existing approaches vary widely in the assumptions they require, ranging from motion-based cues and synthetic labels to correspondence learning frameworks that rely on strong data augmentations or contrastive objectives. Common dependencies include opti-cal flow [8], which can fail in low-texture or fast-motion regions; motion saliency [9], which is often confounded by background dynamics; and pseudo-labels from syn-thetic cues [10, 11], which may introduce bias. Meanwhile, correspondence-based SSL methods—such as CRW, TimeT, and TAPIR-style matching—show that flow-free alignment is feasible, but may still break under occlusion, clutter, or large appearance changes. These limitations motivate dense video representations that remain tempo-rally consistent under viewpoint change, occlusion, and background noise—without brittle external priors. We argue that a promising direction is to learn representations at the level of 
+
+semantic object parts , rather than whole objects or individual pixels. Parts such as wheels, wings, or ears tend to persist through occlusion, deform predictably, and com-pose into objects [12–14]. This mid-level abstraction generalises across categories and can be more stable under viewpoint change and intra-class variation [15, 16]. How-ever, discovering temporally consistent parts without supervision remains challenging, particularly when neither motion cues nor semantic annotations are available. Prior 2work has explored unsupervised part discovery in static images and short-range cor-respondences in videos, but extending these ideas to long-range, label-free temporal consistency remains an open problem. In this work, we build upon clustering-based part discovery and temporal cor-respondence learning to develop a self-supervised framework that encourages stable part-level alignment across time. We match salient spatial tokens across adjacent frames and enforce consistency in their soft cluster assignments. The key intuition is that the same semantic part (e.g., a bear’s ear or a car’s wheel) should induce similar feature distributions over time, even under scale, rotation, or partial occlusion [17]. We operationalise this intuition using a symmetric Kullback–Leibler (KL) consistency loss, chosen for balanced alignment rather than as a new objective, and we provide ablations against one-sided KL, cross-entropy, and contrastive alternatives. A central component is the [CLS] attention map from a frozen SAM2 encoder [18] to identify salient tokens. Rather than introducing a new saliency mechanism, we leverage an emergent property of ViTs: the [CLS] token aggregates global context and often highlights semantically meaningful regions. In practice, strong [CLS] -attention responses align with salient regions [14, 19]. We adopt an adaptive top-p selection strategy with coarse grid diversity to balance semantic focus and spatial coverage, mitigating failure cases involving small objects, clutter, and varying resolutions. Technically, we treat the frozen SAM2 encoder as a general-purpose visual tok-enizer trained on large-scale segmentation data [20]. Token embeddings are fed to a lightweight MLP clustering head to produce soft part assignments. We track clusters using cosine-similarity matching and enforce temporal alignment via the symmetric KL objective. Keeping the backbone frozen reduces overhead and avoids domain-specific fine-tuning; however, we explicitly evaluate frozen versus fine-tuned variants. To handle variable motion and frame rates, we introduce a multi-∆t temporal pyramid 
+
+with match-rate control, inspired by multi-step correspondence strategies but tailored to stable clustering rather than contrastive tracking. Our approach complements prior work such as SelfMask [9], TimeT [7], BETRayed Attention [21], and modern flow-free correspondence models. Rather than relying on motion cues, heavy augmentations, or decoder heads, CTC 2 focuses on attention-guided token selection and cross-temporal part clustering. This mid-level grouping improves robustness to occlusion, background interference, and intra-class variabil-ity. We also relate our design to memory-centric VOS methods such as XMem [22] and AOT [23], while emphasising that our framework does not use external memory modules or mask propagation. We evaluate on three established self-supervised VOS benchmarks—DAVIS-2017 [24], DAVIS-2016 [2], and YouTube-VOS [3]. Following common practice in label-free dense segmentation [12, 15], the first annotated frame is used only to define the evaluation mapping. For completeness, we also report semi-supervised results where the first-frame mask is provided at inference, and cross-dataset generalisation experiments to assess robustness under domain shift. Across these settings, CTC 2
+
+achieves competitive performance while maintaining real-time throughput. In summary, our main contributions are: 3• We present a self-supervised framework for part-level temporal consistency that com-bines attention-guided token selection with lightweight cross-temporal clustering and a symmetric KL consistency objective. 
+
+• We introduce adaptive token budgeting based on top-p attention and spatial diversity, improving semantic coverage across resolutions without increasing com-putational complexity. 
+
+• We develop a multi-∆t temporal supervision strategy with match-rate control to improve correspondence stability under variable motion and frame rates. 
+
+• We report competitive results on DAVIS-2017, DAVIS-2016, and YouTube-VOS, supported by cross-dataset and semi-supervised evaluations highlighting robustness. 
+
+# 2 Related Work 
+
+# 2.1 Self-Supervised Learning for Dense Visual Understanding. 
+
+Self-supervised learning (SSL) has become a foundational paradigm in computer vision, enabling representation learning without human-annotated labels [25]. Early image-level methods such as MoCo [26], BYOL [27], and SimSiam [28] established instance discrimination as a strong pretext task, achieving competitive performance in classification and retrieval. However, because these approaches emphasise global embeddings, transferring them directly to dense prediction tasks—where spatial correspondence is essential—remains challenging. To address this limitation, later work introduced spatial structure into SSL objec-tives. DenseCL [29] aligns pixel-level features across augmented views; PixPro [30] propagates local features across spatial neighbourhoods. Complementary to pixel-centric objectives, part-aware models such as SCOPS [15] and Leopart [12] promote the discovery of spatially coherent parts, while GroupViT [16] and TokenCut [31] show that semantic grouping can emerge from transformer tokenisation. DINO [19] further demonstrates that Vision Transformer attention provides an unsupervised saliency prior correlated with object and part structure, motivating attention-guided grouping. More recent unsupervised grouping and segmentation methods extend these ideas. LOST [32] shows that object localization can emerge directly from self-supervised ViT features through attention-guided region extraction, while FreeSOLO [33] and U2Seg [34] generalise grouping to class-agnostic instance and universal image seg-mentation. These methods highlight the strength of transformer representations for dense grouping without supervision, but operate primarily on static images and do not enforce temporal coherence across frames. Dense unsupervised video segmenta-tion [35] begins to address temporal consistency, yet remains pixel-centric and does not leverage mid-level part representations or attention-guided token selection. We build on these insights in two ways: (i) instead of clustering all tokens or pixels, we exploit ViT attention to selectively retain salient spatial tokens from a frozen encoder using an adaptive budget that preserves coverage across resolutions; and (ii) we extend grouping from static images to videos by enforcing cross-temporal 
+
+consistency of soft part assignments through a lightweight alignment mechanism. 42.2 Temporal Self-Supervision in Video Representation Learning. 
+
+Temporal continuity in video provides a rich source of self-supervision [36]. Early approaches use surrogate objectives such as frame ordering (Shuffle and Learn [37], Arrow of Time [38]) and future prediction [39]. Cycle-consistency later emerged as a powerful constraint: TimeCycle [40] enforces that correspondences traced forward in time return to their origin, while subsequent methods operationalise correspondence via contrastive or tracking-based objectives, including CycleContrast [41], spacetime random walks [42] and memory-augmented tracking (MAST) [43]. Time-tuning [7] further adapts image-pretrained features to unlabeled video using temporal alignment losses. Despite their effectiveness, many of these methods either (i) operate on global 
+
+embeddings that obscure fine-grained structure, or (ii) rely on dense warping or optical flow, which can be fragile under fast motion, occlusion, or low texture and computa-tionally expensive at scale. Recent correspondence-based models such as TAPIR [44] demonstrate strong long-range, flow-free tracking through recurrent refinement, while Deep ViT Feature Descriptors [45] show that dense correspondences can emerge from self-supervised ViTs without explicit motion modeling. However, these methods still operate on densely sampled patches and do not explicitly constrain the temporal stability of part-level structures. In contrast, we pursue token-level temporal supervision. Guided by attention-derived saliency, we restrict learning to a compact, adaptively selected set of informative tokens and align their soft part assignments across time. This design avoids dense warping, relies on lightweight cosine-similarity matching, and supports a multi-∆t temporal pyramid with match-rate control. Rather than competing with dense correspondence methods such as TAPIR or ViT-based tracking, our formulation targets a lightweight, mid-level alternative in which part-like token groups—rather than pixels or dense patches—serve as the unit of temporal alignment. We treat attention-derived saliency (e.g., [CLS] attention) as a heuristic prior rather than a definitive foreground indicator, acknowledging its limitations for small objects and cluttered scenes. 
+
+# 2.3 Part-Level Representation Learning. 
+
+Part-level representations provide semantically meaningful, generalisable units that are robust to occlusion, deformation, and viewpoint change [13, 46]. In images, SCOPS [15] and Leopart [12] discover recurring part structure through spatial group-ing. In videos, temporal alignment of latent structures—such as cycle-consistency in TimeCycle [40] and neural-surface-based PartDistillation [14]—suggests that mid-level components can persist across time. Dense tracking works such as TAPIR [44] and Deep ViT Correspondences [45] further indicate that temporally stable mid-level features can emerge without flow, though they do not explicitly cluster tokens into part-like groups. We extend this line of work by integrating transformer-derived token saliency with a temporal clustering loss . Salient tokens, selected via [CLS] attention from a frozen 5encoder, are softly clustered into parts and aligned across frames using a symmetric KL objective. This encourages temporally stable groupings without assuming that clusters always correspond to fully interpretable semantic parts. 
+
+# 2.4 Foundation Models and Saliency-Guided Learning. 
+
+Large pretrained Vision Transformers, including DINO [19], SAM [20], and SAM2 [18], exhibit strong transfer to dense prediction tasks due to hierarchical token representa-tions and global attention. These models often show emergent grouping of semantically related regions, providing a natural cue for unsupervised segmentation. Leveraging 
+
+[CLS] attention [47] as a saliency signal enables extraction of informative tokens with-out training a separate saliency network. Our method adopts this principle using a frozen SAM2 encoder. We emphasise that freezing the encoder is a design choice moti-vated by efficiency and generalisation rather than conceptual novelty; ablations in Sec. 4.3 examine frozen versus fine-tuned variants. 
+
+# 2.5 Token-Level Consistency and Loss Design. 
+
+Temporal stability in learned representations has been pursued through contrastive objectives (InfoNCE [48]), cycle-consistency [41], and patch-tracking losses [42], often requiring careful negative sampling or memory banks. We instead adopt a symmet-ric KL divergence [12] between matched token clusters, avoiding negative sampling while enforcing bidirectional consistency. Prior work suggests that symmetric diver-gences can mitigate directional bias, though their advantages over one-sided KL, cross-entropy, or contrastive losses depend on the alignment setting; we therefore include ablations to clarify their behaviour in our framework. Prior SSL video methods emphasise pixel- or object-level propagation, optical flow, or external memory. In contrast, our method treats parts as the unit of temporal alignment, unifying attention-guided token selection with cross-temporal clustering and symmetric-KL agreement on a frozen backbone. With adaptive token budgeting and a multi-∆t training scheme, the pipeline remains label-free and decoder-free while scaling across resolutions and motion regimes. 
+
+# 3 Methodology 
+
+# 3.1 Overview and Notation 
+
+Our objective is to learn temporally consistent and semantically coherent part-level 
+
+representations of objects in videos in a purely self-supervised manner. Reasoning at the level of constituent parts—such as wheels, limbs, or articulated components—has been shown to provide stronger inductive biases than whole-object or pixel-level formulations, particularly under occlusion and deformation [15, 49]. This perspec-tive complements our earlier CAMVOS framework [50], which emphasised contextual and long-term memory for video object segmentation. In contrast, the present work adopts an explicitly unsupervised, part-centric formulation that discovers latent part groupings and enforces their temporal consistency across a video sequence. 6Table 1 : Summary of notation used in Sec. 3.                                
+
+> Symbol Meaning
+> H, W Spatial height and width of feature map
+> NNumber of spatial tokens ( N=HW )
+> DToken embedding dimension
+> Xt∈RN×DToken embeddings for frame It
+> αt∈RNSaliency prior from [CLS] attention
+> StIndices of selected tokens after adaptive sampling
+> kt=|S t|Number of selected tokens
+> Pt(i)∈∆KSoft part distribution for token iKNumber of part prototypes
+> Mt, ∆Mutual matches between frames tand t+ ∆
+
+At a high level, the framework consists of four stages. First, a frozen encoder pro-duces dense spatial tokens together with an attention-derived saliency prior. Second, an adaptive token selection strategy extracts a compact yet semantically informative subset of tokens. Third, a lightweight MLP-based clustering head maps each selected token to a soft distribution over K latent parts. Finally, a temporal consistency objective aligns these part distributions across multiple time offsets. For an input frame It, the encoder outputs a feature map Ft ∈ RH×W ×D , which is flattened into N = H × W spatial tokens Xt ∈ RN ×D . A saliency score αit is assigned to each token via the encoder’s [CLS] attention, forming the vector αt ∈ RN . All notation is summarised in Table 1. An adaptive sampling rule (Sec. 3.4) selects a subset St ⊆ { 1, . . . , N } of size kt.Each selected token i ∈ S t is mapped to a soft part distribution Pt(i) ∈ ∆K , where K
+
+denotes the number of latent part prototypes. Temporal correspondence is established via cosine similarity between tokens from frames t and t + ∆ , yielding the mutual match set Mt, ∆ ⊆ S t × S t+∆ .To ground the notation, consider a concrete example. A 224 × 224 frame yields 
+
+N = 196 tokens using a patch size of 16. The saliency prior selects kt = 32 infor-mative tokens. After clustering, each token is assigned a K = 8 -dimensional part distribution. Matching these tokens with those from frame t+3 produces 24 mutual correspondences, on which the symmetric distributional alignment loss is computed. Our design is guided by three principles. First, efficiency through adaptive saliency :selecting only salient and spatially diverse tokens reduces computation while preserv-ing semantic coverage. Second, stability through part-level clustering : grouping tokens into soft parts yields representations that are more robust to occlusion, motion, and viewpoint change than pixel-level alignment. Third, temporal consistency via sym-metric alignment : we employ symmetric KL divergence as a simple, bidirectional distribution-matching objective. Together, these principles define a lightweight and fully unsupervised pipeline for video object segmentation. 7Fig. 1: Overview of the proposed CTC 2 framework. Consecutive frames It and 
+
+It + ∆ t are encoded by a frozen SAM2 ViT backbone. The [CLS] attention map guides adaptive token selection, retaining only the most salient and spatially diverse regions. A lightweight MLP head clusters these tokens into soft part assignments. Cross-temporal matching aligns part distributions via cosine similarity across mul-tiple temporal offsets, while a saliency-weighted symmetric KL divergence enforces temporal consistency. 
+
+# 3.2 Encoder and Saliency Prior 
+
+We adopt a frozen SAM2 encoder as the feature extractor, motivated by its strong ability to capture high-level semantic information across diverse visual domains. For each frame It, the encoder produces a dense feature map Ft ∈ RH×W ×D , which is flattened into N = H × W spatial tokens Xt = {xit}Ni=1 with xit ∈ RD.In addition to spatial embeddings, the encoder exposes a global [CLS] token whose final-layer attention provides an importance weight for each spatial location. We treat this signal as a saliency prior αt ∈ RN .The [CLS] attention offers two practical advantages. First, it provides a training-free mechanism for highlighting semantically meaningful regions without introducing an additional saliency network or optical-flow estimator. Second, by keeping the encoder frozen, optimisation is confined to the lightweight clustering head and temporal alignment modules, reducing training complexity. We note that this saliency prior is an imperfect heuristic: [CLS] attention may be unreliable in cluttered scenes, for small objects, or under domain shift. To mitigate this, our adaptive selection module combines saliency weighting with spatial diversity constraints, ensuring broad coverage even when the prior is noisy. 
+
+# 3.3 Frame Encoding and Attention-Derived Saliency 
+
+Given a video frame It ∈ R3×H×W , we extract patch-level embeddings using a frozen SAM2 ViT encoder [51]. The frame is divided into N = HP · WP patches of size 
+
+P ×P (with P =16 ), producing a feature map Ft ∈ RN ×D with embedding dimen-sion D=768 . Tokens are flattened in raster order (top-left to bottom-right), yielding 
+
+Xt = {x(i) 
+
+> t
+
+}Ni=1 .Freezing the encoder preserves spatial priors learned from large-scale segmentation corpora [20] and reduces training cost. To localise salient regions without supervision, 8we leverage the final-layer [CLS] attention, which has been shown to correlate with object- and part-level semantics in Vision Transformers [14, 19, 52]. Let q[CLS ] ∈ R1×dk
+
+and K ∈ RN ×dk denote the [CLS] query and token keys. Scaled dot-product attention computes 
+
+At = softmax q[CLS ]K⊤
+
+√dk
+
+!
+
+∈ R1×N , (1) averaged across attention heads. As a softmax distribution, P 
+
+> i
+
+A(i) 
+
+> t
+
+= 1 .Flattening yields αt ∈ RN , a training-free saliency prior in which larger values often correspond to semantically meaningful regions. Because attention quality may degrade under clutter or domain shift, spatial diversity is enforced in Sec. 3.4 to prevent omission of important regions when saliency is imperfect. 
+
+# 3.4 Adaptive Token Selection 
+
+Although the SAM2 encoder produces a dense grid of N tokens, propagating all tokens is computationally inefficient and often redundant, as many correspond to low-semantic background regions. Inspired by token-pruning methods [53–55], we adopt an adaptive strategy that selects a compact, informative subset. Let At denote the saliency vector from Eq. 1. Sorting entries in descending order yields indices π(1) , . . . , π (N ). We select the smallest prefix satisfying 
+
+> |S t|
+
+X
+
+> m=1
+
+A(π(m))  
+
+> t
+
+≥ p, p ∈ [0 .80 , 0.90] . (2) Since At sums to 1, p directly controls the retained saliency mass. To prevent degenerate selections, we enforce 
+
+kmin ≤ |S t| ≤ kmax ,
+
+with kmin =24 and kmax =128 . This guarantees explicit lower and upper bounds on the adaptive budget. Saliency-only selection may collapse spatially by favouring adjacent patches. To ensure coverage, we partition the token grid into B×B non-overlapping cells (typically 
+
+B=4 ). From each non-empty cell, the highest-saliency token is added to a diversity set Gt, guaranteeing inclusion of spatially distinct regions. The remaining budget is filled using the top-p ordering, skipping duplicates. The final selection size follows an explicit termination rule: 
+
+|S t| = min 
+
+
+
+kmax , max( kmin , m ⋆, |G t|)
+
+
+
+,
+
+where m⋆ is the smallest index at which cumulative saliency exceeds p. Training proceeds only once this cardinality is reached. This hybrid top-p plus diversity strategy balances efficiency with semantic coverage and remains stable across resolutions and video domains. 9Algorithm 1 Adaptive Token Selection via Top-p Saliency and Grid Diversity 
+
+Input: Saliency At; patch grid (H/P, W/P ); parameters p, kmin , kmax ; grid size B. 
+
+> 1:
+
+Sort indices π by At (descending).  
+
+> 2:
+
+Compute smallest m⋆ such that Pm⋆ 
+
+> m=1
+
+A(π(m))  
+
+> t
+
+≥ p. 
+
+> 3:
+
+S ← { π(1) , . . . , π (m⋆)}. 
+
+> 4:
+
+Grid Diversity: Partition grid into B×B cells; for each cell with tokens, add highest-saliency token to G. 
+
+> 5:
+
+Initialize St ← G . 
+
+> 6:
+
+Sequentially add tokens from S not already in St until |S t| =min( kmax , max( kmin , m ⋆, |G| )) .
+
+Output: St
+
+# 3.5 Soft Part Clustering Head 
+
+Selected tokens are mapped to part-level representations using a lightweight two-layer MLP. For each token embedding f (i) 
+
+> t
+
+∈ RD from the adaptive set ˜Ft, we compute 
+
+C(i) 
+
+> t
+
+= softmax  W2 σ(W1 f (i) 
+
+> t
+
+) ∈ RK , (3) where W1 ∈ RD×dh , W2 ∈ Rdh×K , and σ denotes a non-linearity (ReLU or GELU). Each C(i) 
+
+> t
+
+represents a soft distribution over K latent parts, with K selected via validation (Sec. 5.2). In practice, K ∈ [12 , 24] provides a good trade-off between granularity and temporal stability. Soft assignments are motivated by prior work in unsupervised part discov-ery, which shows that hard clustering can fragment object regions and produce unstable trajectories, particularly near occlusion boundaries or under appearance change [12, 15, 49]. By contrast, soft distributions preserve uncertainty and allow ambiguous tokens to interpolate between parts, leading to more robust temporal align-ment. Related clustering-based grouping frameworks [16, 56] similarly demonstrate that distributional assignments help prevent collapse and encourage balanced part usage. Compared to the heavier decoders used in semi-supervised VOS [3, 57], our cluster-ing head remains deliberately lightweight. Most representational capacity arises from attention-guided token selection and temporal consistency (Sec. 3.6), allowing us to avoid large-capacity modules. As a result, accuracy gains stem from the part-centric formulation rather than increased parameter count, consistent with efficiency-oriented VOS pipelines [42, 43]. 
+
+# 3.6 Temporal Matching and Multi-Offset Supervision 
+
+Spatial grouping alone is insufficient for video object segmentation; part assignments must remain stable over time despite motion, occlusion, and viewpoint change. Prior self-supervised approaches enforce temporal coherence using cycle-consistency [40, 41], nearest-neighbour tracking [43], or contrastive alignment [42, 48]. Building on these 10 ideas, we establish temporal consistency by matching adaptively selected tokens across frames in embedding space. Let ˜Ft and ˜Ft+∆ t denote the selected tokens from frames t and t + ∆ t, with sizes 
+
+kt and kt+∆ t. Embeddings are L2-normalised, and cosine similarity defines nearest-neighbour correspondences. For token i at frame t,
+
+Nt→t+∆ t(i) = arg max 
+
+> j∈{ 1,...,k t+∆ t}
+
+f (i) 
+
+> t
+
+· f (j)
+
+> t+∆ t
+
+∥f (i) 
+
+> t
+
+∥ ∥ f (j)
+
+> t+∆ t
+
+∥ . (4) To improve robustness, we retain only mutual nearest neighbours whose similarity exceeds a threshold δ ∈ [0 .3, 0.6] :
+
+M∆t =
+
+n
+
+(i, j ) j = Nt→t+∆ t(i), i = Nt+∆ t→t(j), sim( i, j ) ≥ δ
+
+o
+
+. (5) This symmetric rule filters noisy correspondences, consistent with prior correspondence-based SSL [40, 43]. A single temporal offset may not capture both short-term motion and longer-term structural coherence. We therefore employ a multi-offset strategy with strides 
+
+S = {1, 2, 4, 8} and compute M∆t for each ∆t ∈ S . Because matching reliability decreases with increasing stride, we measure offset quality using the match rate 
+
+r(∆ t) = |M ∆t|
+
+min( kt, k t+∆ t) . (6) Offsets satisfying r(∆ t) ≥ rmin (with rmin ∈ [0 .5, 0.7] ) are retained, 
+
+St = {∆t ∈ S | r(∆ t) ≥ rmin }. (7) If no offset meets this criterion, we fall back to the offset with the highest match rate. This ensures that temporal supervision is driven by reliable correspondences rather than noise, particularly under fast motion or low texture. Active offsets are combined using exponentially decaying weights, 
+
+w∆t ∝ γ∆t, γ ∈ [0 .6, 0.8] , X
+
+> ∆t∈S t
+
+w∆t = 1 , (8) emphasising short-term alignment while progressively incorporating longer-range con-sistency. This temporal curriculum stabilises training without relying on optical flow [58] or explicit motion cues. As a continuation of the running example, matching 32 selected tokens from frame t with those from frame t+3 yields approximately 24 mutual correspondences, corresponding to a match rate of r(3) ≈ 0.75 .11 3.7 Saliency-Weighted Symmetric KL Consistency 
+
+Given the mutual correspondences M∆t, we enforce temporal consistency by aligning the corresponding part distributions. Let P(i) 
+
+> t
+
+∈ ∆K and P(j) 
+
+> t+∆ t
+
+∈ ∆K denote the soft part assignments for a matched pair (i, j ). Their agreement is measured using a symmetric KL divergence, 
+
+SKL  P(i) 
+
+> t
+
+, P(j)
+
+> t+∆ t
+
+ = 12
+
+KL( P(i) 
+
+> t
+
+∥ P(j)
+
+> t+∆ t
+
+) + KL( P(j) 
+
+> t+∆ t
+
+∥ P(i) 
+
+> t
+
+). (9) Not all correspondences are equally informative. We therefore weight each pair by the geometric mean of its saliency scores, 
+
+ωij =  α(i) 
+
+> t
+
+α(j)
+
+> t+∆ t
+
+1/2, (10) and compute a normalised loss for each offset, 
+
+LCTC 2 (∆ t) = 1
+
+P 
+
+> (i,j )∈M ∆t
+
+ωij 
+
+X
+
+> (i,j )∈M ∆t
+
+ωij SKL 
+
+
+
+P(i) 
+
+> t
+
+, P(j)
+
+> t+∆ t
+
+
+
+. (11) Consistency is aggregated across all active offsets St using weights w∆t,
+
+Lcons = X
+
+> ∆t∈S t
+
+w∆t LCTC 2 (∆ t). (12) Contrastive objectives such as InfoNCE [48] or MoCo [26] require careful negative construction and often emphasise global separation rather than fine-grained align-ment. Cycle-consistency losses [40, 41] promote temporal stability but are directional and may accumulate drift. In contrast, symmetric KL provides a simple bidirec-tional distribution-matching objective that is well suited to soft part assignments: it preserves uncertainty, discourages drift through mutual agreement, and penalises collapsed distributions [16, 56]. Saliency weighting further focuses supervision on tokens likely to correspond to object parts, reducing the influence of background regions or spurious matches. Together, these components instantiate our inductive bias of part-level temporal con-sistency in a lightweight, label-free manner without negative sampling, pseudo-label propagation, or optical-flow supervision. For continuity with the running example, the symmetric KL loss in Eq. 11 is computed on the ∼24 reliable correspondences obtained when matching frame t with frame t+3 .
+
+# 3.8 Regularisation and Collapse Prevention 
+
+Temporal consistency provides strong supervision, but clustering can still drift toward degenerate optima without additional constraints. In practice, we observe two com-mon failure modes: (i) assignments collapse to a dominant part, and (ii) per-token 12 distributions become overly uniform, erasing semantic structure. To stabilise learn-ing, we introduce two lightweight regularisers on the soft part distributions, adding negligible overhead. To discourage overly flat predictions, we penalise the entropy of per-token distributions: 
+
+Lconf = 1
+
+P 
+
+> t
+
+kt
+
+X
+
+> tkt
+
+X
+
+> i=1
+
+H P(i)
+
+> t
+
+, H(P(i) 
+
+> t
+
+) = −
+
+> K
+
+X
+
+> c=1
+
+P (i) 
+
+> t,c
+
+log P (i) 
+
+> t,c
+
+. (13) This encourages sharper assignments while still allowing uncertainty where warranted (e.g., near boundaries). Similar entropy-based sharpening appears in unsupervised part discovery [15, 49] and clustering-based representation learning [59, 60]. To prevent collapse to a small subset of parts, we promote balanced usage across a batch. Let 
+
+¯p = 1
+
+P 
+
+> t
+
+kt
+
+X
+
+> tkt
+
+X
+
+> i=1
+
+P(i)
+
+> t
+
+denote the batch-averaged distribution over K clusters. We penalise deviation from the uniform prior u = 1 
+
+> K
+
+1 via 
+
+Lbal = KL  ¯p ∥ u =
+
+> K
+
+X
+
+> c=1
+
+¯pc log( K ¯pc). (14) Related balanced-assignment constraints are used in SwAV [61] and GroupViT [16]; here, this term discourages trivial dominance and encourages diverse part activation. Together, Lconf and Lbal complement the temporal consistency loss by steering optimisation away from degenerate solutions. In practice, they stabilise training and yield more coherent part assignments. 
+
+# 3.9 Training Objective and Complexity 
+
+The overall objective combines temporal consistency with the two regularisers: 
+
+L = Lcons + λconf Lconf + λbal Lbal . (15) We set (λconf , λ bal ) = (0 .1, 1.0) , balancing per-token sharpening and global part utili-sation. Gradients are propagated only through the clustering head, while the encoder remains frozen, keeping training stable and memory-efficient. Let kmax be the maximum token budget and |S| the number of temporal offsets. Mutual nearest-neighbour matching requires O(|S| k2max ) similarity computations. The clustering head incurs 
+
+O(kmax Dd h + kmax dhK),
+
+where D is the embedding dimension and dh is the MLP hidden width. With typical settings ( kmax ≤128 , K≤24 , |S|≤ 4), this cost is negligible relative to the frozen SAM2 encoder. 13 Flow-based VOS [58] and memory-centric architectures [57, 62] operate at the pixel level or maintain large external memories, increasing compute and storage. Cycle-consistency approaches such as CRW [42], MAST [43], and TCC [40] often scale quadratically with dense grids or rely on long-range correspondence chains. By contrast, we enforce temporal consistency only on an adaptively selected subset of informative tokens, retaining semantic coverage while improving efficiency. This makes the approach suitable for large-scale, label-free video training regimes where compute is a primary constraint. 
+
+# 4 Experimental Setup 
+
+We evaluate our method on three standard video object segmentation (VOS) bench-marks. DAVIS-2016 [2] contains 50 single-object sequences, and we report results on the official validation split. DAVIS-2017 [24] extends DAVIS to 150 multi-object videos, with evaluation on the validation split. YouTube-VOS [3] is a large-scale multi-object dataset with diverse object categories and motion patterns; we report results on the official validation split. All experiments follow the original evaluation protocols defined by each benchmark. Following established practice in unsupervised part discovery and label-free seg-mentation [12, 15], the annotated first frame of each sequence is used only to compute a permutation between discovered clusters and ground-truth instance identities via Hungarian matching. This permutation is fixed for the remainder of the sequence and is applied solely for evaluation. Ground-truth masks are never used during training or test-time adaptation, distinguishing our setting from semi-supervised VOS methods that receive the first-frame mask as input. We note that fixing the permutation from the first frame may partially obscure temporal identity drift in long sequences. To account for this limitation, we comple-ment standard metrics with targeted ablations, cross-dataset robustness analysis, and qualitative evaluations of part stability and failure cases (Secs. 5.2, 5.3, and 5.4). We report region similarity J , boundary accuracy F, and their mean G = ( J +
+
+F)/2. For multi-object datasets, metrics are averaged per instance and per frame before aggregation at the sequence level, following the official DAVIS and YouTube-VOS evaluation protocols. All experiments use the SAM2 ViT encoder [20, 51] as a frozen backbone, with gradients propagated only through the lightweight clustering head. Input frames are resized to 224 × 224 . Salient tokens are selected using the adaptive top-p strategy described in Sec. 3.4, with p=0 .85 , bounds kmin =24 and kmax =128 , and a grid-diversity prior of B=4 cells. The clustering head is implemented as a two-layer MLP with hidden dimension 
+
+dh=512 , followed by a softmax over K part categories. We use K=16 through-out, and evaluate alternative values in ablation studies. Temporal correspondences are established using L2-normalised embeddings and cosine similarity, followed by mutual nearest-neighbour matching with threshold δ=0 .4. Temporal offsets are drawn from {1, 2, 4, 8} and filtered using the match-rate controller (Sec. 3.6) with threshold 14 rmin =0 .6. Offsets are weighted as w∆t ∝ γ∆t, where γ is annealed linearly from 0.8 to 
+
+0.6 during training. Training is performed using AdamW with learning rate 1 × 10 −3, weight decay 
+
+1 × 10 −4, and batch size of 16 frames (8 temporal pairs). We train for 120k iterations using standard spatial augmentations, including random resize and crop, color jitter, and horizontal flipping. Temporal order is preserved throughout training; temporal reversal is not used, consistent with the original submission. At inference, each frame is independently encoded, salient tokens are selected, and soft part assignments are produced by the clustering head. The Hungarian permuta-tion computed from the first annotated frame is applied post hoc for evaluation only. All experiments are conducted with a fixed random seed (42) on a single NVIDIA V100 GPU (16 GB). Training time and throughput are reported separately in Sec. 5.7. 
+
+Table 2 : Results on the DAVIS-2017 val set under the unsupervised protocol. We report region similarity J , boundary accuracy F, and their mean G = ( J +F)/2.Higher values indicate better segmentation quality. Bold highlights the best perfor-mance among compared methods. 
+
+Method J (Mean) F (Mean) G (Mean) 
+
+SOLV [63] 0.301 – –OCLR [64] 0.346 – –Video Colorization [6] 0.327 0.346 0.336 TimeT* [7] 0.442 0.358 0.400 SMTC [65] 0.446 0.364 0.405 TimeCycle [8] 0.419 0.394 0.407 BA [21] 0.392 0.486 0.439 CorrFlow [5] 0.471 0.499 0.485 TripleNet [66] 0.504 0.513 0.509 Ours 0.539 0.568 0.554 
+
+# 5 Results 
+
+We evaluate CTC 2 on standard video object segmentation benchmarks under the fully self-supervised (zero-shot) setting. We first report quantitative results on DAVIS-2016, DAVIS-2017, and YouTube-VOS, followed by ablation studies and analyses of robustness, cross-dataset generalisation, and semi-supervised performance. 15 5.1 Zero-Shot Self-Supervised VOS Results 
+
+DAVIS-2017 is a challenging benchmark due to frequent multi-object interactions, heavy occlusion, and background clutter. Table 2 reports results on the DAVIS-2017 
+
+val split under the fully unsupervised (zero-shot) protocol, where the first annotated frame is used only to derive a fixed cluster–to–instance permutation for evaluation. Under this setting, CTC 2 achieves a mean G score of 0.554 , outperforming prior self-/unsupervised methods based on pixel-level propagation, cycle-consistency, or dense correspondence learning. Gains are consistent across both region similarity (J = 0 .539 ) and boundary accuracy ( F = 0 .568 ), indicating that part-level tempo-ral consistency stabilises both object extent and contour localisation in multi-object scenes. Compared to correspondence-based approaches such as CorrFlow [5] and TripleNet [66], which propagate dense pixel or patch matches across time, CTC 2
+
+enforces alignment at the level of soft part distributions over a compact, adap-tively selected token subset. This mid-level formulation reduces over-merging between nearby objects and limits identity drift during occlusion, without relying on optical flow, explicit memory banks, or decoder-heavy architectures. Recent self-supervised methods incorporating transformer attention or seman-tic cues (e.g., SMTC [65] and BA [21]) also improve boundary localisation, but typically operate on dense token grids or require additional grouping heuristics. In contrast, our method combines attention-guided token selection with symmetric distributional alignment, focusing supervision on semantically salient regions while remaining computationally efficient. We emphasise that gains on DAVIS-2017 should be interpreted in the context of the zero-shot protocol and frozen-backbone setting. Improvements primarily reflect increased temporal stability of discovered parts rather than full instance recovery, which remains an open challenge in unsupervised VOS. From an efficiency perspective, CTC 2 operates at approximately 35 fps at 224 ×224 
+
+resolution on a single GPU, compared to the 20–25 fps typically reported by dense correspondence-based SSL methods such as MAST [43] and CRW [42]. This efficiency stems from adaptive token budgeting and the absence of dense propagation or motion estimation, rather than task-specific architectural optimisation. Overall, the DAVIS-2017 results show that enforcing temporal consistency at the part level provides a robust and efficient alternative to pixel-level propagation for unsupervised multi-object video segmentation. Failure cases and robustness under challenging conditions are analysed further in Secs. 5.3 and 5.4. Results on DAVIS-2016 (Table 3) show that the proposed method consistently outperforms prior self-supervised baselines in the single-object setting. Because DAVIS-2016 contains a single annotated foreground object per sequence, performance is primarily driven by boundary adherence and temporal label stability rather than multi-object separation. CTC 2 achieves the highest boundary accuracy (F=0 .528 ) and overall score (G=0 .522 ) among the compared self-supervised methods. These gains indicate that enforcing part-level temporal consistency stabilises fine-grained boundaries over time, reducing transient label fluctuations commonly observed in correspondence-based 16 (a) (b)  
+
+> (c) (d)
+
+Fig. 2 : Qualitative examples of part-level segmentation produced by CTC ² under the zero-shot protocol. Each pair shows (left) the RGB frame and (right) the correspond-ing part-level clustering from [CLS]-guided token features. Distinct colors indicate automatically discovered semantic parts. approaches. Notably, this improvement is obtained without optical flow, mask propa-gation, or test-time supervision, demonstrating that mid-level part alignment benefits both single-object and multi-object segmentation scenarios. 
+
+Table 3 : The results on the DAVIS-2016 dataset, higher values indicate better segmentation qual-ity. Bold highlights the best performance achieved across the compared methods.                
+
+> Method J(Mean) F(Mean) G(Mean)
+> CorrFlow [5] 0.471 0.499 0.485 TripleNet [66] 0.494 0.50 0.497 Ours 0.516 0.528 0.522
+
+YouTube-VOS presents a substantially more challenging setting due to long sequences, diverse object categories, and frequent domain shift between training and evaluation data. As shown in Table 4, CTC 2 achieves an overall score of G=0 .570 ,outperforming prior self-/unsupervised methods under the same zero-shot protocol. Boundary accuracy remains strong ( F=0 .577 ) despite fast motion, background clutter, and unseen object categories. These results indicate that saliency-guided part clustering generalises beyond the more constrained DAVIS benchmarks, with-out relying on flow-based motion priors or dataset-specific adaptation. Supervised and semi-supervised methods (marked with †) are included solely as upper-bound references and are not directly comparable to our fully label-free setting. 17 Table 4 : Results on the YouTube-VOS dataset. Higher values indicate better segmentation quality. Boldface highlights the best performance across methods.                         
+
+> Method J(Mean) F(Mean) G(Mean) Video Colorization [6] 0.314 0.345 0.329 CorrFlow [5] 0.489 0.515 0.502 OSMN [67] 0.485 0.539 0.512 MSK [68] 0.518 0.538 0.528 RGMP [69] 0.539 0.537 0.538
+> Ours 0.563 0.577 0.570
+
+Table 5 : Token selection ablation on DAVIS-2017 val . We compare a fixed token budget against adaptive Top-p atten-tion selection and grid-diversity constraints. Proportional k
+
+scales the token count with image size N . Adaptive selection improves segmentation quality ( G) and boundary accuracy (F) at similar throughput. Reported as mean ± std over three seeds.                         
+
+> Selector Budget fps GF
+> Fixed-k(legacy) k=48 34.8 0.523 ±0.001 0.528 Top-pp=0 .85 34.1 0.525 ±0.001 0.530 Top-p+ grid p=0 .85 , B =4 33.9 0.526 ±0.001 0.532
+
+# 5.2 Ablation Studies 
+
+We conduct three ablation studies on DAVIS-2017 val to evaluate key design choices: token selection, temporal supervision, and saliency weighting. Table 5 compares token selection strategies under identical settings. Replacing a fixed budget with Top-p selection (Eq. 2) yields a consistent improvement in 
+
+G at nearly unchanged throughput, indicating that allocating tokens by attention mass preserves more informative regions than a hard cutoff. Adding grid diversity (Alg. 1) further improves F, supporting the hypothesis that coarse spatial coverage helps recover thin or peripheral structures. Finally, scaling the budget proportionally with resolution maintains accuracy relative to fixed-k, reinforcing that spatial cov-erage—not absolute token count—is the critical factor. All results are averaged over three seeds (42/43/44); the standard deviation of G is at most 0.002. Table 6 analyses the effect of multi-offset temporal supervision. Extending from a single offset {1} to {1, 2, 4} improves G while retaining a sufficient pool of reliable correspondences. The match-rate controller ( rmin , γ) balances recall and stability: lower thresholds admit more matches at the cost of noise, whereas moderate values (rmin =0 .6, γ≈0.7) yield the best trade-off. Including very long offsets ( {8}) slightly 18 Table 6 : Multi-offset ablation on DAVIS-2017 val .We vary the set of temporal offsets ( ∆t ∈ { 1, 2, 4})and the match-rate controller ( rmin , γ) to assess the effect of longer-range supervision. “Matched (%)” denotes the proportion of reliable correspon-dences. Moderate offsets achieve the best balance between accuracy ( G) and match reliability. Results are mean ± std over three seeds.                       
+
+> Srmin γGMatched (%) {1} ––0.518 ±0.001 100 {1,2} 0.6 0.8 0.524 ±0.002 86 {1,2,4} 0.6 0.7 0.526 ±0.001 74
+
+Table 7: Effect of saliency weighting in the temporal loss on DAVIS-2017 val . Incorporat-ing [CLS] -attention weights emphasises confident foreground tokens, improving region similarity (J ) and boundary accuracy (F). Results are mean ± std over three seeds.                
+
+> Objective JFG
+> LCTC 2(uniform) 0.519 0.528 0.523 ±0.001
+> Lweighted CTC 2(Eq. 9) 0.521 0.530 0.526 ±0.001
+
+degrades performance, reflecting correspondence brittleness under large motion with-out flow. All results use similarity threshold δ=0 .4 for mutual nearest-neighbour filtering and are averaged over three seeds (std ≤ 0.002 for G). Table 7 isolates the contribution of saliency weighting in the temporal consis-tency loss. Relative to uniform weighting, the saliency-weighted objective consistently improves both J and F, confirming that emphasising confident, foreground-biased tokens reduces identity drift. Results are averaged over three seeds, with standard deviation at most 0.001 for G.Overall, these ablations demonstrate the complementarity of attention-guided token selection, multi-offset temporal supervision, and saliency-aware consistency. Each component improves stability or boundary quality with negligible computa-tional overhead, and their combination yields the strongest performance with a frozen backbone. 
+
+# 5.3 Robustness and Failure Analysis 
+
+Aggregate metrics provide a useful summary of performance but can obscure fail-ure modes that are critical for understanding the robustness and limitations of self-supervised VOS. We therefore complement quantitative results with targeted 19 analyses under challenging conditions, including fast motion, small objects, cluttered backgrounds, and domain shift. Our framework relies on nearest-neighbour matching of adaptively selected tokens across time and does not employ optical flow or explicit motion modelling. As a result, correspondence reliability naturally degrades as inter-frame displacement increases. This behaviour is reflected by the match-rate controller (Sec. 3.6), where longer tem-poral offsets yield fewer reliable matches. Empirically, moderate offsets ( ∆t ∈ { 1, 2, 4})provide the best balance between temporal coverage and stability, whereas very large offsets ( ∆t=8 ) are more susceptible to correspondence failure under fast motion or abrupt camera changes. These trends are consistent with prior correspondence-based SSL methods and motivate our reliability-aware multi-offset supervision rather than unconditional long-range alignment. The saliency prior derived from [CLS] attention is effective at highlighting dom-inant object regions, but can be less reliable for small objects, thin structures, or heavily cluttered scenes. In such cases, attention mass may concentrate on large or high-contrast regions, underrepresenting fine-grained parts. Our adaptive token selec-tion mitigates this by combining saliency weighting with grid-based spatial diversity, ensuring retention of spatially distinct but less salient regions. Nevertheless, failures may occur when small objects occupy only a few patches or are visually indistinguish-able from the background, leading to fragmented parts or absorption into neighbouring clusters. We assess cross-dataset generalisation by training on one benchmark and evaluat-ing on another without adaptation. Although our method degrades less than several prior self-supervised baselines, performance still drops under substantial domain shift, particularly for unfamiliar object categories or appearance statistics. Quali-tative inspection shows that such failures typically coincide with altered saliency behaviour or reduced correspondence reliability, rather than catastrophic collapse of the clustering head. This suggests that freezing the backbone preserves transferable representations but does not eliminate sensitivity to dataset-specific biases in attention and token matching. Following standard practice in unsupervised part discovery, we fix the cluster-to-instance permutation using the first annotated frame. While this enables fair comparison with prior work, it may partially mask temporal identity drift in long sequences. We therefore examine part assignments over extended time spans and across occlusions in our qualitative analysis, revealing both stable part tracking and occasional identity switches when correspondence confidence is low. Addressing iden-tity drift without any label-based anchoring remains an open challenge for fully unsupervised VOS. Overall, the primary failure modes arise from (i) unreliable saliency for small or ambiguous objects, (ii) correspondence breakdown under extreme motion or low tem-poral continuity, and (iii) appearance shifts not well covered by the frozen backbone. Importantly, these failures tend to degrade performance gracefully rather than causing abrupt collapse, reflecting the stabilising effect of part-level clustering and symmetric 20 distributional alignment. We view these limitations as inherent to lightweight, label-free VOS and as promising directions for future work, such as integrating motion-aware matching or adaptive saliency refinement while preserving efficiency. 
+
+# 5.4 Interpretability and Temporal Stability of Discovered Parts 
+
+A central claim of CTC 2 is that enforcing part-level temporal consistency leads to the emergence of stable and interpretable mid-level structures over time. We empha-sise that “interpretability” in this context does not imply recovery of human-defined semantic parts (e.g., anatomically labelled components), but instead refers to the for-mation of temporally coherent latent groupings that act as a useful inductive bias for self-supervised video object segmentation. While qualitative visualisations provide intuition about spatial coherence, we additionally introduce quantitative measures to assess the temporal stability of discovered parts without relying on ground-truth part annotations. We define Temporal Part Stability (TPS) as the consistency of soft part assign-ments across time for matched token pairs. Given a temporal offset ∆t and a set of mutual nearest-neighbour correspondences M∆t ⊆ S t × S t+∆ t, let C(i) 
+
+> t
+
+∈ ∆K and 
+
+C(j) 
+
+> t+∆ t
+
+∈ ∆K denote the predicted part distributions for a matched pair (i, j ). TPS is defined as: 
+
+TPS(∆ t) = 1 − 1
+
+|M ∆t|
+
+X
+
+> (i,j )∈M ∆t
+
+12
+
+h
+
+KL  C(i) 
+
+> t
+
+∥ C(j)
+
+> t+∆ t
+
+ + KL  C(j) 
+
+> t+∆ t
+
+∥ C(i)
+
+> t
+
+i
+
+. (16) Higher TPS values indicate more temporally stable and coherent part assignments. Unlike region-level segmentation metrics, TPS directly measures whether discovered part distributions remain consistent across time, independent of instance identity, pixel-level accuracy, or semantic labels. Table 8 reports TPS on DAVIS-2017 val for different temporal offsets. The sym-metric KL objective consistently yields higher TPS than one-sided KL or cross-entropy losses, indicating increased resistance to temporal drift and cluster collapse. Notably, the stability gap widens at larger offsets, confirming that bidirectional distribu-tion matching is particularly effective under longer temporal gaps and appearance variation. While TPS captures distributional agreement of soft part assignments, it does not explicitly assess whether the dominant part identity is preserved across time. To complement TPS, we introduce a simple and interpretable Cluster Identity Retention 
+
+metric that evaluates hard label consistency for matched tokens. For a matched pair (i, j ) ∈ M ∆t, hard part labels are obtained as 
+
+ˆy(i) 
+
+> t
+
+= arg max  
+
+> k
+
+C(i) 
+
+> t
+
+[k], ˆy(j) 
+
+> t+∆ t
+
+= arg max  
+
+> k
+
+C(j)
+
+> t+∆ t
+
+[k].
+
+21 Table 8 : Temporal Part Stability (TPS) on DAVIS-2017 val .Higher values indicate more stable part assignments across time. TPS is averaged over matched token pairs and three random seeds.                               
+
+> Loss TPS@1 TPS@2 TPS@4
+> Cross-Entropy 0.63 ±0.01 0.58 ±0.01 0.51 ±0.02 One-sided KL 0.70 ±0.01 0.64 ±0.01 0.58 ±0.02 Symmetric KL (CTC 2)0.78 ±0.01 0.73 ±0.01 0.66 ±0.02
+
+Table 9 : Cluster Identity Retention on DAVIS-2017 val . Ret@ ∆t measures the fraction of matched token pairs that preserve the same dominant part identity across time. Results are averaged over three random seeds.             
+
+> Loss Ret@1 Ret@2 Ret@4
+> Cross-Entropy 0.47 0.39 0.28 One-sided KL 0.57 0.48 0.38 Symmetric KL (CTC 2)0.65 0.57 0.48
+
+The retention rate at temporal offset ∆t is defined as 
+
+Ret@∆ t = 1
+
+|M ∆t|
+
+X
+
+> (i,j )∈M ∆t
+
+I
+
+h
+
+ˆy(i) 
+
+> t
+
+= ˆ y(j)
+
+> t+∆ t
+
+i
+
+, (17) where I[·] denotes the indicator function. Higher values indicate stronger preservation of latent part identities across time. Table 9 reports cluster identity retention on DAVIS-2017 val for different temporal offsets. Consistent with the TPS analysis, symmetric KL yields substantially higher retention rates than one-sided KL and cross-entropy, particularly at larger offsets. This shows that CTC 2 not only aligns part distributions in a soft sense, but also preserves consistent latent part identities over time. Together, TPS and cluster identity retention provide complementary evidence that the discovered clusters form temporally stable mid-level structures rather than arbitrary or frame-specific groupings. These results support the intended notion of interpretability in our framework—temporal coherence and identity persistence of latent parts—without requiring explicit part annotations or human-defined semantic labels. 22 5.5 Cross-Dataset Generalisation 
+
+While Sec. 5.3 qualitatively analyses failure modes, this section quantitatively eval-uates robustness under cross-dataset domain shift. Specifically, we measure relative performance degradation using ∆G as a robustness indicator, computed by training on one dataset and evaluating directly on another without adaptation. Table 10 reports cross-dataset results under the zero-shot protocol. Earlier correspondence-based SSL methods such as TimeCycle [8], MAST [43], and CRW [42] exhibit substantial degradation when transferring across datasets, with ∆G ranging from −0.007 to −0.035 . This sensitivity reflects their reliance on dense frame-to-frame correspondences or dataset-specific motion statistics. By contrast, CTC 2 shows consistently smaller degradation. When trained on YouTube-VOS and evaluated on DAVIS, performance drops by only −0.016 , substan-tially less than for MAST or CRW. Conversely, training on DAVIS and evaluating on YouTube-VOS yields no degradation ( G=0 .547 vs. 0.570 in-domain), suggesting partial positive transfer. We attribute this robustness to three design choices: (i) freezing the SAM2 encoder, which reduces overfitting to dataset-specific appearance statistics; (ii) part-level clustering, which produces mid-level representations that are more stable under category and motion shift; and (iii) symmetric distributional alignment, which enforces temporal consistency without relying on dense optical flow or long-range memory banks. Overall, these results indicate that CTC 2 learns transferable representations that generalise beyond the source dataset, a desirable property for real-world deployment where training and test domains often differ. 
+
+# 5.6 Semi-Supervised Setting Results 
+
+For completeness, we also report results under the one-shot (semi-supervised) pro-tocol, where the first-frame mask is provided at inference time only, while training remains fully self-supervised. These results are reported separately and are not directly comparable to the zero-shot setting. On DAVIS-2017, using the first-frame mask to initialise the cluster-to-instance association at inference yields G = 0 .635 , with balanced improvements in region similarity ( J = 0 .617 ) and boundary accuracy ( F = 0 .653 ) (Table 11). Despite relying on a frozen backbone and using no optical flow, decoder, or memory module, CTC 2 performs competitively with recent correspondence-based methods. The stronger gains in boundary accuracy align with our design: instance identity is resolved by the first-frame mask, while saliency-weighted part-level tem-poral consistency stabilises fine-grained structures under occlusion and appearance overlap. On YouTube-VOS, one-shot conditioning similarly improves performance under long temporal horizons and category shifts. As shown in Table 12, CTC 2 achieves 
+
+G = 0 .624 with J = 0 .591 and F = 0 .657 , outperforming early correspondence-based baselines and approaching the performance of MAST. 23 Table 10 : Cross-dataset generalization under the zero-shot protocol. Models are trained on one dataset and evaluated on another without fine-tuning. J , F, and G
+
+denote region similarity, boundary accuracy, and their mean. ∆G indicates relative degradation compared to in-domain training. Dashes denote metrics not reported in the original works under the corresponding protocol. 
+
+Method Training Dataset Test Dataset 
+
+J F G ∆G
+
+TimeCycle* DAVIS DAVIS 0.419 0.394 0.407 –TimeCycle* YT YT – – 0.430 –TimeCycle* YT DAVIS 0.390 0.410 0.400 -0.007 TimeCycle* DAVIS YT – – 0.402 -0.028 MAST* DAVIS DAVIS 0.530 0.540 0.535 –MAST* YT YT – – 0.540 –MAST* YT DAVIS 0.500 0.520 0.510 -0.025 MAST* DAVIS YT – – 0.515 -0.025 CRW* DAVIS DAVIS 0.560 0.570 0.565 –CRW* YT YT – – 0.570 –CRW* YT DAVIS 0.520 0.540 0.530 -0.035 CRW* DAVIS YT – – 0.540 -0.030 CTC 2 (ours) DAVIS DAVIS 0.519 0.528 0.523 –CTC 2 (ours) YT YT 0.563 0.577 0.570 –CTC 2 (ours) YT DAVIS 0.503 0.511 0.507 -0.016 CTC 2 (ours) DAVIS YT 0.541 0.553 0.547 -0.023 Boundary accuracy gains are particularly pronounced, reflecting the combi-nation of attention-guided token selection—which preserves thin, high-frequency structures—and symmetric part-level temporal alignment, which maintains stable assignments across long sequences. OSVOS is included as a supervised one-shot ref-erence; in contrast, our model is trained without ground-truth masks and uses the first-frame annotation only at inference. 
+
+# 5.7 Component-Level Compute and Efficiency Analysis 
+
+Table 13 summarises the component-level compute profile. Nearly all computa-tion resides in the frozen SAM2 backbone ( ∼19 .6 GFLOPs), while the clustering head contributes only ∼0.04 GFLOPs with negligible latency. This indicates that the observed accuracy gains arise from the inductive bias of attention-guided token selection and saliency-weighted temporal consistency rather than increased model capacity. In practice, processing only salient, temporally stable parts yields a superior accuracy–efficiency trade-off compared to enlarging the backbone. 24 Table 11 : DAVIS-2017 val , one-shot/semi-supervised protocol. Training is self-supervised; the first-frame mask is provided only at inference. We report J (mean), boundary accuracy F, and 
+
+G = ( J + F)/2 (decimals).                             
+
+> Method G(Mean) J(Mean) F(Mean)
+> Colorization [6] 0.340 0.346 0.327 CorrFlow [5] 0.503 0.484 0.522 TimeCycle [40] 0.487 0.464 0.500 MuG [70] 0.543 0.526 0.561 ConCorr [71] 0.630 0.605 0.655 CTC 2(ours) 0.635 0.617 0.653
+> MAST [43] 0.655 0.633 0.676
+
+Table 12 : YouTube-VOS val , one-shot/semi-supervised protocol. Training is self-supervised; the first-frame mask is provided only at inference. We report J (mean), boundary accuracy F, and G =(J + F)/2 (decimals).                       
+
+> Method G(Mean) J(Mean) F(Mean)
+> Colorization [6] 0.370 0.366 0.374 CorrFlow [5] 0.447 0.438 0.456 OSVOS[72] 0.574 0.542 0.607 CTC 2(ours) 0.624 0.591 0.657
+> MAST [43] 0.640 0.603 0.677
+
+Table 14 further examines scalability with different token budgets on the DAVIS-2017 val set. Increasing k from 24 to 48 improves coverage and reduces noise, while gains saturate beyond this point as additional tokens primarily cover background regions. The sweet spot at k=48 achieves G=0 .526 while sustaining real-time through-put ( ∼35 fps), demonstrating that the adaptive selector captures the most informative parts using a compact token budget. 
+
+# 6 Conclusion and Future Work 
+
+We presented CTC 2, a self-supervised framework for discovering temporally consis-tent and semantically coherent object parts in videos using a frozen SAM2 backbone. By combining attention-derived saliency, adaptive token selection, and part-level cross-temporal clustering, CTC 2 introduces a lightweight inductive bias that aligns semantic parts across time without relying on optical flow, pseudo-labels, or test-time supervision. Across three standard VOS benchmarks, the method achieves strong zero-shot performance and competitive efficiency, demonstrating that part-level 25 Table 13 : Component-level compute profile at 224 ×224 input res-olution. The clustering head adds only ∼0.04 GFLOPs, confirming encoder-bound runtime.              
+
+> Component Params (M) FLOPs (G) fps
+> Backbone (SAM2 ViT-S, frozen) 22.0 19.60 34.8 Clustering head ( k=48 ,K=16 )0.3 0.04 –End-to-end 22.3 19.64 34.8
+
+Table 14 : Token-budget scaling on DAVIS-2017 val at 224 ×224 input resolution. Accuracy improves up to k=48 before saturating as back-ground tokens dominate.                     
+
+> kFLOPs (G) fps JFG
+> 24 19.45 37.2 0.507 0.529 0.518
+> 48 19.64 34.8 0.521 0.530 0.526
+> 64 19.78 34.2 0.518 0.528 0.523
+
+temporal consistency provides a viable alternative to pixel-level correspondence for self-supervised video segmentation. Beyond aggregate accuracy, we validate key design choices through extensive analysis. Ablation studies confirm the role of symmetric KL divergence in sta-bilising temporal alignment, while controlled experiments comparing frozen and fine-tuned backbones justify our efficiency-oriented design. Robustness and cross-dataset evaluations reveal reduced degradation under domain shift relative to prior correspondence-based methods, and qualitative analyses show that the discovered clusters correspond to temporally stable and interpretable object parts, albeit with known failure modes. Despite these strengths, several limitations remain. Although adaptive Top-p selec-tion improves coverage, token budgeting may require re-tuning at substantially higher resolutions or under extreme clutter. Because the encoder is kept frozen for effi-ciency, saliency quality ultimately depends on the pretrained backbone and may degrade under severe out-of-distribution conditions. While multi-offset supervision improves robustness, very long-term dependencies and highly irregular motion remain challenging without explicit memory mechanisms. Finally, real-time throughput is hardware-dependent, and deployment on resource-constrained devices may require additional optimisation. Future work will explore hierarchical and multi-scale part discovery, integration of lightweight temporal memory to better handle long-term occlusions, and refine-ment of saliency estimation through self-distillation or adaptive attention aggregation. 26 Extending part-level temporal consistency to cross-video or category-level learning, as well as interactive and semi-supervised VOS settings, represents a promising direction for broader applicability in real-world video understanding. 27 References 
+
+[1] Miao, D., Gu, Y., Li, X., He, Z., Wang, Y., Yang, M.-H.: Discriminative spatial-semantic vos solution: 1st place solution for 6th lsvos. arXiv preprint arXiv:2408.16431 (2024) https://doi.org/10.48550/arXiv.2408.16431 [2] Perazzi, F., Pont-Tuset, J., McWilliams, B., Van Gool, L., Gross, M., Sorkine-Hornung, A.: A benchmark dataset and evaluation methodology for video object segmentation. In: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (2016). https://doi.org/10.1109/cvpr.2016.85 [3] Xu, N., Yang, L., Fan, Y., Yang, J., Yue, D., Liang, Y., Price, B., Cohen, S., Huang, T.: Youtube-vos: Sequence-to-sequence video object segmentation. In: Proceedings of the European Conference on Computer Vision (2018). https:// doi.org/10.1007/978-3-030-01228-1_36 [4] Maninis, K.-K., Caelles, S., Chen, Y., Van Gool, L.: Video object segmenta-tion without temporal information. IEEE Transactions on Pattern Analysis and Machine Intelligence (2018) https://doi.org/10.1109/TPAMI.2018.2838670 [5] Lai, Z., Xie, W.: Self-supervised learning for video correspondence flow. arXiv preprint arXiv:1905.00875 (2019) https://doi.org/10.48550/arXiv.1905.00875 [6] Vondrick, C., Shrivastava, A., Fathi, A., Guadarrama, S., Murphy, K.: Tracking emerges by colorizing videos. In: Proceedings of the European Conference on Computer Vision (2018). https://doi.org/10.1007/978-3-030-01261-8_24 [7] Salehi, M., Gavves, E., Snoek, C.G., Asano, Y.M.: Time does tell: Self-supervised time-tuning of dense image representations. In: Proceedings of the IEEE/CVF International Conference on Computer Vision (2023). https://doi.org/10.1109/ iccv51070.2023.01516 [8] Wang, X., Jabri, A., Efros, A.A.: Learning correspondence from the cycle-consistency of time. In: Proceedings of the IEEE/CVF Conference on Com-puter Vision and Pattern Recognition (2019). https://doi.org/10.1109/cvpr.2019. 00267 [9] Yang, Z., Wei, Y., Yang, Y.: Collaborative video object segmentation by multi-scale foreground-background integration. IEEE Transactions on Pattern Analysis and Machine Intelligence (2021) https://doi.org/10.1007/978-3-030-58558-7_20 [10] Huang, N., Zheng, W., Xu, C., Keutzer, K., Zhang, S., Kanazawa, A., Wang, Q.: Segment any motion in videos. In: Proceedings of the Computer Vision and Pattern Recognition Conference (2025). https://doi.org/10.1109/cvpr52734. 2025.00323 [11] Zhu, J., Chen, Z., Hao, Z., Chang, S., Zhang, L., Wang, D., Lu, H., Luo, B., 28 He, J.-Y., Lan, J.-P., et al. : Tracking anything in high quality. arXiv preprint arXiv:2307.13974 (2023) https://doi.org/10.48550/arXiv.2307.13974 [12] Ziegler, A., Asano, Y.M.: Self-supervised learning of object parts for seman-tic segmentation. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pp. 14502–14511 (2022). https://doi.org/10. 1109/cvpr52688.2022.01410 [13] Wei, Y., Gupta, A., Morgado, P.: Towards latent masked image modelling for self-supervised visual representation learning. In: European Conference on Computer Vision (2024). https://doi.org/10.1007/978-3-031-72933-1_1 [14] Zheng, X., Liao, L., Jiao, J., Gao, F., Wang, R.: Surface-sos: Self-supervised object segmentation via neural surface representation. IEEE Transactions on Image Processing (2024) https://doi.org/10.1109/tip.2024.3374199 [15] Hung, W.-C., Jampani, V., Liu, S., Molchanov, P., Yang, M.-H., Kautz, J.: Scops: Self-supervised co-part segmentation. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pp. 869–878 (2019). https://doi.org/10.1109/cvpr.2019.00096 [16] Xu, M., Zhang, Z., Zhang, H., Wei, Y., Xie, E., Li, Z., Loy, C.C.: Groupvit: Semantic segmentation emerges from text supervision. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (2022). https://doi.org/10.1109/cvpr52688.2022.01760 [17] Kim, H.Y.: Rotation-discriminating template matching based on fourier coef-ficients of radial projections with robustness to scaling and partial occlusion. Pattern Recognition (2010) https://doi.org/10.1016/j.patcog.2009.08.005 [18] Ravi, N., Gabeur, V., Hu, Y.-T., Hu, R., Ryali, C., Ma, T., Khedr, H., Rädle, R., Rolland, C., Gustafson, L., et al. : Sam 2: Segment anything in images and videos. arXiv preprint arXiv:2408.00714 (2024) https://doi.org/10.48550/arXiv. 2408.00714 [19] Caron, M., Touvron, H., Misra, I., Jégou, H., Mairal, J., Bojanowski, P., Joulin, A.: Emerging properties in self-supervised vision transformers. In: Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) (2021). https://doi.org/10.1109/ICCV48922.2021.00951 [20] Kirillov, A., Mintun, E., Ravi, N., Mao, H., Rolland, L., Gustafson, J., Xiao, T., Whitehead, S., Cottrell, R., Dolson, J., et al. : Segment anything. arXiv preprint arXiv:2304.02643 (2023) https://doi.org/10.1109/ICCV51070.2023.00371 [21] Ding, S., Qian, R., Xu, H., Lin, D., Xiong, H.: Betrayed by attention: A simple yet effective approach for self-supervised video object segmentation. In: European Conference on Computer Vision (2024). https://doi.org/10.1007/ 29 978-3-031-72995-9_13 [22] Cheng, S., Wang, J., Shen, Y., Joo, J., Zhang, X.: Xmem: Long-term video object segmentation with an atkinson-shiffrin memory model. In: Proceedings of the European Conference on Computer Vision (2022). https://doi.org/10.1007/ 978-3-031-19815-1_37 [23] Yang, Z., Wei, Y., Yang, Y.: Associating objects with transformers for video object segmentation. In: Advances in Neural Information Processing Systems, vol. 34, pp. 2491–2502 (2021) [24] Pont-Tuset, J., Perazzi, F., Caelles, S., Arbelaez, P., Sorkine-Hornung, A., Van Gool, L.: The 2017 davis challenge on video object segmentation. arXiv preprint arXiv:1704.00675 (2017) https://doi.org/10.48550/arXiv.1704.00675 [25] Jing, L., Tian, Y.: Self-supervised visual feature learning with deep neural net-works: A survey. IEEE transactions on pattern analysis and machine intelligence (2020) https://doi.org/10.1109/tpami.2020.2992393 [26] He, K., Fan, H., Wu, Y., Xie, S., Girshick, R.: Momentum contrast for unsu-pervised visual representation learning. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (2020). https://doi. org/10.20944/preprints202501.0668.v1 [27] Grill, J.-B., Strub, F., Altché, F., Tallec, C., Richemond, P.H., Buchatskaya, E., Doersch, C., Avila Pires, B., Guo, Z.D., Azar, M., et al. : Bootstrap your own latent: A new approach to self-supervised learning. In: Advances in Neural Information Processing Systems, vol. 33, pp. 21271–21284 (2020) [28] Chen, X., He, K.: Exploring simple siamese representation learning. In: Proceed-ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (2021). https://doi.org/10.1109/cvpr46437.2021.01549 [29] Wang, X., Xie, S., Gupta, A.: Dense contrastive learning for self-supervised visual pre-training. In: CVPR (2021). https://doi.org/10.1109/cvpr46437.2021.00304 [30] Xie, Z., Lin, Y., Zhang, Z., Cao, Y., Lin, S., Hu, H.: Propagate yourself: Explor-ing pixel-level consistency for unsupervised visual representation learning. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (2021). https://doi.org/10.1109/cvpr46437.2021.01641 [31] Wang, Y., Shen, X., Yuan, Y., Du, Y., Li, M., Hu, S.X., Crowley, J.L., Vaufreydaz, D.: Tokencut: Segmenting objects in images and videos with self-supervised trans-former and normalized cut. IEEE transactions on pattern analysis and machine intelligence (2023) https://doi.org/10.1109/tpami.2023.3305122 [32] Siméoni, O., Puy, G., Vo, H.V., Roburin, S., Gidaris, S., Bursuc, A., Pérez, P., 30 Marlet, R., Ponce, J.: Localizing objects with self-supervised transformers and no labels. arXiv preprint arXiv:2109.14279 (2021) https://doi.org/10.5244/c.35.365 [33] Wang, X., Yu, Z., De Mello, S., Kautz, J., Anandkumar, A., Shen, C., Alvarez, J.M.: Freesolo: Learning to segment objects without annotations. In: Proceed-ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (2022). https://doi.org/10.1109/cvpr52688.2022.01378 [34] Niu, D., Wang, X., Han, X., Lian, L., Herzig, R., Darrell, T.: Unsupervised universal image segmentation. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (2024). https://doi.org/10.1109/ cvpr52733.2024.02146 [35] Araslanov, N., Schaub-Meyer, S., Roth, S.: Dense unsupervised learning for video segmentation. In: Advances in Neural Information Processing Systems, vol. 34, pp. 25308–25319 (2021) [36] Das, K., Abouelenien, M., Burzo, M.G., Elson, J., Prakah-Asante, K., Maranville, C.: Towards autonomous physiological signal extraction from thermal videos using deep learning. In: Proceedings of the 25th International Conference on Multimodal Interaction (2023). https://doi.org/10.1145/3577190.3614123 [37] Misra, I., Zitnick, C.L., Hebert, M.: Shuffle and learn: unsupervised learning using temporal order verification. In: European Conference on Computer Vision (2016). https://doi.org/10.1007/978-3-319-46448-0_32 [38] Wei, D., Lim, J.J., Zisserman, A., Freeman, W.T.: Learning and using the arrow of time. In: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (2018). https://doi.org/10.1109/cvpr.2018.00840 [39] Vondrick, C., Pirsiavash, H., Torralba, A.: Anticipating visual representations from unlabeled video. In: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (2016). https://doi.org/10.1109/cvpr.2016.18 [40] Dwibedi, D., Aytar, Y., Tompson, J., Sermanet, P., Zisserman, A.: Temporal cycle-consistency learning. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (2019). https://doi.org/10.1109/cvpr. 2019.00190 [41] Kong, Q., Wei, W., Deng, Z., Yoshinaga, T., Murakami, T.: Cyclecontrast for self-supervised video representation learning. In: Advances in Neural Information Processing Systems, vol. 33, pp. 8089–8100 (2020) [42] Jabri, A., Owens, A., Efros, A.A.: Space-time correspondence as a contrastive random walk. In: Advances in Neural Information Processing Systems, vol. 33, pp. 19545–19560 (2020) 31 [43] Lai, Z., Xie, W., Zisserman, A.: Mast: A memory-augmented self-supervised tracker. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (2021). https://doi.org/10.1109/cvpr42600.2020.00651 [44] Doersch, C., Yang, Y., Vecerik, M., Gokay, D., Gupta, A., Aytar, Y., Carreira, J., Zisserman, A.: Tapir: Tracking any point with per-frame initialization and temporal refinement. In: Proceedings of the IEEE/CVF International Conference on Computer Vision (2023). https://doi.org/10.1109/iccv51070.2023.00923 [45] Amir, S., Gandelsman, Y., Bagon, S., Dekel, T.: Deep vit features as dense visual descriptors. arXiv preprint arXiv:2112.05814 (2021) https://doi.org/10.48550/ arXiv.2112.05814 [46] Alayrac, J.-B., Donahue, J., Luc, P., Miech, A., Barr, I., Tandon, S., Mensch, A., Milani, S., Huang, P.-S., Han, W., et al. : Flamingo: a visual language model for few-shot learning. In: Advances in Neural Information Processing Systems, vol. 35, pp. 23716–23736 (2022) [47] Dosovitskiy, A., Beyer, L., Kolesnikov, A., Weissenborn, D., Zhai, X., Unterthiner, T., Dehghani, M., Minderer, M., Heigold, G., Gelly, S., et al. : An image is worth 16x16 words: Transformers for image recognition at scale. arXiv preprint arXiv:2010.11929 (2020) https://doi.org/10.48550/arXiv.2010.11929 [48] Oord, A.v.d., Li, Y., Vinyals, O.: Representation learning with contrastive predic-tive coding. arXiv preprint arXiv:1807.03748 (2018) https://doi.org/10.48550/ arXiv.1807.03748 [49] Aubret, A., Teulière, C., Triesch, J.: Self-supervised visual learning from inter-actions with objects. In: European Conference on Computer Vision (2024). https://doi.org/10.1007/978-3-031-73226-3_4 [50] Arshid, W., Awrangjeb, M., Liew, A.W.C., Gao, Y.: Camvos: Leveraging con-text and memory for advanced video object segmentation. In: IEEE Conference on Computer Vision and Pattern Recognition (2024). https://doi.org/10.1109/ dicta63115.2024.00098 [51] Jiaxing, Z., Hao, T.: Sam2 for image and video segmentation: A comprehensive survey. arXiv preprint arXiv:2503.12781 (2025) https://doi.org/10.48550/arXiv. 2503.12781 [52] Raghu, M., Unterthiner, T., Kornblith, S., Zhang, C., Dosovitskiy, A.: Do vision transformers see like convolutional neural networks? In: Advances in Neural Information Processing Systems, vol. 34, pp. 12116–12128 (2021) [53] Bolya, D., Fu, C.-Y., Dai, X., Zhang, P., Feichtenhofer, C., Hoffman, J.: Token merging: Your vit but faster. arXiv preprint arXiv:2210.09461 (2022) https:// doi.org/10.48550/arXiv.2210.09461 32 [54] Rao, Y., Zhao, W., Liu, B., Lu, J., Zhou, J., Hsieh, C.-J.: Dynamicvit: Efficient vision transformers with dynamic token sparsification. In: Advances in Neural Information Processing Systems, vol. 34, pp. 13937–13949 (2021) [55] Vasu, P.K.A., Gabriel, J., Zhu, J., Tuzel, O., Ranjan, A.: Fastvit: A fast hybrid vision transformer using structural reparameterization. In: Proceedings of the IEEE/CVF International Conference on Computer Vision (2023). https://doi. org/10.1109/iccv51070.2023.00532 [56] Asano, Y.M., Rupprecht, C., Vedaldi, A.: A critical analysis of self-supervision, or what we can learn from a single image. In: International Conference on Learning Representations (ICLR) (2020). https://doi.org/10.48550/arXiv.1904.13132 [57] Seong, H., Hyun, J., Kim, E.: Kernelized memory network for video object seg-mentation. In: European Conference on Computer Vision (2020). https://doi. org/10.1007/978-3-030-58542-6_38 [58] Sun, D., Yang, X., Liu, M.-Y., Kautz, J.: Pwc-net: Cnns for optical flow using pyramid, warping, and cost volume. In: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (2018). https://doi.org/10.1109/cvpr. 2018.00931 [59] Caron, M., Bojanowski, P., Joulin, A., Douze, M.: Deep clustering for unsuper-vised learning of visual features. In: Proceedings of the European Conference on Computer Vision (2018). https://doi.org/10.1007/978-3-030-01264-9_9 [60] Ji, X., Henriques, J.F., Vedaldi, A.: Invariant information clustering for unsuper-vised image classification and segmentation. In: Proceedings of the IEEE/CVF International Conference on Computer Vision (2019). https://doi.org/10.1109/ iccv.2019.00996 [61] Caron, M., Misra, I., Mairal, J., Goyal, P., Bojanowski, P., Joulin, A.: Unsuper-vised learning of visual features by contrasting cluster assignments. In: Advances in Neural Information Processing Systems, vol. 33, pp. 9912–9924 (2020) [62] Oh, S.W., Lee, J.-Y., Xu, N., Kim, S.J.: Video object segmentation using space-time memory networks. In: Proceedings of the IEEE/CVF International Conference on Computer Vision (2019). https://doi.org/10.1109/iccv.2019.00932 [63] Aydemir, G., Xie, W., Guney, F.: Self-supervised object-centric learning for videos. In: Advances in Neural Information Processing Systems, vol. 36, pp. 32879–32899 (2023). https://doi.org/10.52202/075280-1424 [64] Xie, J., Xie, W., Zisserman, A.: Segmenting moving objects via an object-centric layered representation. In: Advances in Neural Information Processing Systems, vol. 35, pp. 28023–28036 (2022). https://doi.org/10.52202/068431-2032 33 [65] Qian, R., Ding, S., Liu, X., Lin, D.: Semantics meets temporal correspon-dence: Self-supervised object-centric learning in videos. In: Proceedings of the IEEE/CVF International Conference on Computer Vision (2023). https://doi. org/10.1109/iccv51070.2023.01529 [66] Xu, K., Wen, L., Li, G., Huang, Q.: Self-supervised deep triplenet for video object segmentation. IEEE Transactions on Multimedia (2020) https://doi.org/ 10.1109/tmm.2020.3026913 [67] Yang, L., Wang, Y., Xiong, X., Yang, J., Katsaggelos, A.K.: Efficient video object segmentation via network modulation. In: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (2018). https://doi.org/10.1109/ cvpr.2018.00680 [68] Perazzi, F., Khoreva, A., Benenson, R., Schiele, B., Sorkine-Hornung, A.: Learn-ing video object segmentation from static images. In: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, pp. 2663–2672 (2017). https://doi.org/10.1109/cvpr.2017.372 [69] Oh, S.W., Lee, J.-Y., Sunkavalli, K., Kim, S.J.: Fast video object segmentation by reference-guided mask propagation. In: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (2018). https://doi.org/10.1109/ cvpr.2018.00770 [70] Lu, X., Wang, W., Shen, J., Tai, Y.-W., Crandall, D.J., Hoi, S.C.: Learning video object segmentation from unlabeled videos. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (2020). https://doi. org/10.1109/cvpr42600.2020.00898 [71] Wang, N., Zhou, W., Li, H.: Contrastive transformation for self-supervised cor-respondence learning. In: Proceedings of the AAAI Conference on Artificial Intelligence (2021). https://doi.org/10.1609/aaai.v35i11.17220 [72] Caelles, S., Maninis, K.-K., Pont-Tuset, J., Leal-Taixé, L., Cremers, D., Van Gool, L.: One-shot video object segmentation. In: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, pp. 221–230 (2017) 34

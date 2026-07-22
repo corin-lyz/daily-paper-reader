@@ -1,0 +1,731 @@
+Title: Open-Vocabulary BEV Segmentation with 3D-Aware Geometric Constraints
+
+URL Source: https://arxiv.org/pdf/2606.24353v1
+
+Published Time: Wed, 24 Jun 2026 00:54:20 GMT
+
+Number of Pages: 33
+
+Markdown Content:
+# Open-Vocabulary BEV Segmentation with 3D-Aware Geometric Constraints 
+
+Hojun Choi 1∗ , Seulbin Hwang 2 , Dae Jung Kim 2 , Kisung Kim 2 ,Hyunjung Shim 1† , and Jinhan Lee 2† 
+
+> 1
+
+KAIST AI, South Korea 
+
+{hchoi256,kateshim}@kaist.ac.kr  
+
+> 2
+
+NAVER LABS, South Korea 
+
+{h.sb,daejung.kim,ks.kim,jinhan.lee}@naverlabs.com 
+
+Abstract. Bird’s-eye view (BEV) perception fuses multi-camera images into a unified top-down representation for autonomous driving. Despite recent progress, state-of-the-art methods remain confined to closed-set scenarios, making them vulnerable to unpredictable real-world environ-ments. In this work, we introduce open-vocabulary BEV segmentation (OVBS), which leverages vision-language models (VLMs) to recognize categories beyond the training set while maintaining precise BEV percep-tion and real-time efficiency. A key challenge in OVBS lies in the 3D geo-metric inconsistency inherent in the ill-posed lifting of 2D VLM semantics into BEV. To address this, we propose OVBEVSeg, a geometry-aware OVBS framework that enhances efficient Gaussian splatting (GS)-based unprojection by leveraging robust 3D geometric constraints across three progressive stages: (1) 2D-to-BEV pseudo-labeling via reliable 3D pro-jection for OV generalization; (2) joint 2D–BEV per-scene optimization with BEV structural constraints for 3D geometric consistency; and (3) 3D geometric distillation for online efficiency. On the nuScenes dataset, OVBEVSeg achieves state-of-the-art performance, outperforming closed-set methods by 15.3 mIoU on unseen categories. Remarkably, even with no novel-class ground-truth labels, it remains competitive with self- and semi-supervised baselines trained with up to 40% of ground-truth anno-tations. Furthermore, it achieves 2.5 × faster inference with only 0.22 ×
+
+the memory consumption of projection-based methods. 
+
+Keywords: Autonomous Driving · Bird’s-eye view Perception · Open Vocabulary · 3D Gaussian Splatting 
+
+## 1 Introduction 
+
+Bird’s-eye view (BEV) perception has emerged as a foundational paradigm in autonomous driving (AD), providing a unified ego-centric top-down representa-tion for effective multi-sensor fusion. It now underpins a broad spectrum of 3D 
+
+> ∗
+
+Work done during an internship at NAVER LABS. 
+
+> †
+
+Co-corresponding authors 
+
+> arXiv:2606.24353v1 [cs.CV] 23 Jun 2026
+
+2 H. Choi et al. (1) Detect “truck” 
+
+> Pseudo -BEV
+> Labeling (PBL)
+
+Ours   
+
+> (d) Pseudo -BEV Labels
+> (f) Rendered BEV
+> (h) BEV Prediction (b) Gaussian Field (BAGS)
+> “truck” “truck”
+> Robust in
+> Sparse Viewpoints
+> “truck ”
+> “truck”
+> (1) Missing “truck”
+> (2) Distorted
+> 2D -OV -then -BEV
+> Pseudo -Labeling
+
+Previous approaches        
+
+> (c) GT BEV Labels
+> (e) Rendered BEV
+> (g) BEV Prediction (a) Gaussian Field (3DGS)
+> Noisy from
+> Sparse Viewpoints
+> Unlabeled!
+> Novel -Class GT
+> Not Available!
+> unlabeled Ego vehicle
+> “car”
+> “construction vehicle”
+> Base Class
+> “truck”
+> Novel Class
+> GT BEV Map
+> Vehicles  Base  / Novel
+> (Offline)
+> (Offline )
+> (Offline)
+> (Offline )
+> Step 2
+> Step 1
+> Step 3
+> unknown unknown
+> (2) Sharp Edge
+> BEV -Aware
+> 3DGS
+> BEV -Aware
+> Gaussian
+> Distillation
+> BEV Pseudo -Labels
+> “vehicle”
+
+Fig. 1: (c,d) Ground-truth or pseudo BEV annotations. (a,e) 3D and BEV renderings with plain 3D Gaussian splatting, showing dispersed splats beyond object regions. (b,f ) 
+
+3D and BEV renderings with our BAGS, with splats concentrated along object bound-aries. (g,h) Online BEV predictions: the baseline misses novel classes ( e.g ., “truck”) and exhibits boundary distortions, which are successfully resolved by our method. 
+
+scene understanding tasks, including object detection [28, 32, 53], semantic seg-mentation [5, 17, 19, 40, 61], and trajectory planning [19–21]. A central challenge in BEV perception is how to establish spatial correspondence between 2D cam-era features and the BEV representation. This process is fueled by advancements in depth-based [19, 22, 27, 40], projection-based [5, 17], attention-based [28, 61], and Gaussian-based [4,35] architectures, leading to successful real-time, scalable inference BEV perception critical for modern autonomous platforms. Despite strict demands for efficient deployment, a crucial yet overlooked as-sumption persists: existing BEV perception pipelines are fundamentally framed as closed-set systems. That is, both training and inference assume the same, finite set of semantic classes. In real-world AD, this assumption is neither realistic nor safe. In Fig. 1(g) and 3, autonomous vehicles continuously encounter previously unseen objects— e.g ., “truck,” or atypical movers like “stroller” or “wheelchair.” These novel classes, while present in sensor data, lack both human-annotated and ground-truth labels during training and are therefore silently ignored during in-ference, creating semantically blind regions in the BEV map. This discrepancy is more than a technical shortcoming: it poses a direct threat to downstream tasks such as path planning and collision avoidance [21, 23]. We argue that reframing BEV perception for open-world environments is not optional but essential for ensuring semantic completeness and safety in real-world autonomy. To this end, we introduce open-vocabulary BEV segmentation (OVBS), a new task that extends OV recognition from 2D vision to the BEV domain, leveraging vision-language models (VLMs) to recognize previously unseen categories. The objective of OVBS is to simultaneously achieve three goals: OV generalization to novel classes, precise BEV perception, and inference-time efficiency. OVBEVSeg 3
+
+A natural extension to OVBS is to graft OV visual recognition [50, 51] onto the core logic of unprojection-based BEV pipelines. Concretely, one could attach a 2D OV detector [31] to each camera view, lift the predicted 2D regions into 3D space via depth estimation, and project them into BEV—often used as a fair OV baseline. However, this seemingly straightforward “2D-OV-then-BEV” solution remains vulnerable to a longstanding challenge in AD: it relies on direct 2D-to-3D lifting, which is fundamentally brittle in large-scale outdoor scenes with sparse views. Small errors in 2D localization or semantic classification are amplified by the ill-posed lifting process [27,40]—a structural flaw inherent to all unprojection-based methods. In Fig. 1, this direct mapping fails on two fronts: 
+
+(L1) (c) compounded errors hinder the recognition of novel classes in BEV; and 
+
+(L2) (g) inherent geometric instability results in geometrically inconsistent or distorted BEV boxes. In short, naive designs built upon 2D unprojection break down due to the lack of consistent multi-view 3D geometry—a prerequisite for both OV-to-BEV extensions and reliable unprojection-based BEV perception. This inherent vulnerability persists even in Gaussian splatting (GS)-based unprojection—arguably the most promising candidate due to its superior effi-ciency and scalability—as it remains susceptible to the same 2D-to-3D lifting errors (L1, L2). Specifically, it amplifies these biases by directly lifting 2D fea-tures into 3D Gaussians for BEV splatting. To address these limitations, our key insight is that the direction of geometric reasoning must be reversed: rather than lifting noisy 2D predictions into 3D (unprojection), we should project reliable 3D structure down into 2D and BEV (projection). Following this projective shift, we propose OVBEVSeg, a novel geometry-aware OVBS framework that leverages robust 3D geometric constraints across three progressive stages: (1) generat-ing BEV pseudo-labels by establishing consistent 2D–BEV correspondences and routing 2D VLM semantics via reliable 3D projection of class-agnostic 3D detec-tions [47], thereby bypassing erroneous 2D unprojection and resolving (L1); (2) conducting joint 2D–BEV per-scene optimization constrained by BEV spatial layouts as strong geometric constraints, thereby enabling robust 3D geometric reconstruction from sparse viewpoints; and (3) distilling the recovered geometry into a student model, mitigating (L2) while preserving inference efficiency. Cru-cially, these stages are not independent modules but successive instantiations of a single principle: leveraging 3D geometric constraints to bypass the ill-posed 2D unprojection—first for semantics, geometry, and efficient knowledge transfer. Extensive experiments show that OVBEVSeg sets a new state of the art, surpassing prior work [5] by 15.3 mIoU on novel classes while running 2.5 × faster with 0.22 × memory usage. Without novel-class ground-truth labels, it remains comparable to semi-/self-supervised baselines using up to 40% annotations. 
+
+## 2 Related Work 
+
+Bird’s-Eye View (BEV) Perception. BEV perception maps multi-sensor data into a unified top-down space for 3D scene understanding. Existing meth-ods fall into four paradigms: (1) depth-based methods [22,27,40] explicitly splat 4 H. Choi et al. 
+
+image features with per-pixel depth distributions into a 3D grid, yielding geo-metrically grounded BEV; (2) projection-based schemes [5,17] query camera fea-tures at predefined 3D points; (3) attention-based transformers [28,30,32,48,61] leverage cross-attention to fuse image and BEV tokens; and (4) feed-forward 3D Gaussian splatting methods [4, 35] predict 3D Gaussians to rasterize BEV features. In particular, depth-based approaches are highly sensitive to depth es-timation errors, which can propagate into the BEV representation. Despite their architectural diversity, all these paradigms remain strictly constrained to closed-set categories. In this work, we transcend these boundaries by recasting BEV perception as an open-vocabulary task integrated with 3D geometric constraints. 
+
+3D Gaussian Splatting (3DGS). 3DGS [24] has emerged as a powerful differ-entiable renderer for scene representation. In autonomous driving, 3DGS-based methods bifurcate into offline per-scene optimization and online feed-forward approaches. Within this taxonomy, offline methods [62, 63] incrementally op-timize static Gaussian fields while compositing object-level dynamics. While recovering high-fidelity geometry under photometric supervision, they remain computationally prohibitive for real-time perception. Conversely, feed-forward systems [6, 8, 54] enable omnidirectional rendering by computing per-pixel ray directions under equirectangular models. Building on this, recent BEV vari-ants [4, 35] map image features to 3D Gaussians for BEV splatting. Despite their scalability, these methods often compromise 3D geometric precision due to the ill-posed nature of 2D-to-3D unprojection under sparse viewpoints. Draw-ing on hybrid 3DGS advances [12, 45], we bridge this gap by synergizing the geometric rigor of per-scene optimization with feed-forward efficiency. 
+
+Open-Vocabulary Learning (OVL). To overcome the scalability limits of fixed categories, OVL [50] has gained traction, leveraging large-scale vision-language pretraining [42] for unseen category recognition. In autonomous driv-ing, several studies have extended OVL to various 3D tasks: OV-3DETIC [37] ad-dresses novel-class 3D detection via image-level supervision and debiased cross-modal contrastive learning; OpenScene [39] enables OV semantic segmentation (OVSS) by co-embedding 3D features with text and pixels; and OVTrack [26] introduces the first OV multi-object tracking (OV-MOT) framework by distill-ing vision-language knowledge into a tracker; and LidarCLIP [18] aligns LiDAR features with 2D embeddings for OV recognition in point clouds. In contrast, OV recognition within the BEV space remains underexplored, hindered by the 2D–BEV correspondence ambiguity. To our knowledge, this is the first open-vocabulary BEV segmentation (OVBS) framework that leverages robust 3D ge-ometric constraints to map 2D VLM semantics consistently into the BEV space. 
+
+## 3 Methodology 
+
+In this work, we introduce open-vocabulary BEV segmentation (OVBS), a novel task aimed at enhancing generalization to unseen categories via vision-language OVBEVSeg 5
+
+models (VLMs) while preserving precise BEV perception and real-time efficiency. As established in Sec. 1, the core bottleneck for OVBS can be the ill-posed 2D-to-3D lifting shared by all unprojection-based BEV methods. Our 3D projection-first principle addresses this by reversing the direction of geometric reasoning: we project reliable 3D structure down into 2D and BEV. In Fig. 2, we propose OVBEVSeg, a geometry-aware OVBS framework that enhances Gaussian splatting (GS)-based unprojection by incorporating robust 3D geometric constraints across three synergistic modules: (1) pseudo-BEV la-beling (PBL) for OV generalization (Sec. 3.1), (2) BEV-aware 3DGS (BAGS) for geometric reconstruction (Sec. 3.2), and (3) BEV-aware Gaussian distilla-tion (BAGD) for efficiency (Sec. 3.3). In (1), we explicitly establish 2D–BEV correspondence by propagating semantics via the 3D projection of unsupervised 3D clusters [47]. These 3D candidates are projected into the image space, where instance masks are recovered using a segmentation foundation model [43]. For every segmented 2D object, we extract CLIP-based image embeddings and ob-tain pseudo-class labels via text prompts. These labels are then mapped back to corresponding 3D bounding boxes, which serve as semantic carriers that link the 2D image domain to the 3D scene layout. By projecting these annotated 3D boxes into the BEV space, we generate consistent BEV pseudo-labels for both base ( e.g ., “car”) and novel classes ( e.g ., “truck”); see Fig. 1(d). Building upon these correspondences, in (2), BAGS leverages the derived BEV structural lay-outs as strong geometric priors to enforce 3D geometric consistency from sparse viewpoints; see Fig. 1(b,f). In (3), BAGD distills this high-fidelity geometric knowledge into a student network to ensure real-time inference; see Fig. 1(h). These stages successively leverage 3D geometric constraints to bypass 2D un-projection across semantics, geometry, and knowledge transfer, respectively. 
+
+3.1 Open-Vocabulary Pseudo-BEV Labeling (PBL) 
+
+In this section, we rethink standard BEV perception through the lens of OVBS, targeting robust novel-class recognition under base-class supervision alone. Un-like naive 2D-to-3D lifting, our 3D projection-first principle ensures (1) consis-tent 2D–BEV semantic propagation by leveraging unsupervised 3D detections as geometric constraints, thereby facilitating (2) BEV pseudo-label generation necessary for OV recognition—a linchpin of safety-critical AD. 
+
+Generating 2D–BEV Correspondences via 3D Projection. A straight-forward route to consistent 2D–BEV object discovery is to run an off-the-shelf OV 2D detector [31], lift the detections to 3D via depth estimation [19, 35], and then project them into BEV. This protocol is widely adopted in OV settings for fairness, since the detector is not trained on the dataset’s novel-class ground truth [43,52,58]. However, these pipelines typically rely on ray sampling for depth and inevitably discard information in the 2D-to-3D transformation [27, 40]. De-spite notable progress in 2D-to-3D understanding, lifting image features into a metrically consistent 3D space remains fundamentally ill-posed and approximate due to occlusions, depth ambiguity, and discretization. 6 H. Choi et al. LiDAR / 3DGS Input Images SAM Masks Text Prompts                                  
+
+> Aggregate
+> ”truck”
+> ”car”
+> ”bicycle”
+> …
+> CLIP
+> Text
+> Encoder
+> CLIP
+> Image
+> Encoder
+> Unsupervised
+> 3D Detector
+> CLIP Text
+> Embeddings Class -Agnostic
+> 3D Bounding Boxes 𝒑 ∈𝑷
+> CLIP Image
+> Embeddings
+> SAM
+> Class Labels BEV Masks
+> 𝐛 ∈𝑩 Image Masks
+> 𝐢 ∈𝑰 Object -Centric
+> Image Embeddings
+> 2D –BEV Correspondence Set (𝓢
+> (novel) (base)
+> Projection
+> & Grounded SAM
+> 𝒍 ∈𝑳
+> Object -Centric
+> Masking
+> Cosine
+> Similarity
+> Mask
+> RGB Images Depth Map Image Occ. Map BEV Occ. Map
+> Ground -Truth  Rendered
+> 𝓛 !"#"$ 𝓛 %&'() 𝓛 "!!
+> Image -Consistency BEV -Consistency
+> Image Depth 𝑫 Image RGB 𝑪
+> Differentiable
+> Rasterization
+> Gaussian Field
+> Input Images
+> Feed -Forward
+> 3DGS for OVBS
+> 𝑶 𝒃𝒆𝒗
+> 𝑶 𝒊𝒎𝒈 Occupancy
+> Backbone
+> & CNN
+> Feature 𝑭
+> Opacity 𝜶
+> Depth 𝑫 𝜇 '( ,Σ'(
+> 2D -to -3D Unproject ̂
+> 𝜇 )( ,5Σ)(
+> BEV
+> BEV Project
+> 𝜇 ∗)( ,Σ∗)(
+> 𝓛 %*+(
+> Head
+> Top1 Gating &
+> BEV Project
+> BEV Features 𝑭 !"#
+> 𝓛 ",+&-
+> BAGD: BEV -Aware
+> Gaussian Distillation
+> PBL: Pseudo -BEV
+> Labeling
+> BAGS: BEV -Aware 3D
+> Gaussian Splatting
+> Pseudo -BEV
+> Labeling (PBL)
+> 2D –BEV
+> Correspondence
+> Set !𝓢
+> 3D Gaussians
+> Splatting
+
+🔥 
+
+> 𝐒
+
+Fig. 2: Our method consists of three modules: (1) PBL generates BEV pseudo-labels by leveraging unsupervised 3D object discovery [47], foundational 2D segmentation [43], and VLM grounding [42] to construct a 2D–BEV correspondence set ˜S. (2) BAGS 
+
+performs 3D geometry reconstruction using 2D, depth, and BEV occupancy supervision from ˜S. (3) BAGD distills this optimized 3D geometry into a feed-forward 3DGS-based student network in the BEV space, preserving fast inference speeds. 
+
+Instead, we avoid this unprojection ambiguity by predicting 3D object boxes with an unsupervised 3D detector and projecting them onto the image and BEV planes to establish reliable 2D–BEV correspondences. Specifically, we adopt the 3D bounding-box pseudo-annotations P from UNION [47], which deliver competitive class-agnostic detection by leveraging multi-sensor and temporal cues. Given these boxes, we invoke a 2D segmentation foundation model [43] to obtain pixel-level masks for dynamic objects within the projected pseudo-boxes. For objects seen by multiple cameras, we retain only the largest 2D instance i ∈ I
+
+to maximize visual representation, enforcing a one-to-one match with a single BEV instance b ∈ B. Finally, we define the 2D–BEV correspondence set S =
+
+{(i, b, p ) | i ∈ I, b ∈ B, p ∈ P }. As shown in Fig. 2, it successfully encodes object-centric correspondences ( e.g ., “truck”) across 2D and BEV domains. This 3D-driven pipeline effectively circumvents the unstable depth estimation inherent in naive 2D unprojection—a consistent cross-modal route for 2D VLM semantics. To mitigate failure modes arising from noisy 3D detection priors, we discard instances where the 2D mask area significantly deviates from its projected 2D bounding box. This mismatch signals that the 3D box is inadequately sized; specifically, an over-estimated 3D box leads to a substantial area discrepancy, while an under-estimated box typically yields a non-object response from the foundational grounding model. Such proactive pruning ensures that the resulting set S remains high-fidelity, even when raw 3D predictions are suboptimal. 
+
+Generating BEV Pseudo-Labels. Regarding OV pseudo-labeling, we adopt the standard CLIP-based paradigm, leveraging its shared embedding space to OVBEVSeg 7
+
+align visual and linguistic concepts. Specifically, for each 2D region proposal, the image encoder generates a visual embedding, which is then compared against a set of text embeddings—encompassing both base and novel classes—to com-pute cosine similarity scores. These textual prompts can be derived from image captions [16, 57], dataset class names [59], or MLLM-driven zero-shot labels [9]. Following this paradigm, we initialize C categories from the dataset [2] using their text embeddings derived from standard prompt templates [16]. Using S, we first extract 2D instance masks I to generate background-masked, object-centric crops for the CLIP image encoder, thereby mitigating semantic ambiguity near object boundaries. Each visual embedding is then assigned a pseudo-label l based on its maximum cosine similarity to the text embeddings of the C categories. By incorporating these labels into the original set— ˜S = {(i, b, p, l ) | (i, b, p ) ∈
+
+S, l ∈ L}—we associate the pseudo-labels with their respective 3D instances, effectively lifting image-level VLM outputs into the BEV space. In Fig. 2, VLM embeddings for novel classes ( e.g ., “truck”) remain spatially consistent across both domains. As a result, PBL bridges the gap between closed-set training and OV generalization while relying strictly on base-class supervision. 
+
+3.2 BEV-Aware 3D Gaussian Splatting (BAGS) 
+
+In this section, we directly tackle the ill-posed 2D-to-3D unprojection inherent in GS-based approaches. Our core insight is that high-fidelity geometric cues can serve as strong guidance to recover the degraded geometric structure dur-ing training, thereby mitigating the 3D geometric inconsistencies as established in Sec. 1. Inspired by recent hybrid 3DGS designs [12, 45]—combining per-scene optimization for geometric fidelity with feed-forward mechanisms for efficiency and scalability—we leverage per-scene optimization as the source of this precise 3D supervision. To this end, we first revisit the 3DGS optimization process. 
+
+3DGS. 3DGS represents scenes as a collection of 3D Gaussian primitives, each defined by a mean μ and covariance Σ governing its spatial extent: G(x) = exp( − 12 (x − μ)⊤Σ−1(x − μ)) . To optimize the attributes of these primitives, it employs tile-based rasterization to compute the rendered color C(v) at pixel v:
+
+C(v) = X
+
+> k∈N
+
+ckαkk−1Y
+
+> j=1
+
+(1 − αj ), (1) where N denotes the set of Gaussians within the tile, ck denotes the color of the k-th Gaussian and αk = okG2Dk (v) represents the contribution of the k-th Gaussian, with ok being its opacity and G2Dk (·) its 2D projection. The rendered color is subsequently supervised by a photometric loss against the ground truth. While standard 3DGS yields robust 3D reconstructions that often act as a LiDAR surrogate [3, 7, 63], the resulting explicit 3D Gaussians fundamentally misalign with the BEV representation in real-world AD. As shown in Fig. 1(a,e), vanilla 3DGS faithfully reconstructs near-field camera views ( image-consistency )8 H. Choi et al. 
+
+driven by the photometric loss; however, its BEV renderings often scatter splats across irrelevant, non-object regions ( BEV-inconsistency )—a critical flaw for reliable BEV perception. This failure is particularly pronounced in driving sce-narios characterized by sparse camera coverage and minimal multi-view overlap. 
+
+BAGS. Beyond image-level cues, we contend that BEV structural layouts— driven by our 3D projection-first principle—can impose stringent xy -plane spa-tial priors to mitigate the depth ambiguity inherent in sparse 2D supervision. By providing such robust geometric constraints, this novel paradigm offers reliable guidance for precise 3D localization where visual data alone is insufficient. To this end, we propose BAGS, which enforces cross-modal consistency by synchro-nizing 2D and BEV representations from the correspondence set ˜S. As illustrated in Fig. 2, BAGS prioritizes the learning of object-centric 3D geometry through occupancy maps as opposed to photometric attributes, effectively leveraging the color-agnostic nature of the BEV domain. Specifically, we optimize the accumu-lated occupancy O(v) via a differentiable rasterization pipeline: 
+
+O(v) = 1 − Y
+
+> k∈N
+
+(1 − αk). (2) The resulting 2D and BEV occupancy maps, Oimg and Obev , are aligned with the mask priors in ˜S via a smooth L1 loss. This joint optimization over instance masks i ∈ I and BEV instances b ∈ B ensures cross-modal consistency: 
+
+Locc = Oimg (v) − i(v) SL 1 + Obev (v) − b(v) SL 1 . (3) Moreover, motivated by depth regularization techniques for outdoor scenes [10, 63], we optimize the per-pixel depth D(v) via the rasterization pipeline: 
+
+D(v) = X
+
+> k∈N
+
+dkαkk−1Y
+
+> j=1
+
+(1 − αj ), (4) where dk is the camera-space depth of the k-th Gaussian center. We supervise 
+
+D(v) using a dense depth prior D∗
+
+> dense
+
+, obtained by regularizing the predictions of a depth estimator Fθ [1] with metrically consistent and sparse LiDAR data: 
+
+Ldepth = ∥D(v) − D∗
+
+> dense
+
+(v)∥1 , where D∗ 
+
+> dense
+
+= s∗ · Fθ (I) + t∗, (5) where s∗ and t∗ are optimized scale and translation parameters, and I is the input image. Finally, the total objective for BAGS is defined as: 
+
+LBAGS = (1 − λssim )Lcolor + λssim LD-SSIM + λdepth Ldepth + λocc Locc , (6) where Lcolor and LD-SSIM follow the original 3DGS formulation [24]. This joint supervision effectively constrains the 3D primitives within a well-defined spatial volume, preventing the geometric collapse often observed in sparse-view settings. To suppress background noise, we mask the image with the instance map I,thereby preventing the proliferation of redundant floater Gaussians in irrelevant regions. As shown in Fig. 1(b,f) and 2, BAGS yields compact and geometrically faithful 3D Gaussians, establishing a robust source of geometric supervision. OVBEVSeg 9“dog”   
+
+> Image mask BEV mask CLIP Image Embeddings
+> “wheelchair”  “Stroller”  VLM -based Semantic Grounding 2D –BEV Correspondence
+
+Fig. 3: Open-world 2D–BEV auto-labeling. “truck”  “car”     
+
+> 3D Language Gaussians
+> “car”
+> “car”
+> SAM
+> CLIP
+> Image
+> Encoder
+> Encoder
+> Latent Space
+> Supervise Render
+> Teacher Distribution Student Distribution
+> Decoder
+> Reconstruction Loss
+> KLLoss
+> Vehicle Subclass Feature Disentangled!
+> Multi -View 2D Images
+
+Fig. 4: Language-embedded BAGS. 
+
+Language-Embedded BAGS. The rising demand for OV 3D scene under-standing in AD underscores the extensibility of BAGS, where 3D Gaussians in-herit VLM attributes. A key challenge in this task is reducing the memory over-head incurred by processing high-dimensional VLM embeddings during 3DGS optimization. As shown in Fig. 4, recent work [41] mitigates this by establishing a lower-dimensional latent space via an encoder-decoder pretraining; it optimizes compact latent features as ground-truth targets. However, this innovative design consistently fails in AD scenarios, where features of vehicle subclasses ( e.g ., “car” and “truck”) become entangled during the projection into the latent space. Con-sequently, the decoded features reveal previously unobserved disentanglement problems among semantically similar subclasses. To validate the extensibility of language-embedded BAGS—Lang–BAGS— we propose a disentanglement distillation loss that aligns the categorical simi-larity distributions of reconstructed features with those of original VLM embed-dings over subclass embeddings W, inducing discriminative latent projections: 
+
+LLang–BAGS = τ 2 · KL 
+
+
+
+σ
+
+ s · xorig W⊤
+
+τ
+
+
+
+∥ σ
+
+ s · xrec W⊤
+
+τ
+
+ 
+
+, (7) where σ(·) denotes the softmax function; s and τ are the logit scale and tem-perature, respectively; xorig is the original VLM embedding; and xrec is the reconstructed feature. As shown in Figs. 3 and 6, Lang–BAGS facilitates the extension of BAGS to OV 3D scene grounding, where its sparse-view robustness maintains language consistency across image and BEV domains. 
+
+3.3 BEV-Aware Gaussian Distillation (BAGD) 
+
+In this section, we introduce OVBEVSeg, a hybrid 3DGS-based framework ad-dressing three key objectives: open-world recognition through PBL, 3D geo-metric reconstruction via BAGS, and efficient knowledge transfer using BAGD. Following recent hybrid paradigms [12, 45], we first optimize teacher Gaussians offline with BAGS on temporally downsampled sequences to capture discrimina-tive scene semantics. These high-fidelity primitives provide a rigorous geometric foundation, serving as a dense supervisory signal to guide the student model. 10 H. Choi et al. 
+
+A fundamental challenge in this geometric distillation lies in the inherent lack of one-to-one correspondence between student and teacher Gaussians. While the student predicts a grid-aligned feature tensor ˆG ∈ RN ×HF ×WF ×d, the teacher conversely optimizes an unstructured, dense set of primitives. To bridge this structural gap, we leverage per-pixel opacity α to identify the most influential teacher Gaussian for each ray—a natural choice since objects in driving scenes are rarely stacked vertically in BEV. This allows a single dominant Gaussian to effectively represent the local 3D geometry. Specifically, for each pixel v, we select a representative Gaussian G∗(v) := Gk∗(v) by maximizing its rendering contribution: k∗(v) = arg max k∈N (v) αk. By mapping the attributes of these selected primitives into the supervision tensor G, we ensure pixel-perfect spatial alignment, effectively anchoring discrete grids to continuous 3D Gaussians. On the student side, the predicted 3D Gaussians are projected onto the same BEV plane to obtain ˆG. We then train the student via a symmetrized distillation objective [29] that enforces teacher–student distribution alignment: 
+
+LBAGD = 12|V| 
+
+X
+
+> v∈V
+
+h
+
+KL ( ˆG(v)∥G∗(v)) + KL (G∗(v)∥ ˆG(v)) 
+
+i
+
+, (8) where V denotes the set of pixel coordinates. This distillation strategy effectively harmonizes the two 3DGS variants, synergizing their respective strengths to satisfy stringent real-time requirements within a unified OVBS framework. 
+
+## 4 Experiments 
+
+Datasets and evaluation metrics. OVBEVSeg is evaluated on the official nuScenes dataset [2], a large-scale AD benchmark with synchronized multi-sensor data across diverse weather and times of day. It contains 1,000 scenes split into 700 training, 150 validation, and 150 test scenes. Each 20-second scene includes data from six cameras providing a full 360-degree view around the ego vehicle. For OVBS, we follow the category split in prior work [11], dividing vehicle categories into five base and three novel classes. For fair comparison with prior work [35], we apply a visibility filter that selects objects with at least 40% coverage. This focuses the evaluation on adequately visible objects. The BEV grid has size (200 ×200), covering ([-50 m, 50 m]) along both the X (forward) and Y (side-ways) axes relative to the ego vehicle. Each cell corresponds to (0.5 m ×0.5 m). 
+
+Implementation details. The online framework operates exclusively on camera inputs with LiDAR priors confined to offline, and is optimized using a weighted sum of a segmentation loss on cosine-similarity logits [42] and a KL divergence loss [29], with weights set to 1.0 and 0.01, respectively. For category prompting, we utilize the hand-crafted templates from ViLD [16]. Using AdamW [33] with a learning rate of 3 × 10 −4 and weight decay of 1 × 10 −7, the model is trained for 50 epochs with a batch size of 8 on two A100 GPUs. Input images are resized to 224 × 480 without augmentation, processing multi-scale BEV features at resolutions of 50 × 50 , 100 × 100 , and 200 × 200 . By default, we use an EfficientNet-B4 backbone [46] and disable visibility filtering during inference. OVBEVSeg 11 
+
+Table 1: Comparison of OVBS in the multi-class setting on the nuScenes validation 
+
+set [2]. Note that † denotes visibility filtering. ∆B and ∆S denote the relative improve-ments over the baseline [35] and the SOTA model [60], respectively. 
+
+Method Memory FPS ↑ Novel (IoU) ↑ Base (IoU) ↑ Mean (MiB) ↓ truck bus motorcycle car trailer construction_vehicle pedestrian bicycle IoU ↑
+
+Fully Supervised † [35] 33.0 80.2 29.7 38.4 10.4 - - - - - -
+
+OVBS 
+
+VED † [34] - - 0.0 0.0 0.0 7.4 0.0 0.0 0.0 0.0 0.9 VPN † [38] - - 0.0 0.0 0.0 16.6 4.9 7.1 0.0 4.4 4.1 PON † [44] 38.6 43.8 0.0 0.0 0.0 24.7 16.6 12.3 8.2 9.4 8.9 DiffBEV † [65] - - 0.0 0.0 0.0 38.9 21.1 8.4 9.6 13.2 11.4 GaussianLSS † [35] 33.0 80.2 0.0 0.0 0.0 40.0 25.1 11.6 14.4 10.4 12.7 TaDe † [60] 41.5 51.4 0.0 0.0 0.0 42.8 26.3 11.4 14.0 14.2 13.6 OVBEVSeg (Ours) † 32.4 79.6 19.0 20.3 6.6 41.8 26.9 13.1 15.0 12.0 19.3 
+
+∆B (+19.0) (+20.3) (+6.6) (+1.8) (+1.8) (+1.5) (+0.6) (+1.6) (+6.6) 
+
+∆S (+19.0) (+20.3) (+6.6) (-1.0) (+0.6) (+1.7) (+1.0) (-2.2) (+5.7) 
+
+Table 2: Single-class OVBS comparison. 
+
+∗: novel classes withheld during training.                                                   
+
+> Method Memory FPS ↑IoU ↑
+> (MiB) ↓vehicle ∗pedestrian †mIoU
+> Fully Supervised [35] 33.0 80.2 38.3 18.0 28.1
+> OVBS
+> CVT [61] 35.0 107.6 24.6 14.2 19.4 FIERY static [19] 40.0 27.3 28.0 17.2 22.6 SimpleBEV [17] 331.0 37.1 28.9 17.1 23.3 GaussianLSS [35] 33.0 80.2 29.7 18.0 23.9 PointBeV [5] 126.0 32.0 30.3 18.5 24.4 OVBEVSeg (Ours) 28.7 80.2 34.7 18.4 26.6
+> ∆B(+5.0) (+0.4) (+2.7)
+> ∆S(+4.4) (-0.1) (+2.2)
+
+Table 3: OVBS results with self- and semi-supervised baselines on nuScenes.                                           
+
+> GT Ratio Method truck bus motorcycle mIoU ↑
+> 0% 2D-OV-then-BEV 3.7 2.6 0.0 2.1
+> OVBEVSeg (Ours) 19.0 20.3 6.6 15.3
+> (1 ,5%]
+> LetsMap [15] 13.6 -5.8 9.7 UniMatch [55] 10.4 5.7 1.6 5.9 Semi-BEVseg [64] 14.7 9.8 1.6 8.7 20% UniMatch [55] 16.8 10.5 2.6 10.0 Semi-BEVseg [64] 20.4 16.8 6.7 14.6 40% UniMatch [55] 18.0 17.0 5.6 13.5 Semi-BEVseg [64] 22.7 21.6 6.8 17.0
+
+4.1 Quantitative Research 
+
+Comparison with closed-set methods. We evaluate OVBEVSeg against state-of-the-art (SOTA) closed-set BEV segmentation models on nuScenes [2] under OVBS settings, focusing on novel classes. In Tabs. 1 and 2, SC and MC denote training on a single class ( e.g ., “vehicle”) and multiple classes jointly, respectively; notably, the “vehicle” category in SC uses only base-class annotations. Leveraging our BEV pseudo-labels, OVBEVSeg sets a new SOTA on novel classes, surpass-ing previous projection-based methods [5, 60] by 4.4 and 15.3 mIoU in SC and MC, while being 2.7 × faster and consuming only 0.22 × the memory. It also outperforms the feed-forward 3DGS-based baseline [35] by 2.7 and 6.6 mIoU, while maintaining competitive online efficiency. These results strongly validate that our OVBS framework paves the way for practical deployment. 
+
+Comparison with semi- and self-supervised methods. Despite the clear necessity of OVBS, the current scarcity of direct competitors in this emerging domain leads us to broaden our evaluation. We include two additional baselines with ob-jectives relevant to OVBS. First, we compare against self- and semi-supervised methods [15, 55, 64] trained with varying ground-truth (GT) ratios. In Tab. 3, our method—operating with 0% GT—significantly outperforms these baselines with < 20% GT, and remains competitive with those using up to 40%. Second, 12 H. Choi et al. 
+
+Table 4: OVBS comparison with different 3D priors and non-vehicle classes (4 novel classes).          
+
+> Method Novel (IoU) ↑
+> truck bus motorcycle cone UNION [47] 19.0 20.3 6.6 -F&B [11] 14.2 15.5 7.9 11.5
+
+Table 5: Per-sample submodule runtime on an A100 GPU. Inference-only modules are shared with the baseline. ♮ uses 10% of per-scene samples.                      
+
+> Online Method Backbone Neck Encoder Head BAGD ♮(ms) Ours (BAGD ♮)29.3 5.6 5.7 1.38 0.37
+> Offline Method 3D DET SAM CLIP BAGS ♮Total (min) Ours (PBL + BAGS ♮)<0.01 0.23 0.32 1.54 2.1
+
+a “2D-OV-then-BEV” pipeline—comprising a LiDAR-regularized depth estima-tor [10] and a strong OV detector [31]—is evaluated as a naive OVBS baseline. Our approach markedly outperforms this alternative, particularly in sparse-view settings where 2D unprojection errors are amplified. These fairness comparisons underscore the need for our method in the critical yet underserved OVBS task. 
+
+4.2 Ablation Study 
+
+Ablation of 3D priors and non-vehicle classes. Table 4 shows that PBL consis-tently improves OVBS across unsupervised [47] and VLM-based OV priors [11], while reflecting their complementary strengths, such as better recognition of small static objects with the OV prior. This highlights the generality of PBL beyond vehicle-centric categories and its compatibility with future 3D priors. 
+
+Submodule runtime. Table 5 details the per-scene submodule runtimes on an A100 GPU. Our model extends the baseline with a lightweight BAGD module completely removed during inference. The remaining components ( e.g ., PBL, BAGS, and cached 3D detections) are precomputed and cached offline prior to online training. Each submodule incurs negligible computational overhead via asynchronous batch parallelism—SAM producing masks for batch-wise CLIP aggregation—with BAGS leveraging our online efficient distillation scheme. The offline preprocessing of the entire training set—roughly 30,000 samples—takes approximately 4 days using 8 A100 GPUs, while online efficiency remains on par with the baseline. These results highlight that OVBEVSeg significantly boosts OVBS performance while preserving competitive computational online efficiency. 
+
+Ablation of the individual modules. Table 6 evaluates the contribution of each component within OVBEVSeg. While Group II establishes a new SOTA for novel classes, thereby facilitating OV generalization, the substantial performance degradation in Group III underscores a critical limitation: integrating vanilla 3DGS supervision with BAGD propagates inaccurate 3D geometry, leaving the 2D unprojection dilemma unresolved. In contrast, Group IV demonstrates that combining BAGS with BAGD ensures geometric consistency across camera and BEV views, providing constructive supervision that boosts overall OVBS per-formance by refining boundary details across all classes. These results confirm that the synergistic integration of all proposed modules yields a robust OVBS framework for real-world driving scenarios. OVBEVSeg 13 
+
+Table 6: Component ablation.                    
+
+> Group Components IoU ↑
+> PBL BAGS BAGD Novel Base Mean I0.0 20.3 10.2 II ✓14.0 20.5 17.3 III ✓✓6.1 9.8 7.9 IV ✓✓✓15.3 21.8 19.3
+
+Table 7: BAGD ratio. Ratio IoU ↑       
+
+> Novel Base Mean 014.0 20.5 17.8 0.05 14.8 21.5 18.9 0.1 15.3 21.8 19.3
+
+Table 8: Map segmentation.                           
+
+> Method drivable crossing walkway TaDe 65.9 40.9 42.3 CVT 74.3 36.8 39.9 LSS 75.4 38.8 46.3 GaussianLSS 76.3 46.3 50.2
+> Ours 78.1 49.4 51.9 GT (a) GaussianLSS (b) Ours GT (c) 3DGS (d) BAGS (Ours)
+> ❌✅
+> ❌✅
+> ❌✅
+> ✅
+> ❌✅
+> ❌✅
+> ❌
+
+Fig. 5: (a–b) Our BEV predictions vs. the baseline: orange regions denote both base and novel vehicle classes. (c–d) Our BEV renderings (BAGS) vs. vanilla 3DGS. 
+
+Distillation ratio. We evaluate various BAGD ratios to assess their efficacy in 3D geometric knowledge transfer. A typical nuScenes [2] scene consists of ap-proximately 40 frames captured at 2 Hz. Given the high temporal redundancy between consecutive frames [49,56], we sample frames at uniform intervals to mit-igate 3DGS optimization overhead. This selective distillation strategy enhances the online efficiency of BAGS by focusing on key scene-discriminative frames. As shown in Tab. 7, OVBS performance scales near-linearly with the distilla-tion ratio. Notably, a ratio of 0.1 ( i.e ., 4 frames per scene) achieves the optimal efficiency–accuracy balance, underscoring our framework’s robust scalability. 
+
+Map segmentation. Table 8 evaluates map classes requiring precise road geome-try. Comparing our BAGD-enhanced model against existing methods, we predict categories such as drivable areas, pedestrian crossings, and walkways following the same setup of prior work [35]. Our approach achieves SOTA performance across all classes, effectively reinforcing the underlying scene structure. 
+
+4.3 Qualitative Research 
+
+Qualitative results. As illustrated in Fig. 5, the baseline [35] (a) fails to detect novel-class objects ( e.g ., “truck”) and collapses geometries into unstructured, amorphous volumes, compromising reliability in safety-critical AD. In contrast, OVBEVSeg (b) successfully captures novel classes with sharp boundaries, under-scoring its efficacy for OVBS. Regarding geometric fidelity under sparse ego-car viewpoints, vanilla 3DGS (c) suffers from inaccurate geometry and misaligned 14 H. Choi et al. GT  Language  Embeddings  GT BEV Rendered  Language  Embeddings  Rendered  
+
+> Fig. 6: Language-embedded OV 3D scene understanding via the Lang–BAGS protocol.
+
+BEV renderings, whereas BAGS (d) effectively resolves these inconsistencies, ensuring robustly aligned 3D geometries as reliable OVBS supervision. 
+
+Open-world 2D–BEV auto-labeling. Given the increasing scale of datasets, au-tomatic multimodal annotation is essential for real-world AI applications like AD. In contrast to closed-set approaches, our PBL system facilitates OV auto-labeling ( e.g ., “stroller” in Fig. 3. By projecting cross-modal similarity signals into BEV space via the precomputed correspondence set, our system successfully yields synchronized 3D, 2D, and BEV annotations. This framework establishes a scalable pipeline for high-fidelity, multimodal OV auto-labeling in 3D. 
+
+Open-world 3D scene understanding via 3DGS. Figure 5 demonstrates that Lang–BAGS effectively embeds CLIP features into 3D Gaussians, ensuring their projections in both image and BEV domains consistently align with GT embed-dings. Beyond standard 3DGS, BAGS enables language-aware 3D scene under-standing in AD scenarios, maintaining robustness even with sparse viewpoints. 
+
+## 5 Conclusion 
+
+In this work, we introduced open-vocabulary BEV segmentation (OVBS) to ad-dress the inherent safety-critical limitations of closed-set driving systems. To mit-igate the 3D geometric inconsistencies common in 2D-to-3D semantic lifting— identified as a primary obstacle in OVBS—we proposed OVBEVSeg, the first OVBS framework that enhances Gaussian splatting (GS)-based unprojection by leveraging robust 3D geometric constraints through three synergistic modules— (1) PBL: pseudo-BEV labeling via unsupervised 3D projection for OV general-ization; (2) BAGS: 2D–BEV-consistent 3D Gaussian splatting for 3D geometry recovery; and (3) BAGD: efficiency-preserving geometric distillation. Extensive evaluations validate that OVBEVSeg achieves state-of-the-art novel-class recog-nition with a competitive memory footprint and real-time speed. By enforcing geometric consistency across the 2D-3D-BEV continuum, this work establishes a scalable foundation for robust open-world multimodal 3D perception. OVBEVSeg 15 
+
+## References 
+
+1. Bhat, S.F., Birkl, R., Wofk, D., Wonka, P., Müller, M.: Zoedepth: Zero-shot transfer by combining relative and metric depth. CoRR abs/2302.12288 (2023) 2. Caesar, H., Bankiti, V., Lang, A.H., Vora, S., Liong, V.E., Xu, Q., Krishnan, A., Pan, Y., Baldan, G., Beijbom, O.: nuscenes: A multimodal dataset for autonomous driving. In: 2020 IEEE/CVF Conference on Computer Vision and Pattern Recog-nition, CVPR 2020, Seattle, WA, USA, June 13-19, 2020. pp. 11618–11628 (2020) 3. Cao, Y., Jv, Y., Xu, D.: 3dgs-det: Empower 3d gaussian splatting with boundary guidance and box-focused sampling for 3d object detection (2024) 4. Chabot, F., Granger, N., Lapouge, G.: Gaussianbev: 3d gaussian representation meets perception models for bev segmentation. In: IEEE/CVF Winter Conference on Applications of Computer Vision, WACV 2025, Tucson, AZ, USA, February 26 - March 6, 2025. pp. 2250–2259 (2025) 5. Chambon, L., Zablocki, É., Chen, M., Bartoccioni, F., Pérez, P., Cord, M.: Point-bev: A sparse approach to bev predictions. In: IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2024, Seattle, WA, USA, June 16-22, 2024. pp. 15195–15204 (2024) 6. Charatan, D., Li, S.L., Tagliasacchi, A., Sitzmann, V.: Pixelsplat: 3d gaussian splats from image pairs for scalable generalizable 3d reconstruction. In: IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2024, Seattle, WA, USA, June 16-22, 2024. pp. 19457–19467 (2024) 7. Chen, Q., Yang, S., Du, S., Tang, T., Chen, P., Huo, Y.: Lidar-gs:real-time lidar re-simulation using gaussian splatting. CoRR abs/2410.05111 (2024) 8. Chen, Y., Xu, H., Zheng, C., Zhuang, B., Pollefeys, M., Geiger, A., Cham, T., Cai, J.: Mvsplat: Efficient 3d gaussian splatting from sparse multi-view images. In: Computer Vision - ECCV 2024 - 18th European Conference, Milan, Italy, Septem-ber 29-October 4, 2024, Proceedings, Part XXI. vol. 15079, pp. 370–386 (2024) 9. Choi, H., Lim, Y., Shin, J., Shim, H.: Cot-pl: Visual chain-of-thought reasoning meets pseudo-labeling for open-vocabulary object detection (2025) 10. Chung, J., Oh, J., Lee, K.M.: Depth-regularized optimization for 3d gaussian splat-ting in few-shot images. In: IEEE/CVF Conference on Computer Vision and Pat-tern Recognition, CVPR 2024 - Workshops, Seattle, WA, USA, June 17-18, 2024. pp. 811–820 (2024) 11. Etchegaray, D., Huang, Z., Harada, T., Luo, Y.: Find n’ propagate: Open-vocabulary 3d object detection in urban environments. In: Computer Vision -ECCV 2024 - 18th European Conference, Milan, Italy, September 29-October 4, 2024, Proceedings, Part XL. vol. 15098, pp. 133–151 (2024) 12. Fan, Z., Cong, W., Wen, K., Wang, K., Zhang, J., Ding, X., Xu, D., Ivanovic, B., Pavone, M., Pavlakos, G., Wang, Z., Wang, Y.: Instantsplat: Sparse-view gaussian splatting in seconds (2025) 13. Fang, G., Wang, B.: Mini-splatting: Representing scenes with a constrained number of gaussians. In: Computer Vision - ECCV 2024 - 18th European Conference, Milan, Italy, September 29-October 4, 2024, Proceedings, Part LXXVII. vol. 15135, pp. 165–181. Springer (2024) 14. Fang, G., Wang, B.: Mini-splatting: Representing scenes with a constrained number of gaussians. In: Computer Vision - ECCV 2024 - 18th European Conference, Milan, Italy, September 29-October 4, 2024, Proceedings, Part LXXVII. vol. 15135, pp. 165–181. Springer (2024) 16 H. Choi et al. 15. Gosala, N., Petek, K., Kiran, B.R., Yogamani, S.K., Drews-Jr, P.L.J., Burgard, W., Valada, A.: Letsmap: Unsupervised representation learning for label-efficient semantic BEV mapping. In: ECCV (2024) 16. Gu, X., Lin, T., Kuo, W., Cui, Y.: Open-vocabulary object detection via vision and language knowledge distillation. In: The Tenth International Conference on Learning Representations, ICLR 2022, Virtual Event, April 25-29, 2022 (2022) 17. Harley, A.W., Fang, Z., Li, J., Ambrus, R., Fragkiadaki, K.: Simple-bev: What really matters for multi-sensor BEV perception? In: IEEE International Conference on Robotics and Automation, ICRA 2023, London, UK, May 29 - June 2, 2023. pp. 2759–2765 (2023) 18. Hess, G., Tonderski, A., Petersson, C., Åström, K., Svensson, L.: Lidarclip or: How I learned to talk to point clouds. In: IEEE/CVF Winter Conference on Applications of Computer Vision, WACV 2024, Waikoloa, HI, USA, January 3-8, 2024. pp. 7423–7432 (2024) 19. Hu, A., Murez, Z., Mohan, N., Dudas, S., Hawke, J., Badrinarayanan, V., Cipolla, R., Kendall, A.: FIERY: future instance prediction in bird’s-eye view from surround monocular cameras. In: 2021 IEEE/CVF International Conference on Computer Vision, ICCV 2021, Montreal, QC, Canada, October 10-17, 2021. pp. 15253–15262 (2021) 20. Hu, S., Chen, L., Wu, P., Li, H., Yan, J., Tao, D.: ST-P3: end-to-end vision-based autonomous driving via spatial-temporal feature learning. In: Computer Vision -ECCV 2022 - 17th European Conference, Tel Aviv, Israel, October 23-27, 2022, Proceedings, Part XXXVIII. vol. 13698, pp. 533–549 (2022) 21. Hu, Y., Yang, J., Chen, L., Li, K., Sima, C., Zhu, X., Chai, S., Du, S., Lin, T., Wang, W., Lu, L., Jia, X., Liu, Q., Dai, J., Qiao, Y., Li, H.: Planning-oriented autonomous driving. In: IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2023, Vancouver, BC, Canada, June 17-24, 2023. pp. 17853– 17862 (2023) 22. Huang, J., Huang, G., Zhu, Z., Du, D.: Bevdet: High-performance multi-camera 3d object detection in bird-eye-view. CoRR abs/2112.11790 (2021) 23. Jia, X., Gao, Y., Chen, L., Yan, J., Liu, P.L., Li, H.: Driveadapter: Breaking the coupling barrier of perception and planning in end-to-end autonomous driving. In: IEEE/CVF International Conference on Computer Vision, ICCV 2023, Paris, France, October 1-6, 2023. pp. 7919–7929 (2023) 24. Kerbl, B., Kopanas, G., Leimkühler, T., Drettakis, G.: 3d gaussian splatting for real-time radiance field rendering. ACM Trans. Graph. 42 , 139:1–139:14 (2023) 25. Kirillov, A., Mintun, E., Ravi, N., Mao, H., Rolland, C., Gustafson, L., Xiao, T., Whitehead, S., Berg, A.C., Lo, W., Dollár, P., Girshick, R.B.: Segment anything. In: IEEE/CVF International Conference on Computer Vision, ICCV 2023, Paris, France, October 1-6, 2023. pp. 3992–4003 (2023) 26. Li, S., Fischer, T., Ke, L., Ding, H., Danelljan, M., Yu, F.: Ovtrack: Open-vocabulary multiple object tracking. In: IEEE/CVF Conference on Computer Vi-sion and Pattern Recognition, CVPR 2023, Vancouver, BC, Canada, June 17-24, 2023. pp. 5567–5577 (2023) 27. Li, Y., Ge, Z., Yu, G., Yang, J., Wang, Z., Shi, Y., Sun, J., Li, Z.: Bevdepth: Ac-quisition of reliable depth for multi-view 3d object detection. In: Thirty-Seventh AAAI Conference on Artificial Intelligence, AAAI 2023, Thirty-Fifth Conference on Innovative Applications of Artificial Intelligence, IAAI 2023, Thirteenth Sympo-sium on Educational Advances in Artificial Intelligence, EAAI 2023, Washington, DC, USA, February 7-14, 2023. pp. 1477–1485 (2023) OVBEVSeg 17 28. Li, Z., Wang, W., Li, H., Xie, E., Sima, C., Lu, T., Qiao, Y., Dai, J.: Bevformer: Learning bird’s-eye-view representation from multi-camera images via spatiotem-poral transformers. In: Computer Vision - ECCV 2022 - 17th European Conference, Tel Aviv, Israel, October 23-27, 2022, Proceedings, Part IX. pp. 1–18 (2022) 29. Lin, Y., Wang, C., Chang, C., Sun, H.: An efficient framework for counting pedes-trians crossing a line using low-cost devices: the benefits of distilling the knowledge in a neural network. Multim. Tools Appl. 80 (3), 4037–4051 (2021) 30. Liu, H., Teng, Y., Lu, T., Wang, H., Wang, L.: Sparsebev: High-performance sparse 3d object detection from multi-camera videos. In: IEEE/CVF International Con-ference on Computer Vision, ICCV 2023, Paris, France, October 1-6, 2023. pp. 18534–18544 (2023) 31. Liu, S., Zeng, Z., Ren, T., Li, F., Zhang, H., Yang, J., Jiang, Q., Li, C., Yang, J., Su, H., Zhu, J., Zhang, L.: Grounding DINO: marrying DINO with grounded pre-training for open-set object detection. In: Computer Vision - ECCV 2024 - 18th European Conference, Milan, Italy, September 29-October 4, 2024, Proceedings, Part XLVII. vol. 15105, pp. 38–55 (2024) 32. Liu, Y., Yan, J., Jia, F., Li, S., Gao, A., Wang, T., Zhang, X.: Petrv2: A unified framework for 3d perception from multi-camera images. In: IEEE/CVF Interna-tional Conference on Computer Vision, ICCV 2023, Paris, France, October 1-6, 2023. pp. 3239–3249 (2023) 33. Loshchilov, I., Hutter, F.: Decoupled weight decay regularization. In: 7th Inter-national Conference on Learning Representations, ICLR 2019, New Orleans, LA, USA, May 6-9, 2019 (2019) 34. Lu, C., van de Molengraft, M.J.G., Dubbelman, G.: Monocular semantic oc-cupancy grid mapping with convolutional variational encoder-decoder networks. IEEE Robotics Autom. Lett. 4(2), 445–452 (2019) 35. Lu, S., Tsai, Y., Chen, Y.: Toward real-world BEV perception: Depth uncertainty estimation via gaussian splatting. In: IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2025, Nashville, TN, USA, June 11-15, 2025. pp. 17124–17133 (2025) 36. Lu, T., Yu, M., Xu, L., Xiangli, Y., Wang, L., Lin, D., Dai, B.: Scaffold-gs: Struc-tured 3d gaussians for view-adaptive rendering. In: IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2024, Seattle, WA, USA, June 16-22, 2024. IEEE (2024) 37. Lu, Y., Xu, C., Wei, X., Xie, X., Tomizuka, M., Keutzer, K., Zhang, S.: Open-vocabulary 3d detection via image-level class and debiased cross-modal contrastive learning. CoRR abs/2207.01987 (2022) 38. Pan, B., Sun, J., Leung, H.Y.T., Andonian, A., Zhou, B.: Cross-view semantic segmentation for sensing surroundings. IEEE Robotics Autom. Lett. 5(3), 4867– 4873 (2020) 39. Peng, S., Genova, K., Jiang, C.M., Tagliasacchi, A., Pollefeys, M., Funkhouser, T.A.: Openscene: 3d scene understanding with open vocabularies. In: IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2023, Vancouver, BC, Canada, June 17-24, 2023. pp. 815–824 (2023) 40. Philion, J., Fidler, S.: Lift, splat, shoot: Encoding images from arbitrary camera rigs by implicitly unprojecting to 3d. In: Computer Vision - ECCV 2020 - 16th European Conference, Glasgow, UK, August 23-28, 2020, Proceedings, Part XIV. vol. 12359, pp. 194–210 (2020) 41. Qin, M., Li, W., Zhou, J., Wang, H., Pfister, H.: Langsplat: 3d language gaussian splatting. In: IEEE/CVF Conference on Computer Vision and Pattern Recogni-tion, CVPR 2024, Seattle, WA, USA, June 16-22, 2024. pp. 20051–20060 (2024) 18 H. Choi et al. 42. Radford, A., Kim, J.W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., Krueger, G., Sutskever, I.: Learning transferable visual models from natural language supervision. In: Proceedings of the 38th In-ternational Conference on Machine Learning, ICML 2021, 18-24 July 2021, Virtual Event. vol. 139, pp. 8748–8763 (2021) 43. Ren, T., Liu, S., Zeng, A., Lin, J., Li, K., Cao, H., Chen, J., Huang, X., Chen, Y., Yan, F., Zeng, Z., Zhang, H., Li, F., Yang, J., Li, H., Jiang, Q., Zhang, L.: Grounded SAM: assembling open-world models for diverse visual tasks. CoRR 
+
+abs/2401.14159 (2024) 44. Roddick, T., Cipolla, R.: Predicting semantic map representations from images using pyramid occupancy networks. In: 2020 IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2020, Seattle, WA, USA, June 13-19, 2020. pp. 11135–11144 (2020) 45. Tan, K., Shen, Y., Tu, M., Zhu, H., Wang, B., Chen, G., Ye, H., Sun, H.: Ufo: Unify-ing feed-forward and optimization-based methods for large driving scene modeling (2026) 46. Tan, M., Le, Q.V.: Efficientnet: Rethinking model scaling for convolutional neu-ral networks. In: Proceedings of the 36th International Conference on Machine Learning, ICML 2019, 9-15 June 2019, Long Beach, California, USA. vol. 97, pp. 6105–6114 (2019) 47. de Vries Lentsch, T., Caesar, H., Gavrila, D.: UNION: unsupervised 3d object detection using object appearance-based pseudo-classes. In: Advances in Neural Information Processing Systems 38: Annual Conference on Neural Information Processing Systems 2024, NeurIPS 2024, Vancouver, BC, Canada, December 10 - 15, 2024 (2024) 48. Wang, S., Liu, Y., Wang, T., Li, Y., Zhang, X.: Exploring object-centric temporal modeling for efficient multi-view 3d object detection. In: IEEE/CVF International Conference on Computer Vision, ICCV 2023, Paris, France, October 1-6, 2023. pp. 3598–3608 (2023) 49. Wu, G., Yi, T., Fang, J., Xie, L., Zhang, X., Wei, W., Liu, W., Tian, Q., Wang, X.: 4d gaussian splatting for real-time dynamic scene rendering. In: IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2024, Seattle, WA, USA, June 16-22, 2024. pp. 20310–20320 (2024) 50. Wu, J., Li, X., Xu, S., Yuan, H., Ding, H., Yang, Y., Li, X., Zhang, J., Tong, Y., Jiang, X., Ghanem, B., Tao, D.: Towards open vocabulary learning: A survey. IEEE Trans. Pattern Anal. Mach. Intell. 46 (7), 5092–5113 (2024) 51. Wu, J., Li, X., Xu, S., Yuan, H., Ding, H., Yang, Y., Li, X., Zhang, J., Tong, Y., Jiang, X., Ghanem, B., Tao, D.: Towards open vocabulary learning: A survey. IEEE Trans. Pattern Anal. Mach. Intell. 46 , 5092–5113 (2024) 52. Wu, Y., Meng, J., Li, H., Wu, C., Shi, Y., Cheng, X., Zhao, C., Feng, H., Ding, E., Wang, J., Zhang, J.: Opengaussian: Towards point-level 3d gaussian-based open vocabulary understanding. In: Advances in Neural Information Processing Systems 38: Annual Conference on Neural Information Processing Systems 2024, NeurIPS 2024, Vancouver, BC, Canada, December 10 - 15, 2024 (2024) 53. Xie, E., Yu, Z., Zhou, D., Philion, J., Anandkumar, A., Fidler, S., Luo, P., Álvarez, J.M.: M 2bev: Multi-camera joint 3d detection and segmentation with unified birds-eye view representation. CoRR abs/2204.05088 (2022) 54. Xu, H., Peng, S., Wang, F., Blum, H., Barath, D., Geiger, A., Pollefeys, M.: Depth-splat: Connecting gaussian splatting and depth. In: IEEE/CVF Conference on OVBEVSeg 19 Computer Vision and Pattern Recognition, CVPR 2025, Nashville, TN, USA, June 11-15, 2025. pp. 16453–16463 (2025) 55. Yang, L., Qi, L., Feng, L., Zhang, W., Shi, Y.: Revisiting weak-to-strong consistency in semi-supervised semantic segmentation. In: CVPR (2023) 56. Yu, F., Chen, H., Wang, X., Xian, W., Chen, Y., Liu, F., Madhavan, V., Darrell, T.: BDD100K: A diverse driving dataset for heterogeneous multitask learning. In: 2020 IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2020, Seattle, WA, USA, June 13-19, 2020. pp. 2633–2642 (2020) 57. Zareian, A., Rosa, K.D., Hu, D.H., Chang, S.: Open-vocabulary object detection using captions. In: IEEE Conference on Computer Vision and Pattern Recognition, CVPR 2021, virtual, June 19-25, 2021. pp. 14393–14402 (2021) 58. Zeng, Z., Boehm, J.: Exploration of an open vocabulary model on semantic seg-mentation for street scene imagery. ISPRS Int. J. Geo Inf. 13 (5), 153 (2024) 59. Zhao, S., Zhang, Z., Schulter, S., Zhao, L., Kumar, B.G.V., Stathopoulos, A., Chan-draker, M., Metaxas, D.N.: Exploiting unlabeled data with vision and language models for object detection. In: Computer Vision - ECCV 2022 - 17th European Conference, Tel Aviv, Israel, October 23-27, 2022, Proceedings, Part IX. vol. 13669, pp. 159–175 (2022) 60. Zhao, T., Chen, Y., Wu, Y., Liu, T., Du, B., Xiao, P., Qiu, S., Yang, H., Li, G., Yang, Y., Lin, Y.: Improving bird’s eye view semantic segmentation by task decom-position. In: IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2024, Seattle, WA, USA, June 16-22, 2024. pp. 15512–15521 (2024) 61. Zhou, B., Krähenbühl, P.: Cross-view transformers for real-time map-view semantic segmentation. In: IEEE/CVF Conference on Computer Vision and Pattern Recog-nition, CVPR 2022, New Orleans, LA, USA, June 18-24, 2022. pp. 13750–13759 (2022) 62. Zhou, H., Shao, J., Xu, L., Bai, D., Qiu, W., Liu, B., Wang, Y., Geiger, A., Liao, Y.: HUGS: holistic urban 3d scene understanding via gaussian splatting. In: IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2024, Seattle, WA, USA, June 16-22, 2024. pp. 21336–21345 (2024) 63. Zhou, X., Lin, Z., Shan, X., Wang, Y., Sun, D., Yang, M.: Drivinggaussian: Com-posite gaussian splatting for surrounding dynamic autonomous driving scenes. In: IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2024, Seattle, WA, USA, June 16-22, 2024. pp. 21634–21643 (2024) 64. Zhu, J., Liu, L., Tang, Y., Wen, F., Li, W., Liu, Y.: Semi-supervised learning for visual bird’s eye view semantic segmentation (2024) 65. Zou, J., Tian, K., Zhu, Z., Ye, Y., Wang, X.: Diffbev: Conditional diffusion model for bird’s eye view perception. In: Thirty-Eighth AAAI Conference on Artificial Intelligence, AAAI 2024, Thirty-Sixth Conference on Innovative Applications of Artificial Intelligence, IAAI 2024, Fourteenth Symposium on Educational Advances in Artificial Intelligence, EAAI 2014, February 20-27, 2024, Vancouver, Canada. pp. 7846–7854 (2024) Open-Vocabulary BEV Segmentation with 3D-Aware Geometric Constraints (Supplementary Material) 
+
+Hojun Choi 1∗ , Seulbin Hwang 2 , Dae Jung Kim 2 , Kisung Kim 2 ,Hyunjung Shim 1† , and Jinhan Lee 2†  
+
+> 1KAIST AI, South Korea
+> {hchoi256,kateshim}@kaist.ac.kr
+> 2NAVER LABS, South Korea
+> {h.sb,daejung.kim,ks.kim,jinhan.lee}@naverlabs.com
+
+## Contents 
+
+A. Device Information . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 20 B. Limitations & Future Work . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21 C. Implementation Details . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 22 D. Additional Ablation Study . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 23 D.1 PBL: Pseudo-Label Statistics . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 23 D.2 BAGS: Comparative Analysis of Loss Formulations . . . . . . . . . . . . . . . . . . 24 D.3 Lang–BAGS: Disentanglement Analysis . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 26 D.4 BAGD: Extension to Top-K Gaussian Gating Mechanism . . . . . . . . . . . . 26 D.5 Open-Vocabulary 3D Object Detection . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 27 E. Additional Qualitative Results . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 28 F. Specifications of Baseline Models . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 30 G. Specifications of View Transformation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 32 G.1 3D Camera Projection . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 32 G.2 BEV Splatting: BEV Features via Gaussian Splatting . . . . . . . . . . . . . . . 32 
+
+## A Device Information 
+
+All experiments were implemented in PyTorch 2.1.0 and conducted on a worksta-tion equipped with eight NVIDIA A100-SXM4-80GB GPUs. The online training phase was completed in approximately 6 hours on two GPUs, with a peak VRAM utilization of 21 GB per device. To ensure reproducibility and a fair comparison, we aligned our experimental configuration with the baseline [35] by fixing the random seed to 2025 for all trials. Moreover, the offline stage—leveraging our efficient asynchronous design across the entire nuScenes benchmark—required approximately four days to complete using a distributed configuration of eight GPUs. This offline execution utilized the full GPU memory capacity via multi-threaded processing across all 8 GPUs. OVBEVSeg 21 
+
+## B Limitations & Future Work 
+
+In this section, we provide a critical analysis of the current constraints of our proposed framework, OVBEVSeg. While effective, the system encounters three primary challenges: (L1) the inherent computational overhead of expensive per-scene optimization (Sec. B.1) and (L2) the absence of spatiotemporal (4D) consistency across sequential frames (Sec. B.2). Addressing these bottlenecks remains a high-priority objective for the community. 
+
+B.1 Tedious Per-Scene Optimization 
+
+Our methodology utilizes a Gaussian splatting (GS)-based unprojection frame-work for BEV perception, seamlessly integrated with an online feed-forward 3DGS module [24, 35] to ensure high-performance, real-time inference through-put. While 3D geometric representations are subsequently enhanced through of-fline per-scene optimization, this hybrid 3DGS-based architectural choice retains the necessity for dense 3D geometric supervision. Specifically, achieving peak per-formance requires intensive optimization on a subset of frames ( e.g ., 10% per scene) to ensure high-fidelity reconstruction in visually discriminative environ-ments. While the per-sample optimization latency remains constant across both vanilla 3DGS and BAGS, the latter achieves superior computational efficiency by significantly reducing the training set cardinality required for high-fidelity reconstruction, as established in Tabs. 5 and 7. Nonetheless, the heavy optimization requirements pose a bottleneck for zero-shot generalization to large-scale environments, a common hurdle in the 3DGS paradigm. We envision that integrating efficiency—focused primitives—as seen in RaSGS [13], Scaffold-GS [36], and Mini-GS [14]—will drastically improve the practical deployment of BAGS. As our framework is architecture-agnostic, it can be readily adapted to these emerging 3DGS variants to achieve superior scalability without compromising reconstruction fidelity. 
+
+B.2 Extension to 4D Temporal Dynamics 
+
+Despite its robust spatial reasoning capabilities, the current architectural de-sign of OVBEVSeg does not yet support temporal consistency or 4D scene re-construction across sequential frames. Dynamic scene understanding and multi-frame consistency are critical for safety-critical autonomous driving (AD) ap-plications [62, 63]. Drawing inspiration from recent advancements in 4DGS [49], future work will prioritize the integration of our framework with temporal mod-eling architectures—a natural extension of 3DGS. This synergy will enable the model to leverage our high-fidelity spatial refinements to effectively address dy-namic agents and maintain spatiotemporal consistency across long-range tempo-ral dependencies. Such an integration would enable high-fidelity 3D scene recon-struction from sparse viewpoints across both spatial and temporal dimensions, significantly broadening its utility for AD simulation and closed-loop testing. 22 H. Choi et al. 
+
+## C Implementation Details 
+
+In this section, we delineate the comprehensive implementation details of our proposed framework ( e.g ., the specific model configurations). 
+
+Online framework. Our online architecture is built upon GaussianLSS [35], which leverages feed-forward 3DGS to treat BEV feature prediction as a differen-tiable, GPU-accelerated rasterization process. This design significantly enhances inference throughput (FPS) while minimizing memory overhead—a cornerstone of efficient AD. The optimization objective is formulated as a weighted multi-task loss, comprising a segmentation objective applied to cosine-similarity logits [42] and a KL divergence distillation loss [29]. We set the respective loss weights to 
+
+λovseg = 1 .0 and λBAGD = 0 .01 , ensuring a stable balance between categori-cal discriminability and geometric alignment. The optimization is conducted for 180,000 iterations ( ≈ 50 epochs) using the AdamW optimizer [33] with an ini-tial learning rate of 3 × 10 −4, weight decay of 1 × 10 −7, a cosine learning rate scheduler, and a batch size of 8. Model checkpoints are evaluated every 500 iter-ations, with the final selection based on peak validation performance. Notably, we omit data augmentation to maintain the structural integrity of the spatial distributions, thereby ensuring the consistency of BAGD. Notably, our camera-only online training eliminates the dependency on LiDAR-derived priors; while such data can be optionally incorporated during the offline phase. This distin-guishes our framework from existing multi-sensor BEV approaches that rely on sparse LiDAR supervision to achieve marginally higher performance, offering a more flexible and scalable solution for deployment. Following the standard open-vocabulary (OV) evaluation protocol [50], GT annotations for the unseen semantic categories ( i.e ., “truck,” “bus,” and “mo-torcycle”) are strictly excluded during the training phase. To enable OV capa-bilities, we substitute the standard closed-set segmentation head with an OV head. In this configuration, logits are computed as the cosine similarity between the predicted BEV embeddings and text embeddings derived from a pre-trained vision-language model (VLM) [42]. Accordingly, we project the BEV feature di-mensionality from 128 to 512 to align with the CLIP embedding space. We utilize dataset-specific class names refined with hand-crafted prompts from ViLD [16] to ensure robust semantic grounding. During the training phase, the VLM back-bone remains frozen, while the BEV encoder and the OV head are optimized. 
+
+Offline Framework Our offline framework comprises two primary components: PBL and BAGS. Utilizing parallelized multi-threaded processing across eight GPUs, the aggregate offline time cost of the entire training set—encompassing 700 scenes equivalent to approximately 30,000 temporal samples (roughly equiv-alent to 180,000 images)—is approximately 4 days, as detailed in Tab. 5. 
+
+PBL. PBL integrates three foundational models: Grounding-DINO [31] (base variant) and SAM [25] with a ViT-base backbone for open-world object localiza-tion, CLIP-ViT-B/16 for semantic feature alignment, and an unsupervised 3D OVBEVSeg 23                     
+
+> Table A1: Pseudo-label statistics on the nuScenes train split. Comparative results between our pseudo-labels and ground-truth annotations are provided for the three novel classes. All values correspond to total instance counts across the dataset.
+> Metric Pseudo GT Ratio (%) # Sample Scenes 24,900 28,130 88.5
+> Novel classes
+> truck 23,456 72,815 32.2 bus 10,205 13,163 77.5 motorcycle 4,169 10,109 41.2
+> Total 37,830 96,087 39.4
+
+detector [47]. To maximize throughput, we implement an asynchronous producer-consumer architecture on a single GPU, where SAM serves as the producer for object proposals and CLIP functions as the consumer for feature extraction. This cost-effective design allows for the efficient processing of batched object instances (batch size of 256), fully saturating the available GPU VRAM and significantly reducing offline pseudo-labeling latency. 
+
+BAGS. BAGS is developed upon the 3DGS codebase with integrated depth regularization [10, 24, 41]. In Eq. (6), the loss hyperparameters are empirically set to λcolor = 1 .0, λD-SSIM = 1 .0, λdepth = 1 .0, and λocc = 1 .0. We have engi-neered a customized CUDA-based rasterization pipeline to incorporate learnable occupancy maps, facilitating the joint optimization of all Gaussian parameters. 
+
+## D Additional Ablation Study 
+
+In this section, we provide comprehensive ablation studies to further validate the efficacy of each component in our proposed framework. 
+
+D.1 PBL: Pseudo-Label Statistics and Categorical Fidelity 
+
+Pseudo-label statistics. Table A1 provides a comparative analysis between the BEV pseudo-labels generated by our proposed PBL pipeline and the correspond-ing GT annotations. Our method successfully generates pseudo-labels for 88.5% of the GT scenes, achieving an overall semantic coverage of 39.4% relative to the GT annotations. These statistics indicate that the PBL pipeline consistently assigns a substantial volume of high-quality pseudo-labels for novel classes across a wide range of diverse driving environments. 
+
+Per-category fidelity analysis. At the category level, PBL maintains a high anno-tation density, generating at least 30% as many pseudo-labels as GT instances for every novel class. Notably, the “bus” class achieves a density of 77.5%, directly correlating with the significant performance gains observed for this category in Tab. 1. Specifically, Table A2 further details the overall pseudo-label fidelity. 24 H. Choi et al.                
+
+> Table A2: Novel-class pseudo-label quality of our method on the nuScenes [2] training set. †: visibility filtering.
+> Method Novel (IoU) ↑Mean
+> truck bus motorcycle IoU ↑
+> Ours 15.8 17.98 5.34 13.0 Ours †17.1 18.35 5.09 13.5
+
+Pseudo-label quality. Table A2 evaluates the quality of our BEV pseudo-labels on the nuScenes training set, achieving 13.5 and 13.0 mIoU on novel classes with and without visibility filtering, respectively. This underscores the efficacy of PBL as a robust source for OVBS, even in the absence of novel-class ground truth. 
+
+D.2 BAGS: Comparative Analysis of Loss Formulations 
+
+We study how loss formulations affect joint BAGS optimization across image and BEV domains. The results show that the loss choice is crucial for balancing image reconstruction quality with accurate BEV spatial grounding. 
+
+L1 loss. Fig. A1-a shows that a standard L1 loss produces fragmented and discontinuous BEV reconstructions, failing to form a cohesive structure even af-ter 30K optimization iterations. Compared to LBCE , L1 exhibits slower and less stable convergence, as its element-wise regression objective provides limited guid-ance for enforcing global occupancy consistency. As a result, the optimized 3D Gaussians struggle to maintain coherent density in 3D space, leading to spatial gaps, smearing artifacts, and incomplete object interiors in BEV space. These results indicate that simply increasing the iteration count cannot compensate for the limited cross-modal geometric consistency of the L1 objective. 
+
+Binary cross entropy (BCE). In Fig. A1-b, LBCE tends to favor the rela-tively simple BEV-space binary supervision over the more complex image-space reconstruction. Since the BEV target provides direct occupancy signals, the op-timization can quickly reduce the loss by prioritizing coarse BEV structural con-sistency while under-utilizing image-view cues. Consequently, the 3D Gaussians preserve plausible BEV geometry but fail to reconstruct photometric informa-tion in the image domain. This premature convergence shows that LBCE alone is insufficient for balancing robust BEV grounding with image-space alignment. 
+
+Smooth L1 loss. In Fig. A1-c, smooth L1 loss provides a balanced objective for joint image and BEV reconstruction. By treating 3D density as continuous regression rather than binary classification, it provides stable gradients while remaining robust to outliers. This better aligns continuous image-space features with discrete BEV occupancy supervision, allowing the optimized 3D Gaussians to preserve cohesive BEV structures and high-fidelity image-view reconstruction. OVBEVSeg 25 (b) BCE Loss 
+
+(a) L1 Loss 
+
+1 Iteration 
+
+5,000 Iterations 30,000 Iterations 
+
+Ground-Truth (GT) 
+
+(c) Smooth L1 Loss 
+
+5,000 Iterations 30,000 Iterations 5,000 Iterations 30,000 Iterations 
+
+# Scene 0062 
+
+Fig. A1: Qualitative validation of 2D–BEV consistency under various losses via BAGS. 26 H. Choi et al.      
+
+> Table A3: Quantitative analysis of our disentanglement strategy. Hit Rate represents instances where teacher and student embeddings share identical class labels.
+> Method Hit Rate (%) LangSplat [41] 43.7 Lang–BAGS (Ours) 99.4
+
+D.3 Lang–BAGS: Disentanglement Analysis 
+
+This section provides a quantitative validation of the disentanglement strategy of our Lang–BAGS, as established in Sec. 3.2. To evaluate the representational fidelity of our framework, we conduct a comparative analysis between the original CLIP feature embeddings ( teacher ) and the reconstructed embeddings ( student )for each instance mask extracted via our correspondence set across the entire training corpus. The alignment is measured by mapping both embedding sets to the predefined CLIP textual embeddings of the target category set. We quantify the class-wise agreement by identifying “hits” where both the teacher and student embeddings yield the identical semantic label. Conversely, a “miss” is recorded if the decoded student embedding deviates from the teacher’s classification. As summarized in Tab. A3, the baseline [41] is frequently susceptible to semantic entanglement, particularly among vehicular subcategories, resulting in lower alignment scores. In particular, the decoded student embeddings frequently exhibit semantic collapse, gravitating toward the “car” category—the most per-vasive vehicular representative. This phenomenon is a direct consequence of rep-resentational degradation, where the distinct features of minority subclasses, such as “bus” or “truck,” are subsumed by the dominant class distribution dur-ing the feature distillation process. In contrast, our method effectively resolves these ambiguities, achieving a near-perfect hit rate of approximately 100%. These results empirically demonstrate the efficacy of our disentanglement strategy in preserving high-fidelity semantic information within the geometric primitives. 
+
+D.4 BAGD: Extension to Top-K Gaussian Gating Mechanism 
+
+We extend the gating strategy introduced in Sec. 3.3 to a generalized top-K for-mulation, specifically investigating the empirical trends as K increases. As shown in Fig. A2, increasing K toward the dense limit of teacher primitives facilitates a more precise geometric alignment by integrating a broader set of spatial priors. In the visualization, the white dots denote the projected centers of the splatted 3D Gaussians, illustrating the increased structural density as K scales. How-ever, this gain in precision is accompanied by a linear increase in the number of 3D Gaussians and a consequent rise in computational demands, escalating the model’s training overhead and memory footprint during the distillation phase. Our empirical findings demonstrate that, despite the increased precision at higher K values, the top-1 configuration provides a sufficient foundation for ro-bust 3D grounding. As observed in the top-1 visualizations, the Gaussian with OVBEVSeg 27 Top-Max Top-1 
+
+> Scene  0062
+> Ground-Truth
+> Scene  0027
+> Slightly Better Geometry
+> Heavy Computaion Cost!
+> Top-K Gaussian Gating Mechanism
+
+Fig. A2: Qualitative assessment of top-K Gaussian gating in image and BEV. 
+
+Table A4: 3D detection results on the nuScenes benchmark. The evaluation follows a rigorous OV protocol where all supervision for novel classes is removed.         
+
+> Method NDS mAP
+> BEVDet [22] 27.1 21.9 BEVFormer [28] 27.5 19.5 GaussianLSS [35] 26.4 20.6
+> OVBEVSeg (Ours) 30.8 24.1
+
+the maximal contribution weight already encapsulates the fundamental geomet-ric and semantic essence of the target scene. Since the primary primitive dom-inates the unprojection signal, the incremental structural gains observed when 
+
+K approaches its maximum follow a trend of diminishing returns. Consequently, we justify K = 1 as the optimal default design; it strikes an ideal balance by cap-turing the core 3D geometry through a clear one-to-one correspondence, thereby avoiding the redundant and high-cost overhead of multi-Gaussian aggregation. 
+
+D.5 Open-Vocabulary 3D Object Detection 
+
+To evaluate the broader zero-shot generalization capabilities of OVBEVSeg, we extend our evaluation beyond instance-level BEV segmentation to OV 3D ob-ject detection. Following standard OV protocols [50,51], we establish a stringent unseen scenario by excluding all GT annotations for the three novel classes ( i.e ., “truck,” “bus,” and “motorcycle”). We integrate a detection head directly onto the learned BEV features, following the architecture of BEVFormer [28]. Perfor-mance is quantified using the mean average precision (mAP) and the nuScenes detection score (NDS). As demonstrated in Tab. A4, our framework not only ex-cels in open-vocabulary BEV segmentation but also demonstrates robust cross-task extensibility, effectively handling complex 3D detection in the absence of direct supervision for novel categories. 28 H. Choi et al. GT Ours    
+
+> Scene 0675
+> Web-viewer-induced artifacts
+> 3D Web-based visualization
+> 2D Image Web-based 3D Scene Visualization 2D BEV
+> Fig. A3: Qualitative results of cross-modal consistency in 2D–BEV–3D re-construction via BAGS. The 3D renderings were captured using a web-based visu-alization tool, which may introduce viewer-induced ghosting or smearing artifacts.
+
+## E Additional Qualitative Results 
+
+In this section, we provide comprehensive visual evidence to demonstrate the efficacy of our offline framework. Through a series of top-down and perspective visualizations, we illustrate how our method achieves superior spatial consistency and high-fidelity 3D scene reconstruction. 
+
+E.1 3D Scene Reconstruction and Geometric Fidelity 3D scene visualization. Figs. A3 and A4 present qualitative joint 2D–3D– BEV reconstructions via the BAGS framework; 3D renderings are shown in an approximately orthographic projection. These 3D novel views were captured by exporting the optimized 3D Gaussians into a third-party web-based visual-ization tool. We observe that the resulting 3D renderings may exhibit minor viewer-induced 3D ghosting artifacts, as highlighted in Fig. A3; however, these are purely visualization-side artifacts and are unrelated to our proposed contri-butions. In practice, direct inspection of the optimized primitives confirms that no 3D Gaussians reside within the proximity of these artifacted regions in the source data. These visualizations are provided for reference to facilitate a more intuitive understanding of the overall 3D scene reconstruction. In short, these qualitative results demonstrate that our approach maintains high-fidelity image reconstruction quality—ensuring multi-view consistency— while effectively resolving the inherent spatial ambiguities in the BEV plane of-ten overlooked by existing methods. For instance, in “Scene-0522,” the top-down perspective clearly preserves fine-grained object-level geometry. This structural integrity facilitates the generation of more precise object-centric BEV represen-tations when projecting the 3D Gaussian primitives onto the BEV grid. Collec-tively, our method is the first to establish that BEV-level supervision signals can serve as a potent geometric prior, enabling the optimization of 3D Gaussians with superior spatial accuracy and yielding more faithful 3D scene representations. OVBEVSeg 29 Scene -0519 Scene -0522  Scene -0519 Scene -0519 
+
+Fig. A4: Qualitative assessment of 3D scene reconstruction via BAGS. These novel views were captured using an external web-based visualization tool, which may introduce minor viewer-induced ghosting or smearing artifacts. 30 H. Choi et al. 
+
+2D–depth–BEV visualization. Figure A5 illustrates that our approach yields high-fidelity image and depth reconstructions while effectively mitigating the spatial ambiguities within the BEV plane that typically remain unaddressed by vanilla 3DGS [24]. Concretely, plain 3DGS exhibits significant structural col-lapse in the BEV domain, losing the necessary spatial consistency for reliable scene reconstruction. In stark contrast, our top-down perspective faithfully pre-serves fine-grained object-level geometry, with the corresponding depth maps accurately recovering the underlying spatial layout. This structural integrity facilitates the generation of more precise object-centric BEV representations when projecting the 3D Gaussian primitives onto the BEV grid. Collectively, our method is the first to establish that BEV-level supervision signals can serve as a potent geometric prior, especially under sparse on-vehicle viewpoints. 
+
+## F Baseline Models 
+
+This section details the foundational architectures integrated into our framework, which provide the basis for both OV perception and geometric distillation. 
+
+GaussianLSS. GaussianLSS [35] is an uncertainty-aware BEV perception frame-work that reformulates the Lift-Splat-Shoot paradigm [40]. It estimates per-pixel depth distributions and lifts them into a collection of 3D Gaussian primitives, which are subsequently rasterized into BEV features via differentiable Gaussian splatting. This approach achieves a superior balance between accuracy and infer-ence throughput among unprojection-based methods. In our framework, Gaus-sianLSS serves as the feed-forward 3DGS backbone, upon which we integrate our OV segmentation head and apply our proposed PBL and BAGD strategies. 
+
+Per-scene optimization ( i.e ., offline 3DGS). Per-scene optimization facilitates high-fidelity scene reconstruction by representing complex environments through anisotropic 3D Gaussian primitives. Each primitive is characterized by its spatial extent and appearance, which are iteratively refined to ensure multi-view consis-tency. The parameters of these primitives—including position, covariance, opac-ity, and color—are optimized from multi-view imagery. By utilizing a visibility-aware tiled rasterizer, 3DGS enables the rendering of high-quality radiance fields at real-time frame rates. Building upon this, we develop BAGS to serve as a high-fidelity geometric teacher. BAGS provides the dense supervision signal required to guide the student BEV network during the distillation phase of BAGD. 
+
+UNION. UNION [47] is a state-of-the-art unsupervised 3D object detection framework. it generates static and dynamic object proposals from LiDAR point clouds using spatial clustering and self-supervised scene flow estimation. These proposals are grouped into pseudo-classes to train 3D detectors without requir-ing manual annotations. In our pipeline, we utilize UNION’s class-agnostic 3D bounding boxes as candidate object proposals. These proposals are instrumental in establishing 2D–BEV spatial correspondences, allowing us to generate high-quality BEV pseudo-labels for both base and novel semantic categories. OVBEVSeg 31 GT Ours 
+
+Scene 0448 
+
+Scene 0792  
+
+> GT Ours
+> Rendered Image Rendered Depth Map Rendered BEV
+
+Scene 0525 
+
+> GT Ours
+
+Fig. A5: Qualitative validation of 2D–depth–BEV scene reconstruction via BAGS. 32 H. Choi et al. 
+
+## G View Transformations 
+
+In this section, we describe the geometric transformations into both the 2D perspective image plane (Sec. G.1) and the BEV space (Sec. G.2). 
+
+G.1 3D Camera Projection 
+
+To establish the geometric relationship between the 3D world and the 2D image plane, we adopt the standard pinhole camera model. A 3D point in the world coordinate system, Pw = [ xw, y w, z w]⊤, is first transformed into the camera coordinate system Pc = [ xc, y c, z c]⊤ using the camera extrinsic parameters: 
+
+Pc = RPw + t,  (A1) where R ∈ R3×3 is the rotation matrix and t ∈ R3 is the translation vector. The camera-space point Pc is then projected onto the 2D image plane to obtain the pixel coordinates p = [ u, v ]⊤. This process is governed by the camera intrinsic matrix K:
+
+zc
+
+u v 1 = KPc =
+
+fx 0 cx
+
+0 fy cy
+
+0 0 1
+
+ xc yc zc
+
+ , (A2) where fx, f y represent the focal lengths and cx, c y denote the principal point (optical center). After performing perspective division by the depth zc, the final image coordinates are derived as: 
+
+u = fx
+
+xc
+
+zc
+
++ cx, v = fy
+
+yc
+
+zc
+
++ cy . (A3) This projection framework provides the fundamental mapping required to align 3D spatial features with their corresponding 2D image-plane observations. 
+
+G.2 BEV Splatting: BEV Features via Gaussian Splatting 
+
+Following the 3DGS framework [24], we represent the 3D scene using a collec-tion of Gaussian primitives, each defined as gi = ( μi, Σ i, F i, α i). Here, μi ∈ R3
+
+denotes the mean position, Σi ∈ R3×3 is the covariance matrix representing the spatial extent, Fi is the high-dimensional feature vector, and αi represents the opacity. These primitives are initialized from per-pixel depth distributions esti-mated by the image encoder and subsequently projected onto the BEV plane to construct the foundational BEV feature map. Consistent with GaussianLSS [35], we project these 3D Gaussians by marginal-izing the vertical ( z) axis. A fixed 2D transformation matrix, SBEV , is applied to swap the x–y axes and map metric coordinates to the discrete BEV grid: 
+
+SBEV =
+
+ 0 scale x
+
+scale y 0
+
+
+
+. (A4) OVBEVSeg 33 
+
+Let Σi,xy be the 2 × 2 submatrix of Σi corresponding to the horizontal coordi-nates: 
+
+Σi,xy =
+
+Σ11 Σ12 
+
+Σ21 Σ22 
+
+
+
+. (A5) The covariance of the projected 2D Gaussian in the BEV space is derived as: 
+
+ΣBEV  
+
+> i
+
+= SBEV Σi,xy S⊤ 
+
+> BEV
+
+:= 
+
+ Σ22 scale 2 
+
+> x
+
+Σ21 scale xscale y
+
+Σ12 scale xscale y Σ11 scale 2
+
+> y
+
+
+
+. (A6) The mean vector μi is transformed analogously to obtain the grid-aligned mean 
+
+μBEV  
+
+> i
+
+. Finally, the cumulative BEV features for each grid cell are synthesized by splatting these 2D Gaussians onto the grid, where feature vectors Fi are aggregated via density- and opacity-weighted summation.

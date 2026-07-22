@@ -1,0 +1,620 @@
+Title: Task-Instructed Causal Routing of Vision Foundation Models for Multi-Task Learning
+
+URL Source: https://arxiv.org/pdf/2606.15765v1
+
+Published Time: Tue, 16 Jun 2026 01:56:13 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# Task-Instructed Causal Routing of Vision Foundation Models for Multi-Task Learning 
+
+Donghyun Han 1 , Yuseok Bae 1 , Jung Uk Kim 2⋆ , and Hyung-Il Kim 3⋆ 
+
+> 1
+
+Electronics and Telecommunications Research Institute (ETRI), Korea  
+
+> 2
+
+Kyung Hee University, Korea  
+
+> 3
+
+Chonnam National University, Korea 
+
+{mpolio2,baeys}@etri.re.kr, ju.kim@khu.ac.kr, hyungil.kim@jnu.ac.kr 
+
+Abstract. Vision foundation models (VFMs) have demonstrated strong robustness and transferability across a wide range of visual tasks. How-ever, each model typically encodes strong inductive biases shaped by its pre-training objective and data domain, resulting in fragmented yet com-plementary visual knowledge. As a result, a single model often struggles to capture the diverse visual representations required across multiple dense prediction tasks. To address this limitation, we propose TIGER (Task-Instruction-Guided Expert Routing), a framework that coordi-nates multiple heterogeneous VFMs for multi-task dense prediction. In-stead of naively aggregating expert features, TIGER leverages natural-language task instructions to guide a routing network that assigns token-level expert weights conditioned on task semantics, enabling adaptive in-tegration of complementary expert features. TIGER further introduces a counterfactual loss that aligns routing decisions with each expert’s causal contribution by measuring prediction changes when experts are excluded, encouraging more reliable and interpretable routing. We eval-uate TIGER on two multi-task dense prediction benchmarks, NYUD-v2 and Pascal Context, where it consistently outperforms recent multi-task learning baselines while keeping all VFMs frozen. These results demon-strate that combining instruction-guided expert routing with counter-factual causal alignment enables effective coordination of heterogeneous vision foundation models. 
+
+Keywords: Task-adaptive learning · Multi-task learning · Mixture-of-experts · Vision-language models 
+
+1 Introduction 
+
+Vision foundation models (VFMs) such as CLIP [21], DINOv2 [20], SAM [11], and OWLv2 [18] have become a key foundation for visual understanding. Pre-trained at scale with diverse objectives—such as vision-language alignment, self-supervised learning, promptable segmentation, and open-vocabulary detec-tion—these models provide transferable features that generalize broadly across  
+
+> ⋆
+
+Corrsponding authors 
+
+> arXiv:2606.15765v1 [cs.CV] 14 Jun 2026
+
+2 D. Han et al. Semseg    
+
+> (mIoU )
+> Parsing
+> (mIoU )
+> Saliency
+> (MaxF )
+> Normal
+> (mErr )
+> Boundary
+> (odsF )
+> Semseg
+> (mIoU )
+> Depth
+> (RMSE ) Normal
+> (mErr )
+> Boundary
+> (odsF )
+> 84.58
+> 77.56
+> 83.8
+> 12.46
+> 84.05
+> 63.55
+> 0.4115
+> 16.8
+> 80.31
+> 81.04
+> 73.72
+> 76.63
+> 17.57
+> 78.83
+> 58.44
+> 0.5387
+> 19.23
+> 75.94
+> 54.88
+> 60.87
+> 79.85
+> 14.03
+> 80.59
+> 32.22
+> 0.7854
+> 23.59 75.92
+> 77.75
+> 66.42
+> 77.17
+> 19.23
+> 71.07
+> 47.43
+> 0.669
+> 26.51
+> 68.85
+> 73.22
+> 65.47
+> 79.27
+> 16.48
+> 79.07
+> 41.31
+> 0.7582
+> 25.2 73.45
+> TIGER
+> DINOv2
+> SAM
+> CLIP
+> Owlv2
+> Pascal-Context
+> NYUD-V2
+
+(a) Uneven strengths of indi-vidual VFMs Frozen Expert orchestra0on 
+
+> CLIP
+> DINOv2
+> SAM
+> OWLv2
+> Task -guided Router
+> Saliency
+> Task instruction
+> Saliency Predic-on
+
+1. Baseline Forward 
+
+> Routing Weight
+
+2. Counterfactual Forward    
+
+> Case #1 SAM is removed
+> ⋯
+> Case # 𝒌 Expert 𝒌 is removed
+> ⋯
+
+⋯  
+
+> Δ"!"# Δ"$
+> Loss gap between
+> w/ & w/o Expert
+> Saliency Prediction
+> (w/o SAM)
+> Saliency Prediction
+> (w/o Expert 𝑘 )
+
+⋯    
+
+> SoftMax (Δ+)
+> High Causal importance Low Causal importance
+> Counterfactual Weight
+> Our approach: Larger performance drop implies higher causal importance .
+> Causal Importance
+
+(b) Causal expert coordination 
+
+Fig. 1: (a) Individual vision foundation experts exhibit strong but uneven strengths across tasks, while TIGER yields balanced improvements on multi-task benchmarks by coordinating complementary priors. (b) TIGER aligns expert routing with counterfac-tual evidence: experts are emphasized when their removal would most harm predictions, improving both effectiveness and interpretability of fusion. 
+
+tasks. Yet this diversity also exposes a fundamental gap: no single VFM spans the full spectrum of semantic, geometric, and boundary-level understanding re-quired for dense prediction. As shown in Fig. 1(a), each expert exhibits uneven strengths. For example, SAM leads in boundary detection yet underperforms in semantics, while DINOv2 provides strong geometric priors but lacks saliency precision. This raises a natural question: can heterogeneous VFMs be coordinated into a more holistic multi-task learner? 
+
+The answer lies beyond naïve aggregation. VFMs trained under different objectives generate representations with incompatible latent distributions and embedding dimensions, making naïve fusion prone to interference and feature dominance. More importantly, dense multi-task learning requires different in-ductive biases across tasks—depth estimation benefits from global geometric structure, whereas boundary detection relies on local edge sensitivity. Although recent works have explored integrating multiple VFMs, they offer only partial remedies: distillation-based methods [17, 22] merge experts into a shared repre-sentation at the cost of their complementary biases, while routing-based meth-ods [42] preserve individual experts but require costly fine-tuning. Accordingly, a principled framework is needed to preserve the pretrained in-ductive biases of each expert while adaptively orchestrating their contributions to meet task-specific demands. To this end, we propose TIGER (Task-Instruction-
+
+Guided Expert Routing) for multi-task dense prediction. TIGER is built on two core design considerations: ( i) task-aware and ( ii ) causally grounded. First, expert coordination should be task-aware . A task embodies semantic intent be-yond its loss function, and this intent should determine how expert cues are combined. In TIGER, this is realized through natural-language task instruc-tions: each VFM is treated as a frozen expert, and lightweight modules guide Task-Instructed Causal Routing of Vision Foundation Models 3
+
+token-wise expert coordination conditioned on task intent. This enables scalable, architecture-agnostic expert adaptation while capturing task relationships (e.g., depth and normals share geometric meaning). Second, fusion should be causally grounded . Routing weights alone can re-flect feature dominance rather than true causal contribution, and attention scores do not guarantee that emphasized experts are causally responsible for improved predictions. To address this, TIGER aligns routing decisions with counterfactual evidence of expert influence: if removing an expert significantly degrades predic-tion quality, its contribution is reinforced. This grounding encourages meaningful cross-expert collaboration without expert fine-tuning. As a result, TIGER leads to consistent improvements across diverse dense prediction tasks as illustrated in Fig. 1. Our major contributions are as follows: 
+
+• Frozen heterogeneous VFM orchestration for multi-task dense pre-diction. We propose TIGER, a framework that coordinates multiple hetero-geneous VFMs as frozen experts, preserving their complementary inductive biases without expert fine-tuning. 
+
+• Language-level task guidance as a relational prior. We show that natural-language task instructions provide a structured inductive bias by en-coding task similarity in the language embedding space, leading to stronger and more stable task conditioning than using randomly initialized learnable task prompts alone. 
+
+• Counterfactually grounded expert coordination. We introduce a coun-terfactual objective that aligns routing with each expert’s causal contribution, improving both effectiveness and interpretability of expert fusion. 
+
+• Strong performance on multi-task dense prediction benchmarks. 
+
+TIGER achieves state-of-the-art performance on several tasks in Pascal Con-text and NYUD-v2, while consistently outperforming individual vision experts across all tasks. 
+
+2 Related Works 
+
+2.1 Foundation-Level Expert Fusion 
+
+The rapid evolution of VFMs has motivated efforts to integrate multiple pre-trained experts into unified systems, broadly following two paradigms: repre-sentation unification and expert coordination. Representation unification meth-ods, such as AM-RADIO [22], aggregate diverse VFMs into a single backbone via distillation. However, distilling heterogeneous experts into one backbone in-troduces training complexity and risks suppressing expert-specific inductive bi-ases—such as boundary sensitivity or open-vocabulary objectness—that emerge from distinct pretraining objectives (e.g., contrastive learning [10, 21, 26, 27, 39, 40], masked reconstruction [7, 8, 29, 30], self-distillation [2, 3, 20, 41], region-level or open-vocabulary supervision [11, 12, 16, 18]). Coordination-based approaches, such as MoVA [42], preserve each expert and combine them via routing, but 4 D. Han et al. Task Guided Router           
+
+> “Semantic Segmentation is …”
+> “Human Part Segmentation
+> task is …”
+> “Saliency Detection task is …”
+> Vision Encoder
+> Vision Encoder
+> Task Instruction Encoder
+> S-BERT
+> 𝑔 (𝑡 )
+> ℎ(𝑡 )
+> Query
+> Projection
+> Attention -based Routing
+> Expert -Interactive Attention
+> Task -Interactive Attention
+> Head
+> Head
+> Head
+> Task Instruction
+> 𝐹 !,#
+> $
+> 𝑞 #
+> 𝑞 !𝑡 =𝑞 !𝑊 "𝑡 +𝑏 "(𝑡 )
+> softma x!
+> 𝑞 "𝑡 #⋅𝐹 !,"
+> %
+> 𝑑
+> copy
+> 𝑞 !(𝑡 )
+> 𝐹 #,!
+> %
+> Frozen Vision Experts
+> SAM
+> DINOv2
+> OWLv2
+> LayerNorm  + FFN
+> CLIP
+
+⋮ 
+
+> Routing weights
+> Boundary
+> Human part
+> Semantic Seg
+> Head
+> Head
+> Case #1 CLIP
+> ⋯
+> Case #2 DINOv2
+> ⋯
+> Case # 𝒌 OWLv2
+> ⋯
+
+⋯
+
+Δ"!"#$ Δ"!"#$ Δ"%&"'( ⋯  
+
+> soft max (Δ,)
+> Semantic Seg
+> ℒ&' for causal importance –aware routing
+> Weighted sum
+> Counterfactual forward
+> 𝑝 !
+
+Fig. 2: Overview of TIGER. Frozen vision experts provide heterogeneous features that are fused through instruction-guided expert routing. Task-conditioned queries, inter-action attention layers, and a shared decoder collectively produce task-specific dense predictions. 
+
+typically optimize routing through task loss alone and require fine-tuning large components alongside mixing modules. SAK [17] similarly pursues foundation-level MTL but via a costly two-stage distill-then-adapt pipeline. TIGER instead keeps all VFMs frozen and learns lightweight, instruction-conditioned coordination modules on top. Routing is soft and token-wise, regu-larized by counterfactual signals, without distillation or expert fine-tuning. 
+
+2.2 Multi-Task Learning 
+
+Multi-task learning (MTL) aims to jointly solve multiple visual objectives within a shared framework. Dense MTL methods—from PAD-Net [31] and MTI-Net [28] to transformer-based approaches (ATRC [1], InvPT [34], TaskPrompter [35]) and recent generative or state-space designs (MLoRE [33], MTMamba [13], Diffusion-MTL [37])—have significantly improved inter-task interaction and specialization. Yet most existing frameworks fine-tune a single homogeneous backbone [15, 19], constraining all tasks within a shared pretraining objective and often requiring optimization-level remedies to mitigate gradient interference [4, 24, 38]. TIGER reframes MTL from backbone sharing to expert orchestration: mul-tiple frozen VFMs, each encoding distinct pretrained priors, are coordinated via natural-language task instructions and counterfactual routing alignment. This enables balanced performance across heterogeneous dense prediction tasks while preserving the complementary strengths of foundation models. Task-Instructed Causal Routing of Vision Foundation Models 5
+
+3 Methods 
+
+3.1 Overall Framework 
+
+TIGER is a task-conditioned expert orchestration framework that integrates multiple heterogeneous VFMs for multi-task dense prediction without fine-tuning them. Each VFM is treated as a frozen expert providing complementary seman-tic, geometric, or structural priors, whose features are aligned in a shared token space. Task semantics are encoded using natural-language instructions and used to guide a Task Instruction-Guided Routing module, which dynamically orches-trates expert contributions for each spatial token according to task intent and visual context. To further enhance cooperation among experts and tasks, TIGER incorporates lightweight Expert-Interactive and Task-Interactive attention layers that refine the routed representations. A shared lightweight decoder with task-specific heads produces dense pre-dictions. During training, all VFMs remain frozen and only the routing and interaction modules are optimized, while a counterfactual objective encourages routing decisions to align with the causal contribution of each expert. Overall, TIGER provides a scalable and interpretable framework for orches-trating heterogeneous vision experts across diverse visual tasks. An overview of the TIGER architecture is provided in Fig. 2. 
+
+3.2 Vision Experts and Task Instruction Representation 
+
+TIGER integrates multiple VFMs as frozen experts to capture complementary aspects of visual understanding. Each expert originates from a distinct learning paradigm, providing unique inductive biases that collectively enhance semantic, geometric, and structural reasoning. Specifically, CLIP [21] provides semantic alignment through large-scale vi-sion–language training, while DINOv2 [20] contributes strong structural and geometric representations learned via self-supervised learning. SAM [11] offers boundary- and shape-aware features derived from promptable segmentation train-ing, and OWLv2 [18] provides object-centric representations through open-vocabulary detection. Together, these experts provide complementary visual priors that TIGER can selectively leverage without fine-tuning the foundation models. Since different experts adopt different patch sizes pk, their native token res-olutions may differ. To ensure consistent spatial alignment, we fix a common token grid size H × W across experts. The input resolution for expert Ek is then determined by its patch size: 
+
+Hk = H · pk, Wk = W · pk, (1) where Hk × Wk denotes the input image resolution and H × W denotes the shared token grid. When an expert uses fixed positional encodings, the positional embeddings are interpolated to match the resulting token grid following standard practice in vision transformers [5]. 6 D. Han et al. 
+
+After spatial alignment, each expert produces a feature map Fk ∈ RH×W ×Ck ,where Ck is the channel dimension of expert Ek. We reshape the spatial dimen-sions into N = H × W tokens and project them into a shared embedding space: 
+
+F ′ 
+
+> k
+
+= LayerNorm (FFN (Fk)) , F ′ 
+
+> k
+
+∈ RN ×d. (2) All experts remain frozen during training to preserve their pretrained induc-tive biases, while only the routing and interaction modules are optimized. To incorporate task information into the routing process, we employ a Task Instruction Encoder that embeds natural-language task descriptions into a vec-tor t0 using a sentence-level language model (e.g., Sentence-BERT [23]). The embedding is normalized and fused with a learnable task prompt pt:
+
+t = LayerNorm (t0) + pt. (3) The resulting task representation preserves the semantic meaning of the instruc-tion while allowing adaptation to vision tasks. It subsequently conditions the routing hyper-network (Sec. 3.3), guiding expert coordination according to task intent. 
+
+3.3 Task Instruction-Guided Routing 
+
+To orchestrate heterogeneous frozen experts in a task-aware manner, TIGER introduces a Task Instruction-Guided Routing module. Given the task represen-tation t (Sec. 3.2), the router assigns token-wise expert weights that adapt to both the visual content and the task intent, without fine-tuning any expert. 
+
+Task-conditioned query modulation. Let {F ′
+
+> k
+
+}Mk=1 denote the aligned expert token features, where F ′ 
+
+> k
+
+∈ RN ×d and N = H × W . A lightweight shared vision encoder produces query tokens {qn}Nn=1 . To enable task-dependent routing while keeping the router lightweight, we modulate the query projection using a low-rank hyper-network: 
+
+WQ(t) = W0 + U diag( g(t)) V ⊤, bQ(t) = b0 + h(t), (4) where g(·) and h(·) are small MLPs that map the task representation t to mod-ulation vectors, and U, V are learnable low-rank factors. The task-conditioned query is then computed as 
+
+qn(t) = qnWQ(t) + bQ(t). (5) 
+
+Token-wise expert routing. For each spatial token n, we compute expert routing weights via attention between the task-conditioned query and expert features: 
+
+αk,n (t) = softmax k
+
+qn(t)⊤ · F ′
+
+> k,n
+
+√d
+
+!
+
+, (6) Task-Instructed Causal Routing of Vision Foundation Models 7
+
+where F ′ 
+
+> k,n
+
+∈ Rd is the n-th token feature from expert Ek, and softmax k is taken over experts. The routed token representation is obtained as a weighted mixture: 
+
+fn =
+
+> M
+
+X
+
+> k=1
+
+αk,n (t) F ′
+
+> k,n
+
+. (7) This formulation enables spatially varying expert orchestration through a nonlinear attention-based routing mechanism conditioned on task instructions. Such routing allows the model to adaptively combine heterogeneous expert fea-tures according to both visual context and task semantics. Since all experts remain frozen, only the routing and interaction modules are optimized, resulting in a parameter-efficient framework for coordinating heterogeneous vision experts. 
+
+3.4 Expert and Task Interaction 
+
+To further enhance cooperation among experts and improve consistency across tasks, TIGER incorporates two lightweight attention modules around the routing stage. 
+
+Expert-Interactive Attention. Before routing, tokens from different ex-perts interact through multi-head attention, enabling complementary cues to be exchanged across heterogeneous expert features. This interaction encourages richer representations by allowing structural, boundary, and semantic priors from different experts to reinforce each other. 
+
+Task-Interactive Attention. After routing, task-level interaction refines the fused representation by modeling dependencies among tasks. This allows related tasks (e.g., depth and surface normals) to share useful visual cues while preserving task-specific distinctions. Both modules use standard multi-head attention and introduce only minimal computational overhead. They are jointly optimized with the routing network to promote complementary feature integration across experts and tasks. 
+
+3.5 Counterfactual Loss and Training Objective 
+
+Although the routing module dynamically assigns expert weights αk,n (t), these weights do not necessarily reflect the true contribution of each expert. Attention scores may instead be influenced by feature dominance or scale differences across experts. To address this limitation, TIGER introduces a counterfactual ob-jective that aligns routing decisions with the causal influence of each expert. As illustrated in Fig. 1(b), experts are encouraged to receive higher routing weights when their removal would significantly degrade the prediction. 
+
+Counterfactual Contribution Estimation. For each expert Ek, we estimate its causal contribution by measuring the change in task loss when the expert is removed. Let Ltask (xn, t ) denote the task loss at token n under the full model. The counterfactual loss L(−k) 
+
+> task
+
+(xn, t ) is computed by masking the routed features 8 D. Han et al. 
+
+of expert Ek and recomputing the prediction. The counterfactual difference is defined as 
+
+∆k,n = L(−k) 
+
+> task
+
+(xn, t ) − L task (xn, t ), (8) where a larger ∆k,n indicates a stronger causal contribution from expert Ek.Since counterfactual losses are computed on the image grid while routing operates in token space, we downsample the difference maps to the token grid. The token-wise contributions are then normalized as 
+
+˜∆k,n = ∆k,n − μn
+
+σn + ϵ , (9) where μn and σn denote the mean and standard deviation of {∆k,n }Mk=1 across experts for token n, and ϵ is a small constant added to avoid division by zero. This normalization yields a relative importance score for each expert at token 
+
+n.
+
+Routing–Causality Alignment. The normalized scores are converted into a causal importance distribution 
+
+pk,n = softmax k
+
+˜∆k,n 
+
+τ
+
+!
+
+, (10) while the routing module already produces a token-wise expert distribution 
+
+qk,n = αk,n (t). (11) To align routing with causal expert influence, we minimize the Jensen–Shannon divergence (JSD) [14] between the two distributions: 
+
+L(n) 
+
+> cf
+
+= 12 [DKL (pn ∥ mn) + DKL (qn ∥ mn)] , mn = 12 (pn + qn). (12) The final counterfactual loss is obtained by averaging over tokens: 
+
+Lcf = 1
+
+N
+
+> N
+
+X
+
+> n=1
+
+L(n) 
+
+> cf
+
+. (13) 
+
+Training objective. The overall training objective combines task losses with counterfactual regularization: 
+
+L =
+
+> NT
+
+X
+
+> j=1
+
+λj L(j) 
+
+> task
+
++ λcf Lcf . (14) This objective encourages routing to prioritize experts with stronger causal in-fluence while maintaining stable multi-task optimization. Task-Instructed Causal Routing of Vision Foundation Models 9Ours    
+
+> GT
+> MLoRE
+> Input Saliency Parsing SemSeg Normal Boundary
+> MTMamba
+> SAK
+
+Fig. 3: Qualitative comparison on the Pascal-Context dataset. TIGER produces more coherent region predictions and clearer boundaries compared to MTMamba and MLoRE, particularly in human parsing and structural delineation. Predictions for se-mantic segmentation, parsing, saliency, normals, and boundaries show that task-aware expert routing enables TIGER to capture both semantic detail and geometric structure effectively. 
+
+Table 1: Comparison with existing multi-task methods and vision foundation model baselines on PASCAL-Context. 
+
+Method Semseg mIoU ↑
+
+Parsing mIoU ↑
+
+Saliency maxF ↑
+
+Normal mErr ↓
+
+Boundary ODS-F ↑
+
+Conventional Multi-task Methods 
+
+PAD-Net [31] 78.01 67.12 79.21 14.37 72.60 MTI-Net [28] 78.31 67.40 84.75 14.67 73.00 MQTransformer [32] 78.93 67.41 83.58 14.21 73.90 ATRC [1] 77.11 66.84 81.20 14.23 72.10 InvPT [34] 79.03 67.61 84.81 14.15 73.00 TaskPrompter [35] 80.89 68.89 84.83 13.72 73.50 TaskExpert [36] 80.64 69.42 84.87 13.56 73.30 MLoRE [33] 81.41 70.52 84.90 13.51 75.42 DiffusionMTL [37] 62.55 56.84 80.44 14.85 67.10 MTMamba [13] 81.11 72.62 84.14 14.14 78.80 SEM [9] 81.66 69.90 84.95 13.39 73.80 RADIO [22] 81.11 71.50 85.17 13.49 74.80 SAK [17] 84.01 76.99 84.65 13.82 76.27 
+
+Vision Foundation Model Baselines 
+
+CLIP-ViT-L [21] 77.75 66.42 77.17 19.23 71.07 DINOv2-ViT-L [20] 81.04 73.72 76.63 17.57 78.83 OWLv2-ViT-L [18] 73.22 65.47 79.27 16.48 79.07 SAM-ViT-B [11] 54.88 60.87 79.85 14.03 80.59 
+
+TIGER-B(Ours) 84.08 76.27 83.97 12.52 83.52 
+
+TIGER-L(Ours) 84.58 77.56 83.80 12.46 84.05 10 D. Han et al. 
+
+4 Experiments 
+
+4.1 Experimental Setup Datasets. We evaluate TIGER on two standard multi-task benchmarks: NYUD-v2 [25] with four tasks and Pascal-Context [6] with five tasks, following the eval-uation protocol of TaskPrompter [35]. Additional dataset details are provided in the supplementary material. 
+
+Implementation Details. TIGER coordinates multiple frozen vision founda-tion models through task-conditioned routing and interaction modules. We eval-uate two variants: TIGER-B, which uses CLIP-ViT-B [21], DINOv2-ViT-B [20], and SAM-ViT-B [11] as experts, and TIGER-L, which employs CLIP-ViT-L [21], DINOv2-ViT-L [20], SAM-ViT-B [11], and OWLv2-ViT-L [18]. All experts and the text encoder (Sentence-BERT [23]) remain frozen during training, while only the routing, interaction, and decoder modules are optimized. Detailed training configurations are provided in the supplementary material. 
+
+Baselines and Metrics. We compare TIGER with representative multi-task learning models including PAD-Net [31], MTI-Net [28], ATRC [1], InvPT [34], Task-Prompter [35], MLoRE [33], DiffusionMTL [37], and MTMamba [13], as well as foundation-level approaches such as AM-RADIO [22] and SAK [17]. We also report results of individual vision foundation models (CLIP, DINOv2, SAM, and OWLv2). Standard metrics are used for each task (mIoU, RMSE, mErr, ODS-F, and max-F). 
+
+4.2 Comparison with the State-of-the-art Methods Pascal-Context. Table 1 shows that TIGER achieves strong performance across multiple tasks on PASCAL-Context. TIGER-L obtains the best performance in semantic segmentation (84.58 mIoU), human parsing (77.56 mIoU), surface nor-mals (12.46 mErr), and boundary detection (84.05 ODS-F). Notably, even the base configuration (TIGER-B) surpasses prior multi-task approaches including SAK [17], despite operating under a lightweight setting (579.35 GFLOPs and 362.84M parameters). Moreover, excluding frozen experts, TIGER-L requires only 103.15M trainable parameters, reducing training cost while maintaining strong accuracy. Further efficiency comparisons are provided in the supplemen-tary material. Qualitative results in Fig. 3 further illustrate that TIGER pro-duces more coherent region predictions and clearer object boundaries across tasks. 
+
+NYUD-v2. On NYUD-v2 (Table 2), TIGER also achieves state-of-the-art per-formance across most tasks. TIGER-L obtains 63.55 mIoU in semantic seg-mentation, 0.4115 RMSE in depth estimation, and 80.31 ODS-F in bound-ary detection. These results demonstrate that coordinating heterogeneous vision Task-Instructed Causal Routing of Vision Foundation Models 11 Ours 
+
+GT 
+
+MLoRE 
+
+MTMamba 
+
+Input Semseg Normal Depth Boundary 
+
+SAK 
+
+Fig. 4: Qualitative comparison on the NYUD-v2 dataset. Across all tasks, TIGER better preserves structural details and object contours, demonstrating stronger multi-task consistency. 
+
+Table 2: Comparison with existing multi-task methods and vision foundation model baselines on NYUD-v2. 
+
+Method Semseg mIoU ↑
+
+Depth RMSE ↓
+
+Normal mErr ↓
+
+Boundary ODS-F ↑
+
+Conventional Multi-task Methods 
+
+PAD-Net [31] 36.61 0.6246 20.88 76.38 MTI-Net [28] 45.97 0.5365 20.27 77.86 MQTransformer [32] 54.84 0.5325 19.67 78.20 ATRC [1] 46.33 0.5363 20.18 77.94 InvPT [34] 53.56 0.5183 19.04 78.20 TaskPrompter [35] 55.30 0.5152 18.47 78.30 TaskExpert [36] 55.35 0.5157 18.54 78.40 MLoRE [33] 55.96 0.5076 18.33 78.43 DiffusionMTL [37] 46.82 0.4743 24.75 –MTMamba [13] 55.82 0.5066 18.63 78.70 SEM [9] 56.82 0.4937 18.45 78.40 RADIO [22] 55.03 0.5186 18.49 77.97 SAK [17] 63.18 0.4313 16.25 79.43 
+
+Vision Foundation Model Baselines 
+
+CLIP-ViT-L [21] 47.43 0.6690 26.51 68.85 DINOv2-ViT-L [20] 58.44 0.5387 19.23 75.94 OWLv2-ViT-L [18] 41.31 0.7582 25.20 73.45 SAM-ViT-B [11] 32.22 0.7854 23.59 75.92 
+
+TIGER-B (Ours) 60.71 0.4493 16.95 79.00 
+
+TIGER-L (Ours) 63.55 0.4115 16.80 80.31 
+
+foundation models yields consistent improvements across both semantic and ge-ometric tasks. 12 D. Han et al. 
+
+Table 3: Ablation study on NYUD-v2. In most cases, adding each component pro-gressively improves task performance.                             
+
+> Method Semseg ↑Depth ↓Normal ↓Boundary ↑
+> Expert Routing (Ours) 59.43 0.5245 18.59 79.05 + Task-Instruction Enc. 60.61 0.4810 18.29 80.05 + Expert-Interaction Attn. 60.82 0.4789 18.00 80.05 + Task-Interaction Attn. 61.44 0.4774 17.97 79.93 + Counterfactual Loss 63.16 0.4386 17.44 80.09
+
+Qualitative examples in Fig. 4 further show that TIGER produces more coherent predictions and sharper object contours, indicating improved multi-task consistency. 
+
+4.3 Ablation Studies 
+
+To evaluate the contribution of each component in TIGER, we conduct an ab-lation study on NYUD-v2 (Table 3). Starting from the base routing module, we progressively add the proposed components and observe consistent improve-ments across tasks. 
+
+Expert Routing. The base model performs task-conditioned routing without additional interaction or causal guidance. Even this simple configuration achieves competitive multi-task performance, indicating that routing alone can effectively combine heterogeneous vision experts. 
+
+Task-Instruction Encoder. Introducing task instructions provides clearer task conditioning, helping the routing network allocate experts more appropri-ately. This results in consistent improvements across tasks. 
+
+Expert-Interaction Attention. Adding expert-level interaction enables com-plementary cues to be exchanged across experts before fusion, further improving prediction quality. 
+
+Task-Interaction Attention. Modeling dependencies among tasks provides additional gains, particularly for geometry-related predictions such as depth and surface normals. 
+
+Counterfactual Objective. The counterfactual objective yields the largest improvement. By aligning routing weights with causal expert contributions, the model learns more stable and interpretable expert allocations, leading to the best overall performance. Task-Instructed Causal Routing of Vision Foundation Models 13 DINOv2 SAM DINOv2 SAM DINOv2 SAM DINOv2 SAM DINOv2 SAM            
+
+> CLIP OWLv2 CLIP OWLv2 CLIP OWLv2 CLIP OWLv2 CLIP OWLv2
+> SemSeg Parsing Saliency Normal Boundary
+> DINOv2
+> CLIP
+> SAM
+> OWLv2
+> Depth
+> DINOv2
+> CLIP
+> SAM
+> OWLv2
+> Boundary
+> DINOv2
+> CLIP
+> SAM
+> OWLv2
+> Normal
+> CLIP
+> SAM
+> OWLv2
+> SemSeg
+> DINOv2
+
+Fig. 5: Routing weights show clear expert specialization: SAM focuses on edges, DI-NOv2 provides global structure, and CLIP/OWLv2 contribute semantic cues. 
+
+4.4 Expert Routing and Task Instruction Analysis 
+
+To better understand how TIGER coordinates heterogeneous vision experts and utilizes task semantics, we analyze both the routing behavior across experts and the role of task instruction representations. 
+
+Expert Routing Behavior. We analyze the routing weights produced by TIGER to understand how different vision experts contribute across tasks as shown in Fig. 5. The visualizations reveal clear expert specialization that largely matches the inductive biases of the underlying vision foundation models. DINOv2 is broadly activated over object interiors and large structural re-gions, providing global geometric cues that dominate geometry-related tasks such as depth estimation and surface normals. In contrast, SAM exhibits strong responses along edges and contour regions, reflecting its segmentation-oriented training and making it particularly important for boundary-sensitive tasks. CLIP and OWLv2 contribute more selectively to semantically meaningful regions, pro-viding object-level cues that support tasks requiring semantic discrimination. Across tasks, TIGER forms task-dependent expert coalitions rather than re-lying on a single expert. For example, semantic segmentation combines structural cues from DINOv2 with boundary information from SAM, while human pars-ing benefits from the combination of structural and boundary cues. Geometry-related tasks are primarily driven by DINOv2 but still receive complementary signals from other experts in localized regions. These patterns indicate that TIGER dynamically coordinates heterogeneous VFMs, assigning spatially vary-ing expert importance according to both task requirements and visual context. 14 D. Han et al. semantic_segmentation                     
+
+> human_parsing
+> saliency_detection
+> surface_normal
+> boundary_detection
+> semantic_segmentation
+> human_parsing
+> saliency_detection
+> surface_normal
+> boundary_detection
+> 1.00 0.84 0.81 0.73 0.83
+> 0.84 1.00 0.78 0.71 0.82
+> 0.81 0.78 1.00 0.72 0.80
+> 0.73 0.71 0.72 1.00 0.77
+> 0.83 0.82 0.80 0.77 1.00
+
+(a) Before Hyper-Network semantic_segmentation                      
+
+> human_parsing
+> saliency_detection
+> surface_normal
+> boundary_detection
+> semantic_segmentation
+> human_parsing
+> saliency_detection
+> surface_normal
+> boundary_detection
+> 1.00 0.22 0.42 0.16 0.37
+> 0.22 1.00 0.27 0.10 0.16
+> 0.42 0.27 1.00 0.26 0.33
+> 0.16 0.10 0.26 1.00 0.16
+> 0.37 0.16 0.33 0.16 1.00
+
+(b) After Hyper-Network 30 25 20 15 10 5 0 5 10  
+
+> 25
+> 20
+> 15
+> 10
+> 5
+> 0
+> 5
+> 10
+> Task Instructions
+> Semseg.
+> Parsing.
+> Saliency.
+> Normal.
+> Boundary.
+
+(c) PCA Projection 
+
+Fig. 6: Evolution of task instruction representations. 
+
+Table 4: Effect of task instruction on expert routing. 
+
+Method Semseg ↑ Depth ↓ Normal ↓ Boundary ↑
+
+Task Instruction 63.16 0.4386 17.44 80.09 
+
+Learnable Task Embedding 62.32 0.4658 17.58 79.94 
+
+Task Instruction Representation. We further analyze how task instructions shape the task representations used for expert routing. Unlike learnable task embeddings that are randomly initialized, natural-language task instructions encode semantic relationships between tasks in the language embedding space. Fig. 6 visualizes the evolution of task representations during training. Before passing through the routing hyper-network, task embeddings derived from the language encoder already capture meaningful similarities between related tasks. As training progresses, the hyper-network refines these representations, gradually separating tasks according to their visual characteristics while preserving useful relationships between them. To further evaluate the impact of language-level task guidance, we com-pare the proposed instruction-based representation with a variant that uses only learnable task embeddings (Table 4). Using task instructions consistently im-proves performance across all tasks, yielding higher segmentation accuracy, lower depth and normal errors, and improved boundary detection. These results sug-gest that language-level task guidance provides a structured relational prior, enabling the model to exploit task similarities from the early stages of training rather than learning them entirely from scratch. Overall, the analysis shows that TIGER effectively combines structured task semantics with adaptive expert routing to coordinate heterogeneous vision ex-perts. 
+
+5 Conclusion 
+
+We introduce TIGER, a task-instruction-guided routing framework that inte-grates heterogeneous Vision Foundation Models for multi-task dense prediction. By conditioning expert selection on task semantics, TIGER adaptively lever-ages the complementary strengths of diverse pretrained experts while keeping Task-Instructed Causal Routing of Vision Foundation Models 15 
+
+all VFMs frozen. Language-level task instructions provide a structured prior that guides expert coordination by capturing semantic relationships between tasks. A counterfactual loss further stabilizes routing and promotes interpretable expert–task alignment by encouraging routing weights to reflect each expert’s causal contribution. Extensive experiments on NYUD-v2 and Pascal Context demonstrate that TIGER consistently surpasses state-of-the-art multi-task meth-ods and all single-expert baselines. Overall, TIGER demonstrates that language-guided routing provides an effective and scalable approach for orchestrating het-erogeneous vision foundation models. 
+
+References 
+
+1. Brüggemann, D., Kanakis, M., Obukhov, A., Georgoulis, S., Van Gool, L.: Ex-ploring relational context for multi-task dense prediction. In: Proceedings of the IEEE/CVF international conference on computer vision. pp. 15869–15878 (2021) 2. Caron, M., Touvron, H., Misra, I., Jégou, H., Mairal, J., Bojanowski, P., Joulin, A.: Emerging properties in self-supervised vision transformers. In: Proceedings of the IEEE/CVF international conference on computer vision. pp. 9650–9660 (2021) 3. Chen, X., Xie, S., He, K.: An empirical study of training self-supervised vi-sion transformers. 2021 IEEE/CVF International Conference on Computer Vision (ICCV) pp. 9620–9629 (2021) 4. Chen, Z., Badrinarayanan, V., Lee, C.Y., Rabinovich, A.: Gradnorm: Gradient nor-malization for adaptive loss balancing in deep multitask networks. In: Proceedings of the 35th International Conference on Machine Learning (ICML) (2018) 5. Dosovitskiy, A., Beyer, L., Kolesnikov, A., Weissenborn, D., Zhai, X., Unterthiner, T., Dehghani, M., Minderer, M., Heigold, G., Gelly, S., et al.: An image is worth 16x16 words: Transformers for image recognition at scale. In: ICLR (2021) 6. Everingham, M., Van Gool, L., Williams, C.K., Winn, J., Zisserman, A.: The pascal visual object classes (voc) challenge. International journal of computer vision 88 (2), 303–338 (2010) 7. Fang, Y., Wang, W., Xie, B., Sun, Q.S., Wu, L.Y., Wang, X., Huang, T., Wang, X., Cao, Y.: Eva: Exploring the limits of masked visual representation learning at scale. 2023 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) pp. 19358–19369 (2022) 8. He, K., Chen, X., Xie, S., Li, Y., Dollár, P., Girshick, R.: Masked autoencoders are scalable vision learners. In: CVPR. pp. 16000–16009 (2022) 9. Huang, H., Huang, Y., Lin, L., Tong, R., Chen, Y.W., Zheng, H., Li, Y., Zheng, Y.: Going beyond multi-task dense prediction with synergy embedding models. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 28181–28190 (2024) 10. Jia, C., Yang, Y., Xia, Y., Chen, Y.T., Parekh, Z., Pham, H., Le, Q.V., Sung, Y.H., Li, Z., Duerig, T.: Scaling up visual and vision-language representation learning with noisy text supervision. In: International Conference on Machine Learning (2021) 11. Kirillov, A., Mintun, E., Ravi, N., Mao, H., Rolland, C., Gustafson, L., Xiao, T., Whitehead, S., Berg, A.C., Lo, W.Y., et al.: Segment anything. In: Proceedings of the IEEE/CVF international conference on computer vision. pp. 4015–4026 (2023) 16 D. Han et al. 12. Li, L.H., Zhang, P., Zhang, H., Yang, J., Li, C., Zhong, Y., Wang, L., Yuan, L., Zhang, L., Hwang, J.N., Chang, K.W., Gao, J.: Grounded language-image pre-training. In: CVPR. pp. 10965–10975 (2022) 13. Lin, B., Jiang, W., Chen, P., Zhang, Y., Liu, S., Chen, Y.C.: Mtmamba: Enhancing multi-task dense scene understanding by mamba-based decoders. In: European Conference on Computer Vision. pp. 314–330. Springer (2024) 14. Lin, J.: Divergence measures based on the Shannon entropy. IEEE Transactions on Information Theory 37 (1), 145–151 (1991) 15. Liu, S., Johns, E., Davison, A.J.: End-to-end multi-task learning with attention. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) (2019) 16. Liu, S., Zeng, Z., Ren, T., Li, F., Zhang, H., Yang, J., Jiang, Q., Li, C., Yang, J., Su, H., Zhu, J., Zhang, L.: Grounding dino: Marrying dino with grounded pre-training for open-set object detection. In: Eur. Conf. Comput. Vis. vol. 15105, pp. 38–55. Springer (2024) 17. Lu, Y., Cao, S., Wang, Y.X.: Swiss army knife: Synergizing biases in knowledge from vision foundation models for multi-task learning. In: The Thirteenth Inter-national Conference on Learning Representations (2025) 18. Minderer, M., Gritsenko, A., Houlsby, N.: Scaling open-vocabulary object detec-tion. Advances in Neural Information Processing Systems 36 , 72983–73007 (2023) 19. Misra, I., Shrivastava, A., Gupta, A., Hebert, M.: Cross-stitch networks for multi-task learning. In: CVPR. pp. 3994–4003 (2016) 20. Oquab, M., Darcet, T., Moutakanni, T., Vo, H., Szafraniec, M., Khalidov, V., Fernandez, P., Haziza, D., Massa, F., El-Nouby, A., et al.: Dinov2: Learning robust visual features without supervision. arXiv preprint arXiv:2304.07193 (2023) 21. Radford, A., Kim, J.W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., et al.: Learning transferable visual models from natural language supervision. In: International conference on machine learning. pp. 8748–8763. PmLR (2021) 22. Ranzinger, M., Heinrich, G., Kautz, J., Molchanov, P.: Am-radio: Agglomerative vision foundation model reduce all domains into one. In: CVPR (2024) 23. Reimers, N., Gurevych, I.: Sentence-bert: Sentence embeddings using siamese bert-networks. arXiv preprint arXiv:1908.10084 (2019) 24. Sener, O., Koltun, V.: Multi-task learning as multi-objective optimization. In: Ad-vances in Neural Information Processing Systems (NeurIPS) (2018) 25. Silberman, N., Hoiem, D., Kohli, P., Fergus, R.: Indoor segmentation and support inference from rgbd images. In: European conference on computer vision. pp. 746– 760. Springer (2012) 26. Sun, Q., Fang, Y., Wu, L.Y., Wang, X., Cao, Y.: Eva-clip: Improved training techniques for clip at scale. ArXiv abs/2303.15389 (2023) 27. Tschannen, M., Gritsenko, A., Wang, X., Naeem, M.F., Alabdulmohsin, I.M., Parthasarathy, N., Evans, T., Beyer, L., Xia, Y., Mustafa, B., H’enaff, O., Harm-sen, J., Steiner, A., Zhai, X.Q.: Siglip 2: Multilingual vision-language encoders with improved semantic understanding, localization, and dense features. ArXiv 
+
+abs/2502.14786 (2025) 28. Vandenhende, S., Georgoulis, S., Van Gool, L.: Mti-net: Multi-scale task interaction networks for multi-task learning. In: European conference on computer vision. pp. 527–543. Springer (2020) 29. Wang, H., Tang, Y., Wang, Y., Guo, J., Deng, Z., Han, K.: Masked image modeling with local multi-scale reconstruction. 2023 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) pp. 2122–2131 (2023) Task-Instructed Causal Routing of Vision Foundation Models 17 30. Xie, Z., Zhang, Z., Cao, Y., Lin, Y., Bao, J., Yao, Z., Dai, Q., Hu, H.: Simmim: a simple framework for masked image modeling. 2022 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) pp. 9643–9653 (2021) 31. Xu, D., Ouyang, W., Wang, X., Sebe, N.: Pad-net: Multi-tasks guided prediction-and-distillation network for simultaneous depth estimation and scene parsing. In: Proceedings of the IEEE conference on computer vision and pattern recognition. pp. 675–684 (2018) 32. Xu, Y., Li, X., Yuan, H., Yang, Y., Zhang, L.: Multi-task learning with multi-query transformer for dense prediction. IEEE Trans. Cir. and Sys. for Video Technol. 
+
+34 (2), 1228–1240 (2024) 33. Yang, Y., Jiang, P.T., Hou, Q., Zhang, H., Chen, J., Li, B.: Multi-task dense prediction via mixture of low-rank experts. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 27927–27937 (2024) 34. Ye, H., Xu, D.: Inverted pyramid multi-task transformer for dense scene under-standing. In: European Conference on Computer Vision. pp. 514–530. Springer (2022) 35. Ye, H., Xu, D.: Taskprompter: Spatial-channel multi-task prompting for dense scene understanding. In: The Eleventh International Conference on Learning Rep-resentations (2022) 36. Ye, H., Xu, D.: Taskexpert: Dynamically assembling multi-task representations with memorial mixture-of-experts. In: Proceedings of the IEEE/CVF international conference on computer vision. pp. 21771–21780 (2023) 37. Ye, H., Xu, D.: Diffusionmtl: Learning multi-task denoising diffusion model from partially annotated data. In: Proceedings of the IEEE/CVF Conference on Com-puter Vision and Pattern Recognition. pp. 27960–27969 (2024) 38. Yu, T., Kumar, S., Gupta, A., Levine, S., Hausman, K., Finn, C.: Gradient surgery for multi-task learning. In: Advances in Neural Information Processing Systems (NeurIPS) (2020) 39. Zhai, X., Mustafa, B., Kolesnikov, A., Beyer, L.: Sigmoid loss for language im-age pre-training. 2023 IEEE/CVF International Conference on Computer Vision (ICCV) pp. 11941–11952 (2023) 40. Zhai, X., Wang, X., Mustafa, B., Steiner, A., Keysers, D., Kolesnikov, A., Beyer, L.: Lit: Zero-shot transfer with locked-image text tuning. In: CVPR. pp. 18123–18133 (2022) 41. Zhou, J., Wei, C., Wang, H., Shen, W., Xie, C., Yuille, A.L., Kong, T.: ibot: Image bert pre-training with online tokenizer. ArXiv abs/2111.07832 (2021) 42. Zong, Z., Ma, B., Shen, D., Song, G., Shao, H., Jiang, D., Li, H., Liu, Y.: Mova: Adapting mixture of vision experts to multimodal context. arXiv preprint arXiv:2404.13046 (2024)

@@ -1,0 +1,1244 @@
+WAVE-Stereo: Warp-Aligned Volume Encoding for Stereo Matching
+Zehan Liu
+School of Electronics and Control
+Engineering
+Chang’an University
+Xi’an, China
+zehanliu@chd.edu.cn
+Yage He
+School of Electronics and Control
+Engineering
+Chang’an University
+Xi’an, China
+heyage@chd.edu.cn
+Xianwu Gong∗
+School of Electronics and Control
+Engineering
+Chang’an University
+Xi’an, China
+xwgong@chd.edu.cn
+Abstract
+Existing iterative stereo matching methods primarily adopt
+two types of correspondence representation: explicit match-
+ing search via correlation volumes and local residual re-
+finement via warped features, yet the two remain separately
+modeled. We propose WAVE-Stereo, built on a core insight:
+correlation volumes and feature warping provide comple-
+mentary matching cues.
+GeoWarp Correspondence En-
+coder (GWCE) encodes matching search, residual align-
+ment, and disparity prior in parallel at the ConvGRU input.
+To mitigate matching degradation in textureless regions,
+we propose Periodic Global Context Propagation (PGCP),
+which propagates global spatial information in a peri-
+odic manner. On five real-world benchmarks—Middlebury,
+ETH3D, KITTI 2012, KITTI 2015, and Booster—WAVE-
+Stereo achieves competitive zero-shot generalization accu-
+racy without any external foundation model prior, achieving
+3.18% D1-all on KITTI 2015, 4.42% Bad-2.0 on Booster,
+and 66ms real-time inference, striking a favorable balance
+between accuracy and efficiency.
+Our code is available
+at https://github.com/yamanoko-do/WAVE-
+Stereo.
+1. Introduction
+Stereo matching aims to estimate dense disparity maps
+from rectified binocular image pairs and reconstruct 3D
+scene geometry, serving as a key visual perception task in
+autonomous driving, robotic navigation, and augmented re-
+Figure 1.
+Speed-accuracy trade-off on KITTI 2015.
+WAVE-
+Stereo achieves competitive generalization performance with sig-
+nificantly faster inference.
+ality systems. The core challenge lies in the matching am-
+biguity present in textureless regions, repetitive structures,
+specular highlights, transparent surfaces, and occluded ar-
+eas.
+Over the past decade, deep learning has steadily ad-
+vanced stereo matching accuracy. Early methods modeled
+the problem as cost volume filtering: constructing 3D or 4D
+cost volumes from left-right image features, then applying
+2D or 3D convolutional networks for regularization before
+outputting disparity maps. However, 3D convolutions incur
+substantial computational and memory costs, limiting both
+spatial resolution and computational efficiency.
+RAFT-Stereo [15] introduced the iterative optimization
+arXiv:2607.13674v1  [cs.CV]  15 Jul 2026
+
+
+paradigm from optical flow into stereo matching, using
+ConvGRU to sequentially update the disparity field.
+At
+each iteration, local matching costs are retrieved from a pre-
+computed all-pairs correlation pyramid. This method uses
+only 2D convolutions and lightweight correlation computa-
+tion, achieving leading generalization performance on mul-
+tiple real-world benchmarks. IGEV-Stereo [32] further in-
+troduced a geometry encoding volume: a lightweight 3D
+CNN regularization is applied to the initial correlation vol-
+ume, constructing a multi-level pyramid that enables each
+ConvGRU update to retrieve features encoding both scene
+geometry and local matching details. This design signifi-
+cantly reduces the number of iterations required for conver-
+gence.
+However, existing iterative stereo matching methods ex-
+hibit a clear paradigm split in correspondence represen-
+tation.
+One class [32] relies on correlation volumes for
+explicit matching search, preserving matching ambiguity
+and search space among disparity candidates through pre-
+computed matching costs.
+The other class [5], inspired
+by [2], employs feature warping—using the current dis-
+parity estimate to align right-image features to the left-
+image coordinate system and performing iterative refine-
+ment on cross-view residuals. The former preserves candi-
+date matching information, while the latter leverages cross-
+view residuals for local optimization. Yet, existing methods
+typically adopt only one of these paradigms: correlation-
+based methods lack cross-view alignment information un-
+der the current estimate, while warping-based methods dis-
+card the ambiguity information in matching costs, lead-
+ing to erroneous alignment in ill-posed regions.
+WAFT-
+Stereo [5] first demonstrated that a pure warping paradigm
+can completely eliminate dependence on cost volumes, but
+its feature encoder employs Depth-AnythingV2-Large [37],
+incurring substantial inference overhead. To date, no work
+has unified these two types of correspondence representa-
+tions.
+Furthermore, the iterative update of ConvGRU is inher-
+ently limited to a local context window. In textureless walls,
+repetitive patterns, or transparent surfaces, local matching is
+ambiguous without global spatial context. Recent methods
+mitigate this by introducing ViT backbones or monocular
+depth foundation models, but these models incur inference
+times of hundreds of milliseconds, precluding real-time de-
+ployment.
+We propose WAVE-Stereo (Warp-Aligned Volume En-
+coding Stereo), built on the following observation: correla-
+tion volumes and feature warping provide two complemen-
+tary types of correspondence representation. The former
+preserves matching information and its ambiguity among
+disparity candidates through explicit matching costs; the
+latter aligns right-image features to the left-image coordi-
+nate system based on the current disparity estimate, trans-
+Figure 2. Zero-shot evaluation on five real-world benchmarks. Our
+method demonstrates competitive zero-shot generalization accu-
+racy.
+forming stereo matching into a local residual correction
+problem. Through GWCE, we unify both representations at
+the ConvGRU input, enabling each iteration to simultane-
+ously leverage matching candidate information and cross-
+view alignment signals. To periodically inject global spatial
+constraints into the iterative process with minimal overhead,
+we design PGCP.
+Our contributions are summarized as follows:
+• We propose WAVE-Stereo, a lightweight iterative stereo
+matching framework that achieves good zero-shot gener-
+alization while maintaining real-time inference, without
+requiring any external foundation model.
+• We
+propose
+GeoWarp
+Correspondence
+Encoder
+(GWCE), which addresses the limitation of existing
+methods that employ only a single correspondence
+representation
+(correlation
+search
+or
+feature
+warp-
+ing).
+GWCE encodes three complementary types of
+information—correspondence
+search,
+residual
+align-
+ment, and geometric prior—at the ConvGRU input,
+achieving unified modeling of matching search and
+residual optimization.
+• We propose Periodic Global Context Propagation
+(PGCP), designed to address the inability of ConvGRU’s
+local iterations to propagate long-range matching con-
+straints.
+By periodically injecting global spatial con-
+straints during iteration, PGCP introduces global context
+for ambiguous regions, improving disparity estimation in
+textureless areas.
+• We validate a favorable accuracy-efficiency balance
+across multiple benchmarks: competitive in-domain ac-
+curacy on SceneFlow, and competitive zero-shot general-
+ization on Middlebury, ETH3D, KITTI, and Booster with
+66ms inference speed, without any external foundation
+model.
+
+
+Figure 3. Overall architecture of WAVE-Stereo. The pipeline consists of two key components: GWCE unifies correlation search, residual
+alignment, and geometric prior in parallel at the ConvGRU input; PGCP periodically injects global spatial constraints at 1/32 resolution.
+2. Related Work
+2.1. Iterative Stereo Matching
+The core idea of iterative stereo matching originates
+from RAFT [24]: pre-compute an all-pairs feature correla-
+tion pyramid, retrieve local matching costs at each iteration,
+and have a ConvGRU predict residual flow to progressively
+refine the disparity field. RAFT-Stereo [15] adapted this
+paradigm to stereo matching, replacing 3D convolutional
+cost aggregation with cross-connected multi-resolution
+ConvGRUs—multiple GRUs independently maintain hid-
+den states at 1/16 and 1/8 resolution, exchanging informa-
+tion across adjacent levels through upsampling and down-
+sampling, demonstrating the superior cross-domain gener-
+alization capability of pure 2D convolutional iterative ar-
+chitectures.
+However, local retrieval from all-pairs correlations lacks
+non-local geometric information, leading to ambiguity in
+ill-posed regions. IGEV-Stereo [32] proposed a Combined
+Geometry Encoding Volume: first computing a group-wise
+correlation volume, applying a three-level 3D hourglass net-
+work for cost aggregation (with channel expansion from 16
+to 48 guided by left-image feature channel excitation), then
+combining it with the all-pairs correlation pyramid. The
+initial disparity regressed from this volume is far superior
+to zero initialization, dramatically accelerating ConvGRU
+convergence.
+IGEV++ [34] further constructs geometry
+encoding volumes at small, medium, and large disparity
+ranges, covering broader disparity ranges through adaptive
+patch matching. While these methods achieve leading ac-
+curacy, the 3D convolutional regularization and multi-range
+volumes push inference time to hundreds of milliseconds.
+In contrast to the cost-volume-based approach, the
+WAFT series [2, 5] fundamentally restructured the iterative
+matching architecture. WAFT [2] demonstrated in optical
+flow that iterative matching can be achieved solely through
+high-resolution feature warping without explicitly con-
+structing cost volumes. WAFT-Stereo [5] extended this idea
+to stereo matching, replacing traditional correlation compu-
+tation and cost volume construction with feature warping,
+and providing more stable initial estimates through disparity
+classification, achieving high accuracy with improved effi-
+ciency. However, the pure warping paradigm completely
+discards explicit matching candidates and ambiguity dis-
+tribution information, lacking the multi-candidate search
+space preserved by correlation-based methods; moreover,
+its performance depends on large-scale pretrained depth
+models as backbones, hindering lightweight deployment.
+WAVE-Stereo follows the ConvGRU iterative optimiza-
+tion paradigm pioneered by RAFT-Stereo [15] and uses
+the geometry encoding volume proposed by IGEV [32] for
+matching cost retrieval. Unlike existing methods that em-
+ploy only a single correspondence representation, GWCE
+unifies correspondence search (correlation retrieval) and
+
+
+Figure 4. Visualized qualitative comparisons for real-time disparity estimation methods are displayed on Middlebury, ETH3D, Booster and
+KITTI-2015. All predictions stem from zero-shot evaluation.
+residual alignment (feature warping), enabling each Con-
+vGRU update to simultaneously receive matching candi-
+date information and cross-view alignment signals. Further-
+more, PGCP supplements the limited receptive field of local
+iterative updates through periodic global spatial constraint
+injection.
+2.2. Lightweight Stereo Matching
+Real-time performance is a critical requirement for prac-
+tical stereo matching deployment, yet the computational
+and memory overhead of traditional 3D cost volume ag-
+gregation severely constrains inference speed.
+Existing
+lightweight methods mainly pursue efficiency along three
+directions.
+The first category reduces cost volume complexity while
+retaining 3D convolutions. StereoNet [13] constructs cost
+volumes on low-resolution features and recovers high-
+frequency details through color-image-guided hierarchical
+refinement.
+BGNet [31] proposes edge-aware cost vol-
+ume upsampling, confining expensive operations such as
+3D convolutions to low resolutions.
+CoEx [7] improves
+aggregation efficiency through guided cost volume excita-
+tion, while Fast-ACVNet [33] selectively processes high-
+resolution matching with sparse attention. Although these
+methods reduce absolute computation, the inherent over-
+head of 3D convolutions still limits further efficiency gains.
+The second category replaces 3D convolutions with pure
+2D operations.
+AANet [35] adopts deformable 2D con-
+volutions for adaptive cost aggregation; MobileStereoNet-
+2D [23] builds lightweight backbones with MobileNet mod-
+ules.
+LightStereo [12] further proposes a key insight:
+through substantial channel expansion (Channel Boost) in
+2D cost aggregation, one can match the accuracy of 3D/4D
+cost volumes without relying on 3D convolutions.
+Its
+core module employs MobileNetV2 [20] inverted resid-
+ual blocks that temporarily expand input channels, perform
+spatial propagation via depthwise separable convolutions,
+and project back to the original channel count, combined
+with a three-level 2D UNet and multi-scale stripe atten-
+tion, achieving strong performance in both speed and ac-
+curacy. However, pure 2D methods generally face limited
+cross-domain generalization—most models are optimized
+for specific domains (particularly the KITTI online bench-
+mark) and exhibit restricted generalization on diverse un-
+seen scenes.
+The third category adopts hybrid 3D-2D aggregation.
+LiteAnyStereo [4] retains a small 3D component to main-
+tain disparity awareness while using ConvNeXt-style 2D
+
+
+layers for spatial aggregation, achieving strong zero-shot
+generalization through a three-stage training strategy (su-
+pervised pretraining, self-distillation, pseudo-label distilla-
+tion). This method demonstrates that through careful train-
+ing strategy design, lightweight models can also achieve
+generalization comparable to foundation-model-enhanced
+methods.
+WAVE-Stereo’s cost aggregation module follows Light-
+Stereo’s [12] 2D aggregation design: MobileNetV2 [20] in-
+verted residual blocks for channel expansion and a three-
+level UNet for multi-scale feature fusion. Building on the
+initial disparity from 2D aggregation, WAVE-Stereo further
+applies iterative refinement: GWCE unifies correlation re-
+trieval and feature warping as motion encoding, and PGCP
+periodically injects global spatial constraints. This iterative
+refinement framework enables progressive refinement of the
+initial estimate from the lightweight aggregation module,
+significantly improving zero-shot generalization without in-
+creasing cost volume construction overhead.
+2.3. Zero-Shot Generalization in Stereo Matching
+Maintaining accurate estimation on completely unseen
+target domains is a critical prerequisite for practical stereo
+deployment.
+Traditional methods fine-tuned on specific
+datasets (e.g., KITTI) exhibit limited cross-domain gen-
+eralization.
+Recent research on zero-shot generalization
+has primarily proceeded along two directions: introducing
+large-scale pretrained monocular depth foundation models
+(VFM) into the stereo pipeline to leverage their rich scene
+priors, or improving generalization through training strate-
+gies such as distillation and multi-stage training.
+One approach directly introduces large-scale pretrained
+monocular depth foundation models into the stereo pipeline,
+leveraging their rich scene priors to enhance generaliza-
+tion. DepthAnythingV2 [37] acquired strong scene geom-
+etry priors through large-scale monocular training. Foun-
+dationStereo [30] injects the monocular prior of DepthAny-
+thingV2 [37] into the stereo pipeline through side-tuning
+adapters, combined with axial-planar convolutions and a
+disparity Transformer, achieving excellent zero-shot gener-
+alization across multiple real-world benchmarks, but with
+inference latency as high as 496ms. MonSter [10] jointly
+refines monocular and multi-view depth, achieving bidi-
+rectional complementarity through stereo-guided alignment
+and monocular-guided refinement, with 336ms inference.
+BridgeDepth [1] unifies monocular and stereo inference
+through latent-space cross-attention, significantly improv-
+ing efficiency while maintaining fast inference. The core
+cost of these methods is that inference still requires running
+the entire monocular depth backbone, consuming a large
+proportion of the computational budget and making edge
+deployment difficult.
+The second approach improves generalization through
+distillation and multi-stage training strategies, rather than
+introducing external models at inference time.
+Fast-
+FoundationStereo [3] uses FoundationStereo as a teacher
+model, compressing the VFM’s generalization capability
+into a smaller model through knowledge distillation, block-
+wise architecture search, and structured pruning, reducing
+inference time to 188ms. LiteAnyStereo [4] completely by-
+passes VFMs: on a lightweight ConvNeXt-style 2D aggre-
+gation architecture, it achieves competitive zero-shot gener-
+alization through three-stage training—supervised pretrain-
+ing, self-distillation, and pseudo-label distillation—without
+relying on any external model. Both works demonstrate
+from different angles that carefully designed training strate-
+gies can preserve or even approach the generalization level
+of VFM-based methods without carrying a monocular VFM
+at inference time.
+WAVE-Stereo combines the insights of both directions:
+on the data side, it trains on large-scale data similar to
+FoundationStereo [30], ensuring exposure to sufficiently di-
+verse scene distributions during training; on the model ar-
+chitecture side, GWCE unifies matching search and resid-
+ual alignment, and PGCP periodically injects global spa-
+tial constraints, enabling the model to more fully ex-
+ploit training signals at a given data scale. Compared to
+VFM-dependent methods, WAVE-Stereo achieves compet-
+itive generalization results on multiple real-world bench-
+marks without requiring an external monocular depth back-
+bone. Compared to LiteAnyStereo [4]’s multi-stage train-
+ing, WAVE-Stereo achieves strong zero-shot generalization
+with only single-stage supervised training, through care-
+fully designed correspondence representations and suffi-
+ciently diverse training data.
+3. Method
+The overall network architecture is illustrated in Fig. 3.
+We first present the two core modules, GWCE and PGCP,
+followed by the overall training and inference pipeline.
+3.1. GeoWarp Correspondence Encoder
+GWCE is based on the following design principle: ge-
+ometric correlation and feature warping provide funda-
+mentally different matching cues.
+The former retrieves
+local matching costs from the cost volume, preserving
+explicit matching differences and ambiguity information
+among disparity candidates—in textureless or repetitive re-
+gions, multiple disparity candidates may exhibit similar
+matching scores, and this ambiguity is itself an informa-
+tive matching signal.
+The latter warps right-image fea-
+tures to the left-image coordinate system based on the cur-
+rent disparity estimate, enabling the network to directly
+observe aligned cross-view feature differences, transform-
+ing correspondence estimation into a local residual correc-
+tion problem that is more amenable to iterative refinement.
+
+
+Figure 5. Detailed architecture of the GeoWarp Correspondence
+Encoder (GWCE). Three parallel branches—correlation search,
+disparity prior, and cross-view warping alignment—encode com-
+plementary matching signals, which are fused to produce motion
+features mt for the ConvGRU.
+These two provide matching search information and resid-
+ual alignment information, respectively, and are comple-
+mentary in nature.
+In iterative stereo matching, the motion encoder is re-
+sponsible for encoding multiple matching signals into the
+ConvGRU’s motion input.
+Existing methods exhibit a
+paradigm split in correspondence representation: RAFT-
+Stereo [15] and IGEV-Stereo [32] use only correlation fea-
+tures for matching search, while WAFT-Stereo [5] uses only
+warped features for residual optimization. GWCE unifies
+both, providing the GRU with richer matching cues.
+The encoder receives three types of input: correlation
+features c retrieved from the geometry encoding volume,
+the current disparity estimate d, and left-right image fea-
+tures fL, fR.
+These three inputs carry information from
+different stages of correspondence optimization and are en-
+coded in parallel through three independent branches before
+fusion.
+Correlation branch. This branch retrieves local corre-
+lation features from the geometry encoding volume to pro-
+vide explicit matching search information. The correlation
+features c are processed by Encc, where a 1×1 convolution
+compresses the channel dimension and unifies feature rep-
+resentations across scales, followed by a 3 × 3 convolution
+that incorporates local spatial context to produce the corre-
+spondence features xc. Unlike directly regressing a single
+match, the correlation representation preserves the distri-
+bution of matching responses across disparity candidates,
+enabling the network to leverage relative confidence rela-
+tionships among them. In textureless or repetitive regions,
+multiple disparity candidates may produce similar matching
+responses, and this ambiguity information provides a basis
+for subsequent ConvGRU updates:
+xc = Encc(c)
+(1)
+Disparity prior branch. This branch explicitly injects
+the current disparity estimate into the motion encoding. The
+current disparity d is processed by encoder Encd: a 7 × 7
+large-kernel convolution captures sufficiently wide spatial
+context, enabling the branch to perceive spatial distribution
+patterns of the current estimate, followed by ReLU and a 3×
+3 convolution. This geometric prior provides the iterative
+update with current geometric state information:
+xd = Encd(d)
+(2)
+Cross-view warping alignment branch. This branch
+transforms
+correspondence
+estimation
+from
+matching
+search into local residual correction. First, fR is warped
+to the left-image coordinate system via grid sampling using
+the current disparity d to obtain ˜fR, then concatenated with
+fL along the channel dimension and processed by encoder
+Encw (two 3 × 3 convolutions interleaved with ReLU). Un-
+like the correlation branch, the warping alignment branch
+directly observes aligned cross-view feature differences—
+when the disparity estimate is accurate, ˜fR and fL are
+highly consistent and differences mainly stem from noise;
+when bias exists, differences are significantly amplified at
+local edges and textures. The network leverages these cross-
+view differences to estimate the disparity residual, avoiding
+the computational cost of explicit search in the candidate
+disparity space:
+˜fR = Warp(fR, d)
+(3)
+xw = Encw([fL, ˜fR])
+(4)
+where Warp denotes the warping operation using bilinear
+grid sampling, and [·, ·] denotes concatenation along the
+channel dimension.
+Fusion. The three branch outputs are first fused through
+Fusion, then concatenated with the current disparity d to
+form the motion features mt, which serve as input to the
+ConvGRU. The three branches respectively provide match-
+ing candidate information, cross-view alignment informa-
+tion, and current geometric state information:
+mt = [Fusion([xc, xd, xw]), d]
+(5)
+3.2. Periodic Global Context Propagation
+The local iterative update of ConvGRU can only propa-
+gate short-range matching information, with a limited re-
+ceptive field.
+In textureless and repetitive regions, local
+
+
+matching signals are highly ambiguous, and matching am-
+biguity cannot be resolved through neighborhood context
+alone—long-range spatial constraints are needed to deter-
+mine correct correspondences.
+However, running global
+self-attention at every iteration is prohibitively expensive,
+and not every iteration requires global information injec-
+tion.
+The design motivation of PGCP is not to enhance feature
+expressiveness, but to periodically re-inject global spatial
+constraints during the iterative process. When local GRU
+updates drift in ambiguous regions, the global context pro-
+vides global spatial constraints for the local update. Specifi-
+cally, PGCP runs lightweight self-attention at extremely low
+resolution (1/32) only at fixed-interval iterations, keeping
+the additional computational overhead at a very low level.
+The motion features mt are pooled by 8× average pool-
+ing (H/4 →H/32), projected to a Transformer hidden di-
+mension Dtf = 128 via a 1 × 1 convolution, and flattened
+into T = (H/32) × (W/32) tokens. Three Transformer
+layers, each with 4 attention heads and MLP expansion ra-
+tio 3, perform self-attention. The outputs of the first and
+third layers are reshaped back to spatial dimensions, form-
+ing 2 feature scales, which are fed into a simplified DPT
+module.
+The DPT module fuses multi-scale features in a bottom-
+up manner: starting from the deepest level (H/32), each
+step passes through a DPT fusion block (deep residual con-
+volution + bilinear 2× upsampling), adds the result to the
+higher-resolution feature, and ultimately returns to H/4 res-
+olution. The output is added to the GRU hidden state via a
+learnable gating parameter α:
+ht = ht + α · gt
+(6)
+where gt is the global feature output from DPT, and α is a
+learnable scalar initialized to −0.1.
+3.3. Overall Architecture
+We now present the overall architecture of WAVE-
+Stereo. Given a rectified binocular image pair IL, IR ∈
+R3×H×W , a shared-weight MobileNetV2 [20] lightweight
+backbone first extracts multi-scale features, which are fused
+top-down through an FPN with skip connections to pro-
+duce features at four scales.
+The 1/4-resolution features
+fL, fR ∈RCf ×H/4×W/4 (Cf = 24) are used for all sub-
+sequent operations. The maximum disparity Dmax corre-
+sponds to D = Dmax/4 disparity candidates at 1/4 resolu-
+tion.
+Initial disparity. We compute all-pairs correlation be-
+tween fL and fR (channel-wise dot product with mean),
+constructing a 3D cost volume C
+∈
+RD×H/4×W/4.
+A lightweight 2D aggregation module regularizes C.
+Soft-argmin regression yields the initial disparity d0 ∈
+R1×H/4×W/4:
+d0 =
+D−1
+X
+d=0
+d · softmax(C(d))
+(7)
+Iterative update. At iteration t, GWCE receives three
+inputs: (1) local correlation features ct retrieved from the
+geometry encoding volume; (2) the current disparity dt−1;
+(3) warped right-image features ˜fR = Warp(fR, dt−1).
+These three components are encoded through independent
+convolutional branches, concatenated, and fused into mo-
+tion features mt ∈R64×H/4×W/4. The motion features are
+then fed together with context features into the ConvGRU
+to update the hidden state ht. A disparity head decodes the
+residual update ∆dt, and dt = dt−1 + ∆dt.
+Periodic global context injection. Every K iterations,
+the motion features are pooled by 8× average pooling
+(H/4 →H/32), passed through a compact ViT and a
+simplified DPT fusion module to produce global features,
+which are added to the ConvGRU hidden state via a learn-
+able gating mechanism.
+Upsampling.
+RAFT [24]-style convex upsampling
+(Context Upsampling) recovers the 1/4-resolution disparity
+to full resolution. The upsampling mask is generated from
+the GRU’s output mask feature map through two-stage de-
+convolution with progressive upsampling and stem feature
+fusion.
+Loss function. We compute the disparity loss on the
+initial disparity and all iteration disparities:
+Lstereo = λ0 · SmoothL1(d0 −dgt) +
+N
+X
+i=1
+γN−i∥di −dgt∥1
+(8)
+where d0 is the initial disparity from 2D cost aggregation
+with soft-argmin regression, bilinearly upsampled to full
+resolution, λ0 = 0.5 is the initial loss weight. {di}N
+i=1 are
+the N iteration disparity predictions (full resolution), and
+γ = 0.9 is the exponential decay factor assigning higher
+weight to later iterations.
+4. Experiments
+We evaluate WAVE-Stereo on five public benchmarks:
+SceneFlow, Middlebury, ETH3D, KITTI, and Booster. We
+first describe the datasets and implementation details, then
+present zero-shot generalization and in-domain results, and
+finally conduct ablation studies to verify the contribution
+and design choices of each module.
+4.1. Datasets and Evaluation Metrics
+We evaluate on five widely-used public datasets.
+SceneFlow [17] is a synthetic dataset with 960×540 res-
+olution, providing 35,454 training pairs and 4,370 test pairs
+
+
+with dense disparity annotations. We use the more chal-
+lenging Finalpass version (with motion blur and defocus)
+for both training and testing. The end-point error (EPE) is
+reported.
+Middlebury [21] is a real-world indoor dataset with
+2948×1988 resolution, providing two sets of 15 image pairs
+for training and testing. Images are available at full, half,
+and quarter resolutions. For evaluation, we use only the
+half-resolution training pairs to assess cross-domain gener-
+alization, reporting Bad-3.0 (percentage of pixels with ab-
+solute error > 3).
+KITTI 2012/2015 [11, 18] are real-world driving
+datasets at 1242 × 375 resolution. KITTI 2012 contains
+194 training and 195 test pairs, while KITTI 2015 pro-
+vides 200 training and 200 test pairs. Both provide sparse
+ground-truth disparity from LiDAR. We report D1-all for
+both KITTI 2012 and KITTI 2015.
+ETH3D [22] contains grayscale stereo images from in-
+door and outdoor environments, providing 27 pairs with
+ground truth. We use only the training set for cross-domain
+generalization evaluation, reporting Bad-2.0.
+Booster [19] contains extensive scenes with translu-
+cent and specular surfaces, evaluating robustness to non-
+Lambertian surfaces. It provides 228 training and 15 test
+(without GT) pairs. We use only the training set for cross-
+domain generalization evaluation, reporting Bad-2.0 and
+Bad-3.0.
+4.2. Implementation Details
+WAVE-Stereo is implemented in PyTorch. All experi-
+ments use the AdamW [16] optimizer with a OneCycleLR
+learning rate scheduler, peak learning rate 0.0001, and gra-
+dient norm clipping to 0.1. Training uses a batch size of 16
+image pairs per GPU on 8 NVIDIA A100 GPUs. The model
+is jointly trained on 9 public synthetic datasets: Scene-
+Flow [17], FSD [30], FallingThings [26], IRS [27], Syn-
+ClearDepth [6], VirtualKitti2 [9], InStereo2K [8], Unreal-
+Stereo4K [25], and TartanAir [28]. Images are randomly
+cropped to 320 × 720 during training, with data augmenta-
+tion similar to CREStereo [14], including asymmetric color
+jitter, random erasing, random scaling and stretching, ran-
+dom grayscale, Gaussian blur, and region-based noise in-
+jection. The maximum disparity is set to 192. ConvGRU
+training iterations are set to 12, with 8 iterations during in-
+ference by default unless otherwise noted. All speed and
+memory measurements are performed at 1280×736 (720p)
+resolution on an NVIDIA RTX 3090.
+4.3. Zero-Shot Generalization
+Table 1 presents the comparison on five public real-world
+datasets.
+WAVE-Stereo is jointly trained on the mixed
+dataset and evaluated in a zero-shot manner on Middlebury,
+ETH3D, KITTI 2015, and Booster—all target-domain data
+unseen during training.
+Note: All methods are evaluated using their publicly
+available best weights under the same environment. Mid-
+dlebury uses half-resolution (H), non-occluded regions;
+ETH3D uses non-occluded regions;
+KITTI uses non-
+occluded regions; Booster uses quarter-resolution (Q). Iter-
+ative methods are evaluated with their default inference iter-
+ation counts. As shown in Table 1, WAVE-Stereo achieves
+strong performance at 66ms inference speed across five
+real-world benchmarks.
+WAVE-Stereo does not rely on
+any external foundation model—FoundationStereo [30] and
+MonSter [10] both use the monocular prior provided by
+DepthAnythingV2 [37], and WAFT-Stereo [5] similarly re-
+lies on DepthAnythingV2-Large as its feature backbone.
+This indicates that feature warping in GWCE helps improve
+matching performance in transparent and specular regions.
+On Middlebury and ETH3D’s textureless regions, PGCP’s
+periodic global context injection significantly improves dis-
+parity continuity.
+4.4. SceneFlow In-Domain Comparison
+To quantitatively evaluate model performance, we com-
+pare WAVE-Stereo with state-of-the-art stereo methods
+on the SceneFlow in-domain setting, as shown in Ta-
+ble 2.
+Among methods without any monocular VFM,
+WAVE-Stereo achieves the highest accuracy with EPE
+0.43.
+Notably, WAVE-Stereo not only comprehensively
+outperforms all real-time non-VFM methods—reducing er-
+ror by 14.0% over LightStereo-H [12] (EPE 0.50), 14.0%
+over RT-IGEV [34] (EPE 0.50), and 29.5% over RAFT-
+Stereo [15] (EPE 0.61)—but also surpasses several non-
+real-time non-VFM methods: 10.4% error reduction over
+IGEV-Stereo [32] (EPE 0.48), 6.5% over IGEV++ [34]
+(EPE 0.46), and 2.3% over Selective-IGEV [29] (EPE 0.44).
+Among these, IGEV++ and Selective-IGEV both rely on
+computationally expensive 3D convolution cost aggregation
+and multi-level geometry encoding volumes, yet WAVE-
+Stereo achieves competitive in-domain accuracy through
+GWCE’s unified geometric-warping encoding and PGCP’s
+global context injection, without any external priors. The
+accuracy gap to VFM methods remains within a manage-
+able range (see §4.3 for efficiency comparison).
+4.5. Ablation Studies
+We conduct four groups of ablation experiments to sys-
+tematically verify the contribution and design choices of
+each module in WAVE-Stereo: component-wise build-up
+verifies the independent marginal contribution of each mod-
+ule, GWCE branch ablation verifies the necessity of unified
+correspondence modeling, PGCP design choices verify the
+optimal configuration of global context injection, and run-
+time decomposition verifies the real-time design objective.
+
+
+Table 1. Zero-shot generalization comparison on five real-world benchmarks. Bold: Best.
+Method
+KITTI-15 D1 ↓
+KITTI-12 D1 ↓
+ETH3D BP-2 ↓
+Booster BP-2 ↓
+Booster BP-3 ↓
+Middlebury BP-3 ↓
+Speed (ms)
+Memory (MB)
+IGEV++ [34]
+9.92
+5.10
+2.29
+16.99
+14.42
+7.77
+582
+2536
+MonSter [10]
+3.39
+3.01
+0.54
+13.00
+9.51
+3.49
+1301
+6544
+WAFT-Stereo [5]
+3.00
+2.71
+0.32
+5.35
+3.61
+1.91
+601
+10412
+FoundationStereo [30]
+2.88
+2.48
+0.38
+4.35
+3.46
+1.69
+1852
+13142
+RT-IGEV [34]
+6.65
+6.18
+3.10
+23.20
+19.00
+11.11
+79
+1070
+LiteAnyStereo [4]
+3.72
+2.97
+1.67
+17.07
+12.89
+7.05
+43
+902
+MatchStereo-Tiny [36]
+3.93
+2.87
+0.93
+7.94
+6.29
+4.30
+82
+920
+Fast-FoundationStereo [3]
+3.21
+2.54
+0.52
+7.15
+5.75
+2.63
+166
+2732
+WAVE-Stereo (Ours)
+3.18
+3.06
+0.86
+4.42
+2.84
+3.92
+66
+980
+Table 2.
+SceneFlow test set in-domain accuracy comparison.
+WAVE-Stereo achieves the best EPE among methods without
+monocular VFM; VFM methods serve as accuracy upper bounds.
+Method
+EPE ↓
+Without Monocular VFM
+LightStereo-H [12]
+0.50
+LiteAnyStereo [4]
+0.82
+RAFT-Stereo [15]
+0.61
+IGEV-Stereo [32]
+0.48
+RT-IGEV [34]
+0.50
+IGEV++ [34]
+0.46
+Selective-IGEV [29]
+0.44
+WAVE-Stereo (Ours)
+0.43
+With Monocular VFM (Upper Bound)
+MonSter [10]
+0.37
+FoundationStereo [30]
+0.34
+All ablation experiments are trained on SceneFlow and eval-
+uated on the test set by EPE.
+4.5.1. Component Ablation
+To verify the independent contribution of GWCE and
+PGCP, we start from a baseline model and progressively
+add each module. All configurations are evaluated on the
+SceneFlow test set for accuracy and inference speed.
+Table 3. Component-wise build-up ablation on SceneFlow test set.
+Row 1 is the IGEV-style baseline. The full model is highlighted in
+green.
+Row
+GWCE
+PGCP
+EPE ↓
+1
+0.58
+2
+✓
+0.57
+3
+✓
+0.46
+4
+✓
+✓
+0.43
+The baseline adopts IGEV [32]-style ConvGRU iterative
+optimization, using only correlation retrieval as the motion
+encoder.
+Adding PGCP alone yields a modest improve-
+ment (0.57 EPE), verifying that global context provides a
+marginal benefit even without unified correspondence en-
+coding. Introducing GWCE unified encoding substantially
+improves accuracy (0.46 EPE), validating the complemen-
+tary gain of warping and correlation features.
+Further
+adding PGCP periodic global context injection achieves the
+optimal 0.43 EPE, demonstrating that global spatial con-
+straints provide critical supplementary information for local
+iterative updates.
+4.5.2. GWCE Branch Ablation
+To evaluate the contribution of each GWCE branch, we
+compare three configurations: (A) w/ Correlation, corre-
+sponding to IGEV [32]’s matching search paradigm; (B)
+w/ Warping, corresponding to WAFT [5]’s feature warping
+paradigm; and (C) Full, unifying both. All configurations
+retain the disparity prior branch for fair comparison.
+Table 4. GWCE branch ablation on SceneFlow test set. All config-
+urations retain the disparity prior branch for fair comparison. The
+full model is highlighted in green.
+Configuration
+Correlation
+Warping
+EPE ↓
+A: w/ Correlation
+✓
+0.451
+B: w/ Warping
+✓
+0.447
+C: Full (Ours)
+✓
+✓
+0.434
+As shown in Table 4, each branch contributes comple-
+mentary information.
+w/ Correlation (A) achieves 0.451
+EPE, w/ Warping (B) achieves 0.447 EPE. Full (C) achieves
+0.434 EPE, reducing error by 2.9% over (B) and 3.8%
+over (A). Notably, w/ Warping (B) slightly outperforms w/
+Correlation (A), indicating that within the current iterative
+framework, residual alignment signals are more critical than
+matching search signals. However, their joint use produces
+an effect surpassing any single paradigm, validating our
+core insight—correlation volume and feature warping are
+complementary rather than alternative correspondence rep-
+resentations.
+4.5.3. PGCP Structural Design
+The key principle of PGCP is to supplement ConvGRU’s
+local updates with a sufficiently compact global branch,
+rather than stacking a heavy Transformer.
+We therefore
+compress PGCP’s hyperparameters into a small set of repre-
+sentative configurations following the exploration paradigm
+commonly used in stereo matching literature. All config-
+urations fix the periodic injection strategy (K = 3) and
+vary only the hidden dimension, number of Transformer
+layers, attention heads, and MLP expansion ratio to ana-
+lyze how PGCP’s internal structural capacity affects accu-
+racy and speed.
+
+
+Table 5. PGCP structural design ablation on SceneFlow test set. Configurations a–d use periodic injection (K = 3); e uses the same
+hyperparameters as b but with every-iteration injection (K = 1), validating that periodic injection achieves similar accuracy at a fraction
+of the cost. The default configuration (b) is highlighted in green. PGCP time measured with the same setup as Table 6.
+TF DIM
+TF LAYERS
+TF HEADS
+TF MLP RATIO
+EPE ↓
+PGCP Time (ms)
+a
+64
+2
+4
+2
+0.46
+1.9
+b
+128
+3
+4
+3
+0.43
+3.2
+c
+256
+3
+8
+3
+0.45
+4.5
+d
+128
+4
+4
+4
+0.49
+3.3
+e
+128
+3
+4
+3
+0.48
+8.8
+As shown in Table 5, config b (128-dim hidden space,
+3 Transformer layers) achieves the optimal 0.43 EPE, out-
+performing both config a (0.46 EPE) and config c (0.45
+EPE), indicating that the global branch requires moderate
+capacity to effectively model long-range spatial dependen-
+cies: too small a capacity (a) cannot propagate global in-
+formation, while simply enlarging the hidden dim and head
+count (c) yields limited gains and raises PGCP time from
+3.2ms to 4.5ms. Config d increases the layer count to 4
+and the MLP ratio to 4, yet EPE degrades to 0.49, showing
+that blindly deepening or widening the Transformer intro-
+duces optimization difficulty rather than performance gains.
+Config e switches the injection interval of b from K=3 to
+every-iteration injection (K=1), which raises the cost to
+8.8ms but degrades EPE to 0.48, confirming that overly fre-
+quent injection not only adds overhead but may also perturb
+the local iterative update by repeatedly injecting redundant
+global signals. Overall, config b achieves the best accuracy-
+efficiency balance and is thus selected as the final configu-
+ration. Fig. 6 provides an ablation visualization of the im-
+provement brought by PGCP on depth estimation quality.
+Figure 6. Ablation visualization of the PGCP module. From left
+to right: RGB images, without PGCP, with PGCP, and ground
+truth. PGCP effectively reduces local estimation errors and im-
+proves disparity continuity in textureless regions.
+4.5.4. Runtime Decomposition
+WAVE-Stereo is designed for real-time inference.
+To
+verify whether the efficiency design of each component
+meets expectations, we measure the runtime breakdown at
+8 iterations.
+The full pipeline (including CPU pre/post-
+Table 6. Runtime decomposition at 8 iterations. The full pipeline
+(including CPU pre/post-processing) is approximately 65ms per
+frame.
+Stage
+Component
+Time (ms)
+Proportion (%)
+Frontend (×1)
+Feature Extraction (MobileNetV2)
+10.72
+17.8
+Cost Volume + 2D Aggregation
+8.58
+14.2
+Initial Disparity Regression
+0.15
+0.3
+Subtotal
+19.45
+32.2
+Iterative (×8)
+GWCE Three-Branch Encoding
+18.53
+30.7
+ConvGRU Update
+16.11
+26.7
+Subtotal
+34.64
+57.4
+Periodic (×3, K = 3)
+PGCP Global Context Injection
+2.92
+4.8
+Backend (×1)
+Disparity Upsampling
+3.32
+5.5
+Total
+60.32
+100
+processing) is approximately 65ms per frame.
+As shown in Table 6, the GPU forward pass totals
+60.32ms, meeting the real-time requirement.
+The run-
+time distribution clearly reflects WAVE-Stereo’s architec-
+tural philosophy of “lightweight front-end + strong itera-
+tive refinement”: front-end processing (feature extraction,
+cost volume, initial disparity) accounts for 32.2%, while
+the computational budget is concentrated in the iterative re-
+finement stage (GWCE + ConvGRU collectively 57.4%).
+The efficiency of the two core modules aligns with design
+expectations—GWCE executes all three branches at every
+iteration yet costs only 2.32ms per call due to exclusive use
+of lightweight convolutions; PGCP operates at 1/32 resolu-
+tion and is invoked only once every 3 iterations, accounting
+for merely 4.8%, demonstrating that periodic injection in-
+troduces global context with low computational overhead.
+4.6. Limitations
+(1) Although our method demonstrates strong general-
+ization, the model is primarily trained on synthetic data.
+Incorporating real-world pseudo-label data during training
+may further improve performance. (2) The maximum dis-
+parity is limited to 192 pixels. This is often insufficient
+for close-range scenes with large baselines and high reso-
+lutions.
+
+
+5. Conclusion
+We proposed WAVE-Stereo, an iterative optimization
+framework for real-time zero-shot stereo matching. To ad-
+dress the limitation of existing methods that adopt either
+correlation search or feature warping in isolation, we in-
+troduce the GeoWarp Correspondence Encoder (GWCE),
+which jointly models matching candidate information,
+cross-view alignment information, and geometric priors,
+and design Periodic Global Context Propagation (PGCP)
+to periodically inject global spatial constraints with low
+overhead. Experiments show that WAVE-Stereo achieves
+competitive zero-shot generalization and real-time infer-
+ence speed on multiple real-world datasets without relying
+on any external monocular depth foundation model. Future
+work will further explore unified correspondence modeling
+and leverage larger-scale training data to improve general-
+ization in complex scenes.
+References
+[1] Anonymous. Bridgedepth: Unifying monocular and stereo
+depth estimation.
+In IEEE Conf. Comput. Vis. Pattern
+Recog., 2025. 5
+[2] Anonymous. Waft: Warping-alone field transforms for opti-
+cal flow. In IEEE Conf. Comput. Vis. Pattern Recog., 2025.
+2, 3
+[3] Anonymous.
+Fast-foundationstereo: Real-time zero-shot
+stereo matching. In IEEE Conf. Comput. Vis. Pattern Recog.,
+2026. 5, 9
+[4] Anonymous.
+Lite any stereo: Efficient zero-shot stereo
+matching. In IEEE Conf. Comput. Vis. Pattern Recog., 2026.
+4, 5, 9
+[5] Anonymous. Waft-stereo: Warping-alone field transforms
+for stereo matching.
+In IEEE Conf. Comput. Vis. Pattern
+Recog., 2026. 2, 3, 6, 8, 9
+[6] Kaixin Bai, Huajian Zeng, Lei Zhang, Yiwen Liu, Hongli
+Xu, Zhaopeng Chen, and Jianwei Zhang. Cleardepth: En-
+hanced stereo perception of transparent objects for robotic
+manipulation. arXiv preprint arXiv:2409.08926, 2024. 8
+[7] Antyanta Bangunharcana, Jae Won Cho, Seokju Lee, In So
+Kweon, Kyung-Soo Kim, and Soohyun Kim. Correlate-and-
+excite: Real-time stereo matching via guided cost volume
+excitation. In 2021 IEEE/RSJ International Conference on
+Intelligent Robots and Systems (IROS), pages 3542–3548,
+2021. 4
+[8] Wenjing Bao, Wei Xu, Xiaoxue Chen, and Yulan Guo. In-
+stereo2k: A large real dataset for stereo matching in indoor
+scenes. SCIS, 2020. 8
+[9] Yohann Cabon, Naila Murray, and Martin Humenberger. Vir-
+tual kitti 2. arXiv, 2020. 8
+[10] Junda Cheng et al. Monster++: A unified geometric foun-
+dation model for multi-view depth estimation via harness-
+ing monodepth priors. In IEEE Conf. Comput. Vis. Pattern
+Recog., 2025. 5, 8, 9
+[11] Andreas Geiger, Philip Lenz, and Raquel Urtasun. Are we
+ready for autonomous driving? the kitti vision benchmark
+suite. In IEEE Conf. Comput. Vis. Pattern Recog., 2012. 8
+[12] Xiuyan Guo, Chenming Zhang, Dujun Nie, Wenzhao Zheng,
+Yuelin Li, Xu Liu, Yuyao Lin, Feiyue Zhou, et al. Light-
+stereo: Channel boost is all you need for efficient stereo
+matching. In IEEE Conf. Comput. Vis. Pattern Recog., 2025.
+4, 5, 8, 9
+[13] Sameh Khamis, Sean Fanello, Christoph Rhemann, Adarsh
+Kowdle, Julien Valentin, and Shahram Izadi.
+Stereonet:
+Guided hierarchical refinement for real-time edge-aware
+depth prediction. In Eur. Conf. Comput. Vis., 2018. 4
+[14] Jiankun Li, Peisen Wang, Pengfei Xiong, Tao Cai, Ziwei
+Yan, Lei Yang, Jiangyu Liu, Haoqiang Fan, and Shuaicheng
+Liu. Practical stereo matching via cascaded recurrent net-
+work with adaptive correlation. In IEEE Conf. Comput. Vis.
+Pattern Recog., 2022. 8
+[15] Lahav Lipson, Zachary Teed, and Jia Deng.
+Raft-stereo:
+Multilevel recurrent field transforms for stereo matching. In
+3DV, 2021. 1, 3, 6, 8, 9
+[16] Ilya Loshchilov and Frank Hutter. Decoupled weight decay
+regularization. Int. Conf. Learn. Represent., 2019. 8
+[17] Nikolaus Mayer, Eddy Ilg, Philip H¨ausser, Philipp Fischer,
+Daniel Cremers, Alexey Dosovitskiy, and Thomas Brox. A
+large dataset to train convolutional networks for disparity,
+optical flow, and scene flow estimation. In IEEE Conf. Com-
+put. Vis. Pattern Recog., 2016. 7, 8
+[18] Moritz Menze and Andreas Geiger. Object scene flow for
+autonomous vehicles. In IEEE Conf. Comput. Vis. Pattern
+Recog., 2015. 8
+[19] Pierluigi Zama Ramirez, Fabio Tosi, Matteo Poggi, Samuele
+Salti, Luigi Di Stefano, and Stefano Mattoccia. Booster: A
+benchmark for depth from images of specular and transpar-
+ent surfaces. IEEE Trans. Pattern Anal. Mach. Intell., 2023.
+8
+[20] Mark Sandler, Andrew Howard, Menglong Zhu, Andrey Zh-
+moginov, and Liang-Chieh Chen.
+Mobilenetv2: Inverted
+residuals and linear bottlenecks. In IEEE Conf. Comput. Vis.
+Pattern Recog., 2018. 4, 5, 7
+[21] Daniel Scharstein, Heiko Hirschm¨uller, York Kitajima,
+Greg Krathwohl, Nera Neˇsi´c, Xi Wang, and Porter West-
+ling. High-resolution stereo datasets with subpixel-accurate
+ground truth. In GCPR, 2014. 8
+[22] Thomas Sch¨ops, Johannes L. Sch¨onberger, Silvano Galliani,
+Torsten Sattler, Konrad Schindler, Marc Pollefeys, and An-
+dreas Geiger.
+A multi-view stereo benchmark with high-
+resolution images and multi-camera videos. In IEEE Conf.
+Comput. Vis. Pattern Recog., 2017. 8
+[23] Faranak Shamsafar, Samuel Woerz, Rafia Rahim, and An-
+dreas Zell. Mobilestereonet: Towards lightweight deep net-
+works for stereo matching. In Proceedings of the IEEE/CVF
+Winter Conference on Applications of Computer Vision,
+pages 2417–2426, 2022. 4
+[24] Zachary Teed and Jia Deng. Raft: Recurrent all-pairs field
+transforms for optical flow. In Eur. Conf. Comput. Vis., 2020.
+3, 7
+[25] Fabio Tosi, Yiyi Liao, Carolin Schmitt, and Andreas Geiger.
+Smd-nets: Stereo mixture density networks. In Conference
+
+
+on Computer Vision and Pattern Recognition (CVPR), 2021.
+8
+[26] Jonathan Tremblay, Thang To, and Stan Birchfield. Falling
+things: A synthetic dataset for 3d object detection and pose
+estimation. In Eur. Conf. Comput. Vis., 2018. 8
+[27] Qiang Wang, Shizhen Zheng, Qingsong Yan, Fei Deng,
+Kaiyong Zhao, and Xiaowen Chu. IRS: A large naturalistic
+indoor robotics stereo dataset to train deep models for dis-
+parity and surface normal estimation. In IEEE International
+Conference on Multimedia and Expo (ICME), 2021. 8
+[28] Wenshan Wang, Delong Zhu, Xiangwei Wang, Yaoyu Hu,
+Yuqiu Qiu, Chen Wang, Yafei Hu, Ashish Kapoor, and Se-
+bastian Scherer. Tartanair: A dataset to push the limits of
+visual slam. In IROS, 2020. 8
+[29] Xianqi Wang, Gangwei Xu, Hao Jia, and Xin Yang.
+Selective-stereo: Adaptive frequency information selection
+for stereo matching.
+In IEEE Conf. Comput. Vis. Pattern
+Recog., 2024. 8, 9
+[30] Bowen Wen, Alex Trevithick, Jan Kautz, Stan Birchfield,
+and Jonathan Tremblay. Foundationstereo: Zero-shot stereo
+matching. In IEEE Conf. Comput. Vis. Pattern Recog., 2025.
+5, 8, 9
+[31] Bin Xu, Yuhua Xu, Xiaoli Yang, Wei Jia, and Yulan Guo.
+Bilateral grid learning for stereo matching networks. In IEEE
+Conf. Comput. Vis. Pattern Recog., 2021. 4
+[32] Gangwei Xu, Xianqi Wang, Xiaohuan Ding, and Xin Yang.
+Iterative geometry encoding volume for stereo matching. In
+IEEE Conf. Comput. Vis. Pattern Recog., 2023. 2, 3, 6, 8, 9
+[33] Gangwei Xu, Yun Wang, Junda Cheng, Jinhui Tang, and Xin
+Yang. Accurate and efficient stereo matching via attention
+concatenation volume. IEEE Transactions on Pattern Anal-
+ysis and Machine Intelligence, 2023. 4
+[34] Gangwei Xu, Xianqi Wang, Zhaojie Zhang, Xiaohuan Ding,
+and Xin Yang. Igev++: Iterative multi-range geometry en-
+coding volumes for stereo matching. IEEE Trans. Pattern
+Anal. Mach. Intell., 2025. 3, 8, 9
+[35] Haofei Xu and Juyong Zhang. Aanet: Adaptive aggrega-
+tion network for efficient stereo matching. In Proceedings of
+the IEEE/CVF Conference on Computer Vision and Pattern
+Recognition, pages 1959–1968, 2020. 4
+[36] Tingman Yan, Tao Liu, Xilian Yang, Qunfei Zhao, and
+Zeyang Xia. Matchattention: Matching the relative positions
+for high-resolution cross-view matching.
+arXiv preprint
+arXiv:2510.14260, 2025. 9
+[37] Lihe Yang, Bingyi Kang, Zilong Huang, Zhen Zhao, Xiao-
+gang Xu, Jiashi Feng, and Hengshuang Zhao. Depth any-
+thing v2. In Adv. Neural Inform. Process. Syst., 2024. 2, 5,
+8

@@ -1,0 +1,2133 @@
+SeeSE3: Emergence of 3D Space in Vision Features
+Caroline Chen
+Google DeepMind
+Sayna Ebrahimi
+Google DeepMind
+Fedor Kitashov
+Google DeepMind
+Ming-Hsuan Yang
+Google DeepMind
+Leonidas Guibas
+Google DeepMind
+Viorica P˘atr˘aucean
+Google DeepMind
+Maks Ovsjanikov
+Google DeepMind
+Abstract
+In this paper, we ask whether vision foundation models construct representations
+that reflect the intrinsic properties of 3D Euclidean space. Unlike previous works
+that probe 3D awareness of vision features by regressing image-centric quantities
+such as depth or normals, we investigate the relation between the structure of the
+space of visual features and the group of Euclidean transformations SE(3). We
+propose a set of probes to evaluate this relation from both topological and geometric
+perspectives: a mutual neighborhood metric that measures the alignment between
+feature neighborhoods and spatial topology, and a Poincaré Adapter to test the linear
+accessibility of the geometry of camera motion from latent displacements in static
+scenes. We show that self-supervised vision models, which, in principle, have not
+been trained with direct 3D supervision or active agency, possess latent subspaces
+that are remarkably strongly correlated with three-dimensional Euclidean space,
+when probed correctly. Building on this insight we propose a new class of “Latent-
+Space Navigation” techniques that perform visual odometry and localization purely
+in the latent space, bypassing the need for explicit 3D reconstruction.
+1
+Introduction
+Learning to perceive the 3D structure of the world is integral to human development [1, 2, 3, 4, 5]. In
+contrast, in most existing vision, robotics or world models, the geometry of 3D space is imposed a
+priori, either through an explicit choice of a coordinate system, e.g., [6, 7, 8, 9] or by distilling from
+human knowledge. One can therefore ask whether it is possible for a vision model to “discover” the
+3D structure of the world with minimal intervention, e.g., purely from the statistics of visual data.
+A prominent view in both cognitive science and philosophy is that to discover the geometry of
+Euclidean space, one must have agency, e.g., [10, 11, 4]. For example, Henri Poincaré hypothesized
+that “A motionless being could never have acquired the concept of space because, he would have had
+no reason to distinguish [changes of position] from changes of state. Nor would he have been able to
+acquire it if his movements had not been voluntary.” ([12] Chap. 4).
+Modern vision foundation models present an opportunity to test this hypothesis. These models are,
+in a strict sense, “motionless beings.” Even when trained on video, they are passive observers of
+someone else’s movement. Inspired by Poincaré, we thus formulate the following problem:
+The Poincaré Task:
+Can a motionless observer, given only passive visual input, “discover” the
+structure of 3D space? In particular, does a vision model naturally organize its latent space in a way
+that reflects the special Euclidean group SE(3) of Euclidean transformations?
+Note that the latent spaces of vision models associate features with the content of the scene, which
+is naturally present in 3D, while 3D space itself is not directly observable. Unlike prior works that
+either probe the 3D awareness of visual features by regressing local visible-surface-centric quantities
+Preprint.
+arXiv:2607.14228v1  [cs.CV]  15 Jul 2026
+
+
+Figure 1: Overview: we investigate whether vision features are aligned with the geometry of Euclidean
+transformations, as captured by motion (trajectories) within a static scene (left). While raw features
+are chaotic and tangled (middle left), we show that a lightweight network that we call the “Poincaré
+adapter” can identify the subspace of the feature space, associated with spatial motion, and unroll it
+to closely follow the ground truth camera trajectories (middle right and right).
+such as depth and normals [13], or employ high-capacity decoders to extract pose [14, 15, 16], we
+test whether the feature space itself is organized to reflect Euclidean 3D structure.
+The key characteristics of Euclidean space are its low-dimensionality (6D for position and camera
+orientation), and its homogeneity, e.g., relative displacements have the same meaning regardless of the
+position in space. This is seemingly in contrast to vision features which are both high-dimensional and
+fundamentally tied to visual content. It is thus not obvious a priori whether such a low-dimensional,
+homogeneous coordinate system resides in the visual features of even the most powerful models.
+To answer this question, we define an appropriate protocol and test several vision foundation models
+on static scenes taken from diverse datasets. Our experiments show that information contained in
+several purely self-supervised image models, when probed correctly, possesses a remarkably strong
+alignment with the spatial structures of SE(3) — so these models are able to “see” SE(3). We build
+on this insight to propose efficient ways to regress camera motion and to enable closed-form latent
+visual navigation. The key contributions of this work are:
+1. We formulate the problem of inferring the structure of 3D space from visual features, by
+comparing their structure to the group of Euclidean transformations SE(3), and introduce
+several probes to evaluate the performance of a range of encoders with respect to this task.
+2. We show that while no features are directly isomorphic to SE(3) even locally, this structure
+can nevertheless be extracted using a lightweight Siamese decoder that we call the “Poincaré
+adapter,” which produces a homogeneous coordinate system.
+3. We provide a theoretical analysis of the conditions under which self-supervised methods can
+recover geometric structure, and investigate the difficulty of recovering different components
+of SE(3) — for example, we show that rotation is easier to encode than translation. We
+also establish the necessary conditions for the emergence of geometric structure through a
+large ablation comparing different variants of vision features trained on the same dataset.
+4. Building on this insight, we introduce a novel closed-form visual navigation approach,
+which exploits the linearization enabled by our Poincaré adapter.
+Overall, our work investigates the conditions for the emergence of the 3D spatial structure within
+vision-based architectures. Furthermore, these insights are related to Visual Navigation Models
+[17, 18, 19] and Navigation World Models [20, 21] by identifying the geometry that underlies spatial
+reasoning and navigation in the latent space.
+2
+Related Work
+Probing 3D Awareness. Our work is closely related to the recent literature on probing the 3D
+awareness of vision foundation models. For example, Probe3D [13] proposed a protocol and
+evaluated a range of vision models on depth and surface normals, as well as multi-view feature
+consistency (keypoint matching). Similarly, You et al. [22] demonstrated that multi-view feature
+consistency is strongly correlated with improved performance on various downstream tasks, while
+Amir et al. [23] showed that self-supervised ViT features serve as effective dense visual descriptors for
+keypoint correspondence. Huang et al. [24] evaluated a range of vision models by estimating multiple
+2
+
+
+3D properties from their features via shallow read-outs, while Man et al. [25] performed a similar
+analysis in the context of scenes, by considering both low-level geometric as well as semantic 3D
+tasks. Other works have probed for viewer-centric properties such as depth (e.g., [26, 27] among many
+others). Our work is fundamentally different from all these efforts, in that we focus on the underlying
+structure of the vision features themselves, and specifically on the presence of a homogeneous spatial
+coordinate system within them, which, we argue, is the hallmark of intrinsic geometric discovery.
+Explicit 3D Reconstruction and Visual Odometry. The field of explicit 3D estimation has seen rapid
+progress with models like DUSt3R [15] and VGGT [16]. These approaches treat 3D reconstruction as
+a sequence-to-sequence problem, employing heavy Transformer architectures to “compute” geometry
+from features. Similarly, classical Visual Odometry (VO) [28] explicitly solves for pose. However,
+these approaches typically employ high-capacity decoders, which might demonstrate that geometric
+information exists within the features, but do not reveal whether visual features are organized and
+structured in a way that reflects Euclidean 3D space.
+Closely related to our goals is RUST [29], which demonstrated that a generative model trained on
+static scenes naturally organizes its latent space into a geometric structure isomorphic to physical
+camera parameters. Our work broadens this by asking if discriminative models trained on arbitrary,
+diverse data (like ImageNet or YouTube) can also discover this geometric substructure for static
+scenes. Interestingly, related recent work by Mitchel et al. [30] shows that in the context of Novel
+View Synthesis, letting the network “discover” pose space through transferability, rather than imposing
+it a priori leads to better performance.
+Cognitive and Neuroscientific Foundations. Our investigation is also motivated by the work of
+Hénaff et al. [31], who demonstrated that the primary visual cortex (V1) transforms curved video
+trajectories into “straighter” paths—a hypothesis recently extended to learned world models [32] in
+the temporal domain. We ask whether vision foundation models perform a similar linearization to
+recover the 6D generators of rigid motion. Our finding that a “Visual Grid Code” emerges in passive,
+motionless observers challenges the prevailing view that grid-cell-like representations require active
+motor agency for path integration [33, 34].
+Visual Navigation Models and Navigation World Models. Our work is also related to Visual
+Navigation Models (VNMs) [35, 36, 17, 18, 37, 19] and Navigation World Models [20, 38, 21, 32].
+The former typically take a source and target frame and output a set of actions to reach the target from
+the source without building a map, while the latter (NWMs) are typically tasked with predicting the
+next visual state or observation given a current state and a simulated action. Although our work does
+not directly deal with action selection, these two problems are closely related to our pose linearization
+and latent space navigation (Section 4 below). Furthermore, both VNMs and NWMs have so far
+been driven primarily by architectural and scaling advances. Instead, our work aims to establish and
+improve the fundamental mechanisms that enable navigation and prediction in vision feature space.
+3
+Background and Motivation
+The overall objective of our work is to study the structure of vision features and to relate it to the
+group of Euclidean transformations. To make the problem well-posed, we consider static scenes,
+where the mapping from camera pose to an image (and thus feature) is stable and well-defined.
+Problem Statement.
+Let S be a static scene observed by a moving camera across time t. An
+encoder fθ maps the image It at time t to a high-dimensional feature vector zt = fθ(It). Our goal is
+to determine if these features reflect the structure of Euclidean transformations the camera undergoes.
+In particular, we consider image acquisition as a sampling process U →Rd from the camera pose
+space U ⊆SE(3) to the feature space Rd. For a static scene, this process is defined via composition
+Pt →It →zt, where Pt ∈U is the camera-to-world pose at time t, It is the image associated with
+that pose, and zt is the vision feature. After assembling the set of features Z = {zt}t=1..N we then
+compare the properties of the point set Z to the structure of SE(3), as defined by the set {Pt}.
+Topology Consistency and Submanifold Dimensionality.
+We first evaluate whether the topology
+of the feature point set {zt} locally respects the topology of SE(3) by comparing the nearest
+neighbors in the feature space to nearest neighbors in camera pose space (metric M1 below). We then
+evaluate whether {zt} locally forms a 6D manifold (metric M2 below).
+3
+
+
+Geometry – Local Linearization and Lie Algebra.
+Most importantly, we are interested in evaluat-
+ing whether {zt} (or a projection of it) captures the geometry of SE(3), or, more precisely, whether
+it is isomorphic to SE(3). Unfortunately, it is generally impossible to construct a global isomorphic
+representation of SE(3) with additive operations in Rd, regardless of the dimensionality d (see
+e.g., [39, 40]). We thus focus on recovering the structure of SE(3) locally. This aligns with the
+concept of “straightening” proposed by Hénaff et al. [31], which suggests that the visual cortex trans-
+forms non-linear pixel-space trajectories into straighter paths. This behavior has been investigated in
+the context of temporal straightening (e.g., [41, 42, 43, 32]), whereas we ask if the “straight” paths in
+latent space correspond to the generators of rigid body motion.
+Formally, we let Pt, Pt+s ∈SE(3) be the camera-to-world pose matrices at frames t and t + s. The
+relative transformation between them is given by Prel = P −1
+t
+Pt+s. We map this relative pose to its
+tangent vector ∆P in the Lie Algebra se(3) using the matrix logarithm:
+∆P = (Log(P −1
+t
+Pt+s))∨∈R6 .
+(1)
+Here, ∆P is a 6-dimensional vector comprising 3 translational velocities and 3 rotational velocities
+(axis-angle), and ∨is the vee operator, which extracts the 6D twist coordinates from the 4×4 matrix
+in se(3). We argue that if the latent space is geometrically structured, there should exist a fixed and
+uniform (i.e., applicable for every point in space) linear operator W such that:
+∆P ≈W(zt+s −zt).
+(2)
+The requirement for W to be linear ensures that the latent space itself supports vector arithmetic
+isomorphic to the tangent space of SE(3).
+Space Discovery.
+To link this optimization problem to the original Poincaré task, suppose ∆P =
+W(zt+s−zt). Since W ∈R6×d, this implies that transitions in the feature space z can be decomposed
+into a 6D row space of W (“changes of position”). Crucially, the modifications within this subspace
+are homogeneous: i.e., the difference vectors zt+s −zt, after projection, can be captured by the same
+set of 6 basis vectors, regardless of t. This means that, by isolating such a subspace an agent can, in
+principle, discover the primary degrees of freedom in the 3D physical world, and those degrees of
+freedom have a consistent meaning irrespective of the visual content observed.
+4
+Protocol
+We evaluate a range of vision encoders on static scenes from ScanNet [44], ARKitScenes [45], TUM
+RGB-D [46], 12 Scenes [47], and 7 Scenes [48] datasets. As mentioned above, we introduce several
+metrics of increasing complexity to probe spatial awareness of vision models.
+Metric 1 (M1): Topological Alignment.
+We use the mutual k-nn alignment metric [49, 50] to eval-
+uate the similarity between neighborhoods in the visual feature and camera pose spaces, respectively.
+While previous works have used it to compare signals as captured by different encoders (vision vs.
+text), here we adapt this metric to compare vision encoders directly to spatial transformations as
+captured by camera motion in a static scene. We describe our precise protocol in Appendix Sec. A.1.
+Metric 2 (M2): Intrinsic Dimensionality (ID).
+We estimate the Local Intrinsic Dimensionality
+using MLE [51] and Two-NN [52] estimators. An intrinsic dimensionality closer to 6 suggests a
+representation that potentially captures the underlying degrees of freedom.
+Note that both metrics M1 and M2 are training-free and directly evaluate the structural similarity
+between the feature space of different encoders and camera pose space. While the results depend on
+the choice of representation for camera pose, we found that the relative ordering of different vision
+encoders is remarkably robust across different representations.
+Metric 3 (M3): Linear Equivariance.
+We test if the feature space is globally Euclidean. For this,
+we train a linear regressor W to predict the relative pose change ∆P from the feature difference:
+∆P ≈W(zt+s −zt) across frames separated by stride s. Success here implies the manifold is
+natively flat. The regression targets are standardized (zero mean, unit variance) per component to
+account for scale differences between translational and rotational units (see Appendix A.2 for details).
+Metric 4 (M4): The Poincaré Adapter.
+Since the metric M3 above imposes a restrictive linear
+constraint, we introduce a lightweight, trainable adapter φθ (an MLP) in a Siamese manner:
+∆P ≈W(φθ(zt+s) −φθ(zt))
+(3)
+4
+
+
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+Mutual k-NN @ Stride 1 (higher is better ↑)
+0.10
+0.15
+0.20
+0.25
+0.30
+0.35
+0.40
+0.45
+Mutual k-NN @ Stride 21 (higher is better ↑)
+Spatial Awareness: Short vs Long Range Topology
+4DS
+CLIP
+CroCo
+DA v3
+DINOv2-B
+DINOv2-L
+DINOv3-B
+DUSt3R
+SD LCM
+MASt3R
+Metric3D
+MoGe
+PE
+Pixels
+RVM
+SD 1.5
+SD 2.1
+SD-DINO
+SVD
+VGGT
+VideoMAEv2
+V-JEPA 2.1
+Model Type
+Video-based
+Text-aligned
+SSL
+Metric-based
+Generative
+Baseline
+Figure 2: Mutual k-nn Alignment (M1). Alignment between camera poses and vision features for
+short (x axis) and long (y axis) strides on ScanNet. The former captures pixel-level dependencies,
+while the latter is more indicative of spatial awareness. Explicit geometric models (DUSt3R, MoGe)
+achieve high alignment. Among self-supervised models, DINO-family encoders show emergent
+spatial topology, while video models (4DS, RVM) struggle to maintain a consistent spatial embedding.
+We call the network φθ a “Poincaré Adapter,” since its goal is to unroll the non-linear feature
+space to construct a homogeneous coordinate system, where changes of pose become linear. We
+emphasize that the adapter network φ is applied independently to any latent vector z, thus allowing a
+restructuring of the latent space to reveal the SE(3) geometry. Please see Figure 1 for a qualitative
+illustration. The full training and implementation details are provided in Appendix A.2. Although
+Eq. (3) is our main formulation, we investigate several alternatives in Section 6 and Appendix A.5.
+Following recent work (e.g., [53]), which has shown that intermediate layers of vision models tend
+to carry more geometric awareness, for all metrics M1-M4, we perform a layer sweep across the
+encoder blocks to achieve the best performance.
+4.1
+Application: Latent Space Navigation
+As a proof of concept enabled by our study, we apply our approach to Latent Space Navigation.
+The key idea is that, if the visual latent space can be structured to reflect the local topology of SE(3),
+then an agent should be able to “imagine” the visual consequence of a physical movement without
+requiring explicit 3D reconstruction. This objective relates to both latent novel view synthesis [7, 54],
+and, more closely, to Navigation World Models [20, 21]. Unlike both of these frameworks, our goal is
+not to synthesize views, however, but rather to show that navigation can be greatly simplified (reduced
+to vector arithmetic) after identifying the appropriate camera-aligned linear feature subspace.
+Formally, given the adapted feature gt = φθ(zt) of a starting frame and a desired physical displace-
+ment (pose change) ∆P, our goal is to predict the feature representation of the destination frame,
+ˆgt+s by inverting the Poincaré Adapter. We evaluate a completely training-free navigator (which we
+call Inverse Poincaré). Since our adapter projects features such that ∆P ≈W(gt+s −gt), (where
+gt = φθ(zt) as in Eq. (3)), we can linearly invert this relationship:
+ˆgt+s = gt + W †∆P ,
+(4)
+where W † is the pseudo-inverse of the linear projection weights. We compare this approach to
+parametric correctors (e.g., Linear, MLP, and Attention layers) trained to predict ˆgt+s from the
+concatenated input [gt; ∆P]. To give the networks a strong geometric foundation, the higher-capacity
+models (MLP and Attention) are constructed to predict a non-linear residual correction on top of the
+baseline prediction (i.e., ˆgt+s = gt + W †∆P + Net([gt; ∆P])).
+5
+
+
+Metric
+Pixels
+CroCo [55]
+DINOv2-B [56]
+DINOv3-B [57]
+DUSt3R [15]
+V-JEPA [21]
+VGGT-L [16]
+ID (TwoNN)
+5.01
+7.66
+9.15
+10.76
+7.16
+9.55
+7.74
+ID (MLE)
+4.03
+5.92
+6.41
+7.88
+4.40
+5.13
+5.36
+R2 (M3)
+-5.29
+-0.42
+-0.28
+-0.26
+-0.22
+0.09
+-0.09
+Table 1: Intrinsic Dimension & Linear Equivariance. Representative models compared on intrinsic
+dimension (TwoNN and MLE) and raw linear readout R2 (M3). Values correspond to the layer
+maximizing M3 performance. We provide the full table with 18 different models in Appendix A.3.
+To evaluate navigation success, we perform a nearest-neighbor retrieval task. We query the test set
+of unseen scene frames using the predicted ˆgt+s via L2 distance in the adapted feature space, and
+measure Pose-Error Hits (Hit@ϵ). For each frame, we compute the L2 distance between the raw 6D
+twist vectors (3D translation in meters + 3D axis-angle rotation in radians) of the target and retrieved
+relative poses. As this distance mixes translation and rotation, the thresholds ϵ ∈{0.1, 0.2, 0.3, 0.5}
+correspond approximately to a pure translation error of ϵ m, a pure rotation error of ϵ rad, or some
+combination thereof. Hit@ϵ reports the fraction of retrievals for which this distance is below ϵ.
+5
+Main Results
+We first evaluate a diverse set of vision foundation models on static scenes from ScanNet [44].
+Our evaluation suite includes: patchified Raw Pixels (baseline), CLIP [58], DINOv2 [56], DI-
+NOv3 [57], CroCo [55] (3D-pretext SSL), V-JEPA 2.1 [21], against explicit geometric foundation
+models DUSt3R [15] and MoGe [59]. We also evaluated Depth Anything v3 [60], Perception Encoder
+[61], Metric3d v2 [62], and generative models: Stable Diffusion SD 1.5 DDIM and SD 2.1 DDIM
+features, [63, 64], LCM DDIM [65, 63, 64], SD-DINO VAE and SD-DINO UNet features [66], Stable
+Video Diffusion (SVD) [67], as well as several video models: VideoMAEv2 [68], RVM (Recurrent
+Video Masked autoencoders) [69] and the base variant from the 4DS family [70].
+Topological Alignment (Metric M1).
+We first evaluate if the neighborhood structure of the visual
+latent space mirrors the neighborhood structure of the physical world. We use the mutual k-nn
+alignment score described in Appendix A.1, across both short and long temporal strides. A higher
+stride introduces larger viewpoint changes, reducing pixel overlap and testing global spatial awareness.
+As shown in Figure 2, models explicitly trained with geometric objectives (DUSt3R, MoGe, MASt3R)
+achieve the highest alignment scores (≈0.35 −0.40) at high strides. This highlights that their
+representations map visual inputs to a metric-aligned coordinate system. Interestingly, although most
+of these methods require a decoder to regress camera pose, our results show that the encoder itself
+tends to structure the latent space to align with the structure of the pose space.
+Perhaps more surprisingly, among purely self-supervised vision models, DINOv2 and DINOv3 ex-
+hibit remarkably strong topological alignment (≈0.38), significantly outperforming other baselines
+and Raw Pixels. Crucially, this structure emerges purely from passive image-level self-supervision,
+without explicit depth or pose signals. We also note that video models (VideoMAE, RVM, 4DS)
+perform less successfully on this metric (≈0.15−0.25). We hypothesize that while these models cap-
+ture temporal motion, their latent states are highly context-dependent (entangled with the generative
+trajectory) and fail to form a stable, globally consistent spatial map of the static environment.
+Geometry of Raw Features (Metrics M2 & M3).
+We estimate the Local Intrinsic Dimensionality
+(ID) using both Two-NN and MLE estimators. Theoretically, a perfectly space-aligned representation
+of a static scene viewed by a moving camera should have an ID of ≈6. As shown in Table 1, most
+encoders result in features with intrinsic dimensionality around 6 (we justify this effect theoretically
+in Section 6). We observe that DINOv2 and DINOv3 exhibit higher IDs (≈5.8 −10.0), reflecting
+a richer semantic manifold that has expanded beyond simple pixel correlations. CroCo, which is
+pre-trained with explicit 3D cross-view completion, shows a lower ID (≈5.9, MLE) closer to the
+physical degrees of freedom.
+We then test if physical displacements ∆P can be recovered via a global linear projection ∆P ≈
+W(zt+s −zt). As reported in Table 1, models generally fail this test, yielding negative or near-zero
+R2 scores (e.g., DINOv2 R2 ≈−0.28, Pixels R2 ≈−5.29). This confirms that the “Manifold of
+Vision” is natively curved; standard vector arithmetic on raw features does not correspond to physical
+motion. We provide a full comparison across a wide range of models in Appendix A.3.
+6
+
+
+Figure 3: Example frame pairs from ScanNet. The frames within each of these two pairs are
+separated by a stride of s = 40 frames, illustrating the typical viewpoint change that the Poincaré
+adapter must decode.
+2
+4
+8
+16
+20
+24
+32
+40
+60
+Frame stride (s)
+-0.20
+-0.15
+-0.10
+-0.05
+-0.00
+0.05
+0.10
+0.15
+0.20
+0.25
+0.30
+0.35
+0.40
+0.45
+0.50
+0.55
+0.60
+0.65
+0.70
+Best adapter R2 (mean)
+Best adapter R2 vs frame stride (all models, best layer per s)
+DINOv2-B
+V-JEPA 2.1
+DUSt3R
+VGGT
+SD 2.1
+MASt3R
+DINOv2-L
+PE
+DINOv3-B
+CroCo
+SD LCM
+SD-DINO VAE
+SD-DINO
+SVD
+SD 1.5
+MoGe
+CLIP
+Pixels
+Figure 4: Poincaré Adapter (M4). Quantitative evaluation across a range of encoders and frame
+strides s. We evaluate whether changes in the latent features as observed across s frames can be
+linearly mapped to changes in camera pose.
+Emergence of Linear Structure (Metric M4).
+As shown above, Metrics M2 and M3 do not tend
+to differentiate vision encoders because they are, respectively, too easy (most models have ID close
+to 6) and too hard (no model possesses an easily linearizable subspace aligned with motion). We thus
+focus on the Poincaré Adapter described in Eq. (3). Example input frame pairs (Figure 3) illustrate
+the typical viewpoint change across a stride of s=40 frames in ScanNet [44].
+Remarkably, by applying a lightweight Siamese MLP adapter φ, we recover strong linear equivariance.
+As shown in Figure 4, DINOv2 achieves strong performance, reaching test set R2 ≈0.65, averaged
+over 3 scenes from ScanNet. This implies that the latent space contains a locally Euclidean sub-
+manifold isomorphic to SE(3)—effectively a “Visual Grid Code”—which can be accessed via a
+non-linear projection. Notably, CroCo, despite being trained with explicit 3D tasks, underperforms
+DINOv2 (R2 ≈0.38), suggesting that massive passive observation (DINOv2’s scale) may be more
+effective for discovering spatial laws than smaller-scale explicit 3D pre-training.
+We also note that topological alignment already emerges without any training (M1), and that raw
+pixels remain strongly negative R2 even with the adapter (Figure 4), confirming that the decodable
+structure arises in and is dependent on the properties of learned features.
+To provide a complete picture of geometric decodability across different environments, we summarize
+the results of 5 different datasets in Table 2. We compare the three representative foundation models
+(DINOv2, V-JEPA, DUSt3R) and average decodability metrics within each dataset. Overall, we note
+that V-JEPA 2.1 [21] and DUSt3R [15] possess, on average, the strongest geometric awareness. We
+also remark that the difficulty of decoding the spatial structure is highly dependent on the environment,
+and present a scene difficulty analysis in Sec. A.4.
+Generalization and Scaling.
+To understand how geometric awareness generalizes, we trained
+Poincaré adapters on varying numbers of ScanNet rooms (N ∈{5, 10, 15, . . . , 200}) and evaluated
+them zero-shot on a fixed set of 31 held-out rooms. As shown in Figure 5, generalization improves
+monotonically with scale across multiple vision foundation models (DINOv2, V-JEPA, DUSt3R)
+despite their different pre-training objectives. For example, the fraction of rooms where the zero-shot
+7
+
+
+Dataset
+Scenes
+V-JEPA 2.1 [21]
+DUSt3R [15]
+DINOv2 [56]
+Max R2
+R2 > 0
+R2 > 0.3
+Max R2
+R2 > 0
+R2 > 0.3
+Max R2
+R2 > 0
+R2 > 0.3
+12-Scenes [47]
+10
+0.803
+100%
+70%
+0.789
+90%
+80%
+0.682
+80%
+50%
+ScanNet [44]
+707
+0.735
+35%
+4%
+0.711
+37%
+6%
+0.673
+31%
+3%
+ARKitScenes [45]
+133
+0.344
+51%
+3%
+0.412
+50%
+4%
+0.339
+47%
+1%
+TUM RGB-D [46]
+17
+0.337
+41%
+12%
+0.435
+41%
+18%
+0.348
+35%
+12%
+7-Scenes [48]
+46
+0.254
+4%
+0%
+0.320
+7%
+2%
+0.331
+2%
+2%
+Table 2: Overall Dataset Success Rates (M4). Aggregate performance metrics across all evaluated
+rooms and representative model backbones. The results highlight that datasets with clean bundle-
+adjusted poses and dense captures (e.g., 12-Scenes) achieve near-perfect decodability, whereas sparse
+or noisy datasets (e.g., single-scan ARKitScenes) exhibit much lower success rates.
+Figure 5: Generalization and Scaling (M4). Evaluation of zero-shot pose recovery on 31 unseen test
+rooms as a function of the number of training rooms (N). Left: The fraction of successfully recovered
+rooms (Top-R2 > 0) increases monotonically. Right: The total recoverable signal (Clipped Mean
+R2) grows substantially without plateauing.
+adapter recovers a positive R2 signal grows from roughly 18% at N = 5 to 50% at N = 200, while
+the overall recoverable signal increases accordingly. Notably, these scaling curves do not plateau at
+N = 200, confirming that geometric awareness is a scalable, universal emergent property of vision
+transformers that transfers to unseen environments.
+5.1
+Latent Space Navigation
+Building upon the linear structure revealed by the Poincaré Adapter, we test our Latent Space
+Navigation proof-of-concept using the intermediate features of DINOv2 (Layer 7) and the explicitly
+geometric DUSt3R (Layer 16). The results, averaged across multiple scenes, are summarized in
+Table 3. We include an Identity baseline that simply returns the source frame’s feature (ˆgt+s = gt, i.e.,
+no navigation at all) to calibrate the difficulty of the task. We compare the training-free “Inv. Poincaré”
+approach—which simply adds the pseudo-inverse scaled pose displacement to the current feature
+(gt + W †∆P)—against a learned Attention corrector for both backbones. As shown in Table 3, the
+zero-shot Inv. Poincaré approach yields highly competitive retrieval, significantly outperforming the
+static Identity baseline at all scales. While the Attention corrector achieves better regression metrics
+(R2), it lags behind Inv. Poincaré in physical region retrieval, suggesting that simple vector arithmetic
+is sufficient to move the observer to the correct spatial neighborhood. A full comparison including
+additional correctors is provided in Appendix Table 9.
+Cross-Room Generalization. We extend our navigation evaluation to 31 unseen test rooms to test
+generalizability. While the zero-shot pseudo-inverse (W †) correctly retrieves frames better than
+Identity in roughly 60% of rooms, adapting it using a Ridge-Refit (fitting only the linear mapping
+component of ∆P →∆g on the test room, given a frozen adapter) pushes navigation success to 90–
+94% across DINOv2, DUSt3R, and V-JEPA backbones. This demonstrates that the adapter discovers
+a geometrically structured manifold that is robust even across entirely different environments.
+We also note that this linear structure allows for Multi-Step Navigation in the latent space. Given a
+source and a target frame from an unseen test room, we split the desired pose displacement ∆P into
+S equal sub-steps and iteratively apply the adapter in an open-loop fashion to generate intermediate
+latent features, without generating any pixels. We then retrieve the nearest neighbor frame from the
+test set. We note that for moderate displacements (e.g., 0.68m, 19◦) in the 12 Scenes dataset [47],
+the 4-step retrieved trajectory reaches the exact target frame. Even for extreme displacements (e.g.,
+8
+
+
+Backbone
+Method
+MSE (↓)
+R2 (↑)
+Top-1 (↑)
+Hit@0.1 (↑)
+Hit@0.2 (↑)
+Hit@0.3 (↑)
+Hit@0.5 (↑)
+DINOv2
+Identity
+0.578
+−0.323
+0.000
+0.090
+0.204
+0.302
+0.523
+DINOv2
+Inv. Poincaré
+0.350
+0.199
+0.041
+0.252
+0.479
+0.628
+0.741
+DINOv2
++ Attention
+0.258
+0.407
+0.018
+0.167
+0.323
+0.383
+0.422
+DUSt3R
+Inv. Poincaré
+0.226
+0.155
+0.030
+0.216
+0.346
+0.467
+0.629
+DUSt3R
++ Attention
+0.108
+0.597
+0.024
+0.201
+0.357
+0.455
+0.535
+Table 3: Latent Space Navigation Results (Averaged over 3 scenes). The Identity baseline (no
+navigation) calibrates task difficulty. The zero-shot Inv. Poincaré approach dominates in topological
+retrieval (Hit@ϵ) despite the Attention corrector achieving better regression metrics (R2).
+Figure 6: Multi-Step Latent Navigation. A 4-step open-loop trajectory (∆P = 0.85m, 36◦). The
+path drifts slightly due to the open-loop integration, but the retrieved frames remain visually coherent
+and successfully approach the target view.
+2.45m, 37◦), the path remains semantically coherent and rotation recovery remains highly precise
+(< 5◦error), although translation drift accumulates. Figure 6 shows a representative trajectory, and
+further examples are provided in Appendix A.11. This confirms the feasibility of open-loop latent
+planning over extended paths. We also explore extending the single-chart adapter to a Mixture-of-
+Experts (MoE) architecture, described in Appendix A.11.
+6
+Analysis
+Going back to the original Poincaré question formulated in the introduction, our findings suggest that
+the answer is: Yes, a motionless observer can discover space, but only up to a nonlinear unwrapping
+that a simple adapter can undo. In this section we provide a more in-depth analysis of both the
+theoretical underpinnings of this behavior and the practical conditions under which it arises. Full
+derivations, proofs, and detailed tables are deferred to the Appendix.
+Probe design is important.
+We compare the Poincaré adapter against four alternative formulations
+for pose recovery from frozen DINOv2-B features (Appendix A.5, Table 6). Three design choices
+prove to be important. First, Lie algebra linearization: predicting the 6D twist vector via a linear
+readout W outperforms SE(3) matrix regression (R2 = 0.61 vs. −0.43), confirming that the adapted
+feature differences are naturally aligned with the tangent space of SE(3). Second, predicting absolute
+poses fails entirely (R2 = −1.75), indicating that DINOv2 encodes relational structure between
+views, not scene-specific locations. Lastly, Siamese structure: applying the adapter independently
+to each feature before subtraction (φ(z2) −φ(z1)) outperforms operating on the raw difference
+(φ(z2 −z1)) by ∆R2 = +0.13, with translation magnitude collapsing from +0.60 to −0.08 without
+it. The Siamese design enforces homogeneity: each feature is normalized into a common coordinate
+frame before comparison.
+Why does the adapter work?
+In the Appendix Sec. A.7, we provide a formal analysis of the
+conditions under which the Poincaré adapter recovers SE(3) displacements. We show (Theorem 3)
+that any smooth encoder whose Jacobian has rank 6 admits a local linear readout. We then analyze
+global decodability: when does a single W work across all poses? We show (Theorem 5a–b) that the
+error is controlled by the curvature of the feature manifold, as measured by the variation of the feature
+9
+
+
+encoder’s Jacobian across poses. A nonlinear adapter φ removes the feature-manifold curvature
+entirely by “unrolling” the curved manifold into a flat coordinate patch (Theorem 5c); a residual from
+the non-commutativity of SE(3) remains, whose rotational component vanishes for pure translational
+displacements and which is small when the angular extent of the region is modest—consistent with
+the observed R2 ≈0.61 where raw linear decoding fails (R2 < 0). We note that on the training set,
+R2 exceeds 0.9, suggesting that the remaining gap is due to generalization rather than a structural
+ceiling of the problem formulation.
+We also study the relative difficulty of recovering different SE(3) components by decomposing
+the Poincaré adapter’s output into rotation (3 DoF), translation direction (2 DoF), and translation
+magnitude (1 DoF). Across a sweep of 3,328 adapter configurations (varying bottleneck dimension,
+learning rate, and loss type) evaluated over multiple random seeds on frozen DINOv2-B features, a
+consistent pattern emerges (detailed in Appendix A.6): rotation is reliably decodable (positive R2 in
+88% of configurations), while translation magnitude is not (positive in only 27%, with 6× the seed
+standard deviation). With a well-tuned adapter, all components achieve comparable R2 (Table 8:
+0.63 trans, 0.59 rot for pretrained DINOv2-B), but translation magnitude is far more sensitive to
+hyperparameters and initialization. This asymmetry has a geometric origin (Theorem 7): rotational
+optical flow depends only on pixel coordinates and focal length, while translational flow scales as 1/Z
+with scene depth—introducing an additional source of Jacobian variation that makes translation
+harder to decode reliably. Translation magnitude is further confounded with depth via the rescaling
+invariance (v, Z) 7→(λv, λZ), making ∥v∥unrecoverable without metric priors.
+Model training – topology is stable; geometry is fragile.
+To identify the necessary training
+conditions, we train 25 DINOv2-B checkpoints from scratch on frames taken from a single walking-
+tour video (using the setup introduced in [71]). We perform systematic ablations across the main
+DINOv2 hyperparameters to investigate the necessary conditions for the emergence of geometric
+structure in the feature extractor (Table 8). We make several observations. First, mutual k-nn
+alignment (metric M1) is stable across recipes (M-k-nn ∈[0.35, 0.42]), while Poincaré R2 ranges
+from 0.08 to 0.47—even four identical runs yield R2 ∈[0.08, 0.35] with M-k-nn = 0.38 ± 0.01.
+The sole ablation that degrades topology is removing DINO self-distillation (M-k-nn drops to 0.24);
+reducing batch size to 128 collapses manifold formation entirely (M-k-nn = 0.15). Data scale is
+the dominant factor for geometry: the pretrained model (R2 = 0.61, 142M images) outperforms the
+best single-video checkpoint (R2 = 0.47), with the gap concentrated in translation magnitude (Mag
+R2 = +0.60 vs. all negatives)—consistent with Theorem 7(d): metric scale requires statistical priors
+over object sizes that only diverse training can provide.
+7
+Conclusion, Limitations and Future Work
+In this paper, we investigated whether vision features capture the structure of Euclidean space by
+studying the alignment between these features and the group SE(3) of rigid motions. We showed
+that, although no encoder reflects this structure directly, it is nevertheless possible to “unroll” the
+feature manifold using a relatively simple adapter network in some cases. It is remarkable that visual
+feature changes can be mapped to pose changes by a homogeneous low-dimensional adapter that is
+independent of location. Interestingly, self-supervised models, while only trained through passive
+observation, do form a representation of 3D space, decodable when probed correctly.
+One limitation of our study is that we only considered static scenes where feature changes are only
+associated with camera motion, and thus do not test Poincaré’s distinction between “changes of
+position” and “changes of state”. It would be interesting to extend our formalism and approach to
+dynamic scenes, which are governed by both camera motion as well as scene motion from underlying
+physical processes, aiming for an understanding of more profound spatio-temporal symmetries or
+conservation laws.
+8
+Acknowledgements
+The authors would like to thank Dima Damen, João Carreira, Daniel Zoran, Gabrijel Boduljak and
+Andrew Zisserman for the many useful comments, discussions and feedback on this work.
+10
+
+
+References
+[1] Edward C Tolman. Cognitive maps in rats and men. Psychological review, 55(4):189, 1948. 1
+[2] James J Gibson. The ecological approach to visual perception: classic edition. Psychology
+press, 2014. 1
+[3] Roger N Shepard and Jacqueline Metzler. Mental rotation of three-dimensional objects. Science,
+171(3972):701–703, 1971. 1
+[4] Jean Piaget. Child’s Conception of Space: Selected Works vol 4. Routledge, 2013. 1
+[5] Roberta L Klatzky. Allocentric and egocentric spatial representations: Definitions, distinctions,
+and interconnections. In Spatial cognition: An interdisciplinary approach to representing and
+processing spatial knowledge, pages 1–17. Springer, 1998. 1
+[6] Johannes L Schonberger and Jan-Michael Frahm. Structure-from-motion revisited. In Proceed-
+ings of the IEEE conference on computer vision and pattern recognition, pages 4104–4113,
+2016. 1
+[7] Ben Mildenhall, Pratul P Srinivasan, Matthew Tancik, Jonathan T Barron, Ravi Ramamoor-
+thi, and Ren Ng. Nerf: Representing scenes as neural radiance fields for view synthesis.
+Communications of the ACM, 65(1):99–106, 2021. 1, 5
+[8] Manolis Savva, Abhishek Kadian, Oleksandr Maksymets, Yili Zhao, Erik Wijmans, Bhavana
+Jain, Julian Straub, Jia Liu, Vladlen Koltun, Jitendra Malik, et al. Habitat: A platform for
+embodied ai research. In Proceedings of the IEEE/CVF international conference on computer
+vision, pages 9339–9347, 2019. 1
+[9] Chuhan Zhang, Guillaume Le Moing, Skanda Koppula, Ignacio Rocco, Liliane Momeni,
+Junyu Xie, Shuyang Sun, Rahul Sukthankar, Joëlle K Barral, Raia Hadsell, et al. Efficiently
+reconstructing dynamic scenes one d4rt at a time. arXiv preprint arXiv:2512.08924, 2025. 1
+[10] George Berkeley. An essay towards a new theory of vision. IndyPublish.com, 1709. 1
+[11] Richard Held and Alan Hein. Movement-produced stimulation in the development of visually
+guided behavior. Journal of comparative and physiological psychology, 56(5):872, 1963. 1
+[12] Henri Poincaré. Science and hypothesis. Dover Publications, 2011. 1
+[13] Mohamed El Banani, Amit Raj, Kevis-Kokitsi Maninis, Abhishek Kar, Yuanzhen Li, Michael
+Rubinstein, Deqing Sun, Leonidas Guibas, Justin Johnson, and Varun Jampani. Probing the
+3D awareness of visual foundation models. In Proceedings of the IEEE/CVF Conference on
+Computer Vision and Pattern Recognition, pages 21795–21806, 2024. 2
+[14] Z. Teed, L. Lipson, and J. Deng. Deep patch visual odometry. In Advances in Neural Information
+Processing Systems (NeurIPS), volume 36, 2023. 2
+[15] S. Wang, V. Leroy, Y. Cabon, B. Chidlovskii, and J. Revaud. DUSt3R: Geometric 3D vision
+made easy. In Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR), pages 20697–
+20709, 2024. 2, 3, 6, 7, 8
+[16] J. Wang, M. Chen, N. Karaev, A. Vedaldi, C. Rupprecht, and D. Novotny. VGGT: Visual
+geometry grounded transformer. In Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit.
+(CVPR), pages 5294–5306, 2025. 2, 3, 6
+[17] Ajay Sridhar, Dhruv Shah, Catherine Glossop, and Sergey Levine. Nomad: Goal masked
+diffusion policies for navigation and exploration. In 2024 IEEE International Conference on
+Robotics and Automation (ICRA), pages 63–70, 2024. 2, 3
+[18] Ria Doshi, Homer Walke, Oier Mees, Sudeep Dasari, and Sergey Levine. Scaling cross-
+embodied learning: One policy for manipulation, navigation, locomotion and aviation. arXiv
+preprint arXiv:2408.11812, 2024. 2, 3
+11
+
+
+[19] Maeva Guerrier, Karthik Soma, Jana Pavlasek, and Giovanni Beltrame. Can vision founda-
+tion models navigate? zero-shot real-world evaluation and lessons learned. arXiv preprint
+arXiv:2603.25937, 2026. 2, 3
+[20] Amir Bar, Gaoyue Zhou, Danny Tran, Trevor Darrell, and Yann LeCun. Navigation world
+models. In Proceedings of the Computer Vision and Pattern Recognition Conference, pages
+15791–15801, 2025. 2, 3, 5
+[21] Lorenzo Mur-Labadia, Matthew Muckley, Amir Bar, Mido Assran, Koustuv Sinha, Mike Rabbat,
+Yann LeCun, Nicolas Ballas, and Adrien Bardes. V-JEPA 2.1: Unlocking dense features in
+video self-supervised learning. arXiv preprint arXiv:2603.14482, 2026. 2, 3, 5, 6, 7, 8
+[22] Yang You, Yixin Li, Congyue Deng, Yue Wang, and Leonidas Guibas. Multiview equivariance
+improves 3D correspondence understanding with minimal feature finetuning. arXiv preprint
+arXiv:2411.19458, 2024. 2
+[23] Shir Amir, Yossi Gandelsman, Shai Bagon, and Tali Dekel. Deep ViT features as dense visual
+descriptors. arXiv preprint arXiv:2112.05814, 2(3):4, 2021. 2
+[24] Zixuan Huang, Xiang Li, Zhaoyang Lv, and James M Rehg. How much 3d do video foundation
+models encode? arXiv preprint arXiv:2512.19949, 2025. 2
+[25] Yunze Man, Shuhong Zheng, Zhipeng Bao, Martial Hebert, Liang-Yan Gui, and Yu-Xiong
+Wang. Lexicon3D: Probing visual foundation models for complex 3D scene understanding.
+Advances in Neural Information Processing Systems, 37:76819–76847, 2024. 3
+[26] A. Bhattad, D. McKee, D. Hoiem, and D. A. Forsyth. StyleGAN knows normal, depth, albedo,
+and more. arXiv preprint arXiv:2306.00987, 2023. 3
+[27] Y. Chen, F. Viégas, and M. Wattenberg. Beyond surface statistics: Scene representations in a
+latent diffusion model. arXiv preprint arXiv:2306.05720, 2023. 3
+[28] C. Campos, R. Elvira, J. J. Gómez Rodríguez, J. M. M. Montiel, and J. D. Tardós. ORB-
+SLAM3: An accurate open-source library for visual, visual–inertial, and multimap SLAM.
+IEEE Transactions on Robotics, 37(6):1874–1890, 2021. 3
+[29] Mehdi SM Sajjadi, Aravindh Mahendran, Thomas Kipf, Etienne Pot, Daniel Duckworth, Mario
+Luˇci´c, and Klaus Greff. Rust: Latent neural scene representations from unposed imagery. In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages
+17297–17306, 2023. 3
+[30] Thomas W Mitchel, Hyunwoo Ryu, and Vincent Sitzmann. True self-supervised novel view
+synthesis is transferable. arXiv preprint arXiv:2510.13063, 2025. 3
+[31] Olivier J Hénaff, Yoon Bai, Julie A Charlton, Ian Nauhaus, Eero P Simoncelli, and Robbe LT
+Goris. Primary visual cortex straightens natural video trajectories. Nature communications,
+12(1):5982, 2021. 3, 4
+[32] Lucas Maes, Quentin Le Lidec, Damien Scieur, Yann LeCun, and Randall Balestriero. LeWorld-
+Model: Stable end-to-end joint-embedding predictive architecture from pixels. arXiv preprint
+arXiv:2603.19312, 2026. 3, 4
+[33] B. Sorscher, G. C. Mel, S. A. Ocko, L. M. Giocomo, and S. Ganguli. A unified theory for the
+computational and mechanistic origins of grid cells. Neuron, 111(1):121–137, 2023. 3
+[34] W. Dorrell and J. Whittington. If grid cells are the answer, what is the question? a review of
+normative grid cell theory. arXiv preprint arXiv:2601.12424, 2026. 3
+[35] Dhruv Shah, Ajay Sridhar, Arjun Bhorkar, Noriaki Hirose, and Sergey Levine. Gnm: A general
+navigation model to drive any robot. In 2023 IEEE International Conference on Robotics and
+Automation (ICRA), pages 7226–7233, 2023. 3
+[36] Dhruv Shah, Ajay Sridhar, Nitish Dashora, Kyle Stachowicz, Kevin Black, Noriaki Hi-
+rose, and Sergey Levine. Vint: A foundation model for visual navigation. arXiv preprint
+arXiv:2306.14846, 2023. 3
+12
+
+
+[37] Hao Ren, Yiming Zeng, Zetong Bi, Zhaoliang Wan, Junlong Huang, and Hui Cheng. Prior
+does matter: Visual navigation via denoising diffusion bridge models. In Proceedings of the
+IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 12100–12110, 2025.
+3
+[38] Xuan Yao, Junyu Gao, and Changsheng Xu. Navmorph: A self-evolving world model for
+vision-and-language navigation in continuous environments. In Proceedings of the IEEE/CVF
+International Conference on Computer Vision, pages 5536–5546, 2025. 3
+[39] R. M. Murray, Z. Li, and S. S. Sastry. A Mathematical Introduction to Robotic Manipulation.
+CRC Press, 1994. 4
+[40] Yi Zhou, Connelly Barnes, Jingwan Lu, Jimei Yang, and Hao Li. On the continuity of rotation
+representations in neural networks. In Proceedings of the IEEE/CVF conference on computer
+vision and pattern recognition, pages 5745–5753, 2019. 4, 16
+[41] Nikhil Parthasarathy, SM Eslami, Joao Carreira, and Olivier Henaff. Self-supervised video
+pretraining yields robust and more human-aligned visual representations. Advances in Neural
+Information Processing Systems, 36:65743–65765, 2023. 4
+[42] Xueyan Niu, Cristina Savin, and Eero P Simoncelli. Learning predictable and robust neural
+representations by straightening image sequences. Advances in Neural Information Processing
+Systems, 37:40316–40335, 2024. 4
+[43] Piyush Nitin Bagad and Andrew Zisserman. Chirality in action: Time-aware video represen-
+tation learning by latent straightening. Advances in Neural Information Processing Systems,
+38:92695–92726, 2026. 4
+[44] A. Dai, A. X. Chang, M. Savva, M. Halber, T. Funkhouser, and M. Nießner. ScanNet: Richly-
+annotated 3D reconstructions of indoor scenes. In Proc. IEEE Conf. Comput. Vis. Pattern
+Recognit. (CVPR), pages 5828–5839, 2017. 4, 6, 7, 8
+[45] Gilad Baruch, Zhuoyuan Chen, Afshin Dehghan, Tal Dimry, Yuri Feigin, Peter Fu, Thomas
+Gebauer, Brandon Joffe, Daniel Kurz, Arik Schwartz, et al. ARKitScenes: A diverse real-
+world dataset for 3D indoor scene understanding using mobile RGB-D data. arXiv preprint
+arXiv:2111.08897, 2021. 4, 8
+[46] Jürgen Sturm, Nikolas Engelhard, Felix Endres, Wolfram Burgard, and Daniel Cremers. A
+benchmark for the evaluation of rgb-d slam systems. In 2012 IEEE/RSJ international conference
+on intelligent robots and systems, pages 573–580, 2012. 4, 8
+[47] Julien Valentin, Angela Dai, Matthias Nießner, Pushmeet Kohli, Philip Torr, Shahram Izadi,
+and Cem Keskin. Learning to navigate the energy landscape. In 2016 Fourth International
+Conference on 3D Vision (3DV), pages 323–332. IEEE, 2016. 4, 8
+[48] Jamie Shotton, Ben Glocker, Christopher Zach, Shahram Izadi, Antonio Criminisi, and Andrew
+Fitzgibbon. Scene coordinate regression forests for camera relocalization in rgb-d images.
+In Proceedings of the IEEE conference on computer vision and pattern recognition, pages
+2930–2937, 2013. 4, 8
+[49] M. Huh, B. Cheung, T. Wang, and P. Isola. The platonic representation hypothesis. arXiv
+preprint arXiv:2405.07987, 2024. 4
+[50] Tyler Zhu, Tengda Han, Leonidas Guibas, Viorica P˘atr˘aucean, and Maks Ovsjanikov. Dynamic
+reflections: Probing video representations with text alignment. In The Fourteenth International
+Conference on Learning Representations, 2026. 4
+[51] E. Levina and P. Bickel. Maximum likelihood estimation of intrinsic dimension. In Advances in
+Neural Information Processing Systems (NeurIPS), volume 17, 2004. 4
+[52] E. Facco, M. d’Errico, A. Rodriguez, and A. Laio. Estimating the intrinsic dimension of datasets
+by a minimal neighborhood information. Scientific Reports, 7(1):12140, 2017. 4
+13
+
+
+[53] Sebastian Ray Mason, Anders Gjølbye, Phillip Chavarria Højbjerg, Lenka Tˇetková, and Lars Kai
+Hansen. Large vision models can solve mental rotation problems. In IEEE International
+Conference on Acoustics, Speech and Signal Processing (ICASSP), pages 1571–1575, 2026. 5
+[54] G. Metzer, E. Richardson, O. Patashnik, R. Giryes, and D. Cohen-Or. Latent-NeRF for shape-
+guided generation of 3D shapes and textures. In Proc. IEEE/CVF Conf. Comput. Vis. Pattern
+Recognit. (CVPR), pages 12663–12673, 2023. 5
+[55] P. Weinzaepfel, V. Leroy, T. Lucas, R. Brégier, Y. Cabon, V. Arora, L. Antsfeld, B. Chidlovskii,
+G. Csurka, and J. Revaud. CroCo: Self-supervised pre-training for 3D vision tasks by cross-view
+completion. In Advances in Neural Information Processing Systems (NeurIPS), volume 35,
+pages 3502–3516, 2022. 6
+[56] M. Oquab, T. Darcet, T. Moutakanni, H. Vo, M. Szafraniec, V. Khalidov, P. Fernandez, D. Haziza,
+F. Massa, A. El-Nouby, et al. DINOv2: Learning robust visual features without supervision.
+arXiv preprint arXiv:2304.07193, 2023. 6, 8
+[57] Oriane Siméoni, Huy V Vo, Maximilian Seitzer, Federico Baldassarre, Maxime Oquab, Cijo
+Jose, Vasil Khalidov, Marc Szafraniec, Seungeun Yi, Michaël Ramamonjisoa, et al. DINOv3.
+arXiv preprint arXiv:2508.10104, 2025. 6
+[58] A. Radford, J. W. Kim, C. Hallacy, A. Ramesh, G. Goh, S. Agarwal, G. Sastry, A. Askell,
+P. Mishkin, J. Clark, et al. Learning transferable visual models from natural language supervision.
+In Int. Conf. Mach. Learn. (ICML), pages 8748–8763, 2021. 6
+[59] R. Wang, S. Xu, C. Dai, J. Xiang, Y. Deng, X. Tong, and J. Yang. MoGe: Unlocking accurate
+monocular geometry estimation for open-domain images with optimal training supervision. In
+Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR), 2025. 6
+[60] H. Lin, S. Chen, J. H. Liew, D. Y. Chen, Z. Li, G. Shi, J. Feng, and B. Kang. Depth Anything 3:
+Recovering the visual space from any views. arXiv preprint arXiv:2511.10647, 2025. 6
+[61] D. Bolya, P.-Y. Huang, P. Sun, J. H. Cho, A. Madotto, C. Wei, T. Ma, J. Zhi, J. Rajasegaran,
+H. Rasheed, et al. Perception encoder: The best visual embeddings are not at the output of the
+network. arXiv preprint arXiv:2504.13181, 2025. 6
+[62] M. Hu, W. Yin, C. Zhang, Z. Cai, X. Long, H. Chen, K. Wang, G. Yu, C. Shen, and S. Shen.
+Metric3D v2: A versatile monocular geometric foundation model for zero-shot metric depth
+and surface normal estimation. arXiv preprint arXiv:2404.15506, 2024. 6
+[63] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Björn Ommer. High-
+resolution image synthesis with latent diffusion models. In Proceedings of the IEEE/CVF
+conference on computer vision and pattern recognition, pages 10684–10695, 2022. 6
+[64] Jiaming Song, Chenlin Meng, and Stefano Ermon. Denoising diffusion implicit models. arXiv
+preprint arXiv:2010.02502, 2020. 6
+[65] Simian Luo, Yiqin Tan, Longbo Huang, Jian Li, and Hang Zhao. Latent consistency models:
+Synthesizing high-resolution images with few-step inference. arXiv preprint arXiv:2310.04378,
+2023. 6
+[66] Junyi Zhang, Charles Herrmann, Junhwa Hur, Luisa Polania Cabrera, Varun Jampani, Deqing
+Sun, and Ming-Hsuan Yang. A tale of two features: Stable diffusion complements dino for
+zero-shot semantic correspondence. Advances in Neural Information Processing Systems,
+36:45533–45547, 2023. 6
+[67] Andreas Blattmann, Tim Dockhorn, Sumith Kulal, Daniel Mendelevitch, Maciej Kilian, Do-
+minik Lorenz, Yam Levi, Zion English, Vikram Voleti, Adam Letts, et al. Stable video diffusion:
+Scaling latent video diffusion models to large datasets. arXiv preprint arXiv:2311.15127, 2023.
+6
+[68] L. Wang, B. Huang, Z. Zhao, Z. Tong, Y. He, Y. Wang, Y. Wang, and Y. Qiao. VideoMAE v2:
+Scaling video masked autoencoders with dual masking. In Proc. IEEE/CVF Conf. Comput. Vis.
+Pattern Recognit. (CVPR), pages 14549–14560, 2023. 6
+14
+
+
+[69] D. Zoran, N. Parthasarathy, Y. Yang, D. A. Hudson, J. Carreira, and A. Zisserman. Recurrent
+video masked autoencoders. arXiv preprint arXiv:2512.13684, 2025. 6
+[70] J. Carreira, D. Gokay, M. King, C. Zhang, I. Rocco, A. Mahendran, T. A. Keck, J. Heyward,
+S. Koppula, E. Pot, et al. Scaling 4D representations. arXiv preprint arXiv:2412.15212, 2024. 6
+[71] Tengda Han, Sayna Ebrahimi, Dilara Gokay, Li Yang Ku, Maks Ovsjanikov, Iva Babukova,
+Daniel Zoran, Viorica Patraucean, Joao Carreira, Andrew Zisserman, et al. Unique lives, shared
+world: Learning from single-life videos. arXiv preprint arXiv:2512.04085, 2025. 10
+[72] H. Federer. Geometric Measure Theory. Springer, 1969. 21
+[73] J. M. Lee. Introduction to Smooth Manifolds. Springer, 2nd edition, 2012. 21
+15
+
+
+A
+Appendix
+Figure 7: Overview of the mutual nearest neighbor metric M1. For each frame in a scene we extract
+its visual features, as well as its corresponding (ground truth) camera pose. We then compare the
+nearest neighbor graphs computed in the feature (left) and pose (right) spaces.
+A.1
+Metric M1: Mutual k-nn protocol
+For a fixed scene we sample 256 frames, at a given stride. We compute a feature vector for each frame,
+and also associate to it the corresponding camera pose (see Figure 3 for examples of such frame
+pairs). We then compute the k nearest-neighbors (k = 10) in the feature space using cosine similarity,
+and compare these nearest neighbors to the nearest neighbors computed in the camera pose space.
+We use the 9D camera pose representation, comprising 3D translation and the first two columns
+of the rotation matrix, as defined in [40], in world coordinates. To reduce the impact of temporal
+sampling, we exclude temporal neighbors within 10 frames from the nearest neighbor computation in
+both visual feature and pose space. The mutual k-nn metric is defined as the average intersection
+(number of shared edges) between these nearest neighbor graphs (illustrated in Figure 7). The metric
+ranges from 0 (no alignment) to 1 (perfect alignment) between visual and spatial representations.
+For video encoders that require, as input, a temporal window of frames, we sample the encoder-native
+set of frames around each anchor frame and pool all features within this temporal window to obtain a
+single feature vector. We also experimented with keeping only the features associated with a specific
+anchor frame, without a noticeable difference in the results.
+Since this metric requires a single vector per frame, for encoders that contain a CLS token, we take
+features from that token. For others, we perform mean pooling over the patch tokens.
+A.2
+Metrics M3 and M4: implementation details
+For both metrics, we construct frame pairs at a fixed temporal stride s and split them using a time-
+based strategy: for each scene, the first 80% of frames (ordered by timestamp) are used for training
+and the remaining 20% for testing, ensuring that no test frame appears during training. For M3
+(Linear Equivariance), we fit a Ridge regression (scikit-learn, α=1.0, with intercept) from the raw
+feature displacement ∆z = zt+s −zt to the 6D Lie-algebra pose target ∆P, and report the test R2
+(uniform average over the 6 components). Table 1 reports results at the layer maximizing M3 for
+each model.
+To train and evaluate the Poincaré Adapter (M4), we use the same temporal train/test split. The
+Siamese projection network φθ is a 2-layer MLP: Linear(d, 64) →LayerNorm →GELU →
+Linear(64, 20), followed by a bias-free linear readout W ∈R6×20. The regression targets ∆P are
+z-scored (zero mean, unit variance) per component on the training set before training, and predictions
+16
+
+
+Figure 8: Poincaré Adapter architecture: illustration of the Siamese architecture of our “Poincaré
+adapter” used in our Metric M4.
+are un-normalized before computing the test R2. The adapter is optimized with AdamW (lr=1e-3,
+weight decay=1e-2) for 10 epochs with batch size 512 and gradient clipping at norm 1.0. Similarly
+to M1 described above, for video encoders we use a temporal window around each anchor frame
+and pool features within this window to obtain a single feature vector. We use a CLS token when
+available, or, mean pooled patch tokens, otherwise. The representative architecture of the “Poincaré
+Adapter” network is visualized in Figure 8.
+A.3
+Full Intrinsic Dimension and M3 Results for All Models
+In Table 4, we report the Intrinsic Dimension (TwoNN and MLE) and the M3 metric (Max Test R2)
+for 18 different models evaluated in our sweep, using the layer that maximized M3 performance for
+each model.
+Model
+Layer
+ID (TwoNN)
+ID (MLE)
+M3 (Max Test R2)
+clip
+9
+9.61
+7.77
+0.07
+croco
+10
+7.66
+5.92
+-0.42
+dinov2-B
+9
+9.15
+6.41
+-0.28
+dinov2-L_reg_pooled
+11
+8.00
+5.20
+-0.11
+dinov3
+9
+10.76
+7.88
+-0.26
+dust3r
+19
+7.16
+4.40
+-0.22
+lcm_ddim_noise
+3
+9.16
+7.72
+-0.06
+mast3r
+10
+7.37
+5.17
+-0.23
+moge
+-1
+5.93
+4.78
+-0.69
+pe
+15
+14.87
+6.91
+-0.35
+pixels
+-1
+5.01
+4.03
+-5.29
+sd15_ddim_noise
+3
+9.87
+8.35
+-0.04
+sd21_ddim_noise
+3
+10.51
+9.15
+-0.07
+sd_dino_unet
+8
+9.29
+5.83
+-0.75
+sd_dino_vae
+9
+10.18
+6.16
+-0.04
+svd
+3
+7.70
+6.70
+-0.02
+vggt_dinov2
+11
+7.74
+5.36
+-0.09
+vjepa21
+10
+9.55
+5.13
+0.09
+Table 4: Intrinsic Dimension and M3 Metric. Full results for all 18 models evaluated on ScanNet.
+Most models cluster near the theoretical ID of 6, while M3 R2 is negative or near-zero for all,
+suggesting that no model is natively linearly equivariant.
+17
+
+
+Dataset
+Scenes
+Avg Frames/Scene
+R2 > 0 Rate
+Best R2
+Bottleneck
+12-Scenes
+10
+≈1,000
+100%
+0.80
+None — perfect dataset
+ScanNet
+707
+200–5,000
+40%
+0.74
+Single-scan data scarcity
+ARKitScenes
+133
+≈1,500
+59%
+0.37
+Single iPhone scan, motion blur
+TUM RGB-D
+17
+200–800
+47%
+0.44
+Traversals, texture-less scenes
+7-Scenes
+46
+≈500
+9%
+0.19
+≈40 test frame pairs — evaluation noise
+Table 5: Multi-Dataset Evaluation. We evaluate the decodability of geometric features across 913
+individual scenes. Performance varies dramatically by dataset, driven by data sufficiency, visual
+richness, and workspace geometry rather than foundation model capability.
+A.4
+Dataset Summary & Difficulty Analysis
+We summarize the different datasets and the key performance in Table 5. To understand why
+pose recovery varies across environments, we trained independent Poincaré adapters on 913 scenes
+spanning 5 diverse datasets (ScanNet, 12-Scenes, ARKitScenes, TUM RGB-D, 7-Scenes) using
+three representative encoders (V-JEPA 2.1, DUST3R, DINOv2-B). Consistently with the results
+presented in the main paper, we use a temporal 80%/20% train/test split separation. From a large-scale
+comparison across multiple environments, we observe that scene difficulty is driven, to a significant
+extent by data properties, in addition to the choice of foundation model. Specifically, success hinges
+on three factors: (1) Data Sufficiency: scenes with > 1000 pairs succeed 81% of the time, explaining
+why dense datasets like 12-Scenes achieve 100% success while sparse ones like 7-Scenes (often
+< 50 test pairs) artificially fail (9% success). (2) Visual Richness: highly textured rooms provide
+the necessary semantic anchors, outperforming texture-less traversals. (3) Workspace Geometry:
+bounded rooms naturally support dense view overlap and closure, yielding much higher decodability
+than linear hallway traversals. A summary of the dataset difficulties is provided in Table 5.
+Note that the intrinsic dimensionality of most features typically is close to the theoretical value 6 (see
+Theorem 1 below), while the R2 value for linear equivariance Metric M3 is negative or close to zero,
+suggesting that no model is natively aligned with rigid motion.
+A.5
+Ablation: Alternative Formulations for Pose Recovery
+We compare the Poincaré adapter formulation against four alternatives for recovering camera pose
+from frozen DINOv2-B (Layer 7) features on ScanNet. All methods share the same feature backbone,
+train/test splits (time-based, 3 scenes), and adapter capacity (hidden_dim=64, geo_dim=20). Results
+are averaged over 15 random seeds.
+Methods.
+Let zi = z(Igi) ∈R768 denote the frozen feature for image I at pose gi ∈SE(3), and
+let ∆P = log(g2g−1
+1 ) ∈R6 be the Lie algebra target.
+• Poincaré adapter (baseline):
+ˆ
+∆P = W
+ φ(z2) −φ(z1)
+
+, where φ is a 2-layer MLP and
+W is a bias-free linear readout. Loss: MSE on z-scored Lie algebra targets. Siamese: φ is
+applied independently to each feature before taking the difference.
+• Method A (unanchored relative): ˆ
+M = ψ(z2) · ψ(z1)−1, where ψ maps each feature to
+an SE(3) matrix (3D translation + 6D rotation representation), consistent with the target
+convention Mgt = g2g−1
+1 . Loss: ∥log( ˆ
+M −1Mgt)∥2 (geodesic on SE(3)).
+• Method B (absolute pose): ˆWi = ψ(zi) predicts the absolute camera-to-world pose; the
+relative pose is recovered as ˆ
+M = ˆW2 · ˆW −1
+1
+, consistent with Mgt = g2g−1
+1 . Loss: geodesic
+on SE(3) for each absolute pose independently, i.e., P
+i ∥log( ˆW −1
+i
+gi)∥2. Note that the
+composition formula is used only at evaluation time; the training signal is purely on absolute
+poses.
+• Method C (SE(3) MLP on ∆φ): ˆ
+M = MLPSE3
+ φ(z2) −φ(z1)
+
+, using the same Siamese
+φ but outputting an SE(3) matrix instead of a Lie algebra vector. Loss: geodesic on SE(3).
+• Method D (non-Siamese difference):
+ˆ
+∆P = W · φ(z2 −z1), where φ operates on the raw
+feature difference rather than on individual features. Loss: MSE on z-scored Lie algebra
+targets (same as baseline).
+18
+
+
+Results.
+Table 6 summarizes the main results of this ablation.
+Method
+Overall R2
+Trans. R2
+Rot. R2
+Dir. R2
+Mag. R2
+Poincaré adapter
+0.61 ± 0.04
+0.63
+0.59
+0.41
+0.60
+D: φ(∆z) non-Siamese
+0.48 ± 0.07
+0.44
+0.53
+0.08
+−0.08
+C: SE(3) MLP on ∆φ
+−0.43 ± 2.36
+0.25
+−1.10
+−0.05
+−1.45
+A: Unanchored relative
+−6.82 ± 4.83
+−0.66
+−12.98
+−0.97
+−0.99
+B: Absolute pose
+−1.75 ± 2.52
+−0.80
+−2.70
+−0.98
+−3.10
+Table 6: Probe Formulations for SE(3) Recovery from frozen DINOv2-B (Layer 7) features. The
+Siamese Poincaré adapter (R2=0.61) substantially outperforms all alternatives, including absolute
+pose prediction (which fails) and non-Siamese variants.
+Three findings emerge. (1) Relative changes over absolute poses. Method B, which predicts
+absolute camera pose from individual features, fails catastrophically (R2 = −1.75), while all
+relative-change methods achieve positive R2 on at least some components. We attribute this failure
+to the fact that DINOv2 features do not encode scene-specific absolute camera coordinates—they
+encode relational structure between views. Even a hypothetically perfect composition formula
+cannot recover meaningful relative poses from absolute predictions that do not correlate with the
+true camera positions. (2) Linearization helps. Methods A and C operate on SE(3) directly rather
+than on the flat Lie algebra se(3), yet both perform worse than the linearized Poincaré adapter.
+Method C uses the same Siamese architecture and differs only in replacing the linear readout W
+with an MLP outputting SE(3) matrices, yet its R2 drops from 0.61 to −0.43. This suggests that
+the feature differences φ(z2) −φ(z1) are naturally aligned with the Lie algebra structure, and that
+the linearization ∆P ≈W · ∆φ(z) is not a lossy approximation but rather matches the geometry
+of the representation. (3) Siamese structure matters. Method D uses the same linear readout and
+loss as the baseline but applies φ to the raw difference z2 −z1 instead of computing φ(z2) −φ(z1).
+This seemingly minor change drops R2 from 0.61 to 0.48, with the translation magnitude component
+collapsing from 0.60 to −0.08. The Siamese architecture, in which φ normalizes each feature
+independently before subtraction, is essential for the pose signal to be linearly decodable from the
+difference.
+A.6
+Pose Recovery Components Difficulty Analysis
+To further elaborate on our key metric M4 results and analyze the difficulty of recovering different
+components of camera pose, we decompose the Poincaré adapter’s overall R2 into three major parts:
+rotation (3 DoF), translation direction (2 DoF), and translation magnitude (1 DoF), where direction
+and magnitude together form the full translation (3 DoF).
+We assess whether there is a difference in the difficulty of recovering these components. To this end,
+we conducted a hyperparameter sweep training different Poincaré adapters to optimize metric M4
+following the protocol in A.2. We trained 3,328 unique adapter configurations evaluated with up
+to 20 random seeds each, totaling 38,929 runs. All runs use frozen DINOv2-B features (Layer 7,
+CLS token, d = 768) extracted from 3 ScanNet scenes (∼1,200 frames total, stride 2). The
+adapter consists of a Siamese nonlinear projection φ (2-layer MLP) followed by a bias-free linear
+readout W; we sweep over bottleneck dimension geo_dim ∈{10, 20, 40, 80, 160, 320}, number
+of mixture-of-experts heads K ∈{1, 2, 4}, learning rate lr ∈[3×10−4, 3×10−2], and loss type
+∈{MSE, cosine, rot-only}. Evaluation pairs are sampled at a fixed temporal gap (stride) of s = 40
+frames, and R2 is computed on a held-out time-based test split.
+Difficulty hierarchy.
+Table 7 reports the fraction of adapter configurations achieving positive R2
+(better than predicting the constant mean) and R2 > 0.5, aggregated over all runs.
+A consistent ordering emerges: R2
+rot > R2
+trans > R2
+dir > R2
+mag. Rotation is positive in 88% of
+configurations; translation magnitude in only 27%. Moreover, translation magnitude has 6× the seed
+variance of rotation (σ = 1.03 vs. 0.17), meaning that even the configurations that achieve positive
+R2
+mag in one seed often fail in another. While individual configurations occasionally achieve R2
+mag up
+to 0.72, the metric is not reliably linearly decodable: across all runs, the mean R2
+mag is −3.30.
+19
+
+
+Component
+Best R2
+% configs > 0
+% configs > 0.5
+Seed σ
+Rotation
+0.813
+88.1%
+11.2%
+0.17
+Translation
+0.730
+71.7%
+7.0%
+0.32
+Trans. direction
+0.665
+60.5%
+3.9%
+0.30
+Trans. magnitude
+0.725
+26.7%
+6.7%
+1.03
+Table 7: Success Rates and Seed Stability across 38,929 Poincaré adapter runs (DINOv2-B, Layer 7,
+ScanNet). Seed σ is the average within-config standard deviation. Rotation is reliably decodable
+(88% positive R2), while translation magnitude is not (27%, with 6× the seed variance).
+Why rotation is easier.
+The difficulty hierarchy has a precise geometric explanation rooted in
+optical flow and formalized in Theorem 7 below. Intuitively, rotational flow is depth-independent,
+whereas the translational Jacobian depends on depth map (see Theorem 7 for details).
+Joint training regularizes rotation.
+Perhaps counter-intuitively, training the adapter to predict all
+6 DoF jointly produces better rotation R2 than predicting rotation alone. Under matched conditions
+(same architecture, 5 seeds):
+Objective
+Rot R2 mean
+Rot R2 std
+Rot R2 max
+Full 6D (rot + trans)
+0.613
+0.19
+0.813
+Rot-only (3D readout)
+0.552
+0.05
+0.634
+One possible interpretation is that the translation objective acts as a multi-task regularizer for the
+shared feature projection φ, reducing the possibility of overfitting.
+A.7
+Theoretical Analysis
+Before proceeding, we note that even without considering the specifics of the visual feature extractor,
+under fairly general conditions, the acquisition process itself imposes theoretical constraints on the
+structure in the feature domain. To state this formally, we frame the visual feature acquisition as
+a continuous generative process over time, and express these constraints with the theorem below
+(which is derived from basic principles, but which we state explicitly for clarity and completeness):
+Theorem 1. Let S be a static scene, and let U ⊆SE(3) be an open set of valid camera poses.
+Consider a visual feature acquisition process P(t) parameterized by time t ∈R, and defined as:
+P(t) = (F ◦P ◦C)(t)
+(5)
+where C : R →U maps time to a camera pose, P : U →I is the rendering mapping from a camera
+pose to an image in the space of pixel values I, and F : I →Rd is a visual feature extractor. Then:
+1. P is a well-defined function, with a unique image for any given pose, and any temporal
+trajectory P(t) is confined to the scene-specific latent set MS = (F ◦P)(U).
+2. Assuming Φ = F ◦P is a smooth mapping, the intrinsic (Hausdorff) dimensionality of MS
+is at most 6.
+3. If Φ = F ◦P is a smooth embedding—meaning it is an injective immersion that maps
+homeomorphically onto its image—then MS is a regular smooth submanifold of Rd with
+intrinsic dimension of exactly 6.
+Proof. We address each claim sequentially:
+1. For a strictly static scene S, the geometry, materials, and illumination of the environment
+are invariant over time. Thus, time t influences the visual observation solely through the
+trajectory C(t), making P : U →I a well-defined mapping that assigns a unique, repeatable
+image to any specific pose. Moreover, by definition, the camera trajectory is restricted to
+valid poses, meaning C(t) ∈U for all t ∈R. Therefore, the composed mapping evaluated
+at any time t yields P(t) = F(P(C(t))) ∈(F ◦P)(U) = MS. The continuous, time-
+parameterized sequence of features P(R) is thus a 1-dimensional curve constrained entirely
+within the bounds of the spatial set MS.
+20
+
+
+2. Let Φ = F ◦P. The domain of valid poses U is an open subset of the Lie group SE(3),
+which is a smooth manifold of dimension 6. Because the composition Φ : U →Rd is
+assumed to be a smooth mapping, it is continuously differentiable and therefore locally
+Lipschitz continuous. By standard results in geometric measure theory [72], locally Lipschitz
+mappings do not increase the Hausdorff dimension of a set. Therefore, dimH(MS) =
+dimH(Φ(U)) ≤dimH(U) = 6.
+3. By definition, a smooth embedding Φ is an immersion (its differential dΦ has a full rank
+of 6 everywhere) that is injective and maps homeomorphically onto its image. Under
+these assumptions, standard differential topology [73] guarantees that the image of an
+embedded manifold is a regular smooth submanifold, diffeomorphic to the domain. Because
+diffeomorphisms preserve dimensionality, MS = Φ(U) is a regular smooth submanifold of
+Rd with an exact intrinsic dimension of 6.
+A.7.1
+Geometric Decodability from Features – Setup and Notation
+Throughout the theoretical analysis, relative pose is expressed in the body frame: ξ = log(g−1
+1 g2),
+which describes the displacement as seen from g1. This is consistent with Eq. (1) of the main paper.
+Note that for the Poincaré adapter we define the target motion ∆P in the local camera coordinate
+frame (the body frame). In this frame, a translation vector corresponds to an agent-centric action
+(e.g., “move forward 1 meter”) rather than a change in absolute map coordinates (e.g., “move North”).
+This choice is essential for homogeneity: a specific visual change (like the radial expansion of optical
+flow) should always correspond to the same displacement vector ∆P, regardless of where the agent
+is located in the world or which direction it is facing.
+In Appendix A.5, Methods A and B use the world-frame convention log(g2g−1
+1 ); the two are related
+by the adjoint action log(g2g−1
+1 ) = Adg1, log(g−1
+1 g2).
+Rendering model. Fix a 3D scene s. A camera with pose g ∈SE(3) renders an image Ig =
+R(g, s) ∈RH×W ×3. We write the Lie algebra decomposition se(3) = so(3) ⊕R3, so a tangent
+vector ξ = (ω, v) encodes infinitesimal rotation ω ∈R3 and translation v ∈R3.
+Encoder. Let z : RH×W ×3 →Rd be a feature encoder (e.g., a vision transformer). Define the posed
+feature map:
+f : SE(3) →Rd,
+f(g) = z
+ R(g, s)
+
+.
+Definition 2 (Poincaré adapter). We say f admits a Poincaré adapter at g0 if there exist a C1
+diffeomorphism φ: U →V (where U ∋f(g0) is open in Rd) and a matrix W ∈R6×d such that for
+g near g0:
+W ·
+ φ(f(g)) −φ(f(g0))
+
+= log(g−1
+0 g) + O
+ ∥log(g−1
+0 g)∥2
+.
+We say f admits a linear Poincaré adapter if the above holds with φ = id.
+A.7.2
+Local Geometric Decodability
+Theorem 3 (Local Geometric Decodability). Let f : SE(3) →Rd with d ≥6 be the posed feature
+map of a C1 encoder z. Suppose:
+(C1) Smoothness. f is C1 on a neighborhood of g0 ∈SE(3).
+(C2) Local discriminability. The differential dfg0 : se(3) →Rd has rank 6.
+Then f admits a linear Poincaré adapter at g0. Explicitly, there exists W ∈R6×d such that:
+W ·
+ f(g) −f(g0)
+
+= log(g−1
+0 g) + O
+ ∥log(g−1
+0 g)∥2
+.
+Proof. Define F : se(3) ∼= R6 →Rd by F(ξ) = f(g0 · exp(ξ)) −f(g0). Then F(0) = 0 and the
+Jacobian at the origin is JF (0) = dfg0 (since d exp0 = id on se(3)).
+21
+
+
+By (C2), JF (0) ∈Rd×6 has rank 6, so it admits a left inverse: there exists W ∈R6×d with
+W · JF (0) = I6. By Taylor’s theorem:
+W · F(ξ) = W · JF (0) · ξ + O(∥ξ∥2) = ξ + O(∥ξ∥2).
+Since g = g0 · exp(ξ) implies ξ = log(g−1
+0 g), this gives the result.
+Remark 4. Theorem 3 is essentially trivial—it follows from Taylor’s theorem and the existence
+of a left inverse. The content is in recognizing that (C2) is the only condition needed for local
+decodability: any smooth, locally discriminative encoder automatically admits a Poincaré adapter.
+The hard question is: when does a single W work across a range of poses g0? This is the content of
+Theorem 5.
+A.7.3
+Global Linear Decodability and Its Obstruction
+The local readout W(g0) from Theorem 3 depends on g0 because the Jacobian dfg0 varies with pose.
+Define the Jacobian field:
+J : SE(3) →Rd×6,
+J(g) = dfg.
+Theorem 5 (Global Geometric Decodability). Let f : SE(3) →Rd be C2 with rank(dfg) = 6 for
+all g in a connected compact geodesically convex region K ⊂SE(3) (i.e., every minimizing geodesic
+between points in K lies in K).
+(a) Linear Poincaré adapter. Fix any W ∈R6×d that is a left inverse of J(g∗) for some base
+pose g∗∈K (i.e., W · J(g∗) = I6). Then:
+W ·
+ f(g2) −f(g1)
+
+= log(g−1
+1 g2) + ε(g1, g2)
+with first-order error
+∥ε(g1, g2)∥≤
+
+sup
+g∈K
+∥W · J(g) −I6∥
+
+· ∥log(g−1
+1 g2)∥+ O
+ ∥log(g−1
+1 g2)∥2
+.
+The first-order error vanishes if and only if W · J(g) is constant over K—i.e., the Jacobian
+field is constant modulo ker W.
+(b) Obstruction (manifold curvature). The first-order error is controlled by the curvature of
+the feature manifold f(K) ⊂Rd:
+sup
+g∈K
+∥W · J(g) −I6∥≤diam(K) · sup
+g∈K
+∥W · ∇J(g)∥,
+where ∇J denotes the covariant derivative of J along K, and diam(K) is the diameter
+of K in SE(3).
+(c) Nonlinear adapter and intrinsic curvature. Suppose further that the feature map f is
+globally injective on K (hence an embedding). Without loss of generality, choose the world
+coordinate frame such that the identity pose I ∈K. There exists a C1 diffeomorphism
+φ: U →V (where U, V ⊂Rd are open neighborhoods of f(K) and φ(f(K)), respectively)
+and a readout matrix W ∈R6×d such that for all g1, g2 ∈K, the Siamese adapter yields:
+W ·
+ φ(f(g2)) −φ(f(g1))
+
+= log(g−1
+1 g2) + εLie(g1, g2) + O
+ ∥log(g−1
+1 g2)∥2
+.
+The nonlinear adapter flattens the extrinsic curvature of the neural feature manifold (remov-
+ing the Jacobian variation). The remaining first-order error, εLie, is strictly intrinsic to the
+non-commutative geometry of SE(3), governed by the inverse differential of the exponential
+map (d expX)−1. Its leading term is the Lie bracket, and it is bounded by:
+∥εLie(g1, g2)∥≤C(RK) · ∥log(g−1
+1 g2)∥,
+where C(RK) →0 as RK →0, with leading behavior C(RK) = 1
+2CLie RK + O(R2
+K).
+where RK = maxg∈K ∥log(g)∥is the radius of K in the Lie algebra.
+22
+
+
+Proof of (a). Fix any W that is a left inverse of J(g∗) for some g∗∈K. By the fundamental theorem
+of calculus along a geodesic γ from g1 to g2 with body velocity ξ = log(g−1
+1 g2):
+f(g2) −f(g1) =
+Z 1
+0
+J(γ(t)) dt
+
+· ξ.
+Applying W:
+W ·
+ f(g2) −f(g1)
+
+= ξ +
+Z 1
+0
+ W · J(γ(t)) −I6
+
+dt
+
+· ξ.
+The error term satisfies:
+
+Z 1
+0
+ W · J(γ(t)) −I6
+
+dt · ξ
+ ≤sup
+g∈K
+∥W · J(g) −I6∥· ∥ξ∥.
+The error vanishes to first order iff W · J(g) = I6 for all g ∈K.
+Proof of (b). Since W · J(g∗) = I6, for any g ∈K:
+∥W · J(g) −I6∥= ∥W · (J(g) −J(g∗))∥≤∥W∥· ∥J(g) −J(g∗)∥.
+By the mean value theorem on the Lie group, ∥J(g) −J(g∗)∥≤supγ ∥∇J∥· d(g, g∗). Taking the
+supremum over K and noting d(g, g∗) ≤diam(K) gives the result (absorbing ∥W∥into the ∇J
+term).
+Proof of (c). Since f is a C1 immersion and globally injective on the compact set K, the image
+M = f(K) is an embedded 6-dimensional submanifold of Rd. By the Tubular Neighborhood
+Theorem, there exists an open neighborhood U of M and a smooth projection π: U →M.
+Define the Lie algebra chart around the identity ψ(g) = log(g) ∈se(3) ∼= R6. We first define a map
+on the manifold ˆφ = ψ ◦f −1 ◦π: U →R6. To make this a full diffeomorphism onto its open image
+in Rd, we append the normal bundle coordinates: φ(x) = ( ˆφ(x), x −π(x)) ∈R6 × Rd−6 ∼= Rd.
+Setting W = [I6 | 0], the adapter exactly evaluates differences in the absolute Lie algebra coordinates
+(linearizing around 0):
+W ·
+ φ(f(g2)) −φ(f(g1))
+
+= log(g2) −log(g1).
+Let X = log(g1) and let ξ = log(g−1
+1 g2) be the true relative body velocity. Observe the exact
+group composition: g2 = g1(g−1
+1 g2) = exp(X) exp(ξ). By the Baker–Campbell–Hausdorff (BCH)
+formula, the full linear-in-ξ expansion is:
+log
+ exp(X) exp(ξ)
+
+= X + (d expX)−1(ξ) + O(∥ξ∥2),
+where (d expX)−1(ξ) = ξ + 1
+2[X, ξ] + 1
+12[X, [X, ξ]] + · · · is the full BCH series in ξ (convergent
+for ∥X∥< 2π). Substituting this back, the adapter evaluates to:
+ X + (d expX)−1(ξ) + O(∥ξ∥2)
+
+−X = ξ +
+ (d expX)−1(ξ) −ξ
+
++ O(∥ξ∥2).
+The residual first-order error is εLie = (d expX)−1(ξ) −ξ, whose leading term is 1
+2[X, ξ], with
+higher-order corrections
+1
+12[X, [X, ξ]] + · · · that scale as O(∥X∥2∥ξ∥). Because g1 ∈K, we have
+∥X∥= ∥log(g1)∥≤RK. Since the full series converges and each term is bounded by O(Rn
+K∥ξ∥),
+we obtain ∥εLie∥≤C(RK)∥ξ∥with C(RK) = 1
+2CLieRK + O(R2
+K), yielding the result.
+Remark 6 (Interpretation).
+• (a) says that a linear readout W always exists, and its error is controlled by how much
+the Jacobian J(g) varies over the trajectory. The Jacobian variation is the fundamental
+obstruction to linear geometric decodability.
+• (b) says the obstruction is geometric: it is the curvature of the feature manifold f(K) ⊂Rd.
+A flat (affine) feature manifold gives perfect linear readout; curvature creates error.
+23
+
+
+• (c) says the nonlinear adapter φ “unrolls” the curved feature manifold, removing the
+Jacobian-variation error from (a)–(b). However, even after perfect unrolling, the Siamese
+difference φ(z2)−φ(z1) incurs a residual from the Lie bracket 1
+2[ξ, X], because subtraction
+in Rd cannot exactly mirror the non-Abelian group operation. This residual is O(∥ξ∥· RK)
+and is an intrinsic property of SE(3), not of the encoder. Importantly, the se(3) bracket
+satisfies [(ω1, v1), (ω2, v2)] = (ω1×ω2, ω1×v2 −ω2×v1). When both X and ξ are pure
+translations, the bracket vanishes entirely. When the relative displacement ξ is a pure
+translation (ωξ = 0) but the base pose X = (ωX, vX) is rotated relative to the coordinate
+origin, a cross-coupling term ωX × vξ remains; however, the rotational component of
+the bracket still vanishes. In general, the residual scales with the rotational extent of the
+region K, and is small when the angular range RK is modest.
+A.7.4
+Rotation–Translation Asymmetry
+Theorem 7 (Rotational Jacobian is Depth-Independent). Let R(g, s) be the rendering of scene s
+from pose g = (R, t) ∈SE(3), and let the encoder z compute any weighted spatial average of local
+image features. Decompose the Jacobian:
+dfg = [Jω(g)
+Jv(g)] ∈Rd×6,
+where Jω = ∂f/∂ω (rotational) and Jv = ∂f/∂v (translational).
+(a) Rotational Jacobian. The rotational optical flow at pixel (u, v) is:
+∂
+∂ω
+
+u
+v
+
+=
+ 
+−uv
+fy
+fx + u2
+fx
+−fxv
+fy
+−fy −v2
+fy
+uv
+fx
+fyu
+fx
+!
+.
+This depends only on the pixel coordinates and focal lengths (fx, fy)—not on scene depth Z.
+(b) Translational Jacobian. The translational optical flow at pixel (u, v) with depth Z is:
+∂
+∂v
+
+u
+v
+
+= 1
+Z
+
+fx
+0
+−u
+0
+fy
+−v
+
+.
+This depends on Z−1, which varies across the image and across scenes.
+(c) Consequence for Jacobian variation. Jω(g) varies only through the encoder’s nonlinearity
+(how z processes different image content), not through the geometry of the flow itself. Jv(g)
+varies both through the encoder’s nonlinearity and through the depth distribution Z(u, v; g).
+Since Jv has a strictly larger set of variation sources than Jω, the upper bound from
+Theorem 5(b) is generically larger for translation. This provides an analytical justification
+for the empirically observed inequality:
+inf
+Wω sup
+g∈K
+∥Wω · Jω(g) −I3∥≤inf
+Wv sup
+g∈K
+∥Wv · Jv(g) −I3∥,
+with equality only when the scene has constant depth. Note that this is a heuristic expectation
+based on the structure of the upper bounds, not a strict deduction; the actual optimized
+readout errors depend on the specific encoder and scene geometry.
+(d) Scale ambiguity. The translational flow ∂I/∂v ∝Z−1 is invariant under the rescaling
+(v, Z) 7→(λv, λZ). Therefore, translation magnitude and depth are confounded: no
+encoder operating on pixel intensities alone can disambiguate ∥v∥from Z. Note that the
+local Jacobian Jv(g) for a fixed scene generically has full column rank 3, since the depth map
+Z(u, v; g) is fixed and any non-zero translation induces non-trivial optical flow. However,
+scale ambiguity implies that no universal linear readout Wv trained across scenes with
+varying depth distributions can reliably recover translation magnitude—only the translation
+direction (2 DoF) is universally recoverable without metric priors.
+Proof sketch of (c). The chain rule gives Jω(g) = ∂z
+∂I
+
+Ig · ∂Ig
+∂ω and Jv(g) = ∂z
+∂I
+
+Ig · ∂Ig
+∂v . Both share the
+encoder sensitivity factor ∂z/∂I. The rotational flow operator ∂Ig/∂ω is depth-independent by (a);
+the translational flow operator ∂Ig/∂v includes Z−1(u, v; g), which varies with scene geometry. This
+adds an extra source of variation to Jv, so ∥∇Jv∥≥∥∇Jω∥generically.
+24
+
+
+A.8
+Vision Encoder Training, Performance Analysis
+To understand the necessary and sufficient conditions for spatial structure to emerge in self-supervised
+features, we train DINOv2-B from scratch on a single walking-tour video (Amsterdam WalkingTours,
+∼20 minutes) with systematic ablations of the training recipe. We evaluate 25 checkpoints spanning
+component ablations (removing individual losses or crop strategies), a prototype count sweep (64
+to 65k), and multiple independent reruns of the same 65k-prototype baseline to measure training
+stochasticity. All checkpoints are trained for 62,500 iterations with effective batch size 192 (3× A100,
+batch_size_per_gpu = 64), except one checkpoint trained with batch size 128 (2× A100). Each
+checkpoint is evaluated on ScanNet (3 scenes, ∼1,200 frames) using two complementary metrics
+across all 12 transformer layers:
+• Mutual k-nn (M1): a non-parametric measure of topological alignment between features
+and SE(3) camera poses, evaluated at frame stride 5 with oracle over layers.
+• Poincaré adapter R2: a parametric measure of linear geometric decodability. Following
+the optimal configuration found in our hyperparameter sweep, we use s ∈[10, 40] range
+pairing with 30,000 pairs, a bottleneck dimension of 20, and train for 200 epochs averaging
+over 15 random seeds per checkpoint with oracle over layers.
+Table 8 reports both metrics. The central finding is that topology is stable while geometry is fragile.
+Topology
+Geometry (Poincaré R2, oracle layer)
+Checkpoint
+Ablation
+M1
+Best L
+Overall
+Trans
+Rot
+±σ
+Pretrained DINOv2-B
+(142M images)
+0.37
+L7
+0.61
+0.63
+0.59
+0.04
+Component ablations (all BS = 192):
+no_ibot
+−iBOT
+0.39
+L7
+0.30
+0.30
+0.30
+0.05
+no_koleo
+−KoLeo
+0.42
+L7
+0.11
+−0.10
+0.33
+0.11
+no_local
+0 local crops
+0.40
+L0
+0.30
+0.26
+0.34
+0.09
+no_global
+global scale [1, 1]
+0.35
+L1
+0.27
+0.12
+0.41
+0.04
+no_dino
+−DINO loss
+0.24
+L0
+0.31
+0.30
+0.32
+0.05
+geo_regularized
++ geo loss
+0.38
+L10
+0.26
+0.24
+0.27
+0.06
+Prototype count sweep (all BS = 192):
+4k protos
+0.38
+L6
+0.47
+0.42
+0.51
+0.05
+12k protos
+0.39
+L7
+0.31
+0.37
+0.26
+0.06
+1k protos
+0.39
+L11
+0.29
+0.34
+0.25
+0.05
+256 protos
+0.38
+L6
+0.21
+0.17
+0.24
+0.03
+64 protos
+0.38
+L9
+0.08
+0.00
+0.17
+0.10
+Reproducibility: identical 65k config, different runs:
+65k_rerun
+0.40
+L6
+0.35
+0.17
+0.52
+0.04
+v2_65k
+0.38
+L0
+0.21
+0.11
+0.30
+0.03
+65k_base
+0.38
+L3
+0.15
+0.14
+0.15
+0.06
+65k_rerun
+0.38
+L8
+0.08
+−0.06
+0.23
+0.05
+(BS = 128)
+65k, 2×A100
+0.15
+L3
+0.11
+−0.04
+0.26
+0.03
+random weights
+(no training)
+0.11
+L8
+−0.12
+−0.23
+−0.00
+0.03
+Table 8: Training Ablation (ScanNet). Topology (mutual k-nn metric M1) is measured at stride = 5,
+oracle over 12 layers. Geometry (R2) is the mean over 15 seeds at the oracle layer. All checkpoints
+trained on Amsterdam WalkingTours for 62,500 iterations. Topology is stable across training recipes;
+geometry is fragile and depends critically on data scale.
+Topology is stable; geometry is fragile.
+Mutual k-nn alignment is remarkably stable: excluding
+the no_dino and (BS = 128) outliers, all trained checkpoints achieve mutual k-nn ∈[0.35, 0.42],
+within 15% of each other and comparable to the pretrained model (0.37). In contrast, Poincaré adapter
+R2 varies from 0.06 to 0.47 across the same checkpoints—a significantly larger spread relative to
+the metric range. This dissociation reveals that DINOv2 training reliably produces features that are
+topologically aligned with camera pose, but the metric quality of this alignment (whether a linear
+adapter can quantitatively decode pose) is far more sensitive to training details and stochasticity.
+25
+
+
+DINO self-distillation shapes depth representation.
+While no_dino achieves a reasonable over-
+all R2 of 0.31, its best layer is L0 (the patch embedding), and performance collapses in deeper
+layers. This indicates that without the DINO objective, the network fails to build abstract geometric
+representations in its deeper layers, defaulting to low-level pixel correlations available at the input.
+Furthermore, no_dino is the sole ablation that substantially degrades mutual k-nn (0.24 vs. 0.38
+baseline), identifying self-distillation as a unique mechanism for topological alignment.
+Batch size is critical for manifold formation.
+The (BS = 128) checkpoint, trained with effective
+batch size 128 instead of 192, achieves mutual k-nn = 0.15—near random weights (0.11) and far
+below all BS = 192 checkpoints (≥0.35). This suggests a sharp phase transition in self-distillation
+effectiveness as a function of batch diversity, where insufficient contrastive signal prevents the
+formation of a pose-aligned manifold.
+Geometry is stochastic even under identical configs.
+Four independent training runs of the same
+65k-prototype configuration yield Poincaré R2 ranging from 0.08 to 0.35 (Table 8, reproducibility
+block), with the oracle layer migrating from L0 to L8 across runs. Their mutual k-nn scores, however,
+are nearly identical (0.38 ± 0.01). This confirms that the topology-to-geometry gap reflects intrinsic
+training stochasticity: the feature manifold’s global shape is reproducible, but its local metric structure
+is not.
+A.9
+Full Latent Space Navigation Results
+Table 9 provides the complete latent space navigation results including all corrector variants (Linear,
+MLP-2, MLP-3, Attention) for both DINOv2 and DUSt3R backbones. The condensed version in the
+main paper (Table 3) reports only the Identity baseline, Inv. Poincaré, and the Attention corrector.
+Corrector
+MSE (↓)
+R2 (↑)
+Top-1 (↑)
+Hit@0.1 (↑)
+Hit@0.2 (↑)
+Hit@0.3 (↑)
+Hit@0.5 (↑)
+DINOv2 (Layer 7)
+Identity
+0.578
+−0.323
+0.000
+0.090
+0.204
+0.302
+0.523
+Inv. Poincaré
+0.350
+0.199
+0.041
+0.252
+0.479
+0.628
+0.741
+Linear
+0.254
+0.414
+0.020
+0.141
+0.263
+0.342
+0.415
+MLP-2
+0.280
+0.355
+0.029
+0.185
+0.342
+0.410
+0.473
+MLP-3
+0.219
+0.498
+0.051
+0.261
+0.451
+0.532
+0.581
+Attention
+0.258
+0.407
+0.018
+0.167
+0.323
+0.383
+0.422
+DUSt3R (Layer 16)
+Identity
+0.266
+0.021
+0.000
+0.090
+0.204
+0.302
+0.523
+Inv. Poincaré
+0.226
+0.155
+0.030
+0.216
+0.346
+0.467
+0.629
+Linear
+0.171
+0.327
+0.007
+0.030
+0.063
+0.136
+0.203
+MLP-2
+0.149
+0.429
+0.016
+0.156
+0.279
+0.369
+0.439
+MLP-3
+0.112
+0.577
+0.019
+0.190
+0.338
+0.400
+0.462
+Attention
+0.108
+0.597
+0.024
+0.201
+0.357
+0.455
+0.535
+Table 9: Full Latent Space Navigation Results (Averaged over 3 scenes). We evaluate different
+methods for predicting the destination feature ˆgt+s. The Identity baseline (no navigation) calibrates
+the task difficulty. The zero-shot Inv. Poincaré approach (using pseudo-inverse W †) dominates
+in topological retrieval at all scales, even though parametric correctors like MLP-3 achieve better
+regression metrics (MSE and R2). The Hit@ϵ metric measures the fraction of retrievals where the L2
+error on the raw 6D twist vector (translation in meters, rotation in axis-angle radians) is below ϵ.
+A.10
+Cross-Room Navigation Results
+To rigorously test the generalizability of the learned geometric structures, we evaluated latent space
+navigation on a held-out set of 31 test rooms. A Poincaré adapter was trained on a separate set of
+rooms, and we evaluated navigation success using the Hit@0.1 metric. We compared a pure zero-shot
+inverse (using W † directly on unseen rooms) against a Ridge-Refit approach (which fits a direct
+inverse mapping ∆P →∆g on the test room). As shown in Table 10, while the zero-shot mapping
+succeeds in approximately 60% of rooms (beating the Identity baseline), the Ridge-Refit correction
+26
+
+
+pushes this to 90–94% across all three major backbone families. This confirms that the geometric
+manifold is a robust, transferable property of the features.
+Backbone
+Zero-Shot > Identity
+Ridge-Refit > Identity
+Hit Rate (Ridge-Refit)
+DINOv2
+19/30 (63%)
+29/31 (94%)
+94%
+DUSt3R
+17/29 (59%)
+26/29 (90%)
+90%
+V-JEPA 2.1
+19/31 (61%)
+29/31 (94%)
+94%
+Table 10: Cross-Room Latent Space Navigation. Fraction of 31 held-out test rooms where naviga-
+tion (Hit@0.1) outperforms the no-navigation Identity baseline. Ridge-Refit dramatically improves
+generalization, indicating that while the exact inverse mapping may shift between environments, the
+underlying vector space remains highly linear and navigable.
+A.11
+Mixture-of-Experts Poincaré Adapter
+To capture the full geometry of complex scenes, we extend the single-chart Poincaré adapter to a
+Mixture-of-Experts (MoE) architecture with K local charts. Each expert k possesses its own value
+projection W k
+V : Rd →Rg and linear readout W k
+R ∈R6×g. The prediction is a gated combination of
+expert outputs:
+ˆy =
+K
+X
+k=1
+αk(zt) · W k
+R · (φk(zt+s) −φk(zt))
+Gating is performed via prototype routing on the source feature zt alone:
+αk(zt) = softmax
+(Wroute zt) · pk
+exp(τ)
+
+where Wroute ∈Rr×d is a shared linear projection, pk ∈Rr are K learnable prototype vectors, and
+τ is a learnable log-temperature scalar. The key design decisions are: (i) routing depends only on
+zt (the observer’s current position), not on zt+s, enforcing that chart selection depends on where
+the observer is rather than where it is going; (ii) a shared routing projection reduces parameters by
+∼60× compared to per-expert Q/K projections; and (iii) a learnable temperature allows soft-to-hard
+expert selection during training, avoiding the “uniform gating” trap. For K=1, the routing layers are
+omitted entirely, ensuring exact numerical equivalence with the baseline single-chart adapter.
+A.12
+Multi-Step Latent Space Navigation
+We provide qualitative examples of the open-loop Latent Space Navigation described in Section 5.1.
+In each case, given a source frame and a target frame, we compute the target pose displacement
+∆P and subdivide it into 4 equal sub-steps. The trajectory is integrated entirely in the frozen latent
+space by recursively predicting the next feature. We then query the nearest-neighbor image from the
+test set. Because the navigation operates open-loop, drift can accumulate on long paths. Figure 9
+summarizes three navigation scenarios of increasing difficulty, with detailed strip visualizations
+shown in Figures 10, 11, and 12.
+27
+
+
+Figure 9: Multi-Step Navigation Trajectories. Three trajectories of varying difficulty generated via
+open-loop navigation in the latent space. Top (∆= 0.68m, 19◦): The planner successfully traverses
+the exact path with zero final NN retrieval error. Middle (∆= 0.85m, 36◦): Moderate drift, but
+semantically consistent room traversal. Bottom (∆= 2.45m, 37◦): Large translation creates drift,
+but rotation is recovered exceptionally well (< 5◦error).
+Figure 10: Trajectory 1 (Perfect Recovery). ∆P = 0.68m, 19◦rotation. The final retrieved frame
+perfectly matches the target image. (Final error: 0.000m, 0.000rad).
+28
+
+
+Figure 11: Trajectory 2 (Moderate Drift). ∆P = 0.85m, 36◦rotation. The path drifts slightly
+due to the open-loop integration, but the retrieved frames remain visually coherent and approach the
+target view. (Final error: 0.387m, 0.140rad).
+Figure 12: Trajectory 3 (Extreme Displacement). ∆P = 2.45m, 37◦rotation. The largest
+displacement tests the limits of the open-loop linear model. While translation error accumulates, the
+rotation is extremely well recovered (0.084rad ≈5◦). (Final error: 1.020m, 0.084rad).
+29

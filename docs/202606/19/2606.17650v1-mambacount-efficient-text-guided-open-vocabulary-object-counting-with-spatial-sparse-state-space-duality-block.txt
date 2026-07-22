@@ -1,0 +1,404 @@
+Title: MambaCount: Efficient Text-guided Open-vocabulary Object Counting with Spatial Sparse State Space Duality Block
+
+URL Source: https://arxiv.org/pdf/2606.17650v1
+
+Published Time: Wed, 17 Jun 2026 00:43:03 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+# MambaCount: Efficient Text-guided Open-vocabulary Object Counting with Spatial Sparse State Space Duality Block 
+
+# Hao-Yuan Ma 
+
+School of Computer Science and Technology, Soochow University Suzhou, China 
+
+# Li Zhang 
+
+School of Computer Science and Technology, Soochow University Suzhou, China 
+
+# Minjie Qiang 
+
+School of Computer Science and Technology, Soochow University Suzhou, China 
+
+# Jie Gao 
+
+School of Computer Science and Technology, Soochow University Suzhou, China 
+
+## Abstract 
+
+Text-guided Open-vocabulary Object Counting (TOOC) aims to estimate the number of objects described by text prompts, which is particularly challenging in dense scenes with large scale variations. Existing TOOC approaches predominately rely on Transformers, which quadratic complexity with respect to image resolution limits their scalability. Mamba offers a promising alternative due to its linear complexity. However, the previous Mamba methods have two main limitations. On the one hand, the inherent causal for-mulation of Mamba constrains bidirectional spatial dependency modeling required by non-causal vision tasks. On the other hand, existing Mamba-based vision models often overlook the uncon-strained high entropy in the spatial token, which can weaken local details and high-frequency cues. To address these limitations, we propose MambaCount, an efficient framework built on the Spatial Sparse State Space Duality block. Specifically, we analyze and recon-struct the decay dynamics of hidden states in Mamba to alleviate the dependency constraints introduced by causal modeling. More-over, we introduce a Spatial Token Selection (STS) sub-block to reduce the unconstrained high entropy in spatial token responses within Mamba. In addition, we design Multi-Granularity Prototypes (MGP) to identify object-like regions at different semantic levels, improving cross-modal alignment and interpretability. Extensive experiments on FSC-147 demonstrate that MambaCount achieves state-of-the-art performance among methods without secondary querying, obtaining a test MAE of 12.23, while retaining linear complexity. The code is in the supplementary material. 
+
+## Keywords 
+
+Object Counting, Vision-Language Model, State Space Duality, Pro-totype Learning 
+
+## 1 Introduction 
+
+Unlike conventional class-specific counting [ 8 , 22 , 24 , 25 ] that is restricted to predefined categories such as crowds or vehicles. Text-guided Open-Vocabulary Object Counting (TOOC) [ 9, 23 ] aims to count objects of arbitrary categories specified by textual prompts, without visual exemplars. This flexibility makes TOOC particularly valuable in real-world applications, including inventory manage-ment in retail and warehousing [ 26 ], ecological surveys to estimate wildlife populations [ 32 ], and urban analytics for monitoring traf-fic and pedestrians [ 3]. Despite its practical significance, TOOC remains highly challenging due to the co-occurrence of large scale variations, dense and occluded distributions, and the open-ended nature of text-specified categories. Existing TOOC methods can be broadly categorized into two paradigms. Firstly, exemplified by CLIP-Count [ 9 ], VLCounter [ 10 ]and OVID [ 23 ], employs CLIP-style [ 27 ] vision-language models which use standard Transformer and face the quadratic complexity 
+
+𝑂 (𝑁 2) of the attention mechanism severely limits scalability. Sec-ondly, represented by CountGD [ 2] and GroundingREC [ 19 ], builds upon GroundingDINO [ 19 ] and adopts deformable attention [ 43 ]to mitigate the cost of dense attention through sparse reference-point sampling. These methods typically impose a hard constraint on the maximum number of query points. When the object count exceeds this limit, they must resort to adaptive image cropping and secondary querying over local regions, resulting in substantial inference overhead [ 2]. Moreover, the computational advantage of deformable attention is not always guaranteed in practice. Un-der low-resolution inputs, where the number of visual tokens is relatively small, the overhead introduced by large query sets, multi-scale feature interaction, and deformable sampling can outweigh its sparsity benefits, sometimes even leading to higher computa-tion than standard Transformers. In addition, these methods often rely on specialized operators to accelerate deformable attention, which further limits their practicality in real-world deployment. Overall, neither paradigm scales gracefully to the high-count, high-resolution scenarios common in real-world TOOC applications. To overcome the above scalability bottlenecks, we turn to Mamba [5 , 6], which offers linear O( 𝑁 ) complexity and has shown promis-ing results in vision tasks. However, adapting existing Vision Mamba methods [ 21 , 42 ] to object counting suffers from two key limita-tions: (1) their inherent causal nature necessitates 1D serialization, disrupting the non-causal 2D spatial structure of visual features; and (2) Mamba adaptations overlook the issue of unconstrained high entropy in spatial tokens, which can weaken local structures and suppress high-frequency cues that are essential for accurate object counting. To address these deficiencies, we analyze and re-construct the State Space Duality (SSD) framework in Mamba2 and propose the Spatial Sparse State Space Duality (S 4D) block for object counting. Specifically, we conduct an analysis of the decay dynamics of hidden states to alleviate the constraints of causal state transitions on non-causal spatial dependency modeling. In addition, we introduce a Spatial Token Selection (STS) sub-block to suppress  
+
+> arXiv:2606.17650v1 [cs.CV] 16 Jun 2026 Conference acronym ’MM, , Ma et al.
+
+unconstrained high entropy in spatial tokens, thereby preserving local details and discriminative high-frequency cues. Furthermore, text-guided counting of arbitrary categories re-quires fine-grained cross-modal alignment between visual and tex-tual representations. However, a single text embedding is often insufficient to align with visual patterns across different semantic granularities.To alleviate this issue, we propose Multi-Granularity Prototypes (MGP), which derive fine-to-coarse prototypes from hierarchical feature maps through a top-𝐾 selection strategy. By explicitly selecting the most text-relevant prototypes at each gran-ularity, MGP enables more precise cross-modal alignment while suppressing background interference. In addition, the selected pro-totypes improve interpretability by revealing which image regions are regarded as object-like across different semantic granularities. Our main contributions can be summarized as follows: 
+
+• We propose the Spatial Sparse State Space Duality (S 4D) block. We analyze the State Space Duality (SSD) framework in Mamba2 and find that unconstrained high entropy in spatial tokens leads to weakening local details and high-frequency cues. We reconstruct the SSD framework to re-solve the causal in vision tasks and introduce the Spatial To-ken Selection (STS) sub-block to mitigate the unconstrained high entropy in spatial token. 
+
+• We propose Multi-Granularity Prototypes (MGP), a hierarchi-cal prototype learning module that extracts fine-to-coarse prototypes from multi-scale features. MGP provides fine-grained semantic alignment for accurate open-vocabulary counting and enhances model interpretability by explicitly revealing target-like regions at each granularity. 
+
+• We build MambaCount, a unified framework for Text-guided Open-Vocabulary Counting. Extensive experiments demon-strate that MambaCount achieves state-of-the-art (SOTA) performance among methods without secondary querying on FSC-147 with a Test MAE of 12.23, while maintaining linear computational complexity. 
+
+## 2 Related Work 2.1 Open-Vocabulary Object Counting 
+
+The open-vocabulary object counting aims at estimating the num-ber of target objects specified by flexible input prompts. Existing approaches can be broadly categorized according to the way the target object is specified. 
+
+Exemplar-based Counting. Early open-vocabulary counting methods, often referred to as few-shot counting, define the target object using visual exemplars such as bounding boxes or support patches. Representative works such as FamNet [ 28 ] and CFOC-Net [ 40 ] employ Siamese-style matching to compare the exemplar features with those of the query image. Although effective, these methods require manual annotation at inference time, which limits full automation. 
+
+Text-guided Open-Vocabulary Counting. Recent methods replace visual exemplars with textual prompts, enabling a more flexible and automated counting pipeline. Early approaches such as CLIP-Count [ 9 ] and CounTX [ 1 ] leverage vision-language models to transfer semantic knowledge from text to density estimation. However, these methods typically inherit the dense attention com-putation of ViT-based backbones, resulting in quadratic complexity 
+
+O( 𝑁 2) with respect to the number of visual tokens and limiting scalability on high-resolution images. Another line of work adapts open-vocabulary detection models such as GroundingDINO [ 19 ]for counting, including CountGD [ 2] and GroundingREC [ 4 ]. Al-though effective, these detector-based methods face notable scala-bility challenges. First, they are constrained by a fixed query budget (e.g., 900 object queries), which makes direct counting difficult in dense scenes. To handle high object counts, they often rely on image slicing and secondary querying over multiple sub-regions, substantially increasing inference cost. Second, their reliance on deformable attention introduces additional implementation over-head, since offset learning and sparse sampling can lead to irregular memory access and often require specialized operators for efficient execution. These limitations motivate the need for a more scalable and deployment-friendly solution for text-guided open-vocabulary counting. 
+
+## 2.2 Mamba in Vision 
+
+Mamba [ 5 , 6] was originally developed for long-sequence model-ing in natural language processing. Its main advantage lies in its linear computational complexity with respect to sequence length, offering a more efficient alternative to Transformers with quadratic complexity. Motivated by its efficiency, recent studies have extended Mamba to the visual domain. Early works such as Vision Mamba (Vim) [ 42 ]and VMamba [ 21 ] introduced bidirectional scanning mechanisms to alleviate the directional bias of 1D state-space modeling, enabling efficient processing of high-resolution images. To further improve the ability to represent, Efficient Mamba [ 15 ] incorporates convolu-tional attention and channel rotation to improve feature interaction. Similarly, DefMamba [ 17 ] adopts dynamic scanning strategies to reduce spatial information loss caused by fixed scanning paths. Despite these advances, existing vision Mamba methods still face two fundamental limitations. First, many approaches rely on carefully designed scanning strategies to approximate non-causal spatial modeling with inherently causal scans. This not only devi-ates from the non-causal nature of vision tasks but may also depend on specialized implementations for efficient execution, which can limit deployment flexibility. Second, although recent work such as VSSD [ 29 ] explores non-causal SSD formulations to relax the causality constraint, it does not explicitly address the unconstrained high entropy of spatial tokens. Such responses can weaken local details and high-frequency cues, which are particularly important for dense object counting. In contrast, our method revisits the SSD formulation from the perspective of non-causal visual modeling and introduces a Spatial Sparse State Space Duality (S 4D) block for TOOC. By redesign-ing the hidden-state decay dynamics and incorporating Spatial Token Selection (STS), our approach improves non-causal spatial dependency modeling while better preserving local details and discriminative high-frequency information. MambaCount: Efficient Text-guided Open-vocabulary Object Counting with Spatial Sparse State Space Duality Block Conference acronym ’MM, , 
+
+Figure 1: Overview of MambaCount. The framework con-sists of an image encoder and a text encoder. Visual features are enhanced by PAN and MoE Fusion to produce 𝐸 𝑣 , while textual features are refined by AuxNet to obtain 𝐸 𝑡 . MGP extracts fine-to-coarse prototypes 𝑀 𝑝 from hierarchical fea-tures via top-𝐾 selection. The decoder stacks S 4D block and cross-attention block, which use 𝑀 𝑝 to guide cross-modal interaction. The prediction head outputs the counting result. 
+
+## 3 Method 3.1 Overview 
+
+The overall architecture of MambaCount is illustrated in Fig. 1. Our framework follows a dual-encoder and cross-modal decoder paradigm, consisting of an image encoder, a text encoder, a Path Aggregation Network (PAN) [ 18 ], an Auxiliary Network (AuxNet), a Multi-Granularity Prototypes (MGP) module, a Mixture-of-Experts (MoE) fusion module, a decoder composed of stacked Spatial Sparse State Space Duality (S 4D) and cross-attention blocks, and a decou-pled prediction head. Given an input image and a textual query, the image encoder, extracts hierarchical visual features. These features are further enhanced by PAN to aggregate multi-scale spatial context, yielding visual representations 𝐸 𝑚 𝑣 , 𝑚 ∈ { 1, 2, 3}. In parallel, the text encoder, instantiated with MobileCLIP [ 33 ], encodes the input text into semantic features, which are then refined by AuxNet to produce enriched textual embeddings 𝐸 𝑡 . Here, AuxNet is implemented as a lightweight Feed-Forward Network (FFN) with SwiGLU activation. To improve cross-modal alignment across different semantic granularities, the MGP module extracts fine-to-coarse prototypes from hierarchical visual features through a top-𝐾 selection strategy. The resulting prototype representations 𝑀 𝑝 highlight object-like regions at different spatial scales and provide informative cues for text-guided matching, details are provided in sub-sec 3.2. Next, the multi-scale visual features 𝐸 𝑚 𝑣 are adaptively integrated by the MoE fusion module to obtain fused visual representations. These fused features are then fed into the decoder, where each layer consists of an S 4D block followed by a cross-attention module. In the cross-attention stage, the prototype representations 𝑀 𝑝 serve as keys and values to guide the cross-modal interaction with visual features. Finally, the output of the decoder is fed into a decoupled predic-tion head to generate the counting result. Specifically, the prediction head contains two parallel convolutional branches, one for confi-dence prediction and the other for object localization. 
+
+Figure 2: Illustration of the Multi-Granularity Prototypes (MGP). Given the text features 𝐸 𝑡 , we compute similarity with hierarchical image features and perform top-𝐾 selec-tion at each level to identify the most text-relevant regions. These selected tokens form multi-granularity prototypes rep-resenting object-like regions from fine to coarse semantic levels. The prototypes are further processed by Multi-Head Self Attention (MHSA) to capture their interactions and pro-vide structured guidance for cross-modal reasoning. 
+
+## 3.2 Multi-Granularity Prototypes 
+
+TOOC requires precise semantic alignment between visual and textual representations. However, a single text embedding cannot simultaneously match visual semantics at different granularities. When biased toward high-level semantics, it tends to overlook fine-grained details, whereas focusing on low-level textures often Conference acronym ’MM, , Ma et al. 
+
+introduces background noise. Moreover, computing text-image sim-ilarity over the entire feature map leads to global matching, which is particularly problematic in dense scenes where background regions may partially overlap with the target semantics, resulting in false positives. To address these issues, we propose Multi-Granularity Proto-types (MGP) shown in Fig. 2, which explicitly extracts text-relevant visual prototypes from hierarchical feature maps. By selecting the most relevant regions at different semantic levels, MGP con-structs fine-to-coarse representations that improve cross-modal alignment while suppressing background interference. Additionally, the selected prototypes enhance model interpretability by revealing which image regions are considered object-like at different spatial scales. Given the visual encoder and PAN, we obtain multi-scale visual features: 
+
+𝐸 𝑚 𝑣 ∈ R𝐵 ×𝐶 ×𝐻 𝑚 ×𝑊 𝑚 , 𝑚 ∈ { 1, 2, 3}, (1) where the spatial resolutions is defined as: 
+
+(𝐻 1,𝑊 1) =
+
+ 𝐻 
+
+8 , 𝑊 
+
+8
+
+
+
+, (𝐻 2,𝑊 2) =
+
+ 𝐻 
+
+16 , 𝑊 
+
+16 
+
+
+
+, (𝐻 3,𝑊 3) =
+
+ 𝐻 
+
+32 , 𝑊 
+
+32 
+
+
+
+(2) where 𝐻 and 𝑊 denote the height and width of the input image res-olution. These hierarchical feature maps encode visual information at different semantic granularities. Meanwhile, the text encoder produces textual embeddings is given by: 
+
+𝐸 𝑡 ∈ R𝐵 ×𝐾 𝑝 ×𝐶 , (3) where 𝐾 𝑝 denotes the number of textual tokens. To identify text-relevant visual regions, we compute the simi-larity between text features and spatial visual features. First, the visual features are normalized can be calculated by: 
+
+˜𝐸 𝑚 𝑣 = Norm (𝐸 𝑚 𝑣 ) (4) The similarity between textual tokens and each spatial location of the visual feature map is computed through a channel-wise inner product. The relationship is expressed as: 
+
+ˆ𝑆 𝑚 𝑏,𝑘,ℎ,𝑤 =
+
+D
+
+˜e𝑚 𝑣,𝑏,ℎ,𝑤 , e𝑡,𝑏,𝑘 
+
+E
+
+=
+
+> 𝐶
+
+∑︁ 
+
+> 𝑐 =1
+
+˜𝐸 𝑚 𝑣,𝑏,𝑐,ℎ,𝑤 𝐸 𝑡,𝑏,𝑘,𝑐 (5) where 𝑏 denotes the batch index, 𝑘 denotes the textual token index, and (ℎ, 𝑤 ) represents the spatial location. To stabilize training, we introduce a learnable temperature pa-rameter and bias, resulting in scaled similarity can be calculated by: 
+
+𝑆 𝑚 𝑏,𝑘,ℎ,𝑤 =
+
+ˆ𝑆 𝑚 𝑏,𝑘,ℎ,𝑤 
+
+exp (− 𝛼 ) + 𝛽 (6) where 𝛼 controls the temperature of the similarity distribution and 𝛽 is a learnable bias term. Given the similarity map 𝑆 𝑚 , we select the top-𝐾 spatial locations with the highest similarity scores. The calculation formula is given by: 
+
+I𝑚 = TopK (𝑆 𝑚 , 𝐾 ). (7) 
+
+Figure 3: Overview of the proposed S 4D block. (a) Overall structure of the S 4D block within the decoder. The input features are first normalized and projected to generate the parameters (𝐿, 𝐶, 𝐵 ) for the state space computation. The S 4Dprocesses the sequence features and interacts with the con-volutional branch through multiplicative gating, followed by a linear projection, an FFN, and residual connections. (b) In-ternal design of the S 4D block, which combines the MN-SSD operator with two complementary components: the Spatial Sparse Window (SSW) sub-block and the Spatial Token Se-lection (STS) sub-block to model global dependencies and local structures. (c) Structure of the SSW sub-block, where only a subset of spatial tokens are activated for self-attention while the remaining tokens are masked, enabling efficient sparse attention computation. (d) Structure of the STS sub-block, which aggregates multi-branch features via concatena-tion and convolution operations, followed by softmax-based weighting to adaptively select informative spatial tokens. 
+
+The corresponding visual tokens are extracted as prototypes can be calculated by: 
+
+𝑃 𝑚 = {𝐸 𝑚 𝑣 (𝑖 ) | 𝑖 ∈ I 𝑚 }. (8) These prototypes represent the regions of objects similar to objects relevant to text at the 𝑚 -th feature level. Finally, prototypes from all feature levels are aggregated to form the multi-granularity prototype set: 
+
+ˆ𝑀 𝑝 = Concat (𝐸 𝑡 , 𝑃 1, 𝑃 2, 𝑃 3). (9) To capture interactions among these prototypes, we further apply a multi-head self-attention module: 
+
+𝑀 𝑝 = MHSA ( ˆ𝑀 𝑝 ). (10) The resulting prototypes highlight text-relevant regions across different spatial scales and serve as structured guidance for the subsequent cross-modal decoding stage. MambaCount: Efficient Text-guided Open-vocabulary Object Counting with Spatial Sparse State Space Duality Block Conference acronym ’MM, , 
+
+## 3.3 Spatial Sparse State Space Duality Block 
+
+Although Mamba-based architectures provide an efficient alter-native to Transformers, directly applying existing vision Mamba blocks to dense object counting remains suboptimal. On the one hand, most existing methods inherit the causal dependency bias of state-space modeling and rely on scan-based serialization to process 2D feature maps. Such a design disrupts the native spatial structure of images and limits the modeling of bidirectional spatial interac-tions, which are crucial for counting objects. On the other hand, existing Mamba adaptations often produce overly diffuse, high-entropy spatial token responses, which weaken local details and high-frequency cues that are essential for distinguishing adjacent instances in counting task. To address these limitations, we propose the Spatial Sparse State Space Duality (S 4D) block, as illustrated in Fig. 3(a). The S 4D block consists of a LayerNorm layer, an S 4D, a residual projection, and a feed-forward network. Among them, the S 4D, shown in Fig. 3(b), serves as the core component and is composed of three sub-blocks: a Multi-head Non-causal SSD (MN-SSD) sub-block for global spatial modeling, a Spatial Sparse Window (SSW) attention sub-block for local detail enhancement, and a Spatial Token Selection (STS) sub-block for adaptively fusing the outputs of the two branches and alleviate the high-entropy spatial token responses. Given an input feature map 𝑋 ∈ R𝐵 ×𝐻 2 ×𝑊 2 ×𝐶 , we first apply layer normalization and feed the normalized features into two par-allel branches. The global branch performs efficient long-range dependency modeling through the proposed MN-SSD, while the local branch captures fine-grained spatial structures via SSW at-tention. Their outputs are then adaptively integrated by the STS sub-block to form the output of the S 4D module. Finally, the fused features are projected, added to the input through a residual con-nection, and further refined by a feed-forward network, which produces the final output of the S 4D block. 
+
+Multi-head Non-causal SSD (MN-SSD) sub-block . The first component of S 4D is a MN-SSD sub-block, which is designed to overcome the causal limitation of standard state-space modeling in vision. Unlike conventional Mamba-based blocks that depend on 1D scanning orders to approximate bidirectional modeling, our design performs non-causal global interaction directly on 2D visual features. In practice, the input features are projected to generate the parameters required by SSD, including the state transition and feature interaction terms for each head. 
+
+𝐵 ℎ, 𝐶 ℎ, 𝑋 ℎ = 𝑊 ℎ𝐵 𝑋, 𝑊 ℎ𝐶 𝑋, 𝑋 ℎ ∈ R𝐵 ×𝑁 ×𝑑 ℎ (11) where 𝑁 = 𝐻 2 × 𝑊 2 and 𝑑 ℎ = 𝐶 𝐻 𝑎 , and 𝐻 𝑎 is the number of heads. Unlike Mamba2 which imposes a causal lower-triangular constraint on L, we analyze the impact of causal mask and remove the causal mask, allowing each spatial token to attend to all other tokens bidirectionally. In the context of vision tasks, we reinterpret 
+
+L as a spatially aware factor that captures positional relationships between tokens. In particular, the input L can be viewed as a form of two-dimensional positional encoding derived from the spatial layout of visual tokens. This spatial interpretation enables the model to incorporate structured positional information while preserving efficient state space computation. 
+
+𝑌 ℎ 
+
+> SSD
+
+=  (Bℎ + L)( Cℎ + L)⊤ 𝑋 ℎ (12) 
+
+𝑌 SSD = 𝐶𝑜𝑛𝑐𝑎𝑡 (𝑌 ℎ
+
+> SSD
+
+) (13) The general complexity of this branch is O( 𝑁𝑑 2 
+
+> ℎ
+
+) per head, linear in the number of spatial tokens. These parameters are then used to model long-range spatial dependencies in a non-causal manner, allowing each spatial loca-tion to aggregate context from the entire feature map rather than from a single scan direction. In this way, the proposed Multi-head Non-causal SSD preserves the efficiency advantage of state-space modeling while being better aligned with the intrinsic non-causal nature of visual counting tasks. 
+
+Spatial Sparse Window (SSW) attention sub-block . While the non-causal SSD branch is effective for global context modeling, dense object counting also requires fine-grained local structures to distinguish adjacent instances and preserve high-frequency de-tails. To this end, we introduce the Spatial Sparse Window (SSW) attention sub-block, as shown in Fig. 3(c), to explicitly recover local details and high-frequency cues. Inspired by dilated convolution, SSW constructs sparse window tokens by sampling local neighborhoods with different dilation rates, thereby enlarging the effective receptive field without intro-ducing dense local attention. Specifically, we employ sparse window attention with multiple dilation rates R = {1, 3}, which provide effective receptive fields of 3 × 3 and 7 × 7, respectively. For each dilation rate 𝑟 ∈ R , the dilated neighborhood centered at position 
+
+(𝑖, 𝑗 ) is defined as: 
+
+N𝑟 (𝑖, 𝑗 ) = {( 𝑖 + 𝑟 · 𝛿 ℎ, 𝑗 + 𝑟 · 𝛿 𝑤 ) : 𝛿 ℎ, 𝛿 𝑤 ∈ {− 1, 0, 1}} (14) where 𝛿 ℎ and 𝛿 𝑤 denote the relative offsets in the vertical and horizontal directions, respectively, and 𝑟 controls the sampling interval of the sparse window. Within each sparse window, self-attention is performed only on the sampled tokens. This operation is formulated as follows: 
+
+SSW 𝑟 (𝑋 )𝑖 𝑗 =∑︁    
+
+> (ℎ,𝑤 ) ∈ N 𝑟 (𝑖,𝑗 )
+
+𝜎 𝑞 ⊤ 
+
+> 𝑖 𝑗
+
+𝑘 ℎ𝑤 
+
+√𝑑 ℎ
+
+!
+
+𝑣 ℎ𝑤 (15) where 𝜎 denotes the Softmax. The outputs from different dilation rates are then aggregated as: 
+
+𝑌 SSW = 1
+
+|R| ∑︁ 𝑟 ∈ R 
+
+SSW 𝑟 (𝑋 ). (16) Compared with the local convolution adopted in standard Mamba-style blocks, SSW performs sparse 2D local modeling with multi-scale receptive fields, making it more suitable for capturing fine-grained textures, local structures, and geometric patterns in dense counting scenes. 
+
+Spatial Token Selection . To dynamically allocate SSD or SSW modeling per spatial location, we introduce a Spatial Token Selec-tion (STS) sub-block, as illustrated in Fig. 3(d). Different with the temporal selection mechanism Δ = softplus (Linear (𝑥 )) in Mamba, but operates in the spatial domain. Conference acronym ’MM, , Ma et al. 
+
+The gate predicts a mask per-location 𝑀 ∈ [ 0, 1]𝐻 ×𝑊 from the input features is defined as: 
+
+𝑀 = 𝜎 ( Φ([ 𝑌 𝑆𝑆𝐷 , 𝑌 𝑆𝑆𝑊 ]) 
+
+𝜏 ) (17) where Φ is a lightweight depthwise-separable convolution, and 
+
+𝜏 = |𝜃 𝜏 | + 0.1 is a learnable temperature parameter controlling the sharpness of the gate. The final S 4D output is: 
+
+𝑌 𝑆 4𝐷 = 𝑀 ◦ 𝑌 𝑆𝑆𝐷 + ( 1 − 𝑀 ) ◦ 𝑌 𝑆𝑆𝑊 
+
+Where ◦ is the hadamard product. When 𝑀 → 1, the position relies on global context through MN-SSD, which is beneficial for sparse regions requiring long-range dependencies. When 𝑀 → 0,the position uses sparse window attention, which is more effective for dense regions where local features are sufficient for discrimina-tion. Based on STS sub-block, the 𝑆 4𝐷 block can constrain the high entropy in spatial token. 
+
+## 3.4 Training Objectives 
+
+Inspired by P2PNet [ 31 ], the overall training objective combines classification and localization losses based on a strictly one-to-one label assignment. We first utilize the Hungarian algorithm [ 14 ] to match the predicted points with the ground-truth points. For category classification, we apply the cross-entropy loss on the confidence predictions from the decoupled head across all points: 
+
+L𝑐𝑙𝑠 = CrossEntropy ( ˆ𝑐, 𝑐 ∗) (18) where ˆ𝑐 denotes the predicted confidence scores and 𝑐 ∗ denotes the assigned ground-truth labels. For object localization, we adopt the smooth regression loss in OVID [ 23 ] to supervise coordinate regression. This loss is applied exclusively to the positively matched foreground points: 
+
+L𝑙𝑜𝑐 = L𝑆𝑚𝑜𝑜𝑡ℎ 𝑙𝑛 ( ˆ𝑝, 𝑝 ∗) (19) where ˆ𝑝 and 𝑝 ∗ are the predicted positions of the ground-truth points of the pairs matched, respectively. The total loss is computed as: 
+
+L = L𝑐𝑙𝑠 + 𝜆 L𝑙𝑜𝑐 (20) where 𝜆 is a hyperparameter designed to balance the two loss terms. 
+
+## 4 Experiment 4.1 Experiment Settings 
+
+Dataset . We evaluate our MambaCount on three distinct bench-marks, each selected to validate specific capabilities of our frame-work. FSC-147 [ 28 ], comprising 147 categories, serves as our pri-mary benchmark to evaluate the core text-guided open-vocabulary counting ability of the model. To assess the zero-shot generalization and robustness of the model in handling extreme density, we tested it on CARPK [ 8 ], which features densely packed cars captured from drone views. Furthermore, we evaluated on REC-8K [ 4] to demonstrate our model’s superiority in addressing the challenges of referring expression. 
+
+Implementation details . We adopt YOLOv11s [ 11 ] from the YOLOE [ 35 ] framework as the visual backbone to extract image features, and we employ MobileCLIP-BLT [ 33 ] as the text encoder to obtain textual representations and freeze the text encoder. The model is trained on the FSC147 dataset for 200 epochs with a batch size of 8 and a random seed of 42. The 𝜆 in loss is designed to 0.05. The learning rate is set to 1e-4 for the fusion module and 1e-5 for the remaining modules. We use the Adam [ 12 ] optimizer for training. All experiments are conducted on a server equipped with an NVIDIA RTX V100 GPU (32GB). 
+
+## 4.2 Comparison results with Other Methods on three TOOC Datasets 
+
+Comparison results with existing methods on the FSC147 dataset . Table 1 compares MambaCount with existing text-guided counting methods on FSC-147. Compared with density-based meth-ods, MambaCount reduces the Test MAE from 16.28 (CountTX) to 12.23, showing the advantage of explicit point prediction over den-sity regression. It also outperforms the point-based method OVID (15.61) by a clear margin, demonstrating the effectiveness of our Mamba-based vision-language fusion. Compared with detection-based methods, MambaCount remains competitive. It improves over CountGD (12.98), while being slightly inferior to stronger methods such as GroundingREC, TrueCount 𝑡𝑥𝑡 , and DCount. Notably, some of these methods rely on stronger detection pipelines or additional auxiliary priors, such as SAM [ 13 ] and Depth Anything V2 [ 38 ]in TrueCount 𝑡𝑥𝑡 . In contrast, MambaCount adopts a simpler point prediction framework without extra auxiliary modules, yet still achieves competitive performance. 
+
+Comparison results on REC-8K dataset . Table 2 reports the comparison on the REC-8K dataset. Although MambaCount is not specifically designed for referring expression counting, it achieves strong performance with 5.42 MAE and 17.18 RMSE on the test set. Compared with early zero-shot and density-based methods such as ZSC and CountTX, our method reduces the counting error by a large margin. It also outperforms GroundingDINO and Ground-ingREC, and achieves performance comparable to recent strong detection-based methods such as CAD-GD 𝑆𝑤𝑖𝑛𝑇 and DCount 𝑆𝑤𝑖𝑛𝑇 .These results demonstrate the strong generalization ability and competitiveness of MambaCount without any task-specific modifi-cations. 
+
+Results compared with existing SOTA methods on the CARPK dataset . Table 3 presents the comparison with existing methods on the CARPK dataset. Our method achieves 4.31 MAE and 7.42 RMSE, outperforming most vision-language counting approaches and approaching the performance of the best detection-based model. Compared with density regression methods such as CLIP-count, CountTX, and VLCounter, our method significantly reduces the counting error. In particular, the Test MAE decreases from 6.13 (CountTX) and 6.46 (VLCounter) to 4.31, demonstrating that explicit object-level modeling provides more accurate counting than den-sity estimation in structured scenes such as parking lots. CountGD achieves the best performance (3.83 MAE) due to the strong de-tection prior from large-scale grounding models. Nevertheless, our method achieves competitive performance without relying on MambaCount: Efficient Text-guided Open-vocabulary Object Counting with Spatial Sparse State Space Duality Block Conference acronym ’MM, , 
+
+Table 1: Comparison results with existing methods on FSC147 dataset. 
+
+Method Type Backbone Decoder Val set Test set MAE ↓ RMSE ↓ MAE ↓ RMSE ↓
+
+ZSC [37] Density VAE Transformer 26.93 88.63 22.09 115.17 CLIP-Count [9] Density CLIP Transformer 18.79 61.18 17.78 106.62 VLCount [10] Density CLIP Transformer 18.06 65.13 17.05 106.16 
+
+CountTX [1] Density OpenCLIP Transformer 17.33 61.58 16.28 106.41 OVID [23] Point CLIP Transformer 17.87 64.18 15.61 98.73 COUNTGD [2] Detection GDino DefTransformer 12.14 47.51 12.98 98.35 
+
+GroundingREC [4] Detection GDino DefTransformer 10.06 58.62 10.12 107.19 TrueCount 𝑡𝑥𝑡 [30] Detection GDino DefTransformer 9.54 48.01 10.11 106.11 DCount [16] Detection GDino DefTransformer 9.63 53.60 9.83 105.15 Ours Point YOLOE Mamba 13.22 53.62 12.23 105.69 Table 2: Comparison results on the REC-8K dataset. 
+
+Method Val Set Test Set MAE ↓ RMSE ↓ MAE ↓ RMSE ↓
+
+Mean 14.28 27.75 13.75 25.91 ZSC 𝑅𝑒𝑠𝑁 𝑒𝑡 50 [37] 14.84 31.30 14.93 29.72 ZSC 𝑆𝑤𝑖𝑛𝑇 [37] 12.96 26.74 13.00 29.07 CountTX [1] 11.88 27.04 11.84 25.62 GroundingDINO 𝑆𝑤𝑖𝑛𝑇 [19] 9.03 21.98 8.88 21.95 GroundingREC 𝑆𝑤𝑖𝑛𝑇 [4] 6.80 18.13 6.50 19.79 CAD-GD 𝑆𝑤𝑖𝑛𝑇 [36] 5.43 15.01 5.29 17.08 CAD-GD 𝑆𝑤𝑖𝑛𝐵 [36] 4.23 13.14 4.34 12.93 
+
+DCount 𝑆𝑤𝑖𝑛𝑇 [16] 5.24 15.47 5.45 18.61 Ours 5.28 16.26 5.42 17.18 
+
+Table 3: Comparison results on the CARPK dataset 
+
+Dataset Method MAE ↓ RMSE ↓
+
+CARPK CLIP-count [9] 11.96 16.61 CountTX [1] 6.13 10.87 VLCounter [10] 6.46 8.68 CountGD [2] 3.83 5.41 
+
+Ours 4.31 7.42 
+
+Table 4: Ablation study on each component of MambaCount. 
+
+Val set Test set MAE ↓ RMSE ↓ MAE ↓ RMSE ↓
+
+Baseline 15.81 64.82 16.07 114.14 Baseline + S 4D Block 14.66 56.41 16.09 110.84 Baseline + MGP 13.51 55.46 16.10 115.85 All 13.22 53.62 12.23 105.69 
+
+heavy detection pipelines, indicating that the proposed framework can effectively capture object-level representations while maintain-ing a simpler architecture. 
+
+Table 5: Ablation study of MGP modules and comparison with Soft Exemplar (SE). 
+
+Method Val set Test set MAE ↓ RMSE ↓ MAE ↓ RMSE ↓
+
+Baseline 14.66 56.41 16.09 110.84 Baseline + SE 13.51 55.46 16.10 115.85 Baseline + MGP 13.22 53.62 12.23 105.69 
+
+CountTX 17.33 61.58 16.28 106.41 CountTX + SE 17.02 62.98 16.29 106.02 CountTX + MGP 16.13 58.62 15.31 104.95 
+
+## 4.3 Ablation Experiment 
+
+Component analysis . Table 4 shows the contribution of each component in MambaCount. Both S 4D Block and MGP Block im-prove the validation performance compared with the baseline. While each individual module brings limited improvement on the test set, combining them yields the best overall results, reducing the Test MAE from 16.07 to 12.23. This demonstrates that the two modules are complementary and both are important for the final perfor-mance. 
+
+Impact of the MGP . Table 5 evaluates the contributions of the Soft Exemplar (SE) [ 20 ] and MGP modules. Introducing SE provides a slight improvement on the validation set (MAE 14.66 → 13.51), but shows limited gains on the test set. In contrast, incorporating MGP significantly improves performance, reducing the Test MAE from 16.09 to 12.23 on the baseline and from 16.28 to 15.31 when applied to CountTX. These results demonstrate that the proposed MGP effectively enhances vision-language alignment and improves counting accuracy. 
+
+Impact of the 𝑆 4𝐷 Block . Table 6 compares different spatial modeling mechanisms. The proposed 𝑆 4𝐷 consistently outperforms SSD [ 5], MN-SSD and SSW, achieving the best MAE and RMSE on both validation and test sets. This confirms that the proposed spatial modeling strategy provides more effective feature aggregation for counting tasks. Conference acronym ’MM, , Ma et al. 
+
+Figure 4: Visualization of the MambaCount on FSC147 dataset. Table 6: Ablation study of the 𝑆 4𝐷 Block. 
+
+Module Val set Test set MAE ↓ RMSE ↓ MAE ↓ RMSE ↓
+
+SSD 14.27 60.68 14.82 112.48 MN-SSD 13.42 61.84 14.61 112.04 SSW 13.79 58.08 15.96 127.65 
+
+𝑆 4𝐷 Block 13.22 53.62 12.23 105.69 Table 7: Comparison of different methods on 384 × 384 images with batch size = 1. 
+
+Method Param ↓ FLOPs ↓ FPS ↑
+
+CountTX 161.08M 43.88G 3.2 CountGD 213.00M 98.96G 1.3 CountGD (AC) 213.00M - 0.3 MambaCount 41.77M 27.50G 24.3 
+
+## 4.4 Efficiency Analysis 
+
+Table 7 shows the efficiency comparison on 384 × 384 images with a batch size of 1. MambaCount achieves the best efficiency, with the fewest parameters (41.77M), lowest FLOPs (27.50G), and fastest inference speed (24.3 FPS). In contrast, CountTX and CountGD require higher computational cost and run much slower. After in-troducing Adapative Crop (AC), the inference speed of CountGD further drops to 0.3 FPS, indicating additional computational over-head. 
+
+## 4.5 Visualization 
+
+To further understand the effectiveness of the proposed design, we provide visual analysis from four perspectives. The Fig 4 presents the prediction results, where the proposed method produces object responses that are more accurate and spatially aligned with the targets, especially in dense, cluttered, and scale-varying scenes. The predicted results are more compact and better distributed around true object instances, indicating stronger counting reliability and localization consistency. The Fig 5 shows the multi-granularity prototypes (MGP). As shown in the prototype assignment and t-SNE plots, prototypes from different scales exhibit clear semantic separation while main-taining complementary relationships. Fine-scale prototypes mainly 
+
+Figure 5: Visualization of the MGP. Prototypes are extracted from three different scales to capture complementary multi-scale representations. The t-SNE plots show clear separability among prototypes from different scales. 
+
+respond to small and dense instances, whereas coarser-scale pro-totypes capture larger structures and broader contextual patterns. This confirms that MGP provides discriminative multi-scale repre-sentations and improves adaptability to large variations in object size and arrangement. The Fig 6 shows the visual gating behavior of STS over SSW and MN-SSD. Specifically, STS assigns stronger local gating responses to SSW in regions with concentrated object details, which helps preserve fine-grained local structure. Meanwhile, MN-SSD receives stronger global responses over spatially broader regions, enabling more effective modeling of long-range dependencies and holistic scene layouts. Such complementary gating behavior demonstrates that STS can adaptively balance local detail aggregation and global context modeling and alleviates the high entropy in spatial token according to the image content. 
+
+## 5 Conclusion 
+
+In this paper, we propose MambaCount, an efficient framework for text-guided open-vocabulary object counting (TOOC) built upon the Spatial Sparse State Space Duality (S 4D) block. Our ap-proach effectively addresses the limitations of applying Mamba MambaCount: Efficient Text-guided Open-vocabulary Object Counting with Spatial Sparse State Space Duality Block Conference acronym ’MM, , 
+
+Figure 6: Visualization of the STS sub-block. STS combines SSW and MN-SSD to adaptively focus on informative regions. The resulting heatmaps demonstrate its ability to handle different object layouts. 
+
+to vision tasks.Furthermore, the proposed Multi-Granularity Pro-totypes (MGP) enhance semantic alignment and improve the in-terpretability of the counting process. Extensive experiments on FSC-147 demonstrate that MambaCount achieves state-of-the-art performance among methods without secondary querying while maintaining linear computational complexity, highlighting its effi-ciency and scalability in TOOC. 
+
+## References 
+
+[1] N. Amini-Naieni, K. Amini-Naieni, T. Han, and A. Zisserman. 2023. Open-world Text-specified Object Counting. In British Machine Vision Conference (BMCV) .[2] N. Amini-Naieni, T. Han, and A. Zisserman. 2024. CountGD: Multi-Modal Open-World Counting. In Advances in Neural Information Processing Systems (NeurIPS) .[3] Kang Hao Cheong, Sandra Poeschmann, Joel Weijia Lai, Jin Ming Koh, U Rajendra Acharya, Simon Ching Man Yu, and Kenneth Jian Wei Tang. 2019. Practical automated video analytics for crowd monitoring and counting. IEEE access 7(2019), 183252–183261. [4] Siyang Dai, Jun Liu, and Ngai-Man Cheung. 2024. Referring Expression Count-ing. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) .[5] Tri Dao and Albert Gu. 2024. Transformers are SSMs: Generalized Models and Efficient Algorithms Through Structured State Space Duality. In International Conference on Machine Learning (ICML) .[6] Albert Gu and Tri Dao. 2023. Mamba: Linear-Time Sequence Modeling with Selective State Spaces. arXiv preprint arXiv:2312.00752 (2023). [7] Dongchen Han, Ziyi Wang, Zhuofan Xia, Yizeng Han, Yifan Pu, Chunjiang Ge, Jun Song, Shiji Song, Bo Zheng, and Gao Huang. 2024. Demystify mamba in vision: A linear attention perspective. Advances in Neural Information Processing Systems (NeurIPS) 37 (2024), 127181–127203. [8] Meng-Ru Hsieh, Yen-Liang Lin, and Winston H Hsu. 2017. Drone-based object counting by spatially regularized regional proposal network. In Proceedings of the IEEE international conference on computer vision (ICCV) .[9] Ruixiang Jiang, Lingbo Liu, and Changwen Chen. 2023. CLIP-Count: Towards Text-Guided Zero-Shot Object Counting. arXiv preprint arXiv:2305.07304 (2023). [10] Seunggu Kang, WonJun Moon, Euiyeon Kim, and Jae-Pil Heo. 2024. VLCounter: Text-Aware Visual Representation for Zero-Shot Object Counting. In Proceedings of the AAAI Conference on Artificial Intelligence (AAAI) .[11] Rahima Khanam and Muhammad Hussain. 2024. YOLOv11: An Overview of the Key Architectural Enhancements. arXiv:2410.17725 [12] Diederik P. Kingma and Jimmy Lei Ba. 2015. Adam: A Method for Stochastic Optimization. In Proceedings of the International Conference on Learning Repre-sentations (ICLR) .[13] Alexander Kirillov, Eric Mintun, Nikhila Ravi, Hanzi Mao, Chloe Rolland, Laura Gustafson, Tete Xiao, Spencer Whitehead, Alexander C Berg, Wan-Yen Lo, et al .2023. Segment anything. In Proceedings of the IEEE/CVF international conference on computer vision (CVPR) . 4015–4026. [14] Harold W Kuhn. 1955. The Hungarian Method for the Assignment Problem. 
+
+Naval research logistics quarterly 2, 1-2 (1955), 83–97. [15] Sanghyeok Lee, Joonmyung Choi, and Hyunwoo J. Kim. 2025. EfficientViM: Efficient Vision Mamba with Hidden State Mixer based State Space Duality. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) .[16] Ming Li, Yupeng Hu, Yinwei Wei, Hao Liu, Haocong Wang, and Weili Guan. 2025. DCount: Decoupled Spatial Perception and Attribute Discrimination for Referring Expression Counting. In Proceedings of the 33rd ACM International Conference on Multimedia (ACM MM) . 5306–5315. [17] Leiye Liu, Miao Zhang, Jihao Yin, Tingwei Liu, Wei Ji, Yongri Piao, and Huchuan Lu. 2025. DefMamba: Deformable Visual State Space Model. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) .8838–8847. [18] Shu Liu, Lu Qi, Haifang Qin, Jianping Shi, and Jiaya Jia. 2018. Path Aggrega-tion Network for Instance Segmentation. In Proceedings of IEEE Conference on Computer Vision and Pattern Recognition (CVPR) .[19] Shilong Liu, Zhaoyang Zeng, Tianhe Ren, Feng Li, Hao Zhang, Jie Yang, Chunyuan Li, Jianwei Yang, Hang Su, Jun Zhu, et al . 2024. Grounding dino: Marrying dino with grounded pre-training for open-set object detection. European conference on computer vision (ECCV) (2024). [20] Shuai Liu, Peng Zhang, Shiwei Zhang, and Wei Ke. 2025. CountSE: Soft Exemplar Open-set Object Counting. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) . 21536–21546. [21] Yue Liu, Yunjie Tian, Yuzhong Zhao, Hongtian Yu, Lingxi Xie, Yaowei Wang, Qixiang Ye, Jianbin Jiao, and Yunfan Liu. 2024. VMamba: Visual State Space Model. In Advances in Neural Information Processing Systems 38: Annual Conference on Neural Information Processing Systems NeurIPS .[22] Hao-Yuan Ma and Li Zhang. 2024. Multi-head multi-scale pixel localization network for crowd counting with highly dense and small-scale samples. In 2024 IEEE International Conference on Multimedia and Expo (ICME) . 1–5. [23] Hao-Yuan Ma, Li Zhang, and Minjie Qiang. 2026. OVID: Text-Guided Open-Vocabulary Dense Object Counting and Localization. IEEE International Confer-ence on Acoustics, Speech and Signal Processing (ICASSP) (2026). [24] Hao-Yuan Ma, Li Zhang, and Shuai Shi. 2024. VMambaCC: A Visual State Space Model for Crowd Counting. arXiv preprint arXiv:2405.03978 (2024). [25] Hao-Yuan Ma, Li Zhang, and Xiang-Yi Wei. 2024. FGENet: Fine-Grained Ex-traction Network for Congested Crowd Counting. In Proceedings of the 30th International Conference on Multimedia Modeling (MMM) .[26] Cinthya Vanessa Muñoz Macas, Jorge Andrés Espinoza Aguirre, Rodrigo Arcentales-Carrión, and Mario Peña. 2021. Inventory management for retail companies: A literature review and current trends. In 2021 second international conference on information systems and software technologies (ICISST) . IEEE, 71–78. [27] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al . 2021. Learning transferable visual models from natural language supervision. In International conference on machine learning (ICME) . 8748–8763. [28] Viresh Ranjan, Udbhav Sharma, Thu Nguyen, and Minh Hoai. 2021. Learning to count everything. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . 3394–3403. [29] Yuheng Shi, Minjing Dong, Mingjia Li, and Chang Xu. 2025. VSSD: Vision Mamba with Non-Causal State Space Duality. Proceedings of the IEEE international conference on computer vision (ICCV) (2025). [30] Ziqiang Shi, Rujie Liu, Jun Takahashi, and Shan Jiang. 2025. TrueCount: Improv-ing Open-World Object Counting with Visual-Language Models and Dynamic Multi-Modal Inputs. In Proceedings of the 33rd ACM International Conference on Multimedia (ACM MM) . 1764–1773. [31] Qingyu Song, Changan Wang, Zhengkai Jiang, Yabiao Wang, Ying Tai, Chengjie Wang, Jilin Li, Feiyue Huang, and Yang Wu. 2021. Rethinking Counting and Localization in Crowds:A Purely Point-Based Framework. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) . 3365–3374. [32] Colin J Torney, David J Lloyd-Jones, Mark Chevallier, David C Moyer, Honori T Maliti, Machoke Mwita, Edward M Kohi, and Grant C Hopcraft. 2019. A com-parison of deep learning and citizen science techniques for counting wildlife in aerial survey images. Methods in Ecology and Evolution 10, 6 (2019), 779–787. [33] Pavan Kumar Anasosalu Vasu, Hadi Pouransari, Fartash Faghri, Raviteja Vem-ulapalli, and Oncel Tuzel. 2024. MobileCLIP: Fast Image-Text Models through Multi-Modal Reinforced Training. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) .[34] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia Polosukhin. 2017. Attention is all you need. Advances in neural information processing systems (NeurIPS) 30 (2017). [35] Ao Wang, Lihao Liu, Hui Chen, Zijia Lin, Jungong Han, and Guiguang Ding. 2025. YOLOE: Real-Time Seeing Anything. arXiv:2503.07465 [36] Zhicheng Wang, Zhiyu Pan, Zhan Peng, Jian Cheng, Liwen Xiao, Wei Jiang, and Zhiguo Cao. 2025. Exploring Contextual Attribute Density in Referring Expression Counting. [37] Jingyi Xu, Hieu Le, Vu Nguyen, Viresh Ranjan, and Dimitris Samaras. 2023. Zero-Shot Object Counting. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . 15548–15557. Conference acronym ’MM, , Ma et al.                
+
+> [38] Lihe Yang, Bingyi Kang, Zilong Huang, Zhen Zhao, Xiaogang Xu, Jiashi Feng, and Hengshuang Zhao. 2024. Depth anything v2. Advances in Neural Information Processing Systems (NeurIPS) 37 (2024), 21875–21911. [39] Songlin Yang, Bailin Wang, Yikang Shen, Rameswar Panda, and Yoon Kim. 2023. Gated linear attention transformers with hardware-efficient training. arXiv preprint arXiv:2312.06635 (2023). [40] Shuo-Diao Yang, Hung-Ting Su, Winston H Hsu, and Wen-Chin Chen. 2021. Class-agnostic few-shot object counting. In Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision (CVPR) . 870–878. [41] Weihao Yu and Xinchao Wang. 2025. MambaOut: Do We Really Need Mamba for Vision?. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) .[42] Lianghui Zhu, Bencheng Liao, Qian Zhang, Xinlong Wang, Wenyu Liu, and Xinggang Wang. [n. d.]. Vision Mamba: Efficient Visual Representation Learning with Bidirectional State Space Model. In Forty-first International Conference on Machine Learning (ICML) .[43] Xizhou Zhu, Weijie Su, Lewei Lu, Bin Li, Xiaogang Wang, and Jifeng Dai. 2020. Deformable detr: Deformable transformers for end-to-end object detection. arXiv preprint arXiv:2010.04159 (2020).
+
+## A Experiment 
+
+We train MambaCount on the REC-8K training set and evaluate it on the corresponding test split for the REC task. For the class-agnostic counting task, we train our model using only the training set of FSC-147. The trained model is then evaluated on the FSC-147 test set, which contains object categories different from those in the training set, as well as on the test set of CARPK. 
+
+## A.1 Dataset Details 
+
+FSC-147 is a few/zero-shot object counting dataset consisting of 6,135 images covering 147 object categories. Each image is anno-tated with point-level annotations indicating the locations of object instances. In addition, three exemplar bounding boxes are provided to specify the counting category. The dataset contains over 200k object instances with significant variations in scale, density, and appearance, making it highly challenging for generalized counting methods. CARPK is a widely used dataset for counting cars in parking lot scenes. It contains 1,448 aerial images captured from drone views, with 89,777 annotated cars. Each car is labeled with a bounding box. The dataset is commonly used to evaluate object counting and detection performance in dense parking environments. The dataset is typically split into 989 training images and 459 testing images. REC-8K is a referring expression counting dataset designed for language-guided visual counting. It contains 8,011 images with 286,621 point annotations and 7,122 image–referring-expression pairs. Each pair associates an image with a natural language descrip-tion specifying the target objects to be counted. The dataset pro-vides diverse attribute descriptions such as color, location, action, and orientation, enabling evaluation of models on language-driven counting tasks under dense object scenarios. 
+
+## A.2 Effect of prompt configuration and Top-𝐾 
+
+## selection 
+
+Table 9 analyzes the impact of different prompt configurations and Top-𝐾 selection strategies. Using only the text prompt provides a reasonable baseline performance (Test MAE 13.36), indicating that textual guidance already offers useful semantic cues for counting. Introducing prototype-based prompts further improves the results, demonstrating that visual prototypes can complement textual se-mantics. We further compare different Top-𝐾 selection strategies. Using a fixed number of prototypes across all scales (All-16 and All-32) leads to limited improvements, suggesting that uniformly selecting prototypes may introduce redundant or noisy regions. In contrast, selecting Top-𝐾 prototypes for each scale yields better performance. We adopt Top-𝐾 =16 per scale as the default, which achieves the best Test MAE (12.23); other choices ( 𝐾 =4/8/32) bring no consistent gain, indicating that selecting an appropriate per-scale 
+
+𝐾 provides a good balance between semantic coverage and noise suppression. Finally, removing the text prompt (“Without Text”) degrades the performance compared with the full model (13.59 vs. 12.23 MAE), confirming that textual guidance plays an important role in aligning visual features with the target category. Overall, these results demonstrate that combining text prompts with appro-priately selected multi-scale prototypes leads to the most effective counting performance. MambaCount: Efficient Text-guided Open-vocabulary Object Counting with Spatial Sparse State Space Duality Block Conference acronym ’MM, , 
+
+Figure 7: Visualization of token-level entropy distributions and spatial entropy maps. Compared with SSD, the proposed 𝑆 4𝐷 
+
+block reduces the entropy of spatial token responses and produces clearer spatial variation, indicating more discriminative local representations and improved sensitivity to fine-grained image structures. Table 8: Computational efficiency comparison of attention blocks ( 𝑑 =512 , ℎ=8). Trans.: Transformer Encoder (2 layers); Deform.: Deformable Transformer Decoder (6 layers, 900 queries); SSD Block: ours (2 layers). 
+
+Resolution Tokens FLOPs (G) GPU Latency (ms) CPU Latency (ms) Trans. Deform. Ours Trans. Deform. Ours Trans. Deform. Ours 
+
+320 ×320 400 2.85 24.40 3.06 0.98 6.73 3.26 24.85 262.42 38.57 
+
+480 ×640 1200 10.51 25.66 9.18 3.68 6.74 3.86 109.43 265.54 104.53 
+
+640 ×640 1600 15.33 26.29 12.25 5.97 6.87 4.77 175.11 269.79 142.14 
+
+800 ×800 2500 28.55 27.71 19.14 13.15 7.07 7.84 368.27 279.92 220.43 
+
+1024 ×1024 4096 60.17 30.22 31.35 31.05 7.31 13.45 880.13 318.58 423.81 Params (M) — 6.30 23.72 7.51 — — — — — —
+
+Table 9: Ablation study on different prompt configurations and Top-𝐾 selection.                                          
+
+> Prompt Setting Val Set Test Set MAE ↓RMSE ↓MAE ↓RMSE ↓
+> Text Only 13.61 56.45 13.36 107.10 All-16 14.19 53.89 13.16 113.69 All-32 13.76 54.76 13.70 113.70 Top-𝐾 =4 13.18 53.58 12.68 105.05
+> Top-𝐾 =8 13.60 54.32 13.71 116.29 Top-𝐾 =16 13.22 53.62 12.23 105.69 Top-𝐾 =32 13.48 57.21 13.62 112.92 Without Text (Top-𝐾 =16) 13.46 53.53 13.59 108.42
+
+## A.3 Attention/ Mamba module comparison. 
+
+Table 10 compares different fusion mechanisms for vision-language interaction. While Transformer and Mamba-based variants provide moderate improvements, the proposed 𝑆 4𝐷 block achieves the best performance on the test set (12.23 MAE). This indicates that the structured state-space modeling captures long-range dependencies more effectively than conventional attention-based fusion. 
+
+Table 10: Comparison of different fusion modules. 
+
+Fusion Module Val set Test set MAE ↓ RMSE ↓ MAE ↓ RMSE ↓
+
+Transformer [34] 13.92 60.35 15.72 125.57 Mamba [6] 13.50 55.86 15.69 116.83 MambaOut [41] 13.85 56.91 14.56 108.94 MLLA [7] 14.12 57.26 16.87 134.68 VSSD [29] 13.91 56.08 13.32 107.08 GLA [39] 13.03 51.51 14.91 113.75 
+
+𝑆 4𝐷 Block 13.22 53.62 12.23 105.69 
+
+## B Visualization B.1 Visualization of 𝑆 4𝐷 Block. 
+
+Fig 7 further analyzes the unconstrained high entropy of spatial token responses within SSD [ 5 ]. We observe that the original SSD tends to produce excessively high-entropy responses, meaning that attention over spatial tokens is overly diffuse and insufficiently Conference acronym ’MM, , Ma et al. 
+
+focused on informative regions. After introducing our optimiza-tion strategy, the excessive entropy in spatial token responses is effectively reduced, leading to more concentrated and semantically meaningful activations. The corresponding entropy histograms and spatial maps show that token responses become more structured, with clearer emphasis on object-relevant areas and less interference from irrelevant background regions. 
+
+## C Mamba Details 
+
+State Space Models (SSMs) [ 6] describe a continuous linear dynami-cal system that maps an input signal 𝑥 (𝑡 ) to an output 𝑦 (𝑡 ) through a latent state ℎ(𝑡 ):
+
+ℎ′ (𝑡 ) = Aℎ(𝑡 ) + B𝑥 (𝑡 ), 𝑦 (𝑡 ) = Cℎ(𝑡 ) (21) where A ∈ R𝑁 ×𝑁 is the state transition matrix, and B ∈ R𝑁 ×1
+
+and C ∈ R1×𝑁 are input and output projection matrices, respec-tively. After discretization with step size Δ, the system can be writ-ten in a recurrent form as: 
+
+ℎ𝑡 = ¯Aℎ𝑡 −1 + ¯B𝑥 𝑡 , 𝑦 𝑡 = Cℎ𝑡 , (22) where ¯A = exp (ΔA) and ¯B is the discretized input matrix. When applied to vision tasks, the input sequence 𝑥 𝑡 corresponds to visual tokens obtained by flattening spatial feature maps. How-ever, existing SSM-based vision methods typically rely on multi-directional scanning strategies to convert two-dimensional spatial features into one-dimensional sequences. Such scanning operations often disrupt spatial locality and may introduce redundant depen-dencies, limiting their effectiveness in modeling complex visual structures. Mamba2 further establishes the State Space Duality (SSD) [ 5], which shows that the SSM output can be expressed as a matrix multiplication: 
+
+𝑌 = M · 𝑋, M = L ◦ CB 𝑇 
+
+where L ∈ R𝑇 ×𝑑 is a lower-triangular factor that encodes the causal constraint, ◦ is the hadamard product, and 𝑑 is the state dimension.

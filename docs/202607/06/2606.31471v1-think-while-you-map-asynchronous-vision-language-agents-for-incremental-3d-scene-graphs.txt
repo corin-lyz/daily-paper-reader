@@ -1,0 +1,671 @@
+Title: Think While You Map: Asynchronous Vision-Language Agents for Incremental 3D Scene Graphs
+
+URL Source: https://arxiv.org/pdf/2606.31471v1
+
+Published Time: Wed, 01 Jul 2026 00:57:11 GMT
+
+Number of Pages: 31
+
+Markdown Content:
+# Think While You Map: Asynchronous Vision-Language Agents for Incremental 3D Scene Graphs 
+
+Deniz Bickici 1,3 , Michael Pabst 1,3 , Shohei Mori 1 , Dieter Schmalstieg 1,2 
+
+> 1
+
+University of Stuttgart, Germany  
+
+> 2
+
+Graz University of Technology, Austria  
+
+> 3
+
+IMPRS-IS, Germany 
+
+deniz.bickici@visus.uni-stuttgart.de 
+
+Abstract. Open-vocabulary 3D scene graph methods typically operate in two stages: first reconstruct, then enrich with vision-language mod-els, leaving the graph unqueryable during exploration. We argue that this sequential coupling is unnecessary and propose an asynchronous ar-chitecture in which lightweight online mapping runs concurrently with heavyweight semantic refinement. A probabilistic voxel-based backbone maintains stable object identities incrementally, while background VLM agents progressively enrich the graph. This framework resolves duplicate object tracks through semantic loop closure, attaches fine-grained visual attributes and derives spatial relations between objects. A multi-target frame scheduler amortizes VLM cost by selecting a small set of infor-mative frames that jointly cover multiple targets. The resulting scene graph is queryable during exploration and grows in semantic richness over time. Our method matches or outperforms existing open-vocabulary 3D scene graph methods on semantic segmentation (ScanNet, Replica) and surpasses the prior state-of-the-art across three visual grounding benchmarks (Sr3D+, Nr3D, ScanRefer) by 15.3 to 18.8 A@0.25. Project page: https://denizbickici.github.io/thinkgraphs/ 
+
+Keywords: 3D Scene Graphs · Open-Vocabulary · 3D Scene Under-standing · Incremental Mapping · Visual Grounding 
+
+## 1 Introduction 
+
+Understanding the semantics of 3D environments is fundamental for embodied AI, robotics, and augmented reality. An agent must recognize objects, maintain their identities over time, infer relationships and support language-based queries for grounding and planning, e.g., “pick up the mug next to the laptop”. Scene graphs are a natural representation for this goal. They compactly encode entities as nodes and their interactions as edges, enabling downstream reasoning about “what is where” and “what is interacting with what.” 
+
+> arXiv:2606.31471v1 [cs.CV] 30 Jun 2026
+
+2 D. Bickici et al. QUERY [t=50]       
+
+> "the window closest to the sink"
+> QUERY [t=200]
+> "the stainless steel refrigerator
+> to the left of the TV"
+> Description: Looks
+> like a stainless steel
+> refrigerator
+> Description: Looks
+> like a wall -mounted
+> flatscreen TV
+> Critic: Looks like
+> the identical
+> Object:
+> Scene Coverage  20%
+> 60%
+> 100%
+> Incremental Scene Graph Asynchronous Agentic Refinement Continuously Queryable
+> Scene Graph
+> Visual Grounding
+
+Fig. 1: ThinkGraphs decouples lightweight online mapping from heavyweight VLM reasoning, keeping the scene graph queryable during exploration. Asynchronous back-ground agents refine the graph without blocking the mapping loop: a Critic Agent detects and merges fragmented object tracks, and a Description Agent injects fine-grained visual attributes, enabling complex grounding queries (e.g., “the stainless steel refrigerator left of the TV”) throughout exploration. 
+
+Recent work on 3D scene graphs has largely evolved along two complemen-tary but currently disconnected directions: Semantic-rich offline reconstruction prevents querying unless the whole process is complete, while real-time recon-struction supports querying but only with limited semantic information. The former utilizes offline open-vocabulary systems and prioritizes rich labels, at-tributes, free-form descriptions, and functional relations [11, 19, 26, 47, 53], typ-ically leveraging CLIP [34] embeddings and vision-language reasoning. These methods require completing instance-level reconstruction before enriching the scene with captions, labels, and inter-object relations. The latter are real-time mapping systems that incrementally update object graphs but rely on closed sets of semantics or shallow feature matching, trading the semantic richness of recent large language models (LLM) or vision-language models (VLM) for re-sponsiveness [14, 24, 48]. The core technical challenge of combining these two paradigms lies in the instability of incremental tracking. Since objects are often fragmented or merged incorrectly under partial views and occlusions, it is impractical to query a VLM during exploration. Not only would this degrade the system’s responsiveness, it would also waste massive computational resources on analyzing duplicate or unstable object tracks. Consequently, previous systems have to wait for a fully consolidated offline reconstruction before applying VLM reasoning. Many semantically rich pipelines already build their geometric map incre-mentally [11, 19]. What they lack is this combination of a robust enough 3D scene representation to make on-the-fly enrichment worthwhile, and an efficient scheduling mechanism to make it affordable. Our key observation is that semantic reasoning does not need to wait for a stable graph; it can actively contribute to stabilizing it. This behavior is en-abled by two factors. First, rather than the pairwise greedy association used by Think While You Map 3
+
+prior methods, we accumulate per-voxel votes for each object track, producing substantially more robust object tracks, reducing the instability that motivated postponing semantics in the first place. Second, rather than brute-forcing VLM calls on every object at every frame, we treat VLM reasoning as a selective, asynchronous background process, one that not only enriches the graph with fine-grained attributes, but also actively repairs it by detecting and merging duplicate object tracks through semantic loop closure. We therefore propose an asynchronous architecture in which a lightweight on-line mapper runs concurrently with two background VLM agents: a Critic Agent that detects and merges duplicate object tracks through semantic loop closure, and a Description Agent that attaches fine-grained visual attributes via a multi-target frame scheduler that amortizes VLM cost across informative frames. The resulting scene graph grows in semantic richness as exploration continues, yet never blocks online operation. Our method thus occupies the middle ground be-tween offline open-vocabulary reconstruction and real-time closed-set mapping. It builds the graph incrementally during exploration, enriching semantics asyn-chronously rather than at frame rate. To demonstrate the effectiveness of our approach, we extensively evaluate it on open-vocabulary semantic segmentation and three visual grounding bench-marks. In summary, we make the following contributions: 
+
+– We introduce ThinkGraphs , to our knowledge the first asynchronous ar-chitecture for open-vocabulary 3D scene graph construction. It decouples lightweight online mapping from heavyweight VLM reasoning, meaning the graph remains queryable during exploration and is continually enriched with-out blocking it. 
+
+– We propose a VLM-in-the-loop mechanism for semantic loop closure that detects and merges duplicate object tracks caused by incremental association drift, analogous to geometric loop closure in SLAM. 
+
+– We introduce a multi-target frame scheduler that selects a small number of informative frames for the Description Agent, each depicting multiple undescribed objects, so that a single VLM call enriches several nodes at once. 
+
+– We demonstrate that our incremental method outperforms all batch-based open-vocabulary scene graph methods on semantic segmentation and sur-passes the prior state-of-the-art across three visual grounding benchmarks (Sr3D+, Nr3D, ScanRefer) by 15.3 to 18.8 A@0.25, showing that deferring all semantics to a post-hoc stage is unnecessary. 
+
+## 2 Related Work 
+
+Incremental 3D scene graphs. The incremental construction of 3D scene graphs focuses on updating structured spatial representations as new observa-tions arrive. Kimera [39, 40] first demonstrated real-time metric-semantic map-ping with hierarchical spatial layers, a design later extended by Hydra [14], 4 D. Bickici et al. 
+
+which pioneered incremental scene graphs by integrating signed distance fields with hierarchical graphs of objects, places, and rooms. S-Graphs+ [3] introduced a factor-graph formulation for hierarchical optimization, while SceneGraphFu-sion [49] fuses geometric over-segmentation with a Graph Neural Network (GNN) for incremental semantic prediction. Wu et al. [48] propose a sparse RGB-only variant that combines SLAM-based point tracking with multi-view feature aggre-gation. Further incremental methods either reuse temporal history [10] or incor-porate knowledge from past observations [38] to enhance scene understanding. All of these methods remain restricted to closed-set vocabularies, limiting their applicability in open-world settings. More recently, Clio [24] introduced language interfaces into incremental mapping, averaging open-set features across temporal object tracks to form clusters relevant to the task, although it was limited to a predefined task list. Compared to prior incremental scene graph mappers, our goal is to keep the graph open-vocabulary and queryable while exploration is ongoing. We achieve this goal by decoupling lightweight online tracking from heavyweight seman-tic enrichment: the mapper maintains stable object identities and geometry, while background VLM agents progressively refine labels and attributes without blocking the main loop; spatial relations are updated deterministically from 3D geometry. 
+
+Batch-processing of scene graphs. Many open-vocabulary 3D systems rep-resent semantics as language-aligned features stored in dense maps or spatial memories [4, 12, 20, 32, 43, 50]. In contrast, batch scene graph pipelines commit these signals to discrete object nodes and relations, enabling compositional and relational queries. ConceptGraphs [11] pioneered open-vocabulary 3D scene graphs by combin-ing CLIP [34] embeddings with SAM2 [35] masks to construct 3D objects. Subse-quent works extended this paradigm by adding hierarchical multi-level reasoning across rooms and floors [47], object affordances [53], and relational question an-swering [19]. Open3DSG [17] takes a learning-based approach by distilling 2D vision-language features into a graph neural network, producing language-aligned node and edge embeddings for open-vocabulary object and pairwise relationship prediction. PoVo [26] takes a different approach, operating on geometric super-points rather than per-frame masks and merging them into 3D instances through combined semantic and mask coherence. While some of these methods build their geometric map incrementally [11, 19], all defer semantic enrichment to a post-hoc stage and therefore require a complete reconstruction before the graph becomes queryable. Our method instead exposes an intermediate graph throughout exploration and improves it incrementally: Semantic refinement is asynchronous and revisitable, so the system can answer queries early with coarse semantics and later update the same nodes or edges as better evidence emerges. 
+
+VLM reasoning in 3D scene understanding. Large vision-language models bring contextual reasoning capabilities that go beyond the embedding similarity used for object association and labeling. In open-vocabulary scene graphs, Con-Think While You Map 5
+
+ceptGraphs [11] queries a VLM to caption each object node and an LLM to infer spatial edges, while BBQ [19] formulates object retrieval as deductive reasoning over a scene graph structure using an LLM. For 3D visual grounding, LLM-Grounder [51] decompose complex natural-language queries with an LLM into sub-goals and iteratively invokes a 3D visual grounder (e.g., OpenScene [32] or LERF [16]) to localize targets in reconstructed scenes. SQA3D [23] benchmarks situated question answering that requires joint spatial and common-sense reasoning on 3D scans. Effective visual grounding in these pipelines often relies on visual prompting strategies such as Set-of-Mark [52], which overlays numeric tags on segmented image regions so that a VLM can refer to specific objects without fine-tuning. Existing 3D mapping methods generally employ VLM/LLM reasoning in one of two ways: post-hoc enrichment after reconstruction, or synchronous query-time inference that blocks execution until the model responds. Our work targets the missing middle ground: We treat VLM reasoning as a background process that runs continuously, is scheduled selectively, and integrates results when avail-able. This makes semantics available during mapping while controlling the com-putation via coverage-based frame selection rather than per-object per-frame querying. 
+
+Object-level association and merging. A key challenge in incremental scene graph mapping is maintaining consistent object identities as observations accu-mulate over time. Prior work addresses this through object-level SLAM [25], multi-object tracking and fusion [41, 42], and semantic object-based loop clo-sure [18,22]. However, association remains challenging in the presence of percep-tual ambiguity and viewpoint changes. In open-set mapping, ROMAN [33] aligns object submaps via graph-theoretic data association but assumes object nodes are already formed, while OpenVox [7] formulates incremental instance association as probabilistic voxel inference and Octree-Graph [46] proposes chronological group-wise merging with informative feature selection. Most scene graph systems, whether incremental [14, 49] or batch-based [11, 26], rely on greedy pairwise association in learned embeddings (e.g., CLIP [34] or DINO [31]) and 3D geometric overlap. Such greedy strategies involve making early, local commitments based on limited evidence, which result in the accumu-lation of false negatives that lead to fragmented object tracks [14, 19]. BBQ [19] addresses this by consolidating duplicates in a periodic merge step, but repeated instances and viewpoint changes can still cause missed associations. In contrast, our method couples probabilistic instance tracking with a VLM-based semantic loop closure mechanism that explicitly detects and corrects frag-mented object tracks during online operation (Sec. 3.3). 
+
+## 3 Method 
+
+We introduce ThinkGraphs, an incremental open-vocabulary 3D scene graph pipeline that fuses geometric and visual evidence from sequentially posed RGB-6 D. Bickici et al. Qwen 
+
+> “Table, Window,
+> Lamp, Wall,
+> Stool, …”
+> Grounded -
+> SAM
+
+Frontend  
+
+> Lamp
+> Table Stool
+> Window
+> Door
+
+Backend 
+
+> Filtering & Projection
+> 2D to 3D
+> Association
+> Feature Score
+> cos
+> Geometric Score
+
+Incremental 
+
+3D Scene Graph 
+
+RGB -D   
+
+> Label Voting
+> Chair Lamp Pillow Wall
+> Feature Selection
+> v3
+> v4
+> Feature Space
+> v1
+> v2
+> Adding
+> Relations
+> Refining
+> Nodes
+
+Relation Generation       
+
+> Heuristics
+> Obj
+> left
+> Obj
+> under
+> Obj
+> Obj
+> Adding
+> Nodes
+> Merging
+> Nodes
+> Async -Refinement
+> Frame Schedular Pair Schedular
+> Critic Agent
+> Description Agent
+> Description: "round table",
+> Material : "wood“
+> Color : "medium brown“
+> State : "upright"
+> Texture : "smooth"
+> Description Agent
+> Candidates : Obj1, Obj2
+> Reason: “ both objects have a high
+> IoU and look visually, like
+> fragments of the same carpet ”
+> Decision : Merge
+
+Fig. 2: Method Overview. (i) The frontend extracts grounded instances from each RGB-D frame (Sec. 3.1). (ii) The backend associates them into persistent 3D tracks with probabilistic voxel scoring and derives spatial edges deterministically from 3D geometry (Sec. 3.2). (iii) Two asynchronous VLM agents, a Critic Agent for semantic loop closure and a Description Agent for attribute enrichment, progressively refine the graph without blocking online operation (Sec. 3.3). 
+
+D frames {(Irgb 
+
+t , I depth 
+
+t , θ t)}Nt=1 (Fig. 2), where θt is the camera pose. Our system incrementally constructs a scene graph Gt = ( Vt, Et), where each node vi ∈ V t
+
+corresponds to a confirmed object track Ti, represented by a 3D point cloud Pi, a selected CLIP visual embedding f ⋆i , a consensus label ℓ⋆i , and VLM-enriched at-tributes Ai. Edges Et encode spatial predicates derived from 3D geometry. Rather than requiring a complete reconstruction, the pipeline maintains a continuously queryable graph throughout exploration via three components: (i) a frontend 
+
+that extracts grounded instance observations Ot, (ii) a backend that lifts and associates them into persistent 3D object tracks, and (iii) asynchronous VLM agents that refine the scene graph without blocking the mapping loop. 
+
+3.1 Frontend for grounded instance extraction 
+
+Given an RGB image Irgb 
+
+t at time t, we query Qwen3-VL-2B-Instruct [2] to pro-duce a set of noun prompts Lt = {ℓtj | j = 1 , . . . , C t}, as its context-aware prompts yield fewer missed detections than tag-based alternatives (Tab. 4). We feed these prompts into Grounded-SAM v2 [21, 35, 37], where Grounding-DINO [21] predicts text-conditioned boxes for each prompt, and SAM2 [35] then refines each box into a 2D instance mask. The frontend outputs a set of Kt
+
+grounded instances Ot = {(M tk, ℓ tk, q tk)}Kt
+
+k=1 , where each mask M tk is paired with its matched prompt ℓtk ∈ L t and confidence qtk. This ensures every mask carries a grounded label from the start, which our backend relies on for association and label assignment. Think While You Map 7
+
+3.2 Backend for 3D Association and Track Representation 
+
+We adopt OpenVox’s [7] probabilistic voxel-consistency formulation as our as-sociation backbone, as voxel-level voting accumulates evidence across multiple observations, filtering out noisy detections over time, whereas greedy pairwise matching commits to early associations that can accumulate drift. The under-lying voxel map is a sparse hash map that allocates cells only when RGB-D observations project points into them, so storage scales with observed surface rather than a prespecified volume. We adapt it for our open-vocabulary setting by replacing its SBERT caption pipeline with CLIP text-label embeddings for track association, computed directly from the detector’s label strings. These em-beddings are invariant to viewpoint, unlike visual features. We therefore store visual embeddings separately for retrieval and grounding. Beyond the change of embedding, we introduce stricter observation filtering and confidence-weighted label voting to suppress noise and obtain more stable track representations. 
+
+Track scoring. Before association, we filter each 2D mask (erosion, subtrac-tion of contained segments, area and confidence thresholds) and retain only the dominant 3D cluster via DBSCAN [8], which serves solely as a local per-mask denoising step. We then maintain a sparse voxel map that continuously records the spatial occupancy history of each track. Given a new observation 
+
+O = ( M tk, ℓ tk, q tk) ∈ O t, we compute an association score S(Ti, O ) for each candi-date track Ti using a weighted combination of geometric and feature similarities: 
+
+S(Ti, O ) = λgeo · Sgeo + λfeat · Sfeat . (1) The geometric score Sgeo represents a probabilistic voxel-consistency vote in the intersecting volume: 
+
+Sgeo (Ti, O ) = 1
+
+|V (O)|
+
+X 
+
+> v∈V(O)
+
+cv,i 
+
+cv
+
+, (2) where cv,i is the number of times track Ti has been observed in voxel v, cv =P 
+
+> j
+
+cv,j is the total observation count across all tracks in that voxel, and V (O)
+
+is the set of voxels occupied by observation O. The feature score Sfeat is the cosine similarity between CLIP text embeddings of the incoming observation label and the track’s current consensus label. With λgeo = 0 .8 and λfeat = 0 .2,the observation is merged into the highest-scoring track if S ≥ τassoc . Otherwise, a new tentative track is instantiated. To prevent noisy detections from cluttering the scene graph, these tentative object tracks are promoted to confirmed nodes only after accumulating at least Nconf successful associations, effectively filtering out transient noise. 
+
+Confidence-weighted label voting. As observations accumulate, the same track may receive different label predictions across frames. To resolve these into a single consensus label, each track Ti maintains a label histogram Hi over the labels observed so far. When a new observation with grounded label ℓ and 8 D. Bickici et al. Description Agent  - Frame Scheduling  Critic  Agent  - Pair Scheduling  
+
+> Fig. 3: VLM Scheduling. Multi-target frame scheduling for the Description Agent (left) and pair scheduling for the Critic Agent (right), both using Set-of-Mark overlays.
+
+detection confidence q is associated to Ti, the histogram is updated as 
+
+Hi(ℓ) ← H i(ℓ) + q,  (3) and the consensus label is the highest-scoring label: 
+
+ℓ⋆i = arg max 
+
+> ℓ
+
+Hi(ℓ). (4) Weighting votes by detection confidence, rather than uniform counting, ensures that high-quality detections naturally suppress noisy or ambiguous predictions. 
+
+Visual embedding selection. To support downstream retrieval and grounding tasks, each track Ti aggregates a bank of CLIP visual embeddings Bi = {f vis  
+
+> n
+
+},extracted from tight crops of its associated 2D segments. To ensure embedding quality, we apply two complementary filters. First, distant or heavily occluded viewpoints produce low-quality embeddings and should be discarded. An adap-tive area gate maintains a running maximum segment area A⋆i over the track history and only admits semantic/CLIP updates whose visible 2D segment area 
+
+An satisfies An ≥ ρarea · A⋆i . Second, we select a single representative embed-ding via text-guided scoring . Relying solely on the largest crop is insufficient: For instance, a large view of a wall may still be dominated by occluding furniture, confounding the CLIP feature. Instead, we encode the track’s consensus label 
+
+ℓ⋆i (Eq. (4)) with the CLIP text encoder to obtain a semantic anchor f text 
+
+> ℓ⋆i
+
+and retrieve the most semantically aligned view: 
+
+f ⋆i = f vis  
+
+> s∗
+
+, where s∗ = arg max  
+
+> n
+
+f vis 
+
+> n
+> ⊤
+
+f text  
+
+> ℓ⋆i
+
+. (5) 
+
+Spatial edges. To support relational grounding queries, we derive directed spa-tial edges deterministically from the axis-aligned bounding boxes of confirmed object tracks, following a similar approach to BBQ [19], as spatial relations can be reliably determined from geometric heuristics. Each edge encodes a direc-tional predicate (e.g., left, under) and pairwise distance between target and an-chor. Horizontal directions are resolved relative to a virtual room-center anchor to ensure viewpoint invariance. Think While You Map 9
+
+3.3 Asynchronous Agentic Refinement 
+
+Enriching every node at every frame with a VLM would be prohibitively ex-pensive, while deferring all enrichment to a post-hoc stage would mean that the system would not be queryable during exploration. We therefore introduce an asynchronous refinement layer comprising two VLM background agents that refine the graph without blocking the online loop (Fig. 3). The Critic Agent detects and merges duplicate object tracks caused by incremental association errors, while the Description Agent attaches fine-grained visual attributes to each node. 
+
+Critic agent. Similarly to pose drift in SLAM, incremental object associations accumulate errors over time, spawning duplicate or fragmented tracks. Prior con-solidation methods [19] rely on feature similarity and 3D overlap, but embeddings struggle to distinguish distinct instances of the same class or to re-identify sin-gle objects across varying viewpoints. Resolving such an ambiguity requires both fine-grained visual evidence and a broader scene context, motivating the use of a VLM as a verifier. We therefore introduce the Critic Agent: an asynchronous in-the-loop verifier that performs merge-only identity corrections in two stages. First, a lightweight candidate scheduling step proposes high-confidence duplicate pairs. Then, a visual verification step authorizes or rejects each merge. To avoid overwhelming the VLM with spurious proposals, we apply a two-gate filtering mechanism to each pair of tracks (Ti, T j ), including tentative ones, with observation counts mi, m j (the number of successfully associated detections for each track) and 3D bounding boxes Bi, B j . A geometric gate first discards any pair with min( mi, m j ) < 2 or IoU 3D (Bi, B j ) < τ iou , pruning noisy single-observation detections. Surviving pairs pass through a semantic gate that scores each pair by the cosine similarity sij between the SBERT [36] embeddings of their consensus labels. We use SBERT rather than CLIP here, as CLIP gives uniformly high similarity even for distinct labels, making threshold filtering unreliable. Pairs with sij ≥ τsem enter a candidate buffer that decouples tracking from verification. For each buffered pair, we track the peak alignment via a running maximum ˆsij ← max(ˆ sij , s (t) 
+
+> ij
+
+), capturing the best-observed compatibility as new evidence arrives. The buffer is flushed periodically, ranking candidates by 
+
+ˆsij and dispatching the top-Kcritic to the verifier. At the end of the sequence, all remaining valid pairs are flushed to ensure complete coverage. When merging two tentative tracks results in a combined observation count that exceeds Nconf ,the merged track is automatically promoted to a confirmed node. For each selected pair, we first keep high-visibility views of each track, mea-sured by visible mask area. If both tracks are visible in the same frame, we choose the shared frame where both are most visible. Otherwise, we choose two high-visibility views with similar camera direction, camera position, ob-ject depth, and temporal proximity. To ground VLM attention without ob-scuring texture details, we employ Set-of-Mark (SoM) prompting [52], overlay-ing high-contrast SAM mask boundaries and unique identifiers directly onto the image. The model receives these marked images alongside a context tu-ple C = {ID i,j , Label i,j , ˆsij , geometry cues } that supplies geometric cues to re-10 D. Bickici et al. 
+
+duce hallucinations from ambiguous masks, and returns a structured decision 
+
+D = {a ∈ { Merge , Keep }, r ∈ String }. When the verifier returns a = Merge ,the Critic unifies point clouds, features, and label histograms of both tracks in the scene graph. 
+
+Description agent. While the tracker maintains object identities and coarse text labels, downstream tasks such as visual grounding require deeper semantic understanding. We introduce a Description Agent that runs asynchronously in a dedicated worker thread to enrich each scene graph node with fine-grained visual attributes, such as material, color, texture and physical state, which are critical for disambiguating instances of the same class. Since a single frame typically depicts multiple objects, a small set of well-chosen frames can cover all targets while amortizing VLM cost and preserving scene context that individual crops would lack. We therefore introduce a multi-target frame scheduler that buffers 2D bounding boxes over a tumbling window of Wdesc frames and identifies targets that lack a description or whose best visible area substantially exceeds their last-described area. It then greedily selects up to Kdesc frames that maximize target coverage. A target T can be covered in frame f only if its normalized screen area ˆAT,f is within a fraction τview of its best view in the window. Each candidate frame is scored by 
+
+U (f ) = X 
+
+> T∈T f
+
+wT · ln  1 + γ ˆAT,f 
+
+, (6) where Tf is the set of targets coverable in frame f , wT is a per-target weight that down-weights background classes and γ controls the area sensitivity. The greedy loop selects the highest-scoring frame, marks its targets as covered, and repeats until the budget is exhausted. Selected frames are also rendered with SoM overlays and submitted in a single multi-image VLM call, along with each target’s current label, description, and attribute estimates as context. For each marked object, the model returns a refined label ( e.g ., “winged armchair” rather than “chair”) and visual attributes (material, color, state, texture). Attributes accumulate in a per-node histogram mirroring the confidence-weighted voting of Eq. (3), so repeated observations reinforce consistent evidence. 
+
+## 4 Experiments 
+
+We evaluate on open-vocabulary 3D semantic segmentation and 3D visual ground-ing, then analyze component contributions through ablations. 
+
+Datasets. For semantic segmentation, we evaluate on Replica [44] (eight pho-torealistic scenes: room0 –room2 , office0 –office4 ) and ScanNet [6] (eight real-world RGB-D sequences: 0011_00 , 0030_00 , 0046_00 , 0086_00 , 0222_00 , 0378_00 ,
+
+0389_00 , 0435_00 ). For visual grounding, we use three referring expression benchmarks with ScanNet: ScanRefer [5] (natural-language descriptions), Sr3D+ [1] (template-generated), and Nr3D [1] (free-form human-written). For both tasks, Think While You Map 11 
+
+we follow the evaluation protocol of BBQ [19]; the eight ScanNet scenes are cho-sen to match their grounding setup. We adopt the same frame sampling stride of 5 for Replica and 10 for ScanNet. 
+
+Metrics. For segmentation, we report mean per-class accuracy (mAcc), mean intersection-over-union (mIoU), and frequency-weighted IoU (f-mIoU), following the open-vocabulary protocol of BBQ [19] with EVA02-CLIP [9] features. Per-point predictions are matched to ground truth via nearest-neighbor association in 3D. Generic categories ( other , otherfurniture ) are excluded. For grounding, we use GPT-4o [28] and report accuracy at IoU thresholds A@0.25 and A@0.5 on ScanRefer, and at A@0.1 and A@0.25 on Sr3D+ and Nr3D. The full evaluator prompt and an ablation over evaluator models are provided in the supplementary. 
+
+Implementation. For our CLIP embeddings we use the EVA02-CLIP [9] vari-ant. Qwen3-VL-2B-Instruct [2] runs locally; for the Agents we use GPT-5-mini [29], called via its cloud API. Experiments use a single workstation (AMD Ryzen 7 9700X, NVIDIA RTX 5090, 64 GB RAM). We set the voxel backend to a resolu-tion of 4 cm with an adaptive area ratio ρarea =0 .5. Association balances geometry and feature similarity ( λgeo =0 .8, λfeat =0 .2) at a threshold τassoc =0 .4; tentative tracks are promoted after Nconf =6 successful associations. The semantic gate is set to τsem =0 .8 and the IoU gate to τiou =0 .01 , with utility scale γ=100 . The Critic Agent flushes up to Kcritic =20 candidate pairs every Wcritic =50 frames. The Description Agent operates over tumbling windows of Wdesc =30 frames, se-lecting up to Kdesc =3 frames per window. The remaining hyperparameters are listed in the supplementary. 
+
+## 5 Results 
+
+We evaluate our method on two tasks: open-vocabulary 3D semantic segmenta-tion and 3D visual grounding. We then analyze the contribution of individual components through ablations. 
+
+5.1 Open-Vocabulary 3D Semantic Segmentation 0 20 40 60 80 100 
+
+> Scene coverage (%)
+> 0
+> 10
+> 20
+> 30
+> 40
+> 50
+> 60
+> 70
+> Metric (%)
+> mIoU
+> mAcc
+> f-mIoU
+
+Fig. 4: Incremental Segmentation. 
+
+On Room0 (Replica), metrics converge steadily as frames are processed. 
+
+Tab. 1 compares our method with prior open-vocabulary 3D methods on Replica and ScanNet. On Replica, our incremental method outperforms all prior methods on every metric (0.58 mAcc, 0.37 mIoU, 0.61 f-mIoU), with the largest gain on f-mIoU (+0.13 over BBQ-CLIP). On ScanNet, we obtain 0.75 mAcc, 0.44 mIoU, and 0.46 f-mIoU, achieving the highest mIoU and f-mIoU while remaining competitive with OpenVox (0.76) on mAcc. We attribute these gains to two factors. First, the voxel-consistency association with CLIP text-label embeddings produces more stable 12 D. Bickici et al.                                                   
+
+> Table 1: 3D Semantic Segmentation. Comparison with prior open-vocabulary methods on Replica and ScanNet.
+> Replica ScanNet Method mAcc mIoU f-mIoU mAcc mIoU f-mIoU
+> ConceptFusion [15] 0.29 0.11 0.14 0.49 0.26 0.31 OpenMask3D [45] –––0.34 0.18 0.20 ConceptGraphs [11] 0.36 0.18 0.15 0.52 0.26 0.29 BBQ-CLIP [19] 0.38 0.27 0.48 0.56 0.34 0.36 Octree-Graph [46] 0.51 0.34 0.34 0.71 0.40 0.37 OpenVox [7] 0.51 0.26 0.40 0.76 0.43 0.39
+> ThinkGraphs 0.58 0.37 0.61 0.75 0.44 0.46
+
+track identities than the pairwise visual similarity used by prior methods. Sec-ond, the text-guided feature selection in Eq. (5) ensures that each track is rep-resented by the view most consistent with its consensus label, producing cleaner per-point semantic assignments. Fig. 4 illustrates this effect over time: Met-rics improve steadily as additional frames are processed, demonstrating that the incremental pipeline converges to high-quality predictions without requiring a complete reconstruction. 
+
+5.2 3D Visual Grounding 
+
+We evaluate on three referring expression benchmarks of increasing difficulty: the template-based Sr3D+, the free-form Nr3D, and the natural-language ScanRefer. To handle the complexity of free-form and natural-language evaluation, we utilize GPT-4o [28] as our automated evaluator. 
+
+Sr3D+ and Nr3D. On both referral benchmarks (Tab. 2), our method substan-tially outperforms all baselines, improving over Open3DSG [17] by 15.3 A@0.25 on Sr3D+ and 18.8 on Nr3D. Performance remains consistent across difficulty and viewpoint splits (see supplementary for per-split breakdowns). 
+
+ScanRefer. On the ScanRefer benchmark (Tab. 3), our method achieves 52.9% A@0.25 and 37.6% A@0.5, outperforming Open3DSG [17] by 18.3 and 6.6 abso-lute points respectively. This reflects the combined effect of our core components: our backend provides stable track identities and high-quality representative vi-sual embeddings, the Critic Agent reduces node fragmentation so that queries match the correct consolidated object, and the Description Agent provides fine-grained attributes that help disambiguate same-class instances. 
+
+5.3 Ablation Studies 
+
+To isolate individual component contributions, we conduct ablations on the eight Replica scenes. Think While You Map 13                                                          
+
+> Table 2: 3D Visual Grounding. Overall ac-curacy on Sr3D+ and Nr3D.
+> Sr3D+ Nr3D Method A@0.1 A@0.25 A@0.1 A@0.25 OpenFusion [50] 12.6 2.4 10.7 1.4 BBQ-CLIP [19] 14.4 8.8 15.3 9.4 ConceptGraphs [11] 13.3 6.2 16.0 7.2 BBQ [19] 34.2 22.7 28.3 19.0 Open3DSG [17] 28.9 27.7 25.9 23.0
+> ThinkGraphs 48.6 43.0 47.4 41.8 Table 3: 3D Visual grounding.
+> Overall accuracy on ScanRefer.
+> ScanRefer Method A@0.25 A@0.5 LERF [16] 4.4 0.3 OpenScene [32] 13.0 5.1 LLM-Grounder [51] 17.1 5.3 BBQ [19] 19.4 11.6 Open3DSG [17] 34.6 31.0
+> ThinkGraphs 52.9 37.6 Table 4: Pipeline ablation. Component contributions on Replica; after replacing the RAM++ baseline with Qwen, components are added incrementally.
+> Configuration mAcc mIoU f-mIoU
+> RAM++ (baseline frontend) 0.37 0.20 0.34 Qwen (our frontend) 0.46 0.25 0.43 + CLIP-text labels 0.47 0.26 0.44 + Text-guided selection 0.52 0.35 0.55 + Area filter 0.58 0.37 0.61
+
+Pipeline design choices. Tab. 4 ablates the backend pipeline on Replica. Switching from RAM++ [13] to Qwen3-VL [2] as the frontend tagger yields the largest mAcc gain (+0.09), as context-aware prompts produce fewer missed de-tections. Text-guided embedding selection drives the largest mIoU gain (+0.09): Naively selecting the largest-area crop as the representative embedding, as done 
+
+e.g . in BBQ [19], is sensitive to foreground clutter. Scoring against the consensus label produces cleaner views. The adaptive area gate adds a further 0.06 mAcc by filtering low-quality observations, while replacing SBERT with CLIP text-label embeddings provides a smaller benefit but unifies the visual and textual feature space. 
+
+Agent contributions to grounding. Tab. 5 incrementally adds the two asyn-chronous agents to isolate their effect on Nr3D grounding accuracy. The base system includes the full backend with spatial relations, but no VLM agents. Adding the Critic Agent alone lifts overall A@0.25 from 38.5% to 39.3%, with gains concentrated on easy and view-independent splits where fragmented ob-ject tracks are the primary bottleneck (Fig. 5). The Description Agent has a larger effect on hard referrals (+3.5 A@0.25), where fine-grained attributes are needed to disambiguate same-class instances. Combining both agents yields the best results in all splits (41.8% A@0.25 overall, +7.1 on hard), confirming that the two agents address complementary failure modes. An ablation isolating the 14 D. Bickici et al. 
+
+Table 5: Agent ablation. Effect of the Critic and Description agents on Nr3D; Base is the online mapping pipeline without the VLM agents.                                              
+
+> Overall Easy Hard View Dep. View Indep. Method A@0.1 A@0.25 A@0.1 A@0.25 A@0.1 A@0.25 A@0.1 A@0.25 A@0.1 A@0.25 Base 43.1 38.5 49.2 46.2 27.4 18.8 43.0 37.6 43.1 38.8 Base + Critic 45.1 39.3 52.2 47.4 26.9 18.8 43.0 38.2 45.7 39.7 Base + Description 44.5 40.5 50.0 47.6 30.5 22.3 44.8 40.6 44.4 40.4 Base + Critic + Description 47.4 41.8 53.0 48.0 33.0 25.9 49.1 43.0 46.8 41.4
+
+Critic w/o Critic 
+
+Fig. 5: Effect of the Critic Agent. Without the Critic (left), association drift frag-ments objects into duplicate object tracks (red circles). Semantic loop closure (right) merges them into consistent identities. Points are colored by instance. 
+
+architecture from the frontend VLM (a lighter RAM++ tagger) is provided in the supplementary, showing the gains are not merely due to a stronger tagger. 
+
+Runtime and cost. The online mapping path averages 1.45 s per keyframe, with the Critic and Description agents running off the critical path so they never block the online mapping loop. The multi-target scheduler keeps VLM usage low, about 26 calls per scene on average, more than two orders of magnitude fewer than naive per-object-per-keyframe prompting ( ∼9,300 on a typical scene). The primary runtime bottleneck is the frontend, not the agents. A full analysis is provided in the supplementary. 
+
+5.4 Limitations 
+
+Our framework has two main limitations. Firstly, the front-end models (Qwen3-VL + Grounded-SAM) prevent real-time operation. Replacing these models with more efficient alternatives would be the most direct way of overcoming this issue. Secondly, asynchronous agents inevitably lag behind the mapping frontier, meaning that objects discovered during fast exploration may remain unenriched for several frames. This limits the quality of grounding early in a sequence. Think While You Map 15 
+
+## 6 Conclusion 
+
+We present ThinkGraphs, an asynchronous architecture for open-vocabulary 3D scene graphs that decouples lightweight online mapping from heavyweight VLM reasoning. By running semantic refinement in the background, the scene graph remains queryable during exploration and grows in richness over time. A prob-abilistic voxel backbone with text-guided embedding selection provides stable object identities, while a Critic Agent corrects fragmentation through seman-tic loop closure, and a Description Agent attaches fine-grained attributes via multi-target frame scheduling. Our method outperforms all batch-based open-vocabulary scene-graph methods on semantic segmentation on Replica and Scan-Net, and surpasses the prior state-of-the-art across three visual grounding bench-marks (Sr3D+, Nr3D, ScanRefer) by 15.3 to 18.8 A@0.25, showing that an in-cremental architecture can match and exceed batch-based alternatives. Future work could extend this asynchronous agent design with additional specialized agents, for example for richer relation prediction, higher-level scene reasoning, or task-oriented graph refinement, while also exploring its use in other structured representations that require both responsiveness and semantic depth. 
+
+## Acknowledgements 
+
+The authors thank the International Max Planck Research School for Intel-ligent Systems (IMPRS-IS) for supporting Deniz Bickici and Michael Pabst. This work was supported by the Alexander von Humboldt Foundation funded by the German Federal Ministry of Research, Technology and Space, and by Deutsche Forschungsgemeinschaft (DFG) under Germany’s Excellence Strategy EXC 2120/2 (390831618). 
+
+## References      
+
+> 1. Achlioptas, P., Abdelreheem, A., Xia, F., Elhoseiny, M., Guibas, L.: ReferIt3D: Neural Listeners for Fine-Grained 3D Object Identification in Real-World Scenes. In: Computer Vision – ECCV 2020, vol. 12346, pp. 422–440. Springer International Publishing, Cham (2020). https://doi.org/10.1007/978-3-030-58452-8_25
+> 2. Bai, S., Cai, Y., Chen, R., Chen, K., Chen, X., Cheng, Z., Deng, L., Ding, W., Gao, C., Ge, C., Ge, W., Guo, Z., Huang, Q., Huang, J., Huang, F., Hui, B., Jiang, S., Li, Z., Li, M., Li, M., Li, K., Lin, Z., Lin, J., Liu, X., Liu, J., Liu, C., Liu, Y., Liu, D., Liu, S., Lu, D., Luo, R., Lv, C., Men, R., Meng, L., Ren, X., Ren, X., Song, S., Sun, Y., Tang, J., Tu, J., Wan, J., Wang, P., Wang, P., Wang, Q., Wang, Y., Xie, T., Xu, Y., Xu, H., Xu, J., Yang, Z., Yang, M., Yang, J., Yang, A., Yu, B., Zhang, F., Zhang, H., Zhang, X., Zheng, B., Zhong, H., Zhou, J., Zhou, F., Zhou, J., Zhu, Y., Zhu, K.: Qwen3-VL Technical Report (2025).
+> https://doi.org/10.48550/arXiv.2511.21631
+> 3. Bavle, H., Sanchez-Lopez, J.L., Shaheer, M., Civera, J., Voos, H.: S-Graphs+: Real-Time Localization and Mapping Leveraging Hierarchical Representations. IEEE Robotics and Automation Letters 8(8), 4927–4934 (2023). https://doi.org/10. 1109/LRA.2023.3290512
+
+16 D. Bickici et al. 4. Chen, B., Xia, F., Ichter, B., Rao, K., Gopalakrishnan, K., Ryoo, M., Stone, A., Kappler, D.: Open-vocabulary Queryable Scene Representations for Real World Planning. In: 2023 IEEE International Conference on Robotics and Automation (ICRA). pp. 11509–11522. IEEE, London, United Kingdom (2023). https://doi. org/10.1109/ICRA48891.2023.10161534 
+
+5. Chen, D.Z., Chang, A.X., Nießner, M.: ScanRefer: 3D Object Localization in RGB-D Scans Using Natural Language. In: Computer Vision – ECCV 2020, vol. 12365, pp. 202–221. Springer International Publishing, Cham (2020). https://doi.org/ 10.1007/978-3-030-58565-5_13 
+
+6. Dai, A., Chang, A.X., Savva, M., Halber, M., Funkhouser, T., Nießner, M.: Scan-Net: Richly-Annotated 3D Reconstructions of Indoor Scenes. In: 2017 IEEE Con-ference on Computer Vision and Pattern Recognition (CVPR). pp. 2432–2443. IEEE, Honolulu, HI (2017). https://doi.org/10.1109/CVPR.2017.261 
+
+7. Deng, Y., Yao, B., Tang, Y., Zhou, T., Yang, Y., Yue, Y.: Openvox: Real-time instance-level open-vocabulary probabilistic voxel representation. In: 2025 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS). pp. 1305–1311 (2025). https://doi.org/10.1109/IROS60139.2025.11246455 
+
+8. Ester, M., Kriegel, H.P., Sander, J., Xu, X.: A density-based algorithm for discov-ering clusters in large spatial databases with noise. In: Proceedings of the Second International Conference on Knowledge Discovery and Data Mining (KDD). pp. 226–231. AAAI Press, Portland, Oregon (1996) 9. Fang, Y., Sun, Q., Wang, X., Huang, T., Wang, X., Cao, Y.: Eva-02: A visual representation for neon genesis. Image Vision Comput. 149 (C) (2024). https: //doi.org/10.1016/j.imavis.2024.105171 
+
+10. Feng, M., Yan, C., Wu, Z., Dong, W., Wang, Y., Mian, A.: History-enhanced 3d scene graph reasoning from rgb-d sequences. IEEE Transactions on Circuits and Systems for Video Technology 35 (8), 7667–7682 (2025). https://doi.org/10. 1109/TCSVT.2025.3548308 
+
+11. Gu, Q., Kuwajerwala, A., Morin, S., Jatavallabhula, K.M., Sen, B., Agarwal, A., Rivera, C., Paul, W., Ellis, K., Chellappa, R., Gan, C., De Melo, C.M., Tenenbaum, J.B., Torralba, A., Shkurti, F., Paull, L.: ConceptGraphs: Open-Vocabulary 3D Scene Graphs for Perception and Planning. In: 2024 IEEE International Conference on Robotics and Automation (ICRA). pp. 5021–5028. IEEE, Yokohama, Japan (2024). https://doi.org/10.1109/ICRA57147.2024.10610243 
+
+12. Huang, C., Mees, O., Zeng, A., Burgard, W.: Visual Language Maps for Robot Navigation. In: 2023 IEEE International Conference on Robotics and Automation (ICRA). pp. 10608–10615 (2023). https://doi.org/10.1109/ICRA48891.2023. 10160969 
+
+13. Huang, X., Huang, Y.J., Zhang, Y., Tian, W., Feng, R., Zhang, Y., Xie, Y., Li, Y., Zhang, L.: Open-set image tagging with multi-grained text supervision. In: Pro-ceedings of the 33rd ACM International Conference on Multimedia (ACM MM). p. 4117–4126. Association for Computing Machinery, New York, NY, USA (2025). 
+
+https://doi.org/10.1145/3746027.3755316 
+
+14. Hughes, N., Chang, Y., Carlone, L.: Hydra: A Real-time Spatial Perception System for 3D Scene Graph Construction and Optimization. In: Robotics: Science and Systems XVIII. Robotics: Science and Systems Foundation (2022). https://doi. org/10.15607/RSS.2022.XVIII.050 
+
+15. Jatavallabhula, K., Kuwajerwala, A., Gu, Q., Omama, M., Iyer, G., Saryazdi, S., Chen, T., Maalouf, A., Li, S., Keetha, N., Tewari, A., Tenenbaum, J., Melo, C., Krishna, M., Paull, L., Shkurti, F., Torralba, A.: ConceptFusion: Open-set multi-Think While You Map 17 modal 3D mapping. In: Robotics: Science and Systems XIX. Robotics: Science and Systems Foundation (2023). https://doi.org/10.15607/RSS.2023.XIX.066 
+
+16. Kerr, J., Kim, C.M., Goldberg, K., Kanazawa, A., Tancik, M.: LERF: Lan-guage Embedded Radiance Fields. In: 2023 IEEE/CVF International Confer-ence on Computer Vision (ICCV). pp. 19672–19682. IEEE, Paris, France (2023). 
+
+https://doi.org/10.1109/ICCV51070.2023.01807 
+
+17. Koch, S., Vaskevicius, N., Colosi, M., Hermosilla, P., Ropinski, T.: Open3dsg: Open-vocabulary 3d scene graphs from point clouds with queryable objects and open-set relationships. In: 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 14183–14193 (2024). https://doi.org/10. 1109/CVPR52733.2024.01345 
+
+18. Lin, S., Wang, J., Xu, M., Zhao, H., Chen, Z.: Topology Aware Object-Level Seman-tic Mapping Towards More Robust Loop Closure. IEEE Robotics and Automation Letters 6(4), 7041–7048 (2021). https://doi.org/10.1109/LRA.2021.3097242 
+
+19. Linok, S., Zemskova, T., Ladanova, S., Titkov, R., Yudin, D., Monastyrny, M., Valenkov, A.: Beyond Bare Queries: Open-Vocabulary Object Grounding with 3D Scene Graph. In: 2025 IEEE International Conference on Robotics and Automation (ICRA). pp. 13582–13589 (2025). https://doi.org/10.1109/ICRA55743.2025. 11128059 
+
+20. Liu, P., Guo, Z., Warke, M., Chintala, S., Paxton, C., Shafiullah, N.M.M., Pinto, L.: Dynamem: Online Dynamic Spatio-Semantic Memory for Open World Mobile Manipulation. In: 2025 IEEE International Conference on Robotics and Automa-tion (ICRA). pp. 13346–13355 (2025). https://doi.org/10.1109/ICRA55743. 2025.11127619 
+
+21. Liu, S., Zeng, Z., Ren, T., Li, F., Zhang, H., Yang, J., Jiang, Q., Li, C., Yang, J., Su, H., Zhu, J., Zhang, L.: Grounding DINO: Marrying DINO with Grounded Pre-training for Open-Set Object Detection. In: Computer Vision – ECCV 2024, vol. 15105, pp. 38–55. Springer Nature Switzerland, Cham (2025). https://doi. org/10.1007/978-3-031-72970-6_3 
+
+22. Liu, Y., Petillot, Y., Lane, D., Wang, S.: Global Localization with Object-Level Semantics and Topology. In: 2019 International Conference on Robotics and Au-tomation (ICRA). pp. 4909–4915. IEEE, Montreal, QC, Canada (2019). https: //doi.org/10.1109/ICRA.2019.8794475 
+
+23. Ma, X., Yong, S., Zheng, Z., Li, Q., Liang, Y., Zhu, S.C., Huang, S.: Sqa3d: Sit-uated question answering in 3d scenes. In: International Conference on Learning Representations (ICLR) (2023) 24. Maggio, D., Chang, Y., Hughes, N., Trang, M., Griffith, D., Dougherty, C., Cristo-falo, E., Schmid, L., Carlone, L.: Clio: Real-Time Task-Driven Open-Set 3D Scene Graphs. IEEE Robotics and Automation Letters 9(10), 8921–8928 (2024). 
+
+https://doi.org/10.1109/LRA.2024.3451395 
+
+25. McCormac, J., Clark, R., Bloesch, M., Davison, A., Leutenegger, S.: Fusion++: Volumetric object-level slam. In: 2018 International Conference on 3D Vision (3DV). pp. 32–41 (2018). https://doi.org/10.1109/3DV.2018.00015 
+
+26. Mei, G., Riz, L., Wang, Y., Poiesi, F.: Vocabulary-Free 3D Instance Segmentation with Vision-Language Assistant. In: 2025 International Conference on 3D Vision (3DV). pp. 1197–1210 (2025). https://doi.org/10.1109/3DV66043.2025.00114 
+
+27. Meta: The Llama 4 herd: The beginning of a new era of natively multi-modal AI innovation (2025), https://ai.meta.com/blog/llama-4-multimodal-intelligence/ 
+
+28. OpenAI: GPT-4o System Card (2024). https://doi.org/10.48550/arXiv.2410. 21276 18 D. Bickici et al. 29. OpenAI: OpenAI GPT-5 System Card (2025). https://doi.org/10.48550/ arXiv.2601.03267 
+
+30. OpenAI: Introducing GPT-5.4 (2026), https://openai.com/index/introducing-gpt-5-4/ 
+
+31. Oquab, M., Darcet, T., Moutakanni, T., Vo, H.V., Szafraniec, M., Khalidov, V., Fernandez, P., Haziza, D., Massa, F., El-Nouby, A., Assran, M., Ballas, N., Galuba, W., Howes, R., Huang, P.Y., Li, S.W., Misra, I., Rabbat, M., Sharma, V., Syn-naeve, G., Xu, H., Jegou, H., Mairal, J., Labatut, P., Joulin, A., Bojanowski, P.: DINOv2: Learning robust visual features without supervision. Transactions on Ma-chine Learning Research (2024) 32. Peng, S., Genova, K., Jiang, C., Tagliasacchi, A., Pollefeys, M., Funkhouser, T.: OpenScene: 3D Scene Understanding with Open Vocabularies. In: 2023 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 815–824. IEEE, Vancouver, BC, Canada (2023). https://doi.org/10.1109/CVPR52729. 2023.00085 
+
+33. Peterson, M.B., Jia, Y.X., Tian, Y., Thomas, A., How, J.P.: Roman: Open-set object map alignment for robust view-invariant global localization. In: Robotics: Science and Systems (RSS) (2025). https://doi.org/10.15607/RSS.2025.XXI. 029 
+
+34. Radford, A., Kim, J.W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., Krueger, G., Sutskever, I.: Learning transfer-able visual models from natural language supervision. In: Proceedings of the 38th International Conference on Machine Learning (ICML). vol. 139, pp. 8748–8763. PMLR (2021) 35. Ravi, N., Gabeur, V., Hu, Y.T., Hu, R., Ryali, C., Ma, T., Khedr, H., Rädle, R., Rolland, C., Gustafson, L., Mintun, E., Pan, J., Alwala, K.V., Carion, N., Wu, C.Y., Girshick, R., Dollár, P., Feichtenhofer, C.: SAM 2: Segment Anything in Images and Videos (2024). https://doi.org/10.48550/ARXIV.2408.00714 
+
+36. Reimers, N., Gurevych, I.: Sentence-BERT: Sentence embeddings using Siamese BERT-networks. In: Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natu-ral Language Processing (EMNLP-IJCNLP). pp. 3982–3992. Association for Com-putational Linguistics, Hong Kong, China (2019). https://doi.org/10.18653/ v1/D19-1410 
+
+37. Ren, T., Liu, S., Zeng, A., Lin, J., Li, K., Cao, H., Chen, J., Huang, X., Chen, Y., Yan, F., Zeng, Z., Zhang, H., Li, F., Yang, J., Li, H., Jiang, Q., Zhang, L.: Grounded SAM: Assembling Open-World Models for Diverse Visual Tasks (2024). 
+
+https://doi.org/10.48550/arXiv.2401.14159 
+
+38. Renz, M., Igelbrink, F., Atzmueller, M.: Integrating prior observations for incre-mental 3d scene graph prediction. In: 2025 International Conference on Machine Learning and Applications (ICMLA). pp. 887–892 (2025). https://doi.org/10. 1109/ICMLA66185.2025.00132 
+
+39. Rosinol, A., Abate, M., Chang, Y., Carlone, L.: Kimera: an Open-Source Library for Real-Time Metric-Semantic Localization and Mapping. In: 2020 IEEE Inter-national Conference on Robotics and Automation (ICRA). pp. 1689–1696 (2020). 
+
+https://doi.org/10.1109/ICRA40945.2020.9196885 
+
+40. Rosinol, A., Violette, A., Abate, M., Hughes, N., Chang, Y., Shi, J., Gupta, A., Carlone, L.: Kimera: From SLAM to spatial perception with 3D dynamic scene graphs. The International Journal of Robotics Research 40 (12-14), 1510–1546 (2021). https://doi.org/10.1177/02783649211056674 Think While You Map 19 41. Runz, M., Agapito, L.: Co-fusion: Real-time segmentation, tracking and fusion of multiple objects. In: 2017 IEEE International Conference on Robotics and Au-tomation (ICRA). pp. 4471–4478. IEEE, Singapore, Singapore (2017). https: //doi.org/10.1109/ICRA.2017.7989518 
+
+42. Runz, M., Buffier, M., Agapito, L.: MaskFusion: Real-Time Recognition, Track-ing and Reconstruction of Multiple Moving Objects. In: 2018 IEEE International Symposium on Mixed and Augmented Reality (ISMAR). pp. 10–20. IEEE, Munich, Germany (2018). https://doi.org/10.1109/ISMAR.2018.00024 
+
+43. Shafiullah, N.M.M., Paxton, C., Pinto, L., Chintala, S., Szlam, A.: CLIP-Fields: Weakly Supervised Semantic Fields for Robotic Memory. In: Robotics: Science and Systems XIX (2023). https://doi.org/10.15607/RSS.2023.XIX.074 
+
+44. Straub, J., Whelan, T., Ma, L., Chen, Y., Wijmans, E., Green, S., Engel, J.J., Mur-Artal, R., Ren, C., Verma, S., Clarkson, A., Yan, M., Budge, B., Yan, Y., Pan, X., Yon, J., Zou, Y., Leon, K., Carter, N., Briales, J., Gillingham, T., Mueggler, E., Pesqueira, L., Savva, M., Batra, D., Strasdat, H.M., Nardi, R.D., Goesele, M., Lovegrove, S., Newcombe, R.: The Replica Dataset: A Digital Replica of Indoor Spaces (2019). https://doi.org/10.48550/arXiv.1906.05797 
+
+45. Takmaz, A., Fedele, E., Sumner, R.W., Pollefeys, M., Tombari, F., Engelmann, F.: Openmask3d: open-vocabulary 3d instance segmentation. In: Proceedings of the 37th International Conference on Neural Information Processing Systems (NeurIPS). Curran Associates Inc., Red Hook, NY, USA (2023) 46. Wang, Z., Su, Y., Li, C., Wang, D., Huang, Y., Li, X., Zhao, B.: Open-vocabulary octree-graph for 3d scene understanding. In: 2025 IEEE/CVF International Con-ference on Computer Vision (ICCV). pp. 7037–7047 (2025). https://doi.org/10. 1109/ICCV51701.2025.00661 
+
+47. Werby, A., Huang, C., Büchner, M., Valada, A., Burgard, W.: Hierarchical Open-Vocabulary 3D Scene Graphs for Language-Grounded Robot Navigation. In: Robotics: Science and Systems XX. Robotics: Science and Systems Foundation (2024). https://doi.org/10.15607/RSS.2024.XX.077 
+
+48. Wu, S.C., Tateno, K., Navab, N., Tombari, F.: Incremental 3D Semantic Scene Graph Prediction from RGB Sequences. In: 2023 IEEE/CVF Conference on Com-puter Vision and Pattern Recognition (CVPR). pp. 5064–5074. IEEE, Vancouver, BC, Canada (2023). https://doi.org/10.1109/CVPR52729.2023.00490 
+
+49. Wu, S.C., Wald, J., Tateno, K., Navab, N., Tombari, F.: SceneGraphFusion: Incre-mental 3D Scene Graph Prediction from RGB-D Sequences. In: 2021 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 7511–7521. IEEE, Nashville, TN, USA (2021). https://doi.org/10.1109/CVPR46437.2021. 00743 
+
+50. Yamazaki, K., Hanyu, T., Vo, K., Pham, T., Tran, M., Doretto, G., Nguyen, A., Le, N.: Open-Fusion: Real-time Open-Vocabulary 3D Mapping and Queryable Scene Representation. In: 2024 IEEE International Conference on Robotics and Automa-tion (ICRA). pp. 9411–9417 (2024). https://doi.org/10.1109/ICRA57147.2024. 10610193 
+
+51. Yang, J., Chen, X., Qian, S., Madaan, N., Iyengar, M., Fouhey, D.F., Chai, J.: LLM-Grounder: Open-Vocabulary 3D Visual Grounding with Large Language Model as an Agent. In: 2024 IEEE International Conference on Robotics and Automa-tion (ICRA). pp. 7694–7701 (2024). https://doi.org/10.1109/ICRA57147.2024. 10610443 
+
+52. Yang, J., Zhang, H., Li, F., Zou, X., Li, C., Gao, J.: Set-of-Mark Prompting Un-leashes Extraordinary Visual Grounding in GPT-4V (2023). https://doi.org/ 10.48550/arXiv.2310.11441 20 D. Bickici et al. 53. Zhang, C., Delitzas, A., Wang, F., Zhang, R., Ji, X., Pollefeys, M., Engelmann, F.: Open-Vocabulary Functional 3D Scene Graphs for Real-World Indoor Spaces. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) (2025). https://doi.org/10.1109/CVPR52734.2025.01807 Think While You Map 21 
+
+# Think While You Map: Asynchronous Vision-Language Agents for Incremental 3D Scene Graphs 
+
+## Supplementary Material 
+
+## A Per-Split Grounding Results 
+
+Tabs. 6 to 8 expand the overall grounding numbers from the main paper (Tabs. 2 and 3) into per-split breakdowns. On Nr3D and Sr3D+ [1] (Tabs. 6 and 7), ThinkGraphs outperforms BBQ [19] across nearly all splits. The one exception is Sr3D+’s hard split at A@0.1, where BBQ has a slight advantage (33.3 vs. 32.0). However, ThinkGraphs still leads at A@0.25 (32.0 vs. 22.7). For ScanRefer [5] (Tab. 8), we analyze performance by split. Our approach reaches 71.8% A@0.25 on the unique split. Performance remains also strong on the more challenging multiple split, achieving 49.0% A@0.25, indicating that the attributes of the Description Agent effectively disambiguate instances belonging to the same class. To isolate the contribution of our architecture, we replace the Qwen tagger with the more lightweight RAM++ [13] tagger and rerun the full system on Nr3D. Even with this weaker frontend, ThinkGraphs reaches 33.6 A@0.25, still exceeding Open3DSG (23.0) and BBQ (19.0). The 18.8 A@0.25 overall gain over Open3DSG thus splits into 10.6 from the architecture and 8.2 from the Qwen3-VL tagger, confirming that the improvement does not stem solely from a stronger tagger. 
+
+## B Grounding Model Ablation 
+
+Our main-paper results use GPT-4o [28] as the grounding evaluator, following the protocol of BBQ [19]. To test sensitivity to the evaluator, we re-evaluate the same ThinkGraphs scene graphs with GPT-5.4 [30] and Llama-4 Maverick [27] 
+
+Table 6: Nr3D Grounding. Per-split accuracy on Nr3D. ThinkGraphs (RAM++) 
+
+replaces our Qwen3-VL tagger with the lighter RAM++ tagger.                                                                            
+
+> Overall Easy Hard View Dep. View Indep. Method A@0.1 A@0.25 A@0.1 A@0.25 A@0.1 A@0.25 A@0.1 A@0.25 A@0.1 A@0.25 OpenFusion [50] 10.7 1.4 12.9 1.4 5.1 1.5 8.5 0.0 11.4 1.9 BBQ-CLIP [19] 15.3 9.4 18.1 11.0 8.1 5.6 8.1 6.1 17.2 10.5 ConceptGraphs [11] 16.0 7.2 18.7 9.2 9.1 2.0 12.7 4.2 17.0 8.1 BBQ [19] 28.3 19.0 30.5 21.3 22.8 13.2 23.6 18.2 29.8 19.3 Open3DSG [17] 25.9 23.0 26.5 25.5 24.4 16.8 26.1 23.6 25.8 22.8
+> ThinkGraphs 47.4 41.8 53.0 48.0 33.0 25.9 49.1 43.0 46.8 41.4
+> ThinkGraphs (RAM++) 39.3 33.6 45.8 41.6 22.8 13.2 37.6 30.9 39.9 34.5
+
+22 D. Bickici et al. 
+
+Table 7: Sr3D+ Grounding. Per-split accuracy on Sr3D+                                                                  
+
+> Overall Easy Hard View Dep. View Indep. Method A@0.1 A@0.25 A@0.1 A@0.25 A@0.1 A@0.25 A@0.1 A@0.25 A@0.1 A@0.25 OpenFusion [50] 12.6 2.4 14.0 2.4 1.3 1.3 3.8 2.5 13.7 2.4 BBQ-CLIP [19] 14.4 8.8 15.4 9.0 6.7 6.7 11.4 5.1 14.4 8.8 ConceptGraphs [11] 13.3 6.2 13.0 6.8 16.0 1.3 15.2 5.1 13.1 6.4 BBQ [19] 34.2 22.7 34.3 22.7 33.3 22.7 32.9 20.3 34.4 23.0 Open3DSG [17] 28.9 27.7 29.9 28.8 21.3 18.7 29.1 29.1 28.9 27.5
+> ThinkGraphs 48.6 43.0 50.7 44.4 32.0 32.0 53.2 48.1 47.9 42.3
+
+Table 8: ScanRefer Grounding. Per-split accuracy on ScanRefer. 
+
+Overall Unique Multiple Method A@0.25 A@0.5 A@0.25 A@0.5 A@0.25 A@0.5 
+
+ThinkGraphs 52.9 37.6 71.8 52.4 49.0 34.6 
+
+(Tab. 9) on Nr3D. Overall accuracy stays within a narrow band around GPT-4o, ranging from a 1.9 A@0.25 drop with Llama-4 Maverick to a 3.6 gain with GPT-5.4, confirming that our improvements do not depend on a particular evaluator. 
+
+## C Agent Behavior Analysis 
+
+We provide an additional analysis of the agents’ behavior. 
+
+Critic Agent behavior. Fig. 6 shows representative decisions of the Critic Agent. In the first two cases, the agent correctly identifies duplicate tracks caused by viewpoint changes, such as a leather chair observed from two angles or a partially visible appliance fragmented across frames. In both cases, the agent reasons about spatial offset, containment, and visual consistency to authorize the merge. These are precisely the cases where greedy CLIP-similarity and 3D-IoU association fails: the viewpoint change lowers both embedding similarity and geometric overlap, so a pairwise matcher leaves the object fragmented, whereas the Critic recovers the merge from visual evidence. The third case illustrates 
+
+Table 9: Evaluator Ablation. Effect of the grounding evaluator on Nr3D; scene graphs are fixed (produced by ThinkGraphs), only the evaluator model varies.                                        
+
+> Overall Easy Hard View Dep. View Indep. Evaluator A@0.1 A@0.25 A@0.1 A@0.25 A@0.1 A@0.25 A@0.1 A@0.25 A@0.1 A@0.25 GPT-4o [28] 47.4 41.8 53.0 48.0 33.0 25.9 49.1 43.0 46.8 41.4 GPT-5.4 [30] 51.5 45.4 56.0 51.6 40.1 29.4 43.0 38.8 54.1 47.4
+> Llama-4 Maverick [27] 45.8 39.9 49.4 44.4 36.5 28.4 43.6 38.2 46.4 40.4 Think While You Map 23 Correct Merge Correct Merge
+> Correct Keep Incorrect Merge
+> Fig. 6: Critic Agent Decisions. Examples on ScanNet; green borders mark correct decisions, red borders errors.
+
+a correct rejection. Two visually similar boxes stacked vertically are kept as distinct instances due to their low containment (7.1%) and vertical separation (0.23 m). Conversely, this is a case where IoU- or containment-based merging would erroneously fuse two distinct same-class instances; the Critic keeps them separate. The fourth case illustrates a failure mode in which the axis-aligned bounding box of a larger object overestimates its spatial extent. This causes a smaller, nearby box to appear highly contained and be incorrectly merged as a fragment. To quantify these behaviors across scenes, Tab. 10 categorizes all Critic de-cisions into three types: deduplications , which merge two confirmed tracks re-ferring to the same object and remove a redundant node; absorptions , which fold an unconfirmed fragment into an existing confirmed track, improving its geometry without changing the node count; and promotions , which merge two unconfirmed fragments whose combined observations exceed Nconf and recover an otherwise lost object. Across the eight scenes, 60 out of 144 calls (41.7%) are accepted. Absorptions dominate (38 of 60), followed by 17 deduplications and 5 promotions. Because promotions partially offset deduplications in the to-tal confirmed count, the Critic’s full contribution is best measured through the downstream grounding ablation in Tab. 5 of the main paper. 
+
+Description Agent behavior. We illustrate the Description Agent’s refine-ment (Sec. 3.3 of the main paper) using scene0389_00 from ScanNet [6]. Fig. 7 shows the SoM-annotated [52] frames sent to the agent along with the current track labels. The agent refines coarse labels into fine-grained descriptions. For instance, two tracks both labeled board are disambiguated into padded ironing board (wall-mounted) and folding luggage rack (metal with straps) , while night-stand becomes wooden nightstand (stained two-drawer) . Beyond labels, the agent returns structured attributes (material, color, state, texture) that support the 24 D. Bickici et al. 
+
+Table 10: Critic Decisions by Type. Counts across the eight ScanNet bench-mark scenes. Dedup. merges two confirmed tracks, removing a redundant node. Ab-sorb. folds an unconfirmed fragment into a confirmed track, improving its geometry. 
+
+Promo. merges two unconfirmed fragments into a newly confirmed node, recovering an otherwise lost object. 
+
+Scene Calls Dedup. Absorb. Promo. Rejected 
+
+0011_00 25 7 7 1 10 
+
+0030_00 34 3 4 0 27 
+
+0046_00 19 1 3 0 15 
+
+0086_00 9 0 2 1 6
+
+0222_00 14 0 6 1 7
+
+0378_00 14 2 6 0 6
+
+0389_00 14 1 6 2 5
+
+0435_00 15 3 4 0 8
+
+Overall 144 17 38 5 84 
+
+Fig. 7: Description Agent Call. A single multi-target call on ScanNet 
+
+scene0389_00 : three SoM-annotated frames jointly cover six objects, refining coarse labels into fine-grained descriptions in one VLM call. 
+
+disambiguation of same-class instances during grounding. In one case (track_2), the agent incorrectly overrides the correct consensus label clothes hanger with 
+
+wall-mounted reading lamp . Since the backend consensus label and the agent’s description coexist in the scene graph, incorrect descriptions do not destroy the original label. 
+
+## D Incremental Improvement 
+
+To demonstrate how our system improves over time, we report how the seman-tic segmentation scores evolve during exploration. We report metrics at four coverage checkpoints on both Replica and ScanNet (Tab. 11). On Replica, per-formance improves steadily across all metrics, reaching 0.53 mAcc at just 50% coverage, already surpassing the final scores of most batch-based baselines in Tab. 1 of the main paper. On ScanNet, early-stage metrics start lower (0.09 Think While You Map 25                                
+
+> Table 11: Incremental Convergence. Segmentation metrics on Replica and Scan-Net improve steadily as exploration progresses.
+> Replica ScanNet Coverage mAcc mIoU f-mIoU mAcc mIoU f-mIoU
+> 10% 0.29 0.12 0.23 0.27 0.09 0.11 30% 0.45 0.21 0.42 0.41 0.21 0.25 50% 0.53 0.32 0.48 0.49 0.27 0.32 100% 0.58 0.37 0.61 0.75 0.44 0.46
+
+mIoU at 10%) but recover quickly once diverse rooms are reached, with mIoU and f-mIoU more than doubling between 10% and 30% coverage. 
+
+## E Qualitative Results 
+
+Semantic segmentation. Fig. 8 compares our open-vocabulary semantic seg-mentation predictions with the ground truth for three Replica scenes. Room 2 
+
+accurately recovers most object boundaries, although large objects such as rugs remain a known challenge for incremental association. These objects span many frames and viewpoints, which makes it difficult to consolidate them into a sin-gle, consistent track. Office 3 shows strong overall coverage, but fine-grained objects (e.g. small desk items or thin wall-mounted fixtures) are occasionally missed when they fall below observation filtering thresholds or receive too few confident detections to be promoted to confirmed tracks. Office 4 reveals a notable evaluation artifact: objects assigned to generic ground-truth categories (e.g . other ) are penalized even when our prediction is semantically plausible, such as a surface correctly identified as a table. Across all three scenes, remain-ing errors concentrate on small or heavily occluded objects and large ambiguous surfaces, while the majority of each scene is segmented correctly without requir-ing complete reconstruction. 
+
+Grounding. We also provide multiple examples on the grounding task in Fig. 9, covering Nr3D, Sr3D+, and ScanRefer. Each example shows the predicted bound-ing box alongside the ground truth for a given natural-language query. 
+
+## F Runtime and Cost Analysis 
+
+We profile end-to-end latency and VLM cost across all eight ScanNet sequences used in our temporal benchmark. All timings are reported with visualization, evaluation, and exports disabled in our latency-benchmark mode. Tab. 12 sum-marizes the per-scene breakdown. 
+
+Online path. Across all scenes, the online path averages 1.45 s per keyframe, of which the frontend contributes 1.10 s (76% of online time), making it the primary optimization target. 26 D. Bickici et al. Ground Truth    
+
+> Prediction
+> Room 2 Office 3 Office 4
+> Fig. 8: Qualitative Segmentation Results. Open-vocabulary semantic segmenta-tion on three Replica scenes: ground truth (top), our prediction (bottom).
+
+Asynchronous agents. Both VLM agents run in dedicated background threads, decoupled from per-keyframe processing. On average, the Description Agent takes 22.7 s to complete, with a mean lag of 28.9 keyframes ( ∼289 original frames at stride 10). The Critic Agent takes an average of 19.1 s to complete, with a mean lag of 27.7 keyframes ( ∼277 original frames). These lags are expected by design: the agents trade immediacy for selectivity by processing only high-value targets identified by the schedulers. 
+
+VLM call budget. Across the eight scenes, the system runs 205 VLM calls in total: 61 Description-Agent and 144 Critic pair-verification calls (60 merges, 41.7% acceptance). The multi-target scheduler is what keeps enrichment cheap: a naive per-object-per-keyframe strategy would need ∼9,300 calls on a single typical scene ( e.g ., 39 tracks × 238 keyframes), whereas our Description Agent covers all targets in only 4–16 calls per scene. The total end-to-end wall-clock time across all runs is 3,561 s (59.4 min), of which 305 s (8.6%) is spent draining pending asynchronous work after the last keyframe. 
+
+## G Frontend Design Choices 
+
+Why text-conditioned segmentation? Following prior open-vocabulary scene graph methods [26, 53], we adopt Grounded-SAM v2 [21, 35, 37] as our segmen-tation frontend. This is a natural fit for our pipeline, which anchors association, label voting, and embedding selection on per-mask text labels (Eqs. 1, 3, 5 of the main paper): each mask inherits a grounded label directly from the detec-tion stage, requiring no separate labeling step. Category-agnostic alternatives such as standalone SAM2 [35] would require post-hoc labeling and tend to frag-ment objects into multiple regions (Fig. 10), introducing noise into downstream components. Think While You Map 27  
+
+> Fig. 9: Qualitative Grounding Results. On Nr3D, Sr3D+, and ScanRefer. Green denotes the ground-truth and red the predicted bounding box. All shown examples satisfy A@0.25.
+
+Why Qwen3-VL as the proposal model? Grounded-SAM requires a set of textual object candidates for each frame. Since label stability has a significant downstream impact, the choice of proposal model is critical to avoid the cascade of noisy or overproduced tags throughout our backend processes: association, voting, and embedding selection. Switching from RAM++ [13] to Qwen3-VL-2B-Instruct [2] yields the largest single improvement in our backend ablation (+0.09 mAcc, Tab. 4 of the main paper). RAM++ typically overproduces object names, introducing irrelevant categories that destabilize incremental tracking. Qwen produces concise, object-centric labels ( e.g . “chair”, “table”, “shelf”) that provide a reliable anchor for the full pipeline. Its compact size enables fully local deployment without relying on external APIs, whereas GPT-based captioning, despite being viable, introduces substantial latency that is unsuitable for per-frame operation. 28 D. Bickici et al. 
+
+Table 12: Cross-Scene Runtime. Summary on the eight ScanNet benchmark se-quences. Online, Front, and Back denote mean per-keyframe times in ms. D and C denote Description and Critic agents, reported as latency in seconds and mean lag in keyframes. KFs is the number of keyframes. VLM D/C/T lists the number of De-scription, Critic, and total VLM calls. Critic S/A/R reports submitted, accepted, and rejected Critic pairs. Wall s is the total wall-clock time in seconds. The Average row reports means across all eight sequences.                                                                                           
+
+> Scene KFs Online Front Back D s / lag C s / lag VLM D/C/T Critic S/A/R Wall s
+> 0011_00 238 1764 1511 246 20.8 / 25.4 19.6 / 24.7 7 / 25 / 32 25 / 15 / 10 456.4
+> 0030_00 250 1537 1161 361 21.6 / 29.7 18.8 / 27.0 7 / 34 / 41 34 / 7 / 27 433.1
+> 0046_00 248 1441 1109 318 22.4 / 23.4 16.9 / 24.9 8 / 19 / 27 19 / 4 / 15 400.2
+> 0086_00 143 1123 988 133 29.1 / 36.2 26.0 / 37.8 4 / 9 / 13 9 / 3 / 6 206.2
+> 0222_00 541 1957 1246 685 28.7 / 25.3 20.0 / 21.0 16 / 14 / 30 14 / 7 / 7 1086.8
+> 0378_00 190 1466 1082 372 18.3 / 24.4 18.0 / 25.9 5 / 14 / 19 14 / 8 / 6 314.7
+> 0389_00 142 937 772 160 20.7 / 37.2 16.3 / 26.8 4 / 14 / 18 14 / 9 / 5 171.5
+> 0435_00 328 1389 941 438 19.7 / 29.5 17.2 / 33.6 10 / 15 / 25 15 / 7 / 8 492.3
+> Average 260 1452 1101 339 22.7 / 28.9 19.1 / 27.7 7.6 / 18.0 / 25.6 18.0 / 7.5 / 10.5 445.2
+
+Grounded -SAM (text -conditioned)  SAM2  (class -agnostic) 
+
+Fig. 10: Grounded-SAM vs. SAM2. Grounded-SAM (left) uses text-conditioned queries and yields fewer, object-aligned masks; SAM2 (right) produces class-agnostic masks that fragment objects. 
+
+## H Prompts 
+
+We provide the exact prompts used for the frontend tagger, asynchronous VLM agents, and grounding evaluator. Frontend Tagging Prompt 
+
+–- User –-List the distinct objects you can see in this scene. Respond with a comma-separated list of short nouns only. Think While You Map 29 
+
+Critic Agent Prompt 
+
+–- System –-You are an expert 3D Scene Graph Critic. Your task is to resolve redundant tracks in a 3D scan. You will receive one or two images. If there is one image, both objects are shown together in that same image. If there are two images, Image 1 is Object A and Image 2 is Object B. Decide if they should be MERGED into one entity or KEPT as distinct objects. Return JSON only. –- User –-Two candidate tracks for merge review: - Object A: ID={id_a}, label=’{label_a}’, observations={match_count_a} - Object B: ID={id_b}, label=’{label_b}’, observations={match_count_b} (confirmation threshold: {confirm_threshold}; tracks below it will likely be pruned) Image count: {pair_image_count} Semantic cosine (SBERT): {pair_semantic_cosine} Geometry signals: - Containment: {pair_containment_summary} - Offset (m, Z=vertical): {pair_offset_summary} - Horizontal / Vertical offset: {pair_horizontal_offset_m} / {pair_vertical_offset_m} - B/A volume ratio: {pair_relative_size_ratio_b_to_a} ({pair_relative_size_summary}) - Viewpoint mismatch cost: {pair_pov_cost} - Frames: A={frame_a}, B={frame_b} MERGE when: - Same physical object from different views (duplicate) - One is a sub-part/fragment of the other - Single object split by occlusion KEEP when: - Distinct instances, even if same class and adjacent - Different color/texture/material - Objects only touch at an edge - Small object merely inside larger bbox (containment != same instance) - Either label is a wall variant - Evidence is ambiguous -> default KEEP Evaluate in order: appearance -> geometry -> containment -> wall rule -> uncertainty. Output JSON only (keys in this order): {"reasoning": "<concise explanation>", "action": "MERGE" or "KEEP" }
+
+Description Agent Prompt 
+
+–- System –-You are a precise computer vision assistant specializing in fine-grained object attribute extraction. Your goal is to generate a structured JSON description of objects grounded strictly in their visual appearance. –- User –-The attached images show a scene with specific objects marked by numeric ID tags (e.g., [14]). Focus ONLY on the objects listed below. Aggregate visual evidence from all provided views to ensure completeness. Target Objects: {ids} Task: For each target ID, return a JSON object with: 1. "label": A specific, fine-grained noun (e.g., ’winged armchair’ instead of ’chair’, ’ceramic vase’ instead of ’decor’). 30 D. Bickici et al. 
+
+2. "attributes": - "material": (e.g., wood, velvet, glass, plastic) - "color": (Dominant colors) - "state": (e.g., open, closed, folded, dirty, wet, empty) - "texture": (e.g., glossy, matte, rough, knitted) Constraint: - Do NOT hallucinate attributes not visible in the images. - If an object is completely unclear, set attributes to null. - Output pure JSON mapping { "id": { "label": "...", "attributes": {...} } }. - The numeric ID tags are only identifiers; ignore the digits/label text and use only the pixels inside the ID contour/overlay. –- Prior append (when available) –-Tracker Memory (weak prior): We keep a running scene graph estimate for each object ID. Use this as slight guidance only. Priors may be stale or inaccurate. If visual evidence disagrees, override the prior label/attributes/description. Prior snapshot per target ID: {prior_lines} 
+
+Each prior line is formatted as: 
+
+- [3] label="armchair"; description="brown chair near wall"; attributes={"color":["brown"],"material":["fabric"]} 
+
+Grounding Evaluator Prompt 
+
+–- System –-You are a helpful assistant. The user provides a 3D scene represented by: – a list of objects, each containing an identifier, descriptive fields, and optional spatial, semantic, or other attributes – a list of edges, each describing relationships between objects, with identifiers, relation labels, and optional metrics Your task is to identify the object best matching the user’s query, based on this structured information. Follow these answering guidelines strictly: 1. Select the object ID that best matches the query. 2. Provide a short, factual explanation. –- User –-Below is a 3D scene composed of objects and edges. Each edge is represented as [subject_id, predicate, object_id, distance_m (optional), compass (optional)]. {scene_line} {edge_line} query={utterance} 
+
+## I Full implementation details 
+
+For completeness, Tab. 13 summarizes the key implementation parameters used in our system beyond those reported in the main paper. The released code will provide the complete configuration and default settings. Think While You Map 31 
+
+Table 13: Implementation Parameters. Extended hyperparameters beyond those in the main paper. 
+
+Component Parameter Value 
+
+Frontend Label proposer Qwen/Qwen3-VL-2B-Instruct Segmentation model Grounded-SAM 2 Grounding-DINO variant Swin-T (OGC) SAM2 variant sam2.1_hiera_base_plus Qwen3-VL max tokens 128 Grounding-DINO box / text threshold 0.35 / 0.25 SAM2 mask threshold / max proposals 0.5 / 100 Prompt budget (max labels / Qwen tags) 64 / 40 Observation Filtering Erosion kernel / min area 5 × 5 / 100 px DBSCAN eps / min_samples / voxel 0.05 m / 7 / 0.025 m Tracker min segment area / confidence 30 px / 0.1 Min points after filter / cluster ratio 30 / 0.7 Backend CLIP backbone EVA02-base CLIP crop padding 30 px Frame stride (Replica / ScanNet runs) 5 / 10 Semantic eval prompt template an image of {label} 
+
+Spatial Edges Rule-based proximity threshold 2.0 m Top-k nearest edges 5VLM Agents (shared) Model gpt-5-mini 
+
+Max output tokens 5000 Critic reasoning effort high 
+
+Description Agent Target selection (obs / area / growth / interval) 5 / 2500 px / 0.3 / 2 s Description agent batch / concurrency / queue 5 / 4 / 32 Multi-target scheduler window / batch budget 30 / 3 Multi-target scheduler gates cov. 0.8; occ. 0.02; res. gain 0.2 Utility scale / background weight 100 / 0.25 Critic Agent Critic concurrency / queue 30 / 64 SBERT model all-MiniLM-L6-v2 
+
+Pair candidate scope / trigger all / 2 matches Pair semantic / IoU gate 0.8 / 0.01 Pair view budget / overlay mode 30 / mask_pair 
+
+False-negative queue max pairs / flush 20 / 50 frames

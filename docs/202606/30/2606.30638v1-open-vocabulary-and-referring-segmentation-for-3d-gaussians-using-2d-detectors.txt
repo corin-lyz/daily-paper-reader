@@ -1,0 +1,373 @@
+Title: Open-Vocabulary and Referring Segmentation for 3D Gaussians Using 2D Detectors
+
+URL Source: https://arxiv.org/pdf/2606.30638v1
+
+Published Time: Tue, 30 Jun 2026 02:50:05 GMT
+
+Number of Pages: 25
+
+Markdown Content:
+# Open-Vocabulary and Referring Segmentation for 3D Gaussians Using 2D Detectors 
+
+Jameel Hassan, Yasiru Ranasinghe and Vishal Patel 
+
+Johns Hopkins University 
+
+{jabduls2, dransi1, vpatel36}@jhu.edu 
+
+Abstract. 3D Gaussian Splatting (3DGS) has emerged at the forefront of 3D scene reconstruction. Extending 3DGS with language-driven, open-vocabulary understanding has gained significant attention for real-world applications such as embodied AI. Recent methods achieve this by learn-ing an instance feature attribute and assigning semantics by distilling high-dimensional Contrastive Language-Image Pretraining (CLIP) fea-tures directly into the scene representation. However, the instance group-ing mechanisms of these methods either require a predefined number of instances or suffer from noise in their bottom-up grouping strate-gies. Furthermore, the reliance on CLIP restricts semantic understand-ing to simple noun phrases, preventing complex spatial reasoning and referential expression grounding. We present GaussDet , a method that circumvents the need for dense CLIP features by leveraging discrete, open-vocabulary 2D object detectors with referring expression capabil-ities. We learn instance features for individual Gaussians to decompose the scene into 3D instance groups. By rendering these groups and ag-gregating semantic votes from multi-view 2D detections, we generate a robust View-Aggregated Semantic Label Distribution (VASD) for each 3D instance. This view-aggregation strategy acts as a strong regularizer, attenuating spurious labels caused by low-quality instance grouping. Our approach enables a straightforward, zero-shot extension from simple lan-guage queries to complex referential grounding. Extensive evaluations across two key tasks—open-vocabulary segmentation (LeRF-OVS, Scan-Net) and referring expression grounding (Ref-LeRF)—demonstrate that 
+
+GaussDet achieves consistent improvements over existing methods. Most notably, we achieve a substantial 16.7% mIoU improvement in ref-erential grounding within a strict zero-shot setting. 
+
+Keywords: 3D Gaussian Splatting · Open Vocabulary Scene Under-standing · Referring Expression Scene Understanding 
+
+# 1 Introduction 
+
+Open-vocabulary capabilities have garnered significant attention across numer-ous computer vision domains, including image [19,41,42] and video understand-ing [6,23,33], as well as 3D scene understanding [5,11,30,31,36]. Within the do-main of neural rendering, the fast training, explicit point-based representation, and real-time rendering capabilities of 3D Gaussian Splatting (3DGS) [16] have  
+
+> arXiv:2606.30638v1 [cs.CV] 29 Jun 2026 2J. Hassan et al.
+
+driven its rapid adoption for 3D/4D reconstruction [15,22,26], generation [24,39], and scene understanding [21, 43]. Consequently, enabling open-vocabulary com-prehension within 3DGS serves as a critical stepping stone for real-world appli-cations such as embodied AI [12, 35] and autonomous driving [14, 45]. Early efforts to enhance 3DGS with language-grounding capabilities focused on incorporating a learnable language attribute to individual Gaussians [32, 34, 38, 44]. However, these strategies remained largely 2D-centric, relying on ren-dering language features onto 2D image planes for query evaluation. Pivoting toward a more 3D-native approach, OpenGaussian [37] disentangled instance and semantic properties by first learning an instance attribute supervised via view-agnostic SAM masks [17]. These instance features, combined with 3D coor-dinates, are clustered using k-means to group Gaussians into instances, with each instance group 1 assigned a 2D CLIP feature via a rule-based view se-lection strategy. Building on this, LaGa [8] adopts a similar instance-learning paradigm but eliminates the need to predefine the cluster count by grouping Gaussians through a 2D-3D association, clustering rendered SAM feature masks using HDBSCAN [27]. Despite these differences, both methods fundamentally rely on dense CLIP features to assign semantics to 3D instances. This depen-dence introduces severe bottlenecks, limiting open-vocabulary querying by (1) restricting queries strictly to simple noun phrases [40], and (2) suffering from low semantic expressiveness due to the loss of surrounding image context when extracting CLIP features from isolated SAM masks. Motivated by recent breakthroughs in open-vocabulary object detection [2, 10, 29], we propose GaussDet . Our method leverages the 2D-3D associations be-tween Gaussian instance groups and 2D bounding box detections to perform robust open-vocabulary segmentation and referential expression grounding in 3DGS. Specifically, we utilize an open-vocabulary object detector to generate discrete semantic label maps across all image frames, and follow the grouping mechanism of [8] to obtain 3D Gaussian instance groups. We render these in-stance groups onto the 2D image planes and aggregate spatial votes from the discrete label maps to construct a View-Aggregated Semantic Label Distribu-tion (VASD). The proposed VASD serves as a robust method to counteract the spurious semantic label votes caused by low-quality instance groupings, improv-ing the overall semantic label quality. We present a sample visualization of our method in Fig. 1. Our primary contributions are as follows: 
+
+– We introduce a novel, 2D object detector-based approach for the seman-tic labeling of 3D Gaussian splats, significantly improving open-vocabulary segmentation without relying on dense CLIP features. 
+
+– We demonstrate the seamless extension of our pipeline to referential expres-sion grounding in 3DGS within a zero-shot setting. 
+
+– Extensive evaluations show that GaussDet achieves substantial performance gains over existing 3DGS open-vocabulary methods, including a notable ab-solute increase of 16 .7% mIoU on the Ref-LeRF benchmark compared to the recent, per-scene optimized ReferSplat [13].    
+
+> 1The term “instance group” is used to refer to all Gaussians belonging to a single instance. GaussDet 3
+> Fig. 1: Open-vocabulary and referential expression grounding with GaussDet .
+> Referential grounding examples for “ Toy cat statue ” and “ Waldo ” are shown.
+
+# 2 Related Work 
+
+Neural Rendering: The introduction of Neural Radiance Fields (NeRF) [28] marked a paradigm shift in novel view synthesis and 3D scene representation, achieving highly photorealistic renderings. While numerous subsequent works sought to improve rendering quality of NeRFs [3,4], the implicit continuous rep-resentation of NeRFs inherently relies on dense ray marching, leaving training and rendering computationally expensive. The recent developments in 3D Gaus-sian Splatting (3DGS) [16] represents scenes explicitly using a set of anisotropic 3D Gaussians, optimized via a differentiable tile-based rasterizer. This explicit formulation achieves state-of-the-art rendering quality and real-time frame rates and provides a structured, point-like representation that is highly amenable to downstream 3D scene understanding and object-level manipulation. Con-sequently, 3DGS has been rapidly adopted across a wide range of real-world applications, including autonomous driving [14, 45] and embodied AI [12, 35]. 
+
+Open-Vocabulary Segmentation of Gaussian Splats: Initial efforts to equip 3DGS with open-vocabulary understanding adopted 2D-centric strategies. Methods like LangSplat [32] and Feature 3DGS [44] append high-dimensional semantic features directly to individual Gaussians for 2D query evaluation. Re-cent works transition to a 3D-centric approach, disentangling instance learning from semantic assignment. OpenGaussian [37] groups Gaussians using k-means clustering on SAM-supervised instance features, but requires cluster count ( K). A bottom-up instance aggregation is proposed in [20] to overcome this. Mean-while, [8] bypasses k by clustering rendered SAM mask features via HDBSCAN; however, this 2D-3D association frequently leads to under-segmentation and cap-tures spurious masks. Crucially, these 3D-centric methods remain bottlenecked by their reliance on dense CLIP features for the final semantic assignment, which restricts queries to simple noun phrases. 
+
+Referring Expression Segmentation: Referring segmentation grounds com-plex, descriptive natural language queries into precise object masks. While highly successful in 2D using vision-language fusion and large multimodal models [18, 25] 3D referential expression grounding has traditionally focused on point clouds [1,9]. These methods require extensive 3D-text paired datasets to train dedicated cross-modal matching networks. In the nascent field of 3D Gaussian Splatting, ReferSplat [13] pioneers this task by employing specialized network modules and 4 J. Hassan et al. 
+
+GroundedSAM to generate pseudo-masks for per-scene training. In stark con-trast to ReferSplat’s reliance on per-scene optimization and pseudo-mask gener-ation, GaussDet demonstrates that highly robust referential expression ground-ing in 3DGS can be achieved in a zero-shot manner by leveraging a 2D open-vocabulary detector within our proposed view-aggregation framework. 
+
+# 3 Preliminaries 
+
+3D Gaussian Splatting (3DGS) represents a scene as a set of anisotropic 3D Gaussians characterized by their means μ ∈ R3, a covariance matrix Σ, color 
+
+c, and opacity σ. The Gaussian parameters are optimized by rendering them to 2D image planes using a differentiable rasterization process ψ, and minimizing an image-level objective. The 2D images resulting from ψ(·) are computed via front-to-back alpha blending. The rendered color at pixel p is formulated as: 
+
+C(p) = 
+
+> |O|
+
+X
+
+> k=1
+
+ckαkk−1Y
+
+> j=1
+
+(1 − αj ), (1) where O is the depth-sorted, ordered set of Gaussians that overlap pixel p, and 
+
+|O| is the total number of such Gaussians. The index k represents the front-to-back ranking of a Gaussian within this set. The evaluated opacity αk of the kth 
+
+Gaussian at pixel p is defined as αk = σkG2Dk (p) , which denotes the contribution (or significance) of the Gaussian Gk to pixel p. Here, G2Dk (·) represents the evaluation of the 2D-projected kth Gaussian at the specific pixel location. Recent works based on 3DGS augment each Gaussian with an instance fea-ture f ∈ R6, which is then rendered into 2D feature maps M ∈ R(H×W ×6) 
+
+via the differentiable rasterization process ψ(·). These instance features f are optimized through a contrastive objective combining an intra-mask loss and an inter-mask loss, supervised by SAM instance masks. 
+
+3.1 Disentangling Instance and Semantic Learning for Open-Vocabulary Segmentation 
+
+Our method builds upon the paradigm of disentangled instance learning and semantic feature assignment for 3D Gaussians in open-vocabulary segmentation, as established by [8, 37]. Our approach closely follows LaGa [8], which learns instance features as described above and subsequently groups 3D Gaussians into coherent instances via 2D-3D associations obtained by clustering 2D instance masks. Each Gaussian instance group is assigned semantic feature descriptors by clustering the CLIP features of its associated 2D masks. Multiple semantic descriptors per instance group are maintained, motivated by the fact that the semantic representation of a 3D instance is inherently view-dependent. We refer the reader to the supplementary material for further details. 
+
+Limitations: Existing methods, including LaGa, rely heavily on the dense CLIP features of segmented 2D masks to assign semantics to 3D Gaussian in-stance groups. This approach introduces bottlenecks at both the instance and se-mantic levels. At the instance level, LaGa’s grouping mechanism —driven purely GaussDet 5                
+
+> Fig. 2: GaussDet overall pipeline .We train a 3D Gaussian splat of the scene using RGB images with augmented instance features per Gaussian, which are used to decompose the scene into instance groups Gi. Each instance group Giis rendered to image frames, and the top-Kviews Kiper instance group are selected. We obtain semantic label maps Svusing detections from a 2D open vocabulary object detector to generate a View-Aggregated Semantic Label Distribution (VASD) for each Gaussian via instance groups, using the semantic label maps Svof the top-Kviews Ki.
+
+by 2D mask clustering— is prone to the erroneous grouping of masks from dis-tinct objects, or a mismatch between the selected masks and the 3D instance. In 3D, this yields instance groups comprising multiple objects, background el-ements, or floating artifacts. At the semantic level, aggregating dense CLIP features across all associated 2D masks for these low-quality 3D groups degrades the overall semantic representation. Furthermore, relying exclusively on CLIP restricts open-vocabulary querying capabilities to simple noun phrases [40]. In the following section, we introduce our method, GaussDet , designed to overcome these limitations and significantly extend the capabilities of open-vocabulary segmentation for 3D Gaussians. Focusing our contributions entirely on the semantic assignment phase, we propose a robust label generation pipeline that leverages 2D open-vocabulary object detectors to construct a View-Aggregated Semantic Label Distribution (VASD). To actively mitigate the noisy semantics resulting from low-quality instance masks and erroneous 3D groupings, we incor-porate a Semantic Background Regularizer (SBR). Finally, the versatility of the employed open-vocabulary detector allows us to seamlessly extend GaussDet to referential expression grounding in a zero-shot manner. 
+
+# 4 Method: GaussDet 
+
+4.1 Overall architecture 
+
+Following recent approaches [8, 37], we first augment each Gaussian with an instance feature learned via 2D instance mask supervision. We then apply the grouping mechanism from [8] to obtain 3D instance groups G = {G i ∈ { 0, 1}N |
+
+i = 1 , 2, . . . , Ns}, where N is the total number of Gaussians in the scene and 6 J. Hassan et al. 
+
+Ns is the total number of instance groups. Next, we utilize an open-vocabulary object detector to generate bounding box detections Bv for every frame v, which are subsequently used to construct a semantic label map Sv .To assign a semantic label to a specific instance group, we iteratively render each group Gi across all views V. During this process, we filter out Gaussians based on opacity and significance scores, and compute a rendered mask visibil-ity score ( si,v ) for each view. These scores dictate the selection of the top-K
+
+candidate views. Finally, we uplift the discrete point semantic labels from the 
+
+(x, y ) center coordinates of the rendered Gaussians for Gi in these top-K views to generate a View-Aggregated Semantic Label Distribution for each instance group. The overall proposed methodology of GaussDet is visualized in Fig. 2. 
+
+4.2 Discrete Semantic Label map generation 
+
+Following [5], we deploy an open-vocabulary object detector to generate detec-tions Bv = {(bi, c i) | bi ∈ R4, ci ∈ N, i = 1 , . . . , D v }, where Dv is the number of detections in frame v. Each bounding box is assigned a size-based weight factor wi = bHi + bWi , where bHi and bWi represent the height and width of the bounding box, respectively. These weights determine the rendering order of the bounding boxes when constructing the discrete semantic label map. The semantic label map is represented as a 2D image Sv ∈ Z(H×W ), created by overlaying the bounding box labels Bv at their corresponding detection lo-cations according to the weight factor wi. We initialize Sv with −1 to denote background pixels. We then sort the bounding boxes in descending order of their weights wi and populate Sv with the semantic labels ci across the pixel locations of each bounding box region bi. The formulation of wi serves as a heuristic for oc-clusion modeling, operating under the assumption that smaller objects typically appear in front of larger objects along the camera’s line of sight. In our pipeline, we retain the semantic label for background objects as a Semantic Background Regularizer (SBR) when generating the View-Aggregated Semantic Label Distribution (VASD) for each 3D instance group. This design choice is necessitated by the lack of dense 3D instance masks obtained through the 3D scene decomposition, which we discuss in detail in Section 6.2. 
+
+4.3 3D instance view filtering 
+
+To accurately assign semantic labels from the generated 2D maps to each in-stance group Gi, we must first identify the optimal top-K candidate views. Unlike 3D mask proposals derived directly from point clouds, the extracted Gaussian instance groups are often noisy, frequently capturing spurious background ele-ments or under-segmenting instances. To address this, we first filter candidate views for semantic label uplifting using a combination of Gaussian attribute thresholding and a quantitative mask visibility score. For each Gaussian instance group Gi, we compute the set of valid rendered masks across all V frames. A Gaussian is considered valid in a given view only if it survives filtering based on low opacity and significance thresholds. We denote GaussDet 7            
+
+> Fig. 3: View-Aggregated Semantic Label Distribution (VASD) generation.
+> We extract 3D instance groups Giand render them to camera frames to obtained filtered masks Mi. The top-Kmasks Kiare then chosen using the mask visibility score si,v . The discrete semantic label maps Svof the top-Kviews are then used to build the VASD for the instance group.
+
+the rendered masks as: 
+
+Mi = {mi,v | v ∈ V} . (2) The mask visibility score si,v for a given view v is computed as the ratio of visible Gaussians to the total number of Gaussians in the group: 
+
+si,v = |τv (Gi)||G i| , (3) where τv (Gi) represents the subset of Gaussians in Gi that remain visible af-ter filtering in view v, and | · | denotes the cardinality of the set. Finally, the top-K candidate views, denoted as Ki, are selected for each instance group by identifying the K frames that maximize the mask visibility score si,v .
+
+4.4 View-Aggregated Semantic Label Distribution (VASD) 
+
+Given a 3D instance group Gi, we obtain the projected 2D coordinates of the mean of each Gaussian in view v by tracing it through the rasterization process, denoted as P vi . To determine the valid pixel coordinates to which each Gaussian mean projects, we remove points falling outside the image boundaries and filter out Gaussians with low opacity or significance scores in that view. We then discretize the remaining coordinates to the image grid as: 
+
+ˆP vi = ⌊τ (P vi )⌋, (4) where τ (·) denotes the validity thresholding operations and ⌊·⌋ represents the discretization operation to obtain integer pixel coordinates. 8 J. Hassan et al. 
+
+We then aggregate the sampled semantic labels and the corresponding Gaus-sian significance scores across the candidate top-K views. These are compiled into two sequences of arbitrary length n, denoted as ℓi and qi:
+
+ℓi = M
+
+> v∈K i
+
+Sv  ˆP vi,x , ˆP vi,y 
+
+, (5) 
+
+qi = M
+
+> v∈K i
+
+Qv τv (Gi), (6) where Ki is the set of indices for the top-K views. For the semantic sequence ℓi,we spatially sample the 2D discrete semantic label map Sv . For the significance sequence qi, Qv ∈ RN is the 1D array of significance scores for all rendered Gaussians in view v, and we index it using the filtered subset of Gaussians τv (Gi).The L operator denotes sequence concatenation across the selected views. We define the View-Aggregated Semantic Label Distribution (VASD) for instance group Gi as the sum of the occurrences of each semantic class c within 
+
+ℓi, weighted by the corresponding scores qi (Fig. 3). 
+
+# 5 Experiments 
+
+We evaluate our method across two distinct task settings: open-vocabulary seg-mentation and referential expression grounding. For open-vocabulary segmenta-tion, we evaluate on the LeRF and ScanNet datasets. Both datasets are eval-uated using a 3D-centric approach following OpenGaussian [37]: for LeRF, the relevant Gaussians for a query are selected and rendered for evaluation, whereas for ScanNet, the evaluation is performed directly at the point cloud level using ground-truth data. For referential expression grounding, we evaluate on Ref-LeRF, an extension of the LeRF dataset introduced in [13]. Ref-LeRF annota-tions include attribute-specific descriptions and positional information, with an average description length spanning 13 .6 words. This benchmark strictly tests the fine-grained language grounding capabilities within 3D scenes. 
+
+Implementation Details: To generate the discrete semantic label maps for the fine-grained classes in the LeRF dataset, we utilize Qwen-VL 2.5 (7B-Instruct) for object detection. For the ScanNet dataset, we deploy YOLO-World (X-Large). During the rendering of 3D instance groups for semantic label generation, we fix the opacity threshold to 0.1 and the significance threshold to 0.2 across all datasets. We employ an ensembling approach for the top-K view selection across K = {20 , 40 , 60 , 80 , 120 , |V|} , as discussed in Section 6.4. All experiments are conducted on a single NVIDIA RTX 4090 GPU. 
+
+5.1 Open-Vocabulary Segmentation in 3D 
+
+Table 1 compares the open-vocabulary segmentation performance of GaussDet 
+
+on the LeRF-OVS benchmark against both 2D- and 3D-centric methods. Our method achieves an overall improvement of 5.8% mIoU over LaGa, with particu-larly notable gains in highly cluttered scenes such as Figurines and Ramen . The GaussDet 9
+
+Table 1: Comparison of open vocabulary segmentation mIOU(%) in LeRF-OVS. †
+
+denotes results from [8]. Method Figurines Teatime Ramen Kitchen Average 2D  LEGaussians 60.3 44.5 52.6 41.4 46.9 LangSplat 44.7 65.1 51.2 44.5 51.4 OccamLGS 58.6 70.2 51.0 65.3 61.3 OpenGaussian 39.3 60.4 31.0 22.7 38.4 LEGaussians † 31.2 34.5 17.6 17.3 25.2 LangSplat † 25.9 35.6 29.3 33.5 31.1 SAGA † 36.2 19.3 53.1 14.4 30.7 OpenGaussian [37] † 61.1 59.1 29.2 31.9 45.3 LaGa [8] 64.1 70.9 55.6 65.6 64.1 3D       
+
+> GaussDet 72.5 76.6 65.7 64.9 69.9 (+5.8)
+
+Waldo-Kitchen scene presents a unique challenge due to numerous heavily over-lapping objects, requiring a wide variation in viewing angles for our 2D bounding box-based label maps to distinguish instances accurately. Despite this extreme viewpoints, our method’s performance drop in this specific scene is marginal, demonstrating the resilience of our view-aggregation strategy. 
+
+5.2 Open-Vocabulary Point Cloud Segmentation 
+
+We evaluate point cloud segmentation performance against OpenGaussian and LaGa in Table 2. We report results across the standard class splits utilized in OpenGaussian, though our semantic label map generation operates only over all 19 classes simultaneously. Notably, our detector-based method demonstrates a substantial 3.3% mIoU improvement on the full 19-class split compared to the officially reported LaGa numbers. Furthermore, when compared against our reproduced baseline numbers for OpenGaussian and LaGa (which are lower than reported), GaussDet showcases an even more massive performance gap. 
+
+5.3 Referential Expression Segmentation in 3D 
+
+By eliminating the reliance on dense CLIP features for semantic assignment, 
+
+GaussDet inherently supports more complex textual queries. We demonstrate the benefit of this versatility by evaluating our method on the Ref-LeRF ref-erential expression grounding benchmark in Table 3. It is important to note 
+
+Table 2: Comparison of open vocabulary point cloud segmentation on ScanNet dataset. ‡ denotes numbers reproduced by us using their original code. Method 10 classes 15 classes 19 classes mIoU mAcc mIoU mAcc mIoU mAcc OpenGaussian 38.3 55.2 30.1 48.8 24.7 41.5 LaGa 42.6 63.2 35.5 53.5 32.5 49.1 OpenGaussian [37] ‡ 34.0 47.4 27.5 39.5 25.3 36.9 LaGa [8] ‡ 37.4 53.9 28.9 44.6 24.8 38.4       
+
+> GaussDet 38.7 51.3 35.4 49.9 35.8 51.0
+
+10 J. Hassan et al. 
+
+Table 3: Comparison of referntial grounding in 3D Gaussian Splats. Method Figurines Teatime Ramen Kitchen Average Grounded SAM 16.0 16.9 14.1 16.2 15.8 LangSplat 17.9 7.6 12.0 17.9 13.9 SPIn-NeRF 9.7 11.7 7.3 10.3 9.8 GS-Grouping 8.6 14.8 27.9 6.3 14.4 GOI 16.5 22.9 27.1 15.7 20.5 ReferSplat [13] 25.7 31.3 35.2 24.4 29.2        
+
+> GaussDet (Zero-shot) 58.7 39.2 52.3 33.3 45.9 (+16.7)
+
+Fig. 4: Qualitative comparison on the LeRF dataset for Open-Vocabulary Segmentation. For each query pair, the segmentation output from LaGa [8] ( left )and the output from our method ( right ) are compared. GaussDet yields significantly sharper object boundaries and prevents semantic bleeding into the background. 
+
+that the baseline, ReferSplat, utilizes GroundedSAM to generate pseudo-masks for queries in the training set to optimize the referring features of Gaussians, employing dedicated network modules to learn position-aware cross-modal in-teractions. GaussDet shows a significant overall improvement of 16 .7% mIoU 
+
+over ReferSplat—despite operating in a strict zero-shot setting—solely by lever-aging a capable open-vocabulary detector and our robust VASD assignment. Consistent with our OVS results, we observe the highest performance margins on heavily cluttered scenes such as Figurines and Ramen .
+
+5.4 Qualitative Results 
+
+Visual comparisons of our open-vocabulary segmentation outputs further val-idate the quantitative gains over baseline methods. As illustrated in Fig. 4, 
+
+GaussDet yields significantly sharper segmentation boundaries compared to LaGa, evident in the clean extraction of objects like the toy “Jake” and the “ottolenghi” book. Furthermore, our method demonstrates vastly superior instance isolation. When queried with distinct items within clutter —such as “red apple”, “sake cup”, “onion segments” and “plate”— LaGa frequently captures multiple adja-GaussDet 11 
+
+> Fig. 5: Qualitative results on Ref-LeRF dataset for Referential Grounding.
+
+cent instances. In contrast, our View-Aggregated Semantic Label Distribution (VASD) explicitly localizes the precise target. Our method also successfully seg-ments queries of object parts such as “bear nose”, a benefit from detections on the complete image over segmented mask features. We visualize the robust zero-shot capabilities of GaussDet on complex re-ferring expressions in Fig. 5. As seen in the qualitative examples, GaussDet 
+
+accurately resolves queries requiring fine-grained spatial awareness (e.g., “Rub-ber duck on top of the rubics cube”) and compositional attribute comprehension (e.g., “wavy noodles”), cleanly isolating the 3D instances described by the text. 
+
+# 6 Discussion and Ablations 
+
+6.1 Detector-based Semantic Label Assignment (VASD) 
+
+In this section, we contrast the baseline CLIP dense feature-based semantic assignment utilized in [8] with our proposed open-vocabulary detector-based semantic assignment (VASD). In LaGa [8], 3D scene decomposition is performed by clustering the SAM mask features of the rendered instance feature attributes. Each 3D instance group is then associated to a set of 2D instance masks, and the CLIP features of these masks are extracted and clustered to assign semantics (details in the supplementary material). To establish a baseline for comparison, we compute the mean CLIP embedding of these associated SAM instance masks, calculate their cosine similarity against the text embeddings of the label space, and generate a baseline probability distribution. We then compare this CLIP-based distribution directly against the semantic label distribution generated by our proposed VASD. Further examples are provided in the supplementary. Fig. 6 highlights the advantages of our VASD detector-based approach over the CLIP-based baseline across three representative failure cases. For each sub-plot pair, the left plot is the label distribution obtained using the baseline CLIP 12 J. Hassan et al.     
+
+> Fig. 6: Comparison of Semantic Label Distributions. We contrast the baseline CLIP dense feature-based approach (left ) with our proposed VASD (right ). GaussDet
+> overcomes (a) spurious 2D-3D mask associations, (b) under-segmentation of distinct objects, and (c) background class domination, producing robust semantic predictions.
+
+dense features alongside sample SAM instance masks (in orange) associated with the 3D instance group. The right plot is the distribution generated by VASD, accompanied by the corresponding rendered masks overlaid on the image. 
+
+Case 1: Spurious Mask Associations (Row 1, Fig. 6a). The baseline frequently suffers from erroneous 2D-3D associations, where the SAM instance masks assigned to a 3D instance do not actually correspond to the underlying objects (e.g., the camera and the apple). This leads to highly inaccurate semantic assignments by CLIP. Conversely, because VASD leverages discrete detector-based semantic label maps, it generates a robust and accurate semantic label distribution even if the rendered masks themselves are fragmented or incomplete. 
+
+Case 2: Under-segmentation (Row 2, Fig. 6b). This case demonstrates scenarios where multiple distinct objects are incorrectly grouped into a single 3D instance group. Although the aggregated CLIP embeddings theoretically capture features from all constituent objects, the resulting mean distribution fails to reflect this multiplicity. For example, in the first column, the baseline assigns a GaussDet 13 
+
+negligible probability to the ‘ porcelain hand ’. In the second column, background class probabilities incorrectly suppress the true foreground semantics. In both instances, VASD successfully generates a robust distribution that captures the multiple distinct semantics present within the group. 
+
+Case 3: Background Domination (Row 3, Fig. 6c). We present cases where the baseline CLIP dense features align more strongly with generic or back-ground classes (e.g., ‘object’ or ‘things’) rather than semantics of the foreground items. By contrast, VASD effectively isolates the foreground objects, ensuring that specific, highly descriptive semantic labels dominate the distribution. 
+
+6.2 Semantic Label regularizer in VASD Generation 
+
+A critical design choice in formulating the View-Aggregated Semantic Label Dis-tribution (VASD) is the explicit inclusion of the background via the Semantic Label Regularizer (SBR). This adaptation is motivated by the inherent noisiness of 3D scene decomposition in Gaussian splatting, which frequently results in two primary contributors of noise: (1) the generation of instance groups that predom-inantly encompass background geometry, and (2) spurious Gaussian “floaters” being erroneously associated with valid instance groups. By explicitly retaining the background index from the discrete detector label maps, SBR formulation prevents the forced, erroneous assignment of foreground semantics to groups that are actually background. This is crucial, as false pos-itives heavily degrade downstream open-vocabulary segmentation performance. Furthermore, for spurious floaters, aggregating labels across multiple views with an active background index acts as a regularizer; the impact of an incorrect se-mantic assignment in one view is heavily attenuated when the floater is correctly assigned to the background in the majority of other views. As demonstrated in Fig. 7, ablating this feature on the LeRF dataset reveals that Semantic Label Regularization in generating the semantic label distribution yields consistent improvements across all scenes, resulting in an average mIoU increase of 6.56% .Strategically, this formulation marks a deliberate divergence from prior open-vocabulary methods designed for point clouds, such as [5], which typically discard the background index entirely. Such methods can afford to ignore the background  
+
+> Fig. 7: Impact of Semantic Label Reg-ularizer in generating VASD.
+
+because they rely on powerful, supervised 3D mask proposal networks (e.g., trained on ScanNet) that provide strong class-agnostic geometric priors. In contrast, Gaussian splatting instances are derived through bottom-up, unsupervised 2D-3D clustering without the safety net of dense, supervised 3D object priors. Consequently, SBR explicitly becomes a necessary archi-tectural mechanism to ensure semantic ro-bustness in GSplat segmentation. 14 J. Hassan et al. 
+
+6.3 Orthogonality and plug-and-play integration                  
+
+> Table 4: Transferability of VASD semantic assign-ment.
+> Method VASD LeRF-OVS ScanNet (19 classes) OpenGaussian ✗46.2 25.3 OpenGaussian + VASD ✓57.2 (+11.0) 29.3 (+4.0) LaGa ✗64.1 24.8
+> GaussDet (Ours) ✓69.9 (+5.8) 35.8 (+11.0)
+
+Table 4 demonstrates that VASD functions as a truly plug-and-play module when integrated into existing state-of-the-art open-vocabulary base-lines. By delivering consistent performance gains across dis-parate approaches, we confirm that our semantic assignment is orthogonal to the underlying instance grouping mechanism, providing a generalized solution that effectively resolves the 3DGS semantic bottleneck. 
+
+6.4 Effect of top-K choice 
+
+We analyze the impact of the hyperparameter K, which defines the number of top-ranked views utilized to generate the view-aggregated semantic label distri-bution. As illustrated in Fig. 8, the optimal value for K varies noticeably across different scenes. Highly cluttered environments like the Ramen scene peak ear-lier at K = 60 and degrade thereafter, likely because incorporating lower-ranked views introduces heavily occluded or noisy semantic projections. Conversely, structurally simpler scenes like Teatime continue to benefit from broader aggre-gation, maintaining high performance up to K = 120 . Across all datasets, the average mIoU reaches its maximum at K = 80 before gradually declining. To address this inter-scene variance without requiring manual, scene-specific hyperparameter tuning, we introduce an ensembling approach that aggregates the semantic distributions across multiple K thresholds. As shown in Fig. 8, this ensemble strategy yields robust, near-optimal performance consistently across all   
+
+> Fig. 8: Influence of top-Kchoice.
+
+evaluated scenes. Crucially, because 3D instance groups must be rendered across all available views to com-pute their mask visibility scores, and the 2D discrete semantic label maps are pre-computed for all images, the marginal computational overhead of this ensembling approach is negligible. The additional cost is strictly limited to the sorting and aggregation of these pre-existing distributions. 
+
+# 7 Conclusion and Limitations 
+
+In this paper, we present GaussDet , a novel 3D-centric framework that advances the open-vocabulary scene understanding capabilities of 3D Gaussian Splatting (3DGS). By replacing the standard reliance on dense CLIP feature distilla-tion with discrete semantic label maps from 2D open-vocabulary detectors, our GaussDet 15 
+
+method generates highly robust View-Aggregated Semantic Label Distributions (VASD). To mitigate the under-segmentation and noisy 2D-3D associations in-herent to current 3D scene decomposition techniques, we explicitly model the background through a Semantic Background Regularizer (SBR). Consequently, 
+
+GaussDet achieves significant improvements in both open-vocabulary segmenta-tion and zero-shot referential expression grounding. Despite these performance gains, our approach has notable limitations. First, the spatial and positional reasoning capabilities of GaussDet are inherently upper-bounded by the performance of the chosen 2D open-vocabulary object detector. Second, our pipeline relies on off-the-shelf 3DGS instance grouping mechanisms from which structural error could still propagate. We hope these could serve as improvements in future works. 
+
+# References 
+
+1. Arnaud, S., McVay, P., Martin, A., Majumdar, A., Jatavallabhula, K.M., Thomas, P., Partsey, R., Dugas, D., Gejji, A., Sax, A., et al.: Locate 3d: Real-world object localization via self-supervised learning in 3d. arXiv preprint arXiv:2504.14151 (2025) 3 2. Bai, S., Cai, Y., Chen, R., Chen, K., Chen, X., Cheng, Z., Deng, L., Ding, W., Gao, C., Ge, C., et al.: Qwen3-vl technical report. arXiv preprint arXiv:2511.21631 (2025) 2 3. Barron, J.T., Mildenhall, B., Tancik, M., Hedman, P., Martin-Brualla, R., Srini-vasan, P.P.: Mip-nerf: A multiscale representation for anti-aliasing neural radiance fields. In: Proceedings of the IEEE/CVF international conference on computer vision. pp. 5855–5864 (2021) 3 4. Barron, J.T., Mildenhall, B., Verbin, D., Srinivasan, P.P., Hedman, P.: Zip-nerf: Anti-aliased grid-based neural radiance fields. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 19697–19705 (2023) 3 5. Boudjoghra, M.E.A., Dai, A., Lahoud, J., Cholakkal, H., Anwer, R.M., Khan, S., Khan, F.S.: Open-yolo 3d: Towards fast and accurate open-vocabulary 3d instance segmentation. arXiv preprint arXiv:2406.02548 (2024) 1, 6, 13 6. Carion, N., Gustafson, L., Hu, Y.T., Debnath, S., Hu, R., Suris, D., Ryali, C., Alwala, K.V., Khedr, H., Huang, A., et al.: Sam 3: Segment anything with concepts. arXiv preprint arXiv:2511.16719 (2025) 1 7. Cen, J., Fang, J., Yang, C., Xie, L., Zhang, X., Shen, W., Tian, Q.: Segment any 3d gaussians. In: Proceedings of the AAAI conference on artificial intelligence. vol. 39, pp. 1971–1979 (2025) 19 8. Cen, J., Zhou, X., Fang, J., Wen, C., Xie, L., Zhang, X., Shen, W., Tian, Q.: Tack-ling view-dependent semantics in 3d language gaussian splatting. arXiv preprint arXiv:2505.24746 (2025) 2, 3, 4, 5, 9, 10, 11, 19, 20 9. Chen, D.Z., Chang, A.X., Nießner, M.: Scanrefer: 3d object localization in rgb-d scans using natural language. In: European conference on computer vision. pp. 202–221. Springer (2020) 3 10. Cheng, T., Song, L., Ge, Y., Liu, W., Wang, X., Shan, Y.: Yolo-world: Real-time open-vocabulary object detection. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 16901–16911 (2024) 2 16 J. Hassan et al. 11. Gu, Q., Kuwajerwala, A., Morin, S., Jatavallabhula, K.M., Sen, B., Agarwal, A., Rivera, C., Paul, W., Ellis, K., Chellappa, R., et al.: Conceptgraphs: Open-vocabulary 3d scene graphs for perception and planning. In: 2024 IEEE Inter-national Conference on Robotics and Automation (ICRA). pp. 5021–5028. IEEE (2024) 1 12. Halacheva, A.M., Zaech, J.N., Wang, X., Paudel, D.P., Van Gool, L.: Gaussianvlm: Scene-centric 3d vision-language models using language-aligned gaussian splats for embodied reasoning and beyond. IEEE Robotics and Automation Letters (2025) 2, 3 13. He, S., Jie, G., Wang, C., Zhou, Y., Hu, S., Li, G., Ding, H.: Refersplat: Referring segmentation in 3d gaussian splatting. arXiv preprint arXiv:2508.08252 (2025) 2, 3, 8, 10 14. Hess, G., Lindström, C., Fatemi, M., Petersson, C., Svensson, L.: Splatad: Real-time lidar and camera rendering with 3d gaussian splatting for autonomous driving. In: Proceedings of the Computer Vision and Pattern Recognition Conference. pp. 11982–11992 (2025) 2, 3 15. Keetha, N., Karhade, J., Jatavallabhula, K.M., Yang, G., Scherer, S., Ramanan, D., Luiten, J.: Splatam: Splat track & map 3d gaussians for dense rgb-d slam. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recog-nition. pp. 21357–21366 (2024) 2 16. Kerbl, B., Kopanas, G., Leimkühler, T., Drettakis, G., et al.: 3d gaussian splatting for real-time radiance field rendering. ACM Trans. Graph. 42 (4), 139–1 (2023) 1, 317. Kirillov, A., Mintun, E., Ravi, N., Mao, H., Rolland, C., Gustafson, L., Xiao, T., Whitehead, S., Berg, A.C., Lo, W.Y., et al.: Segment anything. In: Proceedings of the IEEE/CVF international conference on computer vision. pp. 4015–4026 (2023) 2, 19 18. Lai, X., Tian, Z., Chen, Y., Li, Y., Yuan, Y., Liu, S., Jia, J.: Lisa: Reasoning seg-mentation via large language model. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 9579–9589 (2024) 3 19. Li, B., Weinberger, K.Q., Belongie, S., Koltun, V., Ranftl, R.: Language-driven semantic segmentation. arXiv preprint arXiv:2201.03546 (2022) 1 20. Li, H., Wu, Y., Meng, J., Gao, Q., Zhang, Z., Wang, R., Zhang, J.: Instance-gaussian: Appearance-semantic joint gaussian representation for 3d instance-level perception. In: Proceedings of the Computer Vision and Pattern Recognition Con-ference. pp. 14078–14088 (2025) 3 21. Li, Y., Ma, Q., Yang, R., Li, H., Ma, M., Ren, B., Popovic, N., Sebe, N., Konukoglu, E., Gevers, T., et al.: Scenesplat: Gaussian splatting-based scene understanding with vision-language pretraining. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 4961–4972 (2025) 2 22. Li, Z., Chen, Z., Li, Z., Xu, Y.: Spacetime gaussian feature splatting for real-time dynamic view synthesis. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 8508–8520 (2024) 2 23. Lin, Z., Geng, S., Zhang, R., Gao, P., De Melo, G., Wang, X., Dai, J., Qiao, Y., Li, H.: Frozen clip models are efficient video learners. In: European Conference on Computer Vision. pp. 388–404. Springer (2022) 1 24. Ling, H., Kim, S.W., Torralba, A., Fidler, S., Kreis, K.: Align your gaussians: Text-to-4d with dynamic 3d gaussians and composed diffusion models. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 8576–8588 (2024) 2 GaussDet 17 25. Liu, S., Zeng, Z., Ren, T., Li, F., Zhang, H., Yang, J., Jiang, Q., Li, C., Yang, J., Su, H., et al.: Grounding dino: Marrying dino with grounded pre-training for open-set object detection. In: European conference on computer vision. pp. 38–55. Springer (2024) 3 26. Luiten, J., Kopanas, G., Leibe, B., Ramanan, D.: Dynamic 3d gaussians: Tracking by persistent dynamic view synthesis. In: 2024 International Conference on 3D Vision (3DV). pp. 800–809. IEEE (2024) 2 27. McInnes, L., Healy, J., Astels, S., et al.: hdbscan: Hierarchical density based clus-tering. J. Open Source Softw. 2(11), 205 (2017) 2, 19 28. Mildenhall, B., Srinivasan, P.P., Tancik, M., Barron, J.T., Ramamoorthi, R., Ng, R.: Nerf: Representing scenes as neural radiance fields for view synthesis. Commu-nications of the ACM 65 (1), 99–106 (2021) 3 29. Minderer, M., Gritsenko, A., Stone, A., Neumann, M., Weissenborn, D., Doso-vitskiy, A., Mahendran, A., Arnab, A., Dehghani, M., Shen, Z., et al.: Simple open-vocabulary object detection. In: European conference on computer vision. pp. 728–755. Springer (2022) 2 30. Nguyen, P., Ngo, T.D., Kalogerakis, E., Gan, C., Tran, A., Pham, C., Nguyen, K.: Open3dis: Open-vocabulary 3d instance segmentation with 2d mask guidance. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recog-nition. pp. 4018–4028 (2024) 1 31. Peng, S., Genova, K., Jiang, C., Tagliasacchi, A., Pollefeys, M., Funkhouser, T., et al.: Openscene: 3d scene understanding with open vocabularies. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 815– 824 (2023) 1 32. Qin, M., Li, W., Zhou, J., Wang, H., Pfister, H.: Langsplat: 3d language gaussian splatting. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 20051–20060 (2024) 2, 3, 20 33. Rasheed, H., Khattak, M.U., Maaz, M., Khan, S., Khan, F.S.: Fine-tuned clip models are efficient video learners. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 6545–6554 (2023) 1 34. Shi, J.C., Wang, M., Duan, H.B., Guan, S.H.: Language embedded 3d gaussians for open-vocabulary scene understanding. In: Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition. pp. 5333–5343 (2024) 2 35. Shorinwa, O., Tucker, J., Smith, A., Swann, A., Chen, T., Firoozi, R., Kennedy III, M., Schwager, M.: Splat-mover: Multi-stage, open-vocabulary robotic manipulation via editable gaussian splatting. arXiv preprint arXiv:2405.04378 (2024) 2, 3 36. Takmaz, A., Fedele, E., Sumner, R.W., Pollefeys, M., Tombari, F., Engelmann, F.: Openmask3d: Open-vocabulary 3d instance segmentation. arXiv preprint arXiv:2306.13631 (2023) 1 37. Wu, Y., Meng, J., Li, H., Wu, C., Shi, Y., Cheng, X., Zhao, C., Feng, H., Ding, E., Wang, J., et al.: Opengaussian: Towards point-level 3d gaussian-based open vocabulary understanding. Advances in Neural Information Processing Systems 
+
+37 , 19114–19138 (2024) 2, 3, 4, 5, 8, 9, 19, 20 38. Ye, M., Danelljan, M., Yu, F., Ke, L.: Gaussian grouping: Segment and edit any-thing in 3d scenes. In: European conference on computer vision. pp. 162–179. Springer (2024) 2 39. Yi, T., Fang, J., Wang, J., Wu, G., Xie, L., Zhang, X., Liu, W., Tian, Q., Wang, X.: Gaussiandreamer: Fast generation from text to 3d gaussians by bridging 2d and 3d diffusion models. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 6796–6807 (2024) 2 18 J. Hassan et al. 40. Yuksekgonul, M., Bianchi, F., Kalluri, P., Jurafsky, D., Zou, J.: When and why vision-language models behave like bags-of-words, and what to do about it? arXiv preprint arXiv:2210.01936 (2022) 2, 5 41. Zareian, A., Rosa, K.D., Hu, D.H., Chang, S.F.: Open-vocabulary object detection using captions. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 14393–14402 (2021) 1 42. Zhao, H., Puig, X., Zhou, B., Fidler, S., Torralba, A.: Open vocabulary scene parsing. In: Proceedings of the IEEE international conference on computer vision. pp. 2002–2010 (2017) 1 43. Zhou, H., Shao, J., Xu, L., Bai, D., Qiu, W., Liu, B., Wang, Y., Geiger, A., Liao, Y.: Hugs: Holistic urban 3d scene understanding via gaussian splatting. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 21336–21345 (2024) 2 44. Zhou, S., Chang, H., Jiang, S., Fan, Z., Zhu, Z., Xu, D., Chari, P., You, S., Wang, Z., Kadambi, A.: Feature 3dgs: Supercharging 3d gaussian splatting to enable distilled feature fields. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 21676–21685 (2024) 2, 3 45. Zhou, X., Lin, Z., Shan, X., Wang, Y., Sun, D., Yang, M.H.: Drivinggaussian: Com-posite gaussian splatting for surrounding dynamic autonomous driving scenes. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recog-nition. pp. 21634–21643 (2024) 2, 3 GaussDet 19 
+
+# Supplementary Material A Overview 
+
+The following supplementary material provide additional details. A detailed de-scription of the 3D scene decomposition method used is described in Section B. In Section C provides further implementation details of our method, and Sec-tion D presents additional qualitative results of our method in comparison to existing works for open-vocabulary segmentation(Section D.1), referring segmen-tation(Section D.2) and 3D pointcloud segmentation(Section D.3). We also in-clude further ablation studies in Section E. 
+
+# B 3D Scene Decomposition 
+
+We implement our 3D scene decomposition using the method introduced in LaGa [8]. Inspired by prior works on 3DGS decompositions methods [7,37], con-trastive learning approach is adopted to train instance features F = {f k ∈ Rd},where d is the dimensionality of the feature, and k is the index of the Gaussian. To train the instance features, a feature map F v ∈ R(H×W ×d) is rendered for each view v using the differentiable rasterization process ψ(·). Each instance mask obtained using SAM [17] is then assigned a instance prototype feature ˆfM v
+
+obtained by average pooling. The training objective is defined as: 
+
+L = X
+
+> v∈V
+
+X 
+
+> M∈M v
+
+X
+
+> p∈δ(v)
+
+(1 − 2M (p)) max 
+
+
+
+⟨ ˆfM , F v ⟩, 0
+
+
+
+, (7) where δ(v) denotes the set of pixels in view v and M (p) returns true is the pixel 
+
+p is in mask M .Let M = S 
+
+> v∈V
+
+Mv be the set of masks from all training images. These masks are then clustered based on their instance features ˆfM using HDBSCAN [27], resulting in M = SNs 
+
+> i=1
+
+Si, where Ns is the number of clusters. Each cluster 
+
+Si is a set of masks considered to denote a 3D instance group by establishing cross-view connections across 2D SAM masks. A 3D instance prototype feature is then computed as 
+
+tSv = 1
+
+|S i|
+
+X 
+
+> M∈S i
+
+ˆfM . (8) The 3D instance group i∗ to which the kth Gaussian is assigned is determined by identifying the 3D instance prototype with the maximum similarity to the Gaussian instance feature fk as 
+
+i∗ = arg max 
+
+> i
+
+⟨fk, tSi ⟩. (9) This decomposes the N 3D Gaussians into instance groups G = {G i ∈ { 0, 1}N |
+
+i = 1 , 2, . . . , Ns}.20 J. Hassan et al. 
+
+# C Implementation Details 
+
+To obtain 2D instance segmentation masks, we follow previous works [8, 32, 37] by using a ViT-H model of SAM. The Gaussian instance feature dimension d
+
+is set to 32. For LeRF-OVS dataset, we train a multi-granularity model as in LangSplat, OpenGaussian and LaGa. During inference, we obtain the average of all three levels to compute the similarity scores across the semantic label distribution. The 3DGS for each scene is trained for 30000 iterations and the instance features are trained for a further 30000 iterations. During inference, we set the similarity threshold to filter Gaussians as 0.5 that removes noisy regions, then the scores are min max normalized. A 3D bilateral filtering step is applied to the resulting 3D similarity map. The open-vocabulary object detector used for LeRF-OVS is Qwen-VL 2.5 Instruct, and for ScanNet, we use YOLO-World given its faster inference speed. For YOLO-World, we set the confidence threshold to be 0.08 and apply non-maximum suppression with a threshold of 0.3. Since Qwen-VL does not provide a confidence score, we retain all detections. To perform detections with Qwen, we pass each semantic class sequentially to the model for inference. To prevent any bias in model outputs, for each image, we randomly shuffle the semantic class order before passing them for inference. The VLM is prompted as follows 
+
+prompt_text = ( f"Detect the objects corresponding to the following description if present: ‘{target_str}’. " f"Output the results as a JSON list where each item has a key ‘bbox_2d’ and a value being the bounding box coordinates." )
+
+where target_str is the semantic class label or the referring expression. 
+
+# D Additional Qualitative Results 
+
+D.1 Open-Vocabulary Segmentation 
+
+In Figure 9, we provide further qualitative comparisons between GaussDet and existing works LaGa [8] and OpenGaussian [37] on the LeRF dataset. These examples highlight the robustness of our View-Aggregated Semantic Label Dis-tribution (VASD) across a variety of challenging queries. We observe that LaGa and OpenGaussian tend to erroneously capture surrounding background ele-ments rather than strictly isolating the target query. For example, LaGa cap-tures multiple similar objects for “ rubber duck with buoy ” query, while Open-Gaussian similarly captures surrounding regions for “ apple ” and “ kamaboku ”. Furthermore, we notice that OpenGaussian completely fails to isolate certain queries altogether. Finally, both baseline methods fail to identify fine-grained queries like “ hooves ”, whereas GaussDet successfully parses and segments these specific object parts. GaussDet 21 
+
+Fig. 9: Additional Open-Vocabulary Segmentation comparisons on LeRF. 
+
+For each query, we compare the segmentation outputs of OpenGaussian, LaGa, and our proposed GaussDet .22 J. Hassan et al. 
+
+D.2 Referring Expression Grounding  
+
+> Fig. 10: Qualitative comparison on the Ref-LeRF dataset. The first row displays the Ground Truth (GT), the second row shows the output from our method ( GaussDet ), and the third row shows the results from ReferSplat.
+
+In Figure 10, we compare the segmentation masks of GaussDet against the baseline ReferSplat. It is important to emphasize that our method operates in a strictly zero-shot setting, whereas ReferSplat is trained per-scene using gener-ated pseudo-masks. Despite lacking per-scene optimization, GaussDet is able to isolate the target objects significantly better than ReferSplat, as demonstrated in queries such as the “ plate ” and “ sake cup ”. Furthermore, ReferSplat some-times completely fails to identify the queried objects altogether, as seen in the 
+
+Waldo-Kitchen example. We report visual comparisons exclusively on the Ra-men and Waldo-Kitchen scenes, as ReferSplat only provides checkpoints and pseudo-masks for these two specific scenes. 
+
+Failure Cases: As illustrated in Figure 11, our method faces difficulties when there is not significant coverage of views for overlapping objects. In such scenar-ios, GaussDet sometimes fails to completely segment a target object, resulting GaussDet 23  
+
+> Fig. 11: Failure cases. Our method faces challenges with heavily overlapping objects lacking multi-view coverage, leading to incomplete segmentations or residual back-ground artifacts.
+
+in incomplete masks as seen in the “ chopsticks ” and “ spoon ” examples. Further-more, the inherent limitations in the underlying 3D scene decomposition can sometimes still cause some degree of floating background artifacts to persist. 
+
+D.3 ScanNet Qualitative Results 
+
+In Figure 12, we present qualitative comparisons on the ScanNet point clouds. We observe that our segmentation masks are noticeably denser and successfully isolate background points, as demonstrated in the “ bed ” and “ sink ” examples. Furthermore, we notice that certain queries are completely missed by OpenGaus-sian, such as the “ sofa ”, which is only partially captured by LaGa. In contrast, our method obtains a highly accurate and complete segmentation of it. Finally, small objects such as the “ picture ” are entirely missed by the baseline methods, causing severe false positive segmentations for both LaGa and OpenGaussian. Conversely, GaussDet performs exceptionally well at accurately localizing these small targets without introducing widespread background noise. 24 J. Hassan et al.   
+
+> Fig. 12: Qualitative comparison on ScanNet point clouds. We compare the segmentation outputs of OpenGaussian, LaGa, and our proposed GaussDet .
+
+# E Further Ablations 
+
+E.1 Effect of VASD semantic assignment 
+
+In order to compare the effect of the VASD semantic assignment, we compare our method with LaGa. Given the same instance grouping mechanism, we ab-late the semantic expressiveness of our method on the referring segmentation benchmark in Table 5 in addition to reported results in the main paper. For GaussDet 25 
+
+an exact, fair comparison of the semantic label space available to each method, we experiment our VASD semantic label distribution generation using only the query and the background label in Table 6. We note that there is minimal dif-ference in performance compared to using the semantic label space (Row 0) in both open-vocabulary and referring segmentation settings.          
+
+> Table 5: Referring segmentation us-ing CLIP. Method Ref-LeRF LaGa (CLIP) 9.2 GaussDet (VASD) 45.9
+> Table 6: Using a single semantic label for VASD. Method LeRF Ref-LeRF Row 0 69.9 45.9 Row 1 68.9 46.3
+
+E.2 Detector Uncertainty 
+
+We study the effect of the detector with strong 2D priors and its contribution to the semantic label generation. To understand the need for a robust seman-tic assignment using VASD, validating that semantic understanding cannot be simply achieved by relying on the detector, we ablate the detector uncertainty. We replace the semantic label assignment using VASD as follows. We match the rendered mask’s bounding box with the bounding box that has the highest IoU overlap from the object detector outputs, and aggregate it across views for a majority vote (GaussDet + bbox). In Table 7, we observe that this significantly drops the performance, confirming that the gains are not purely from strong 2D priors. Missed/incorrect detections, and incorrect matching of mask with detections lead to degradation in performance. The drop in performance was pronounced in scenes such as “Ramen” and “Waldo Kitchen” that have highly overlapping detections. With VASD, aggregating votes across all independent Gaussians enables to generate a robust semantic distribution label, leading to significant improvement.

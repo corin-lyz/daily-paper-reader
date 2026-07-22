@@ -1,0 +1,551 @@
+Title: CL-CLIP: CLIP-Based Continual Learning Framework with Cost-Volume Category Decoupling for Object Detection
+
+URL Source: https://arxiv.org/pdf/2606.06978v1
+
+Published Time: Mon, 08 Jun 2026 00:33:59 GMT
+
+Number of Pages: 22
+
+Markdown Content:
+# CL-CLIP: CLIP-Based Continual Learning Framework with Cost-Volume Category Decoupling for Object Detection 
+
+Zihan Liu 1∗
+
+, Yuguang Yang 3,2 ∗
+
+, Shengjie Su 4∗
+
+, Jianing Pang 5, Linlin Yang 6†
+
+,Chunyu Xie 2†
+
+, Nikolai Yu. Zolotykh 7‡
+
+, Baochang Zhang 8‡
+
+,
+
+> 1
+
+National College for Excellent Engineers, Beihang University 
+
+> 2
+
+360 AI Research, Qihoo 360 
+
+> 3
+
+School of Electronic Information Engineering, Beihang University 
+
+> 4
+
+School of Cyber Science and Technology, Beihang University 
+
+> 5
+
+School of Computer Science and Engineering, Beihang University 
+
+> 6
+
+State Key Laboratory of Media Convergence and Communication, Communication University of China 
+
+> 7
+
+Institute of Information Technology, Mathematics and Mechanics, Lobachebsky University 
+
+> 8
+
+School of Artificial Intelligence, Beihang University 
+
+Abstract 
+
+Continual Object Detection (COD) requires a detector to acquire new categories over time while preserving previously learned ones. This goal is closely related to open-vocabulary detection, since both settings require reasoning over categories that are not fully covered by the annotations available at the current training stage. Recent CLIP-based open-vocabulary detectors have shown strong zero-shot generalization, and frameworks such as F-ViT demonstrate that vision-language pretraining can provide powerful zero-shot detection ability for unseen categories. However, real-world deployments cannot remain purely zero-shot: once these detectors are continually updated on newly introduced categories, they suffer severe catastrophic forgetting and quickly lose their previously calibrated detection ability. We therefore propose CL-CLIP, a CLIP-based COD framework that equips open-vocabulary detectors with better continual learning ability through cost-volume-guided category decoupling. Specifically, following CAT-Seg, we compute a CLIP image-text similarity cost volume, defined as dense category-wise response maps between visual tokens and class text embeddings. This zero-shot spatial prior decomposes shared region features into class-specific pathways, which are then processed by a Multi-Expert RoI head. Extensive experiments on PASCAL VOC and MS-COCO show that CL-CLIP substantially improves the F-ViT baseline under continual fine-tuning and achieves competitive performance with existing continual object detectors, especially in adapting to newly introduced categories while preserving competitive base-class performance.   
+
+> *Equal contribution.{zy2523383, guangbuaa, 23371363}@buaa.edu.cn
+> †Corresponding author. lyang@cuc.edu.cn ,xiechunyu@360.cn
+> ‡Project leader. Preprint.
+> arXiv:2606.06978v1 [cs.CV] 5 Jun 2026
+
+1 Introduction 
+
+Continual Object Detection (COD) aims to learn novel categories from a task stream while preserving previously acquired detection ability [ 15 , 25 , 23 , 8]. Unlike image classification, however, COD must handle multi-object scenes in which old and new categories co-occur spatially. This leads to the background relegation problem. When the model is updated on a new task, previously learned objects appear without annotations and are treated as background, rapidly eroding old-class decision boundaries and causing severe catastrophic forgetting. Existing COD methods address this problem through knowledge distillation [ 23 , 8, 10 , 29 ], regu-larization [ 12 , 31 , 21 ], replay [ 9, 20 , 1], and pseudo-labeling [ 35 ]. These studies provide important mechanisms for preserving previously learned categories during continual learning. In this work, we explore a different route by using open-vocabulary detection (OVD) as a starting point for COD. This route is motivated by the overlap between the two settings, which both require detectors to reason about categories that are not fully covered by the annotations available at a given training stage. CLIP-based OVD detectors are especially relevant to this route because CLIP provides strong zero-shot ability, which has been widely used to detect categories beyond the training label set. Fine-grained CLIP variants [ 39 , 11 , 33 ] and frameworks such as F-ViT [ 13 ] show that strong vision-language alignment can provide powerful zero-shot detection ability for unseen categories. However, OVD and COD differ in a crucial way. OVD relies on zero-shot transfer without updating the detector, whereas COD repeatedly fine-tunes it as new categories arrive. Once F-ViT-style frameworks are placed in this continual setting, their shared trainable heads are easily overwritten, and the old-class detection ability quickly deteriorates. Traditional remedies such as distillation or replay do not resolve this shared-head interference, and existing architecture-specific continual designs based on learnable prompts [ 36 ] or memory networks [ 2] are typically developed for DETR [ 3 ] or Grounding DINO [19] pipelines rather than for CLIP-based detectors. To address this limitation, we propose CL-CLIP, a continual object detection framework built on category decoupling for CLIP-based open-vocabulary detectors. Inspired by CAT-Seg [ 6], which constructs an image-text similarity cost volume to produce category-wise spatial responses for semantic segmentation, we ask a natural question: can such responses serve as a spatial prior for previously learned classes during continual learning, thereby reducing forgetting under incomplete current-task annotations? Following this insight, CL-CLIP converts the category decomposition ability of CLIP into class-specific detection pathways, reducing direct competition between old and new categories during continual updates. The underlying principle is that a frozen CLIP model produces category-indexed spatial responses invariant to downstream fine-tuning, serving as a structurally stable routing signal that decomposes shared features into class-specific pathways without being corrupted by missing-label supervision on subsequent tasks. This principle is instantiated through two core designs: • Cost-volume-guided category decoupling. The CLIP cost volume provides a zero-shot spatial prior that separates shared region features into per-category pathways, keeping category responses well separated across tasks. • Multi-Expert RoI head with drift stabilization. Each category is assigned a convolutional expert that processes its decoupled features and produces CLIP-aligned detection scores via per-class sigmoid classifiers. Combined with drift regularization on the shared FPN modules, this design reduces cross-class interference and better preserves old-class representations during continual updates. To our knowledge, CL-CLIP is the first framework to systematically adapt cost-volume-based category decomposition for continual object detection, establishing a previously unexplored connection between open-vocabulary spatial priors and architectural anti-forgetting mechanisms. Through extensive experiments on PASCAL VOC [ 7 ] and MS-COCO [ 16 ], including a systematic benchmark for forgetting across multiple CLIP variants within the F-ViT baseline, we show that CL-CLIP substantially improves continual detection performance and achieves competitive results with existing continual object detectors, with particularly strong adaptation to newly introduced categories. 22 Related works 
+
+Continual Learning. Continual learning studies how a model absorbs new knowledge from a task stream without forgetting previous tasks [ 15 , 25 ]. Our work focuses on continual object detection, where the challenge is not only catastrophic forgetting but also preserving spatially localized representations while reducing region-level interference between old and new categories. 
+
+Continual Object Detection. Existing COD methods mitigate forgetting through several lines of solutions. Distillation methods (Faster-ILOD [ 23 ], GCD [ 29 ], MMA [ 4]) transfer old-task knowledge to the current model. Regularization methods (IncDet [ 18 ], GDA [ 21 ], NSGP-RePRE [ 31 ]) constrain parameters or gradients to reduce harmful updates. Replay methods (ABR [ 20 ], IOR [ 1]) preserve previous knowledge by reusing stored or generated samples. Pseudo-labeling methods [ 35 ] recover old objects that reappear without annotations. More recent methods such as ROSETTA [ 34 ] and TARL [ 38 ] isolate task-specific parameters to reduce interference. These approaches can be characterized along two axes: isolation granularity (task-level prompts or branches vs. category-level pathways) and old-class recovery strategy (pseudo-labeling, replay or architectural separation). Most prior work operates at the task level and relies on explicit old-class recovery mechanisms. In contrast, CL-CLIP performs category-level decoupling by constructing class-specific RoI pathways processed by per-category experts, requiring neither pseudo-labels nor replay and eliminating the need for task identity at inference. 
+
+CLIP Models for Dense Prediction and Continual Adaptation. CLIP [ 24 ] has become a strong foundation for open-vocabulary dense prediction. Prior works developed improved or fine-grained CLIP variants such as RegionCLIP, SigLIP2, EVA-CLIP, FineCLIP, and FG-CLIP [ 39 , 28 , 27 , 11 , 33 ], and frameworks such as F-ViT [ 13 ] show that a frozen vision-language backbone can support open-vocabulary detection. However, under sequential fine-tuning, F-ViT’s shared detection head overwrites representations calibrated for old classes, motivating an explicitly continual architecture. Recent studies have begun to explore CLIP for continual detection. IODC [ 10 ] introduces CLIP through pseudo-labeling and prompt tuning, but depends on pseudo-label quality. TARL [ 38 ] applies task-aware parameter isolation on GLIP [ 14 ] but operates at the task level and relies on a grounding-based backbone. In contrast, CL-CLIP avoids pseudo-labeling and decouples at the category level, enabling per-class pathways without requiring task identity at inference. Inspired by CAT-Seg [ 6 ], designed for static open-vocabulary segmentation, we adopt its category-indexed spatial responses as a structural prior for continual detection, removing its cross-class aggregation module to avoid inter-class mixing under missing-label supervision. 
+
+3 Methodology 
+
+We present CL-CLIP, a framework that equips a CLIP-based open-vocabulary detector with continual learning ability. Starting from a frozen CLIP backbone and the F-ViT detection pipeline, we construct a Similarity Cost Volume from image-text alignment as a zero-shot spatial prior. This prior separates shared multi-scale features into class-specific pathways during sequential fine-tuning. On top of these decoupled features, we build a spatial-attention-guided RPN and a Multi-Expert RoI head to reduce cross-class interference. Throughout the framework, only the CLIP encoders and previous-task experts in the RoI head are frozen; all other modules (cost-volume pathway, FPN, RPN, current-task experts) are trainable. The overall architecture is illustrated in Fig. 1. 
+
+Notations : Let I denote the input image and F(·) represent the frozen CLIP vision backbone. For a given proposal b and a candidate category set C, CL-CLIP produces class scores SC 
+
+> b
+
+through the same decoupled expert pipeline during both training and inference. 
+
+3.1 Preliminaries Continual Learning. COD requires a model to learn from a task stream T = {T 1, . . . , Tn}. At step t, the dataset Dt = {X i, Yi} contains annotations only for the current categories Cc, while previously learned categories Cp may still appear without labels. After training on task t, the detector is evaluated over all seen categories Cp ∪ Cc.
+
+F-ViT Framework. We build on F-ViT [ 13 ] framework, a CLIP-based OVD framework that freezes the image and text encoders and trains a standard detection head with text embeddings as classifier 3CLIP           
+
+> Visual
+> Encoder
+> Dense Visual Tokens
+> a car
+> a person
+> a bicycle
+> ...
+> Text Prompts
+> Class
+> Text
+> Embeddings ...
+> Cosine
+> Similarity
+> Categories
+> 𝐀
+> W
+> Swin
+> Spatial
+> Aggregation
+> Upsampling
+> Decoder
+> Category-wise
+> Logits 𝐀 𝐀 𝐀
+> Max over
+> Categories
+> Attention Map 𝐀
+> 𝐀 ×𝐀
+> FPN Features 𝐀
+> 𝐀 ×𝐀 ×𝐀
+
+⨁         
+
+> 𝐀 ’ = 𝐀 ×(𝐀 +𝐀 )
+> RPN
+> Region Proposals
+> Expert 𝐀 1
+> Expert 𝐀 𝐀
+> ...
+> Previous-class experts
+> Expert 𝐀 𝐀 +1
+> Expert 𝐀 𝐀
+> ...
+> Current-class experts
+> 𝐀 𝐀 𝐀 𝐀
+> Class-conditioned
+> Fusion
+
+⨂
+
+> 𝐀 𝐀 𝐀 𝐀
+> ...
+> Category Embeddings
+
+(1) Cost Volume-Guided Feature Decoupling (2) Spatial Attention-Guided RPN (3) Multi-Expert Rol Head 
+
+ℒ = ℒ𝐀 𝐀 𝐀 ℎ𝐀 + ℒ𝐀 𝐀 𝐀 𝐀 𝐀 + ℒ𝐀 𝐀 𝐀 + ℒ𝐀 𝐀 𝐀        
+
+> Flatten
+> +
+> L2 Norm
+> Off-diagonal
+> Penalty 𝐀 𝐀 𝐀 𝐀 ℎ𝐀
+> ℒ𝐀 𝐀 𝐀
+> (Classification)
+> ℒ𝐀 𝐀 𝐀 ℎ𝐀
+> (Orthogonality)
+> 𝐀 =𝐀 (𝐀 𝐀 𝐀 )
+> Gram Matrix 𝐀
+> Response Overlap
+> (mean off-diagonal)
+> Reducing Cross-Category Spatial Overlap (Orthogonality)
+> Current experts: Update
+> Previous experts: Frozen
+> Region
+> Proposals
+> Per -class
+> Sigmoid scores
+> 0.92 0. 11 0. 73 0. 07 ...
+> RoI
+> Align
+> RoI
+> Align
+
+⨀
+
+> ℒ𝐀 𝐀 𝐀
+> (Box Regression)
+> ℒ𝐀 𝐀 𝐀 𝐀 𝐀
+> (Drift Regularization)
+> 、
+
+⨀ Cosine 
+
+> Similarity
+
+Figure 1: Overview of CL-CLIP. (1) Cost Volume-Guided Feature Decoupling constructs category-wise spatial responses from CLIP image-text similarity; (2) Spatial Attention-Guided RPN uses the max-pooled response as a foreground prior; (3) Multi-Expert RoI Head assigns per-category convolutional experts with frozen/trainable separation. The orthogonality loss reduces cross-category spatial overlap via a Gram matrix penalty. weights. While this design provides strong zero-shot detection ability, its trainable head remains shared across categories. Under continual fine-tuning with incomplete annotations, updates for current classes can overwrite the representations previously calibrated for old classes. 
+
+3.2 Cost Volume-Guided Feature Decoupling 
+
+The first step of CL-CLIP is to construct category-indexed spatial responses as class-specific priors for continual detection. The key property we exploit is that these responses are derived from the frozen CLIP encoders: since neither the image nor text encoder is updated during continual fine-tuning, the cost volume provides a stable per-category spatial signal that does not degrade as new tasks arrive. Following CAT-Seg [ 6], originally designed for open-vocabulary semantic segmentation, we compute the cosine similarity between dense CLIP visual tokens and category-specific text embeddings to obtain a Similarity Cost Volume. This cost volume is refined by Swin-based spatial aggregation within each category response and an upsampling decoder, producing category-wise logits maps Zcv :
+
+Zcv = Cost (F(I)) (1) We adapt CAT-Seg for continual detection with two key modifications. First, whereas CAT-Seg uses the cost volume as final dense predictions for segmentation, we use it as a spatial prior that gates region features for downstream proposal-based detection. Second, we remove CAT-Seg’s class aggregation module, which re-introduces cross-category coupling and propagates forgetting signals from unannotated old objects that are treated as background. The resulting category-wise responses are later used by the RoI head to construct class-conditioned RoI representations (detailed in Sec. 3.4). 
+
+Reducing Cross-Category Spatial Overlap. Because the response maps are learned without dense mask supervision, different categories may co-activate on the same spatial regions. We introduce a soft orthogonality constraint. Let P = σ(Zcv ) ∈ RK×H×W denote the response probabilities of categories. We flatten and apply ℓ2 normalization over the N = H × W spatial positions to obtain 
+
+˜P ∈ RK×N , then compute the Gram matrix G = ˜P ˜P⊤ to measure spatial co-activation across class channels, and penalize its off-diagonal entries: 
+
+Lortho = 1
+
+Nb · K(K − 1) 
+
+NbX
+
+n=1 
+
+X
+
+i̸=j
+
+(Gn,i,j )2 (2) 4We use the mean squared off-diagonal value as a quantitative measure of cross-category spatial entanglement, which we call Response Overlap ; Tab. 5 analyzes how this metric changes across decoupling variants. 
+
+3.3 Spatial Attention-Guided RPN 
+
+In continual detection, the RPN [ 26 ] may suppress old objects because its objectness targets are defined only by current-task annotations. We use the Similarity Cost Volume as a foreground prior by taking the maximum response over the category dimension to obtain a class-agnostic attention map. Rather than replacing FPN [17] features with this prior, we use a residual gating form: 
+
+F′ = F × (β + A) (3) where F is the FPN feature, β is a learnable scalar gate initialized to 1, and A is the resized attention map. This softly biases the RPN toward regions with high CLIP-text response while preserving the original features. Tab. 6 compares this with a standard RPN, generic spatial attention, and direct cost-volume modulation through proposal recall. 
+
+3.4 Multi-Expert RoI Head 
+
+We keep the standard box regression branch but replace the shared RoI classifier with category-specific experts. For each proposal b, RoI-Align extracts a visual feature bvis ∈ Rd×d1×d2 from the FPN and a per-category spatial gate bseg ∈ RK×d1×d2 from the sigmoid-activated cost-volume maps, where each slice bseg [c] ∈ Rd1×d2 is a spatial attention mask for category c. Broadcasting 
+
+bseg [c] across channels yields the class-conditioned feature bdec [c] = bvis ⊙ bseg [c], so that each of the K slices in bdec ∈ RK×d×d1×d2 retains only the spatially relevant information for its category. Each category c is assigned a convolutional expert Ec that processes its slice bdec [c]. Following Sylph [ 37 ], we replace the shared softmax classifier with per-class sigmoid classifiers, but differ in that Sylph dynamically generates expert weights from few-shot support images over shared RoI features, whereas our experts are directly learned modules that operate on already spatially-gated, class-specific features. Once a category’s expert is trained, it is frozen in subsequent tasks, providing architectural protection against forgetting. We compute CLIP-aligned scores: 
+
+scb = τ · cos  Ec(bdec [c]) , tc
+
+, (4) where tc is the CLIP text embedding for category c and τ is the logit scale. At each task t, the cost volume and expert pipeline operate over all seen categories Cp ∪ Cc, so that frozen old-class experts continue to receive their gated inputs. The classification loss Lcls is Binary Cross-Entropy with Logits applied to {scb}c∈Cc ; proposals matching previous categories are excluded from the classification loss rather than treated as negatives. At inference, scoring is applied to all seen categories Cp ∪ Cc, and the detection score is Scb = σ(scb). Only current categories’ experts are updated; previous categories’ experts are frozen. Tab. 4 examines this design; a t-SNE visualization is provided in Appendix Fig. 4. Because all experts share a fixed logit scale τ and align to frozen CLIP text embeddings through bounded cosine similarity, old and new experts produce comparable score magnitudes without post-hoc calibration. Since the decoupled RoI features are still fused with FPN representations, we apply EWC [ 12 ] drift regularization ( Ldrif t ) on the lateral and top-down fusion convolutions of the FPN. The diagonal Fisher information is computed after each task from the total loss gradients, and the drift loss penalizes parameter deviations weighted by importance. Together with the L1 box regression loss ( Lreg ), the full training objective is: 
+
+L = Lcls + Lreg + Lortho + λLdrif t (5) 
+
+4 Experiments 
+
+4.1 Datasets and Evaluation Protocols 
+
+We evaluate CL-CLIP on PASCAL VOC [ 7] and MS-COCO [ 16 ]. For VOC, we use the standard two-step splits 10+10, 15+5, and 19+1, where A + B denotes A classes in the first task and B newly introduced classes in the second task. For COCO, we mainly use the 4-task protocol [ 9] to evaluate 5long-horizon forgetting, with additional 40+40 and 70+10 two-step results deferred to Appendix A. We report mAP@50 for previously learned classes (mAP@P), current-task classes (mAP@C), and all seen classes (mAP@A). 
+
+4.2 Baseline Construction and Pre-Evaluation 
+
+Before evaluating CL-CLIP, we first test whether CLIP-based open-vocabulary detectors can naturally handle continual object detection. We build this diagnostic baseline on F-ViT [ 13 ] by sequentially fine-tuning its detector head on current-task categories while evaluating old categories through mAP@P. This setting directly measures whether the frozen CLIP prior can preserve previous categories after the shared trainable head is updated on new tasks. Table 1: Performance of various CLIP models on the 4-tasks MS-COCO benchmark Model ViT Task1 Task2 Task3 Task4                                                                                          
+
+> mAP@C mAP@C mAP@P mAP@A mAP@C mAP@P mAP@A mAP@C mAP@P mAP@A FineCLIP[11] ViT-B/16 64.3 44.5 26.2 35.8 46.1 19.1 28.1 38.4 17.4 22.6
+> FG-CLIP[33] 60.3 43.2 19.3 31.8 37.0 15.6 22.7 33.2 13.3 18.3 EVA-CLIP[27] 61.8 43.8 5.0 25.3 39.9 10.5 20.3 35.4 8.5 15.2 FineCLIP[11] ViT-L/14 73.7 56.2 29.7 43.6 57.4 30.8 39.7 50.7 27.4 33.2
+> FG-CLIP[33] 72.6 55.4 13.3 35.4 53.4 19.0 30.5 48.3 18.1 25.6 EVA-CLIP[27] 70.0 53.5 15.0 35.2 48.2 16.0 26.7 44.0 14.9 22.2 SigLIP2[28] So/14 65.9 48.4 7.3 28.9 45.5 9.2 21.3 40.4 8.2 16.3 SigLIP2[28] So/16 76.5 59.7 8.6 35.4 58.7 13.7 28.7 55.8 13.0 23.7
+
+Using this protocol, we benchmark EVA-CLIP[ 27 ], SigLIP2[ 28 ], FineCLIP[ 11 ], FG-CLIP[ 33 ]. Tab. 1 shows that strong CLIP representations do not by themselves solve continual detection. Several variants keep high current-task accuracy but lose old-class performance almost completely, indicating that open-vocabulary generalization and continual retention are not equivalent once the detector is sequentially fine-tuned. FineCLIP provides the most stable retention and the best mAP@A in most stages, so we use it as the default CLIP backbone. Even this strongest baseline still suffers substantial old-class degradation, motivating an explicitly continual architecture rather than a direct reuse of an OVD detector. Appendix A reports the same pattern on additional two-step COCO and VOC settings. 
+
+4.3 Implementation Details 
+
+We implement CL-CLIP with PyTorch [ 22 ] and MMDetection [ 5]. Following CAT-Seg [ 6], we set the main hyperparameters to dF = 128 , NB = 2 , and NU = 2 . The total batch size is 16 for PASCAL VOC and 32 for MS-COCO. We use FineCLIP ViT-B/16 as the default frozen backbone. For the COCO 4-task protocol we follow the class split of OW-DETR [ 9]; for VOC we use the standard 10+10, 15+5, and 19+1 splits. Multi-seed variance is reported in Appendix F. Complete optimization settings are deferred to Appendix B. 
+
+4.4 Results and analysis Evaluating performance on PASCAL VOC. Tab. 2 summarizes the results on three standard two-step VOC splits. Compared with the FineCLIP/F-ViT baseline, CL-CLIP improves all-class mAP by 7.4, 9.6, and 9.2 points on the 10+10, 15+5, and 19+1 splits, respectively. The gains come from both retention and adaptation: old-class AP increases from 55.8 to 64.8, 65.9 to 78.3, and 68.0 to 77.1, while new-class AP reaches 84.5, 74.5, 84.8. Against existing COD methods, CL-CLIP achieves the best all-class mAP on three VOC settings(74.7, 77.4 77.5). Notably, our FineCLIP baseline (67.3/67.8/68.3) underperforms both ResNet-50-based methods with dedicated continual learning mechanisms (ABR 72.0/71.0/70.9, NSGP-RePRE 74.0/73.6/76.0) and IODC (67.6/70.2/72.3), which shares the same CLIP ViT-B/16 backbone but uses different pretraining. Although these comparisons involve different architectures and strategies, they collectively suggest that stronger pretraining alone does not confer continual retention. The gains of CL-CLIP therefore stem from the category decoupling design rather than backbone capacity. Compared to IODC, CL-CLIP improves all-class mAP from 67.6/70.2/72.3 to 74.7/77.4/77.5. It also compares favorably with parameter-isolation methods such as TARL [ 38 ] and ROSETTA [ 34 ], 61 2 3 4    
+
+> Task
+> 0
+> 10
+> 20
+> 30
+> 40
+> 50
+> 60
+> 70
+> 80
+> mAP@0.5
+> (a) mAP@C (Plasticity)
+> Baseline
+> IOR
+> MMA
+> CL-CLIP
+> 234
+> Task
+> 0
+> 10
+> 20
+> 30
+> 40
+> 50
+> 60
+> mAP@0.5
+> (b) mAP@P (Retention)
+> 234
+> Task
+> 0
+> 10
+> 20
+> 30
+> 40
+> 50
+> mAP@0.5
+> (c) mAP@A (Overall)
+
+Figure 2: Performance on the 4-task MS-COCO benchmark (mAP@0.5). CL-CLIP maintains stronger plasticity and overall accuracy across the full task sequence compared with reproduced baselines. achieving higher new-class AP while keeping competitive old-class AP, and obtains a better stability-plasticity trade-off than NSGP-RePRE [ 31 ]. All comparison numbers except GCD [ 29 ] are taken from original publications; GCD is reproduced with released code as it does not report VOC results. Table 2: mAP@0.5 results on single continual step on PASCAL VOC 
+
+Method Backbone 10+10 15+5 19+1 1-10 11-20 1-20 1-15 16-20 1-20 1-19 20 1-20 
+
+Baseline CLIP ViT-B/16 55.8 78.8 67.3 65.9 73.4 67.8 68.0 74.3 68.3 OW-DETR[9] ResNet-50 63.5 67.9 65.7 72.2 59.8 69.4 71.1 62 70.2 ABR[20] ResNet-50 71.2 72.8 72.0 73.0 65.1 71.0 71.0 69.7 70.9 MMA[4] ResNet-50 69.3 63.9 66.6 73.0 60.5 69.9 71.1 63.4 70.7 NSGP-RePRE[31] ResNet-50 75.3 72.7 74 77.5 61.8 73.6 76.3 69 76 ROSETTA[34] ResNet-50 67.6 66.0 66.8 71.7 61.6 69.2 69.7 68.3 69.6 GCD[29] Swin-T 67.3 71.4 69.4 69.5 58.8 66.8 69.8 74.6 70.1 TARL[38] Swin-T 71.2 70.0 70.6 73.6 60.2 70.3 73.2 66.5 72.9 IODC[10] CLIP ViT-B/16 66.1 69.2 67.6 73.1 61.2 70.2 72.8 62.5 72.3 CL-CLIP(Ours) CLIP ViT-B/16 64.8 84.5 74.7 78.3 74.5 77.4 77.1 84.8 77.5 
+
+Evaluating performance on MS-COCO. The 4-task MS-COCO protocol has not been widely adopted by COD methods, most of which only report two-step COCO results. To examine long-horizon forgetting, we reproduce IOR [ 1] and MMA [ 4] under this protocol. Fig. 2 plots mAP across the four sequential tasks. CL-CLIP improves the FineCLIP/F-ViT baseline throughout the stream, raising mAP@A from 35.8 to 49.7 (Task2), 28.1 to 36.5 (Task3), and 22.6 to 25.7 (Task4), while maintaining a more balanced stability-plasticity trade-off than IOR and MMA across the full sequence. Appendix F confirms the same trend under the stricter mAP@[.5:.95] metric. 
+
+4.5 Ablation study Generalization across CLIP backbones. To verify that CL-CLIP is not tied to a specific CLIP variant, we evaluate it with FG-CLIP [ 33 ] ViT-B/16 in addition to the default FineCLIP backbone. Fig. 3 shows that CL-CLIP consistently improves both backbones across all three VOC splits, confirming that the category decoupling design generalizes across different CLIP representations. 
+
+Core mechanism ablation. Tab. 3 isolates the two core mechanisms: cost-volume-guided category decoupling and EWC-style drift regularization. Removing decoupling (i.e., falling back to the shared F-ViT head while keeping drift regularization) sharply reduces both plasticity and retention, confirming that drift regularization alone cannot substitute for class-specific pathways. Removing drift regularization preserves plasticity but causes severe retention collapse (mAP@P drops from 42.3 to 14.9 on Task2). Only combining both achieves a balanced trade-off. 710+10 15+5 19+1         
+
+> VOC Split
+> 45
+> 50
+> 55
+> 60
+> 65
+> 70
+> 75
+> 80
+> 85
+> mAP@0.5
+> 55.8
+> 65.9
+> 68.0
+> 64.8
+> 78.3 77.1
+> 53.4
+> 63.2
+> 68.9
+> 65.7
+> 73.1 73.2
+> mAP@Previous
+> 10+10 15+5 19+1
+> VOC Split
+> 45
+> 50
+> 55
+> 60
+> 65
+> 70
+> 75
+> 80
+> 85
+> 67.3 67.8 68.3
+> 74.7
+> 77.4 77.5
+> 64.6 64.6
+> 68.6
+> 73.4
+> 71.6
+> 73.5
+> mAP@All
+> FineCLIP Baseline
+> FineCLIP + CL-CLIP
+> FG-CLIP Baseline
+> FG-CLIP + CL-CLIP
+
+Figure 3: Generalization of CL-CLIP across CLIP backbones on PASCAL VOC (mAP@0.5). Left: previous-task classes; Right: all classes. CL-CLIP consistently improves retention and overall accuracy on both FineCLIP and FG-CLIP. Table 3: Core mechanism ablation on the 4-task MS-COCO benchmark: cost-volume decoupling and drift regularization 
+
+Components Task2 Task3 Task4 
+
+Decoupling Drift Reg. mAP@C mAP@P mAP@A mAP@C mAP@P mAP@A mAP@C mAP@P mAP@A 
+
+✓ ✓ 56.4 42.3 49.7 55.4 27.1 36.5 47.1 18.6 25.7 
+
+✓ 50.4 20.1 36.0 49.6 20.4 30.2 43.8 15.8 22.8 
+
+✓ 56.6 14.9 36.8 55.9 10.6 25.7 50.2 3.9 15.4 
+
+Structural component ablation. We evaluate architectural components on the 4-task MS-COCO benchmark (Tab. 4). Adding class aggregation back slightly improves current-class AP but severely damages old-class retention. On Task4, mAP@P falls from 18.6 to 5.4 and mAP@A drops from 25.7 to 16.5. This confirms that cross-class aggregation is harmful under missing-label supervision, as it encourages competition between annotated new classes and unannotated old classes. Removing convolutional experts and falling back to the F-ViT head (with FPN regularization re-tained) drops mAP@A to 36.0/30.2 on Task2/Task3 vs 49.7/36.5 for CL-CLIP, confirming that FPN regularization alone is insufficient without class-specific pathways. The spatial-attention-guided RPN has a more modest effect; we view it as complementary to class aggregation removal and the Multi-Expert branch. Table 4: Ablation study of proposed structure components on the 4-task MS-COCO benchmark                                                          
+
+> Modules Task1 Task2 Task3 Task4
+> class aggregation spatial -RPN conv expert mAP@C mAP@C mAP@P mAP@A mAP@C mAP@P mAP@A mAP@C mAP@P mAP@A
+> ✓✓74.2 56.4 42.3 49.7 55.4 27.1 36.5 47.1 18.6 25.7
+> ✓✓✓74.2 56.5 4.1 31.6 55.5 10.2 25.3 49.8 5.4 16.5
+> ✓69.7 50.4 20.1 36.0 49.6 20.4 30.2 43.8 15.8 22.8
+> ✓74.0 55.9 42.0 49.3 55.0 26.8 36.2 48.4 19.2 26.5
+
+Category response overlap. To examine cross-category spatial entanglement, Tab. 5 reports the Response Overlap metric. Without the orthogonality loss, overlap reaches 0.9945 because the trainable aggregation modules, optimized solely by the detection loss, converge toward a category-agnostic foreground pattern that erases the per-class separation present in the raw CLIP similarities. The orthogonality loss counteracts this by penalizing spatial co-activation, reducing overlap to 0.0017 and improving average old-class AP from 23.5 to 29.3. The class aggregation variant shows moderate overlap (0.0112) but much lower retention (Avg. mAP@P 6.6), confirming that cross-category coupling harms old-class preservation through a different mechanism. 
+
+Proposal recall of Spatial-RPN. Tab. 6 compares standard RPN, CBAM-style spatial attention [ 30 ], direct cost-volume modulation, and our residual-gated cost-volume prior on VOC 10+10. Direct cost-volume modulation obtains the highest proposal recall, suggesting that the cost-volume prior improves object coverage, but its detection accuracy is lower than the residual-gated design. Our 8Table 5: Response Overlap and average detection performance over Task2–Task4 of 4-task MS-COCO. Response Overlap is the mean squared off-diagonal Gram value of sigmoid response maps after spatial ℓ2 normalization (lower is better). 
+
+Variant Avg. mAP@P Avg. mAP@C Avg. mAP@A Response Overlap ↓
+
+w/ class aggregation 6.6 53.9 24.5 0.0112 w/o ortho loss 23.5 53.7 34.4 0.9945 Full CL-CLIP 29.3 53.0 37.3 0.0017 residual-gated prior achieves the best old-class and all-class mAP while keeping competitive recall, supporting it as a minor but complementary refinement to the main decoupling mechanism. Table 6: Proposal recall analysis for Spatial-RPN on the PASCAL VOC 10+10 setting. R@100 is computed at IoU 0.5 using top-100 RPN proposals per image. 
+
+RPN Variant mAP@P mAP@A R@100-P R@100-C R@100-A 
+
+Standard RPN 62.7 74.1 0.320 0.571 0.475 CBAM-style spatial attention 63.3 74.4 0.327 0.570 0.478 Direct cost-volume modulation 63.4 74.2 0.397 0.562 0.499 
+
+Residual-gated cost-volume prior 64.8 74.7 0.356 0.567 0.487 
+
+Auxiliary loss ablation. Tab. 11 (Appendix E) studies the auxiliary losses. Drift regularization is critical for FPN stability; combined with the orthogonality loss it yields the best overall accuracy, as the two losses complement each other in stabilizing shared features and maintaining separable cost-volume responses. 
+
+Implementation choices. Appendix C compares alternative regularization strategies and expert structures, supporting our use of EWC and convolutional experts. 
+
+5 Conclusion 
+
+We studied continual object detection from the perspective of CLIP-based open-vocabulary detec-tion. Our baseline analysis shows that the zero-shot advantage of CLIP-based detectors does not automatically translate into continual learning ability. CL-CLIP addresses this by using a CLIP-text similarity cost volume as a zero-shot spatial prior to build class-specific detection pathways, reduc-ing cross-class interference. Experiments on PASCAL VOC and MS-COCO confirm substantially improvements over the F-ViT baseline and competitive performance compared with existing COD methods, suggesting that category decoupling is a promising direction for CLIP-based continual detection. 
+
+Limitations. We report multi-seed variance on one representative split (VOC 10+10, Tab. 13); extending to all settings remains costly. Evaluation is limited to PASCAL VOC and MS-COCO; generalization to larger-scale or longer-horizon scenarios remains to be validated. The Multi-Expert RoI head introduces one expert per category, so inference FLOPs grow linearly with the number of seen classes (Appendix F). 
+
+References       
+
+> [1] Zijia An, Boyu Diao, Libo Huang, Ruiqi Liu, Zhulin An, and Yongjun Xu. Ior: Inversed objects replay for incremental object detection. In ICASSP 2025-2025 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , pages 1–5. IEEE, 2025. [2] Gaurav Bhatt, James Ross, and Leonid Sigal. Preventing catastrophic forgetting through memory networks in continuous detection. In European Conference on Computer Vision , pages 442–458. Springer, 2024. [3] Nicolas Carion, Francisco Massa, Gabriel Synnaeve, Nicolas Usunier, Alexander Kirillov, and Sergey Zagoruyko. End-to-end object detection with transformers. In European conference on computer vision ,pages 213–229. Springer, 2020.
+
+9[4] Fabio Cermelli, Antonino Geraci, Dario Fontanel, and Barbara Caputo. Modeling missing annotations for incremental learning in object detection. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 3700–3710, 2022. [5] Kai Chen, Jiaqi Wang, Jiangmiao Pang, Yuhang Cao, Yu Xiong, Xiaoxiao Li, Shuyang Sun, Wansen Feng, Ziwei Liu, Jiarui Xu, et al. Mmdetection: Open mmlab detection toolbox and benchmark. arxiv 2019. 
+
+arXiv preprint arXiv:1906.07155 , 5, 2019. [6] Seokju Cho, Heeseong Shin, Sunghwan Hong, Anurag Arnab, Paul Hongsuck Seo, and Seungryong Kim. Cat-seg: Cost aggregation for open-vocabulary semantic segmentation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 4113–4123, 2024. [7] Mark Everingham, Luc Van Gool, Christopher KI Williams, John Winn, and Andrew Zisserman. The pascal visual object classes (voc) challenge. International journal of computer vision , 88(2):303–338, 2010. [8] Tao Feng, Mang Wang, and Hangjie Yuan. Overcoming catastrophic forgetting in incremental object detection via elastic response distillation. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 9427–9436, 2022. [9] Akshita Gupta, Sanath Narayan, KJ Joseph, Salman Khan, Fahad Shahbaz Khan, and Mubarak Shah. Ow-detr: Open-world detection transformer. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 9235–9244, 2022. [10] Ziyue Huang, Yupeng He, Qingjie Liu, and Yunhong Wang. Incremental object detection with clip. arXiv preprint arXiv:2310.08815 , 2023. [11] Dong Jing, Xiaolong He, Yutian Luo, Nanyi Fei, Guoxing Yang, Wei Wei, Huiwen Zhao, and Zhiwu Lu. Fineclip: Self-distilled region-based clip for better fine-grained understanding. Advances in Neural Information Processing Systems , 37:27896–27918, 2024. [12] James Kirkpatrick, Razvan Pascanu, Neil Rabinowitz, Joel Veness, Guillaume Desjardins, Andrei A Rusu, Kieran Milan, John Quan, Tiago Ramalho, Agnieszka Grabska-Barwinska, et al. Overcoming catastrophic forgetting in neural networks. Proceedings of the national academy of sciences , 114(13):3521–3526, 2017. [13] Weicheng Kuo, Yin Cui, Xiuye Gu, AJ Piergiovanni, and Anelia Angelova. F-vlm: Open-vocabulary object detection upon frozen vision and language models. arXiv preprint arXiv:2209.15639 , 2022. [14] Liunian Harold Li, Pengchuan Zhang, Haotian Zhang, Jianwei Yang, Chunyuan Li, Yiwu Zhong, Lijuan Wang, Lu Yuan, Lei Zhang, Jenq-Neng Hwang, et al. Grounded language-image pre-training. In 
+
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 10965–10975, 2022. [15] Zhizhong Li and Derek Hoiem. Learning without forgetting. IEEE transactions on pattern analysis and machine intelligence , 40(12):2935–2947, 2017. [16] Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Dollár, and C Lawrence Zitnick. Microsoft coco: Common objects in context. In European conference on computer vision , pages 740–755. Springer, 2014. [17] Tsung-Yi Lin, Piotr Dollár, Ross Girshick, Kaiming He, Bharath Hariharan, and Serge Belongie. Feature pyramid networks for object detection. In Proceedings of the IEEE conference on computer vision and pattern recognition , pages 2117–2125, 2017. [18] Liyang Liu, Zhanghui Kuang, Yimin Chen, Jing-Hao Xue, Wenming Yang, and Wayne Zhang. Incdet: In defense of elastic weight consolidation for incremental object detection. IEEE transactions on neural networks and learning systems , 32(6):2306–2319, 2020. [19] Shilong Liu, Zhaoyang Zeng, Tianhe Ren, Feng Li, Hao Zhang, Jie Yang, Qing Jiang, Chunyuan Li, Jianwei Yang, Hang Su, et al. Grounding dino: Marrying dino with grounded pre-training for open-set object detection. In European conference on computer vision , pages 38–55. Springer, 2024. [20] Yuyang Liu, Yang Cong, Dipam Goswami, Xialei Liu, and Joost Van De Weijer. Augmented box replay: Overcoming foreground shift for incremental object detection. In Proceedings of the IEEE/CVF international conference on computer vision , pages 11367–11377, 2023. [21] Wenlong Luo, Shizhou Zhang, De Cheng, Yinghui Xing, Guoqiang Liang, Peng Wang, and Yanning Zhang. Gradient decomposition and alignment for incremental object detection. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 4486–4495, 2025. 
+
+10 [22] Adam Paszke, Sam Gross, Francisco Massa, Adam Lerer, James Bradbury, Gregory Chanan, Trevor Killeen, Zeming Lin, Natalia Gimelshein, Luca Antiga, et al. Pytorch: An imperative style, high-performance deep learning library. Advances in neural information processing systems , 32, 2019. [23] Can Peng, Kun Zhao, and Brian C Lovell. Faster ilod: Incremental learning for object detectors based on faster rcnn. Pattern recognition letters , 140:109–115, 2020. [24] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning transferable visual models from natural language supervision. In International conference on machine learning , pages 8748–8763. PMLR, 2021. [25] Sylvestre-Alvise Rebuffi, Alexander Kolesnikov, Georg Sperl, and Christoph H Lampert. icarl: Incremental classifier and representation learning. In Proceedings of the IEEE conference on Computer Vision and Pattern Recognition , pages 2001–2010, 2017. [26] Shaoqing Ren, Kaiming He, Ross Girshick, and Jian Sun. Faster r-cnn: Towards real-time object detection with region proposal networks. Advances in neural information processing systems , 28, 2015. [27] Quan Sun, Yuxin Fang, Ledell Wu, Xinlong Wang, and Yue Cao. Eva-clip: Improved training techniques for clip at scale. arXiv preprint arXiv:2303.15389 , 2023. [28] Michael Tschannen, Alexey Gritsenko, Xiao Wang, Muhammad Ferjad Naeem, Ibrahim Alabdulmohsin, Nikhil Parthasarathy, Talfan Evans, Lucas Beyer, Ye Xia, Basil Mustafa, et al. Siglip 2: Multilingual vision-language encoders with improved semantic understanding. Localization, and Dense Features , 6, 2025. [29] Xu Wang, Zilei Wang, and Zihan Lin. Gcd: Advancing vision-language models for incremental object detection via global alignment and correspondence distillation. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 39, pages 8015–8023, 2025. [30] Sanghyun Woo, Jongchan Park, Joon-Young Lee, and In So Kweon. Cbam: Convolutional block attention module. In Proceedings of the European conference on computer vision (ECCV) , pages 3–19, 2018. [31] Qirui Wu, Shizhou Zhang, De Cheng, Yinghui Xing, Di Xu, Peng Wang, and Yanning Zhang. Demystifying catastrophic forgetting in two-stage incremental object detector. arXiv preprint arXiv:2502.05540 , 2025. [32] Yuxin Wu and Kaiming He. Group normalization. In Proceedings of the European conference on computer vision (ECCV) , pages 3–19, 2018. [33] Chunyu Xie, Bin Wang, Fanjing Kong, Jincheng Li, Dawei Liang, Gengshen Zhang, Dawei Leng, and Yuhui Yin. Fg-clip: Fine-grained visual and textual alignment. arXiv preprint arXiv:2505.05071 , 2025. [34] Binbin Yang, Xinchi Deng, Han Shi, Changlin Li, Gengwei Zhang, Hang Xu, Shen Zhao, Liang Lin, and Xiaodan Liang. Continual object detection via prototypical task correlation guided gating mechanism. In 
+
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 9255–9264, 2022. [35] Dongbao Yang, Yu Zhou, Xiaopeng Hong, Aoting Zhang, Xin Wei, Linchengxi Zeng, Zhi Qiao, and Weipinng Wang. Pseudo object replay and mining for incremental object detection. In Proceedings of the 31st ACM International Conference on Multimedia , pages 153–162, 2023. [36] Huahui Yi, Wei Xu, Ziyuan Qin, Xi Chen, Xiaohu Wu, Kang Li, and Qicheng Lao. idpa: Instance decoupled prompt attention for incremental medical object detection. arXiv preprint arXiv:2506.00406 ,2025. [37] Li Yin, Juan M Perez-Rua, and Kevin J Liang. Sylph: A hypernetwork framework for incremental few-shot object detection. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition ,pages 9035–9045, 2022. [38] Hongquan Zhang, Bin-Bin Gao, Yi Zeng, Xudong Tian, Xin Tan, Zhizhong Zhang, Yanyun Qu, Jun Liu, and Yuan Xie. Learning task-aware language-image representation for class-incremental object detection. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 38, pages 7096–7104, 2024. [39] Yiwu Zhong, Jianwei Yang, Pengchuan Zhang, Chunyuan Li, Noel Codella, Liunian Harold Li, Luowei Zhou, Xiyang Dai, Lu Yuan, Yin Li, et al. Regionclip: Region-based language-image pretraining. In 
+
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 16793–16803, 2022. 
+
+11 A Baseline Results on Two-Stage Benchmarks 
+
+Tab. 7 and Tab. 8 present additional baseline pre-evaluation results across CLIP variants on two-step MS-COCO and PASCAL VOC settings, respectively. These results complement the 4-task MS-COCO analysis in Sec. 4.2 and examine whether the same forgetting pattern holds under shorter continual sequences. The results are consistent with the main text. FineCLIP generally provides stronger old-class retention and all-class accuracy than the other evaluated CLIP variants, which supports its use as the default backbone for CL-CLIP. However, all variants still show clear degradation on previously learned classes after sequential fine-tuning. This confirms that stronger open-vocabulary representations alone are insufficient for continual object detection. Table 7: Performance of various CLIP models on the two-stage MS-COCO benchmark Setting Model ViT Task1 Task2 
+
+mAP@C mAP@C mAP@P mAP@A 40+40 FineCLIP[11] ViT-B/16 57.2 46.9 17.1 32.0 FG-CLIP[33] 49.4 35.4 16.8 26.1 EVA-CLIP[27] 52.0 36.6 11.5 24.1 FineCLIP[11] ViT-L/14 65.5 56.3 34.2 45.3 FG-CLIP[33] 62.2 50.7 19.5 35.1 EVA-CLIP[27] 60.9 46.1 15.7 30.9 SigLIP2[28] So/14 55.4 42.9 12.3 27.6 SigLIP2[28] So/16 66.1 56.5 14.8 35.7 70+10 FineCLIP[11] ViT-B/16 52.7 34.8 24.1 25.5 FG-CLIP[33] 43.7 25.0 21.2 21.7 EVA-CLIP[27] 46.1 25.9 17.2 18.3 FineCLIP[11] ViT-L/14 61.1 46.6 36.9 38.1 FG-CLIP[33] 57.8 40.6 21.2 21.7 EVA-CLIP[27] 55.0 37.7 28.4 29.5 SigLIP2[28] So/14 51.1 31.7 20.3 21.8 SigLIP2[28] So/16 62.6 48.6 26.1 28.9 Table 8: Performance of various CLIP models on the two-stage PASCAL VOC benchmark Model ViT                                                                                                                   
+
+> 10+10 15+5 19+1 Task1 Task2 Task1 Task2 Task1 Task2
+> mAP@C mAP@C mAP@P mAP@A mAP@C mAP@C mAP@P mAP@A mAP@C mAP@C mAP@P mAP@A FineCLIP[11] ViT-B/16 80.2 78.8 55.8 67.3 81.4 73.4 65.9 67.8 79.5 74.3 68.0 68.3 FG-CLIP[33] 76.4 75.7 53.4 64.6 77.0 69.0 63.2 64.6 76.4 62.1 68.9 68.6 EVA-CLIP[27] 76.7 78.7 37.2 58.0 79.5 73.6 55.4 59.9 78.5 74.5 64.0 64.6 FineCLIP[11] ViT-L/14 84.2 82.8 62.0 72.4 84.3 78.6 74.2 75.3 83.4 80.9 73.3 73.6 FG-CLIP[33] 84.1 82.9 53.8 68.4 84.0 76.6 73.1 74.0 83.5 74.6 76.9 76.8 EVA-CLIP[27] 83.0 83.5 39.1 61.3 84.6 80.2 66.1 69.6 83.4 76.9 73.8 74.0 SigLIP2[28] So/14 81.7 81.9 48.2 65.1 82.1 76.5 60.9 64.8 81.3 78.3 67.8 68.3 SigLIP2[28] So/16 85.9 84.8 47.5 66.1 86.5 82.2 66.3 70.3 84.6 82.5 70.8 71.3
+
+B Implementation Details 
+
+All experiments are conducted on 4 × NVIDIA RTX 4090 GPUs. The experimental hyperparameters of our proposed method are shown in Tab. 9. Notably, with the exception of the aggregation module in CAT-Seg, Group Normalization [ 32 ] with the number of groups set to 32 is universally adopted throughout our detector head. 
+
+Task class splits. For the COCO 4-task protocol we follow the class ordering of OW-DETR [ 9 ], partitioned into four groups of 19+21+20+20 categories: Task 1 (1–19): airplane, bicycle, bird, boat, 12 Table 9: Implementation details of CL-CLIP 
+
+Parameter Value 
+
+τ 50.0 Optimizer AdamW Learning Rate 4 × 10 −4
+
+Weight Decay 0.1 Learning Rate Schedule Cosine Annealing Training Epochs 20 Warmup Epochs 4
+
+λ (drift reg. weight) 1000 Norm Cfg GroupNorm Backbone FineCLIP ViT-B/16 Batch Size (VOC / COCO) 16 / 32 Input Resolution 384 × 384 
+
+Random Seed 0bus, car, cat, cow, dog, horse, motorcycle, sheep, train, elephant, bear, zebra, giraffe, truck, person; 
+
+Task 2 (20–40): traffic light, fire hydrant, stop sign, parking meter, bench, chair, dining table, potted plant, backpack, umbrella, handbag, tie, suitcase, microwave, oven, toaster, sink, refrigerator, bed, toilet, couch; Task 3 (41–60): frisbee, skis, snowboard, sports ball, kite, baseball bat, baseball glove, skateboard, surfboard, tennis racket, banana, apple, sandwich, orange, broccoli, carrot, hot dog, pizza, donut, cake; Task 4 (61–80): laptop, mouse, remote, keyboard, cell phone, book, clock, vase, scissors, teddy bear, hair drier, toothbrush, wine glass, cup, fork, knife, spoon, bowl, tv, bottle. For PASCAL VOC, the 20 categories follow the alphabetical order: aeroplane, bicycle, bird, boat, bottle, bus, car, cat, chair, cow, dining table, dog, horse, motorbike, person, potted plant, sheep, sofa, train, tv monitor. The three splits are 10+10, 15+5, and 19+1, partitioned sequentially in this order. 
+
+C Additional Ablations on Regularization and Expert Design 
+
+Tab. 10 provides additional analysis on two implementation choices in CL-CLIP. We compare different regularization strategies for stabilizing the FPN and evaluate alternative expert structures in the Multi-Expert RoI head. For FPN stabilization, we compare EWC [ 12 ] with gradient-space constraint methods including GDA [ 21 ] and NSGP [ 31 ]. EWC penalizes updates to parameters that are important for previous tasks, while GDA and NSGP modify the optimization trajectory by constraining gradients during backpropagation. The upper part of Tab. 10 shows that EWC is more suitable for our FPN stabilizer. GDA and NSGP preserve high current-class AP, but their old-class AP drops sharply in later tasks, which leads to much lower overall accuracy. We also compare two expert structures in the Multi-Expert RoI head. The convolutional expert processes the RoI feature map with a compact convolutional residual network, while the residual MLP expert first applies average pooling and then uses a 3-layer residual MLP. The lower part of Tab. 10 shows a clear advantage for convolutional experts. This suggests that preserving local spatial structure inside each RoI is important for class-specific detection. Table 10: Ablation studies on alternative architectural design choices                                                                  
+
+> Component Methods Task1 Task2 Task3 Task4
+> mAP@C mAP@C mAP@P mAP@A mAP@C mAP@P mAP@A mAP@C mAP@P mAP@A Regularization EWC [12] 74.2 56.4 42.3 49.7 55.4 27.1 36.5 47.1 18.6 25.7 GDA [21] 74.2 55.5 1.2 29.7 55.2 2.1 19.8 49.5 2.6 14.4 NSGP [31] 74.2 57.2 9.0 34.3 56.3 5.2 22.2 49.8 1.7 13.8 Expert Type Conv Expert 74.2 56.4 42.3 49.7 55.4 27.1 36.5 47.1 18.6 25.7 Residual MLP Expert 70.2 51.1 4.1 28.8 49.8 6.3 20.8 44.0 3.2 13.4
+
+13 D Feature-Space Visualization 
+
+To qualitatively examine how the representation space changes after continual fine-tuning, we visualize the RoI features and text embeddings with t-SNE in Fig. 4. Original FineCLIP already shows moderate semantic organization, suggesting that the frozen CLIP representation provides a useful prior but insufficient separation for continual detection. After F-ViT fine-tuning, RoI features become more dispersed and entangled, and text embeddings move away from most visual clusters. In contrast, CL-CLIP forms more compact class-wise RoI clusters with clearer separation, consistent with the intended effect of per-class experts and frozen old-class experts. (a) 
+
+> Original CLIP
+> (b)
+> F-ViT Baseline
+> (c)
+> CL-CLIP (Ours)
+> Task 1 RoI
+> Task 2 RoI
+> Task 3 RoI
+> Task 4 RoI
+> Task 1 Text
+> Task 2 Text
+> Task 3 Text
+> Task 4 Text
+
+Figure 4: t-SNE visualization of RoI features and CLIP text embeddings after the 4-task MS-COCO sequence. Compared with original FineCLIP and the F-ViT baseline, CL-CLIP forms more compact and better separated RoI feature clusters, suggesting a more structured RoI-text feature space. 
+
+E Auxiliary Loss Ablation 
+
+Tab. 11 reports the full loss component ablation on the 4-task MS-COCO benchmark. Table 11: Ablation study of loss components on the 4-task MS-COCO benchmark                                                      
+
+> Losses Task1 Task2 Task3 Task4
+> mAP@C mAP@C mAP@P mAP@A mAP@C mAP@P mAP@A mAP@C mAP@P mAP@A cls+reg 74.6 57.6 5.9 33.0 56.4 4.7 21.9 49.9 4.4 15.8 cls+reg+drift 74.6 56.1 29.1 43.3 55.5 23.2 34.0 49.5 18.2 26.0
+> cls+reg+ortho 74.2 56.6 14.9 36.8 55.9 10.6 25.7 50.2 3.9 15.4 cls+reg+ortho+drift 74.2 56.4 42.3 49.7 55.4 27.1 36.5 47.1 18.6 25.7
+
+F Additional Experiments 
+
+Stricter evaluation metric. To verify that the improvements are not limited to mAP@0.5, we report the stricter COCO-standard mAP@[.5:.95] under the same 4-task protocol. Tab. 12 shows that CL-CLIP consistently outperforms both IOR and MMA on overall accuracy (mAP@A) at every stage, confirming that the gains transfer to the more demanding localization threshold. Table 12: 4-task MS-COCO results under the strict mAP@[.5:.95] metric                                            
+
+> Method Task1 Task2 Task3 Task4
+> mAP@C mAP@C mAP@P mAP@A mAP@C mAP@P mAP@A mAP@C mAP@P mAP@A MMA [4] 37.5 12.9 31.7 21.9 4.3 8.2 6.9 3.5 4.1 3.9 IOR [1] 38.7 20.5 30.5 25.3 23.8 4.8 11.1 24.0 1.4 7.0 CL-CLIP (Ours) 48.1 35.6 17.3 26.2 32.7 13.4 19.8 29.1 9.3 14.3
+
+Efficiency analysis. Fig. 5 compares the inference cost of CL-CLIP and the F-ViT baseline on the VOC 10+10 setting. CL-CLIP has more total parameters (177.48M →179.50M vs. baseline 107.26M) due to the per-category expert heads, with a slight increase as new experts are added. However, 14 CL-CLIP achieves lower FLOPs than the baseline (244.45 G vs. 316.24 G at Task 1) because the cost-volume pathway is computationally lighter. As the number of seen categories grows, FLOPs increase (294.48 G at Task 2) but remain below the baseline in this 20-class setting. On larger-scale benchmarks with more categories (e.g., 80-class COCO), FLOPs grow proportionally with the number of seen-category experts, which could be addressed in future work through expert sharing or pruning strategies. Task 1 Task 2      
+
+> 0
+> 50
+> 100
+> 150
+> 200
+> Parameters (M)
+> 107.3 107.3
+> 177.5 179.5
+> Total Parameters
+> Task 1 Task 2
+> 0
+> 50
+> 100
+> 150
+> 200
+> 250
+> 300
+> 350
+> 400
+> GFLOPs
+> 316.2 316.2
+> 244.4
+> 294.5
+> FLOPs
+> Baseline CL-CLIP
+
+Figure 5: Inference efficiency on VOC 10+10. Params counts parameters activated during the forward pass. CL-CLIP achieves lower FLOPs than the baseline due to the lighter cost-volume pathway, with FLOPs growing moderately as more category experts become active. 
+
+Multi-seed variance. To confirm reproducibility, we run CL-CLIP on the VOC 10+10 split with three random seeds. Tab. 13 reports per-seed results and the mean ±std. The low variance indicates that our method is stable across different initializations. Table 13: Multi-seed results on PASCAL VOC 10+10 (mAP@0.5) 
+
+Seed Task1 Task2 
+
+mAP@C mAP@C mAP@P mAP@A 0 86.2 84.5 64.8 74.7 1 86.4 84.8 63.7 74.3 2 86.4 84.7 64.9 74.8 Mean ±Std 86.3 ±0.1 84.7 ±0.2 64.5 ±0.7 74.6 ±0.3 15 NeurIPS Paper Checklist 
+
+1. Claims 
+
+Question: Do the main claims made in the abstract and introduction accurately reflect the paper’s contributions and scope? Answer: [Yes] Justification: The abstract and introduction clearly state that CL-CLIP achieves competitive performance with existing continual object detectors and substantially improves the F-ViT baseline. These claims are directly supported by experimental results on PASCAL VOC and MS-COCO (Sec. 4). The paper also includes a Limitations paragraph discussing computational overhead of the per-expert design. Guidelines: • The answer [N/A] means that the abstract and introduction do not include the claims made in the paper. • The abstract and/or introduction should clearly state the claims made, including the contributions made in the paper and important assumptions and limitations. A [No] or [N/A] answer to this question will not be perceived well by the reviewers. • The claims made should match theoretical and experimental results, and reflect how much the results can be expected to generalize to other settings. • It is fine to include aspirational goals as motivation as long as it is clear that these goals are not attained by the paper. 2. Limitations 
+
+Question: Does the paper discuss the limitations of the work performed by the authors? Answer: [Yes] Justification: A dedicated Limitations paragraph at the end of Sec. 4 discusses four aspects: (1) single-seed evaluation without variance reporting, (2) evaluation scope limited to VOC and COCO, (3) dependence on CLIP text-image alignment quality, and (4) linear growth of inference cost with the number of seen categories (detailed in Appendix. F). Guidelines: • The answer [N/A] means that the paper has no limitation while the answer [No] means that the paper has limitations, but those are not discussed in the paper. • The authors are encouraged to create a separate “Limitations” section in their paper. • The paper should point out any strong assumptions and how robust the results are to violations of these assumptions (e.g., independence assumptions, noiseless settings, model well-specification, asymptotic approximations only holding locally). The authors should reflect on how these assumptions might be violated in practice and what the implications would be. • The authors should reflect on the scope of the claims made, e.g., if the approach was only tested on a few datasets or with a few runs. In general, empirical results often depend on implicit assumptions, which should be articulated. • The authors should reflect on the factors that influence the performance of the approach. For example, a facial recognition algorithm may perform poorly when image resolution is low or images are taken in low lighting. Or a speech-to-text system might not be used reliably to provide closed captions for online lectures because it fails to handle technical jargon. • The authors should discuss the computational efficiency of the proposed algorithms and how they scale with dataset size. • If applicable, the authors should discuss possible limitations of their approach to address problems of privacy and fairness. • While the authors might fear that complete honesty about limitations might be used by reviewers as grounds for rejection, a worse outcome might be that reviewers discover limitations that aren’t acknowledged in the paper. The authors should use their best judgment and recognize that individual actions in favor of transparency play an impor-tant role in developing norms that preserve the integrity of the community. Reviewers will be specifically instructed to not penalize honesty concerning limitations. 16 3. Theory assumptions and proofs 
+
+Question: For each theoretical result, does the paper provide the full set of assumptions and a complete (and correct) proof? Answer: [N/A] Justification: This paper does not include theoretical results; all contributions are empirical. Guidelines: • The answer [N/A] means that the paper does not include theoretical results. • All the theorems, formulas, and proofs in the paper should be numbered and cross-referenced. • All assumptions should be clearly stated or referenced in the statement of any theorems. • The proofs can either appear in the main paper or the supplemental material, but if they appear in the supplemental material, the authors are encouraged to provide a short proof sketch to provide intuition. • Inversely, any informal proof provided in the core of the paper should be complemented by formal proofs provided in appendix or supplemental material. • Theorems and Lemmas that the proof relies upon should be properly referenced. 4. Experimental result reproducibility 
+
+Question: Does the paper fully disclose all the information needed to reproduce the main ex-perimental results of the paper to the extent that it affects the main claims and/or conclusions of the paper (regardless of whether the code and data are provided or not)? Answer: [Yes] Justification: The full architecture is described with equations in Sec. 4. Appendix. B provides a detailed implementation table (optimizer, learning rate, batch size, training epochs, etc.) and the exact category splits for all task sequences on both MS-COCO and PASCAL VOC. The frozen/trainable boundary of each module is explicitly stated in the methodology. Guidelines: • The answer [N/A] means that the paper does not include experiments. • If the paper includes experiments, a [No] answer to this question will not be perceived well by the reviewers: Making the paper reproducible is important, regardless of whether the code and data are provided or not. • If the contribution is a dataset and/or model, the authors should describe the steps taken to make their results reproducible or verifiable. • Depending on the contribution, reproducibility can be accomplished in various ways. For example, if the contribution is a novel architecture, describing the architecture fully might suffice, or if the contribution is a specific model and empirical evaluation, it may be necessary to either make it possible for others to replicate the model with the same dataset, or provide access to the model. In general. releasing code and data is often one good way to accomplish this, but reproducibility can also be provided via detailed instructions for how to replicate the results, access to a hosted model (e.g., in the case of a large language model), releasing of a model checkpoint, or other means that are appropriate to the research performed. • While NeurIPS does not require releasing code, the conference does require all submis-sions to provide some reasonable avenue for reproducibility, which may depend on the nature of the contribution. For example (a) If the contribution is primarily a new algorithm, the paper should make it clear how to reproduce that algorithm. (b) If the contribution is primarily a new model architecture, the paper should describe the architecture clearly and fully. (c) If the contribution is a new model (e.g., a large language model), then there should either be a way to access this model for reproducing the results or a way to reproduce the model (e.g., with an open-source dataset or instructions for how to construct the dataset). 17 (d) We recognize that reproducibility may be tricky in some cases, in which case authors are welcome to describe the particular way they provide for reproducibility. In the case of closed-source models, it may be that access to the model is limited in some way (e.g., to registered users), but it should be possible for other researchers to have some path to reproducing or verifying the results. 5. Open access to data and code 
+
+Question: Does the paper provide open access to the data and code, with sufficient instruc-tions to faithfully reproduce the main experimental results, as described in supplemental material? Answer: [No] Justification: The code is not released at submission time as it is still being cleaned and organized. We will open-source the full codebase upon acceptance. Guidelines: • The answer [N/A] means that paper does not include experiments requiring code. • Please see the NeurIPS code and data submission guidelines ( https://neurips.cc/ public/guides/CodeSubmissionPolicy ) for more details. • While we encourage the release of code and data, we understand that this might not be possible, so [No] is an acceptable answer. Papers cannot be rejected simply for not including code, unless this is central to the contribution (e.g., for a new open-source benchmark). • The instructions should contain the exact command and environment needed to run to reproduce the results. See the NeurIPS code and data submission guidelines ( https: //neurips.cc/public/guides/CodeSubmissionPolicy ) for more details. • The authors should provide instructions on data access and preparation, including how to access the raw data, preprocessed data, intermediate data, and generated data, etc. • The authors should provide scripts to reproduce all experimental results for the new proposed method and baselines. If only a subset of experiments are reproducible, they should state which ones are omitted from the script and why. • At submission time, to preserve anonymity, the authors should release anonymized versions (if applicable). • Providing as much information as possible in supplemental material (appended to the paper) is recommended, but including URLs to data and code is permitted. 6. Experimental setting/details 
+
+Question: Does the paper specify all the training and test details (e.g., data splits, hyperpa-rameters, how they were chosen, type of optimizer) necessary to understand the results? Answer: [Yes] Justification: All training details (optimizer, learning rate schedule, batch size, number of epochs, input resolution, loss weights) and evaluation protocol (task splits, metrics) are specified in Appendix. B. Data splits for both MS-COCO and PASCAL VOC are listed explicitly. Guidelines: • The answer [N/A] means that the paper does not include experiments. • The experimental setting should be presented in the core of the paper to a level of detail that is necessary to appreciate the results and make sense of them. • The full details can be provided either with the code, in appendix, or as supplemental material. 7. Experiment statistical significance 
+
+Question: Does the paper report error bars suitably and correctly defined or other appropriate information about the statistical significance of the experiments? Answer: [Yes] Justification: We report mean ±std over 3 random seeds on the VOC 10+10 setting (Tab. 13 in Appendix A). The low variance confirms reproducibility of the main claims. 18 Guidelines: • The answer [N/A] means that the paper does not include experiments. • The authors should answer [Yes] if the results are accompanied by error bars, confidence intervals, or statistical significance tests, at least for the experiments that support the main claims of the paper. • The factors of variability that the error bars are capturing should be clearly stated (for example, train/test split, initialization, random drawing of some parameter, or overall run with given experimental conditions). • The method for calculating the error bars should be explained (closed form formula, call to a library function, bootstrap, etc.) • The assumptions made should be given (e.g., Normally distributed errors). • It should be clear whether the error bar is the standard deviation or the standard error of the mean. • It is OK to report 1-sigma error bars, but one should state it. The authors should preferably report a 2-sigma error bar than state that they have a 96% CI, if the hypothesis of Normality of errors is not verified. • For asymmetric distributions, the authors should be careful not to show in tables or figures symmetric error bars that would yield results that are out of range (e.g., negative error rates). • If error bars are reported in tables or plots, the authors should explain in the text how they were calculated and reference the corresponding figures or tables in the text. 8. Experiments compute resources 
+
+Question: For each experiment, does the paper provide sufficient information on the com-puter resources (type of compute workers, memory, time of execution) needed to reproduce the experiments? Answer: [Yes] Justification: All experiments are conducted on 4 × NVIDIA RTX 4090 GPUs. Hardware details are reported in Appendix. B. Guidelines: • The answer [N/A] means that the paper does not include experiments. • The paper should indicate the type of compute workers CPU or GPU, internal cluster, or cloud provider, including relevant memory and storage. • The paper should provide the amount of compute required for each of the individual experimental runs as well as estimate the total compute. • The paper should disclose whether the full research project required more compute than the experiments reported in the paper (e.g., preliminary or failed experiments that didn’t make it into the paper). 9. Code of ethics 
+
+Question: Does the research conducted in the paper conform, in every respect, with the NeurIPS Code of Ethics https://neurips.cc/public/EthicsGuidelines ?Answer: [Yes] Justification: This research uses only publicly available benchmark datasets (MS-COCO and PASCAL VOC) and does not involve human subject, private data, or potentially harmful applications. Guidelines: • The answer [N/A] means that the authors have not reviewed the NeurIPS Code of Ethics. • If the authors answer [No], they should explain the special circumstances that require a deviation from the Code of Ethics. • The authors should make sure to preserve anonymity (e.g., if there is a special consid-eration due to laws or regulations in their jurisdiction). 10. Broader impacts 
+
+19 Question: Does the paper discuss both potential positive societal impacts and negative societal impacts of the work performed? Answer: [N/A] Justification: This work is foundational research on continual object detection using public benchmarks. It does not target any specific real-world deployment scenario and has no direct path to negative societal applications such as surveillance or discrimination. Guidelines: • The answer [N/A] means that there is no societal impact of the work performed. • If the authors answer [N/A] or [No], they should explain why their work has no societal impact or why the paper does not address societal impact. • Examples of negative societal impacts include potential malicious or unintended uses (e.g., disinformation, generating fake profiles, surveillance), fairness considerations (e.g., deployment of technologies that could make decisions that unfairly impact specific groups), privacy considerations, and security considerations. • The conference expects that many papers will be foundational research and not tied to particular applications, let alone deployments. However, if there is a direct path to any negative applications, the authors should point it out. For example, it is legitimate to point out that an improvement in the quality of generative models could be used to generate Deepfakes for disinformation. On the other hand, it is not needed to point out that a generic algorithm for optimizing neural networks could enable people to train models that generate Deepfakes faster. • The authors should consider possible harms that could arise when the technology is being used as intended and functioning correctly, harms that could arise when the technology is being used as intended but gives incorrect results, and harms following from (intentional or unintentional) misuse of the technology. • If there are negative societal impacts, the authors could also discuss possible mitigation strategies (e.g., gated release of models, providing defenses in addition to attacks, mechanisms for monitoring misuse, mechanisms to monitor how a system learns from feedback over time, improving the efficiency and accessibility of ML). 11. Safeguards 
+
+Question: Does the paper describe safeguards that have been put in place for responsible release of data or models that have a high risk for misuse (e.g., pre-trained language models, image generators, or scraped datasets)? Answer: [N/A] Justification: This paper does not release pre-trained models or datasets that pose a high risk of misuse. Guidelines: • The answer [N/A] means that the paper poses no such risks. • Released models that have a high risk for misuse or dual-use should be released with necessary safeguards to allow for controlled use of the model, for example by requiring that users adhere to usage guidelines or restrictions to access the model or implementing safety filters. • Datasets that have been scraped from the Internet could pose safety risks. The authors should describe how they avoided releasing unsafe images. • We recognize that providing effective safeguards is challenging, and many papers do not require this, but we encourage authors to take this into account and make a best faith effort. 12. Licenses for existing assets 
+
+Question: Are the creators or original owners of assets (e.g., code, data, models), used in the paper, properly credited and are the license and terms of use explicitly mentioned and properly respected? Answer: [Yes] 20 Justification: All datasets (MS-COCO, PASCAL VOC) and pre-trained models (CLIP) are properly cited with their original publications. MS-COCO is released under CC BY 4.0 license, and PASCAL VOC is publicly available for research use. Guidelines: • The answer [N/A] means that the paper does not use existing assets. • The authors should cite the original paper that produced the code package or dataset. • The authors should state which version of the asset is used and, if possible, include a URL. • The name of the license (e.g., CC-BY 4.0) should be included for each asset. • For scraped data from a particular source (e.g., website), the copyright and terms of service of that source should be provided. • If assets are released, the license, copyright information, and terms of use in the package should be provided. For popular datasets, paperswithcode.com/datasets 
+
+has curated licenses for some datasets. Their licensing guide can help determine the license of a dataset. • For existing datasets that are re-packaged, both the original license and the license of the derived asset (if it has changed) should be provided. • If this information is not available online, the authors are encouraged to reach out to the asset’s creators. 13. New assets 
+
+Question: Are new assets introduced in the paper well documented and is the documentation provided alongside the assets? Answer: [N/A] Justification: This paper does not release new datasets, models, or code packages. Guidelines: • The answer [N/A] means that the paper does not release new assets. • Researchers should communicate the details of the dataset/code/model as part of their submissions via structured templates. This includes details about training, license, limitations, etc. • The paper should discuss whether and how consent was obtained from people whose asset is used. • At submission time, remember to anonymize your assets (if applicable). You can either create an anonymized URL or include an anonymized zip file. 14. Crowdsourcing and research with human subjects 
+
+Question: For crowdsourcing experiments and research with human subjects, does the paper include the full text of instructions given to participants and screenshots, if applicable, as well as details about compensation (if any)? Answer: [N/A] Justification: This paper does not involve crowdsourcing nor research with human subjects. Guidelines: • The answer [N/A] means that the paper does not involve crowdsourcing nor research with human subjects. • Including this information in the supplemental material is fine, but if the main contribu-tion of the paper involves human subjects, then as much detail as possible should be included in the main paper. • According to the NeurIPS Code of Ethics, workers involved in data collection, curation, or other labor should be paid at least the minimum wage in the country of the data collector. 15. Institutional review board (IRB) approvals or equivalent for research with human subjects 
+
+21 Question: Does the paper describe potential risks incurred by study participants, whether such risks were disclosed to the subjects, and whether Institutional Review Board (IRB) approvals (or an equivalent approval/review based on the requirements of your country or institution) were obtained? Answer: [N/A] Justification: This paper does not involve crowdsourcing nor research with human subjects. Guidelines: • The answer [N/A] means that the paper does not involve crowdsourcing nor research with human subjects. • Depending on the country in which research is conducted, IRB approval (or equivalent) may be required for any human subjects research. If you obtained IRB approval, you should clearly state this in the paper. • We recognize that the procedures for this may vary significantly between institutions and locations, and we expect authors to adhere to the NeurIPS Code of Ethics and the guidelines for their institution. • For initial submissions, do not include any information that would break anonymity (if applicable), such as the institution conducting the review. 16. Declaration of LLM usage 
+
+Question: Does the paper describe the usage of LLMs if it is an important, original, or non-standard component of the core methods in this research? Note that if the LLM is used only for writing, editing, or formatting purposes and does not impact the core methodology, scientific rigor, or originality of the research, declaration is not required. Answer: [N/A] Justification: The core methodology does not involve LLMs as any component. LLMs were only-used for writing assistance, which does not require declaration per NeurIPS policy. Guidelines: • The answer [N/A] means that the core method development in this research does not involve LLMs as any important, original, or non-standard components. • Please refer to our LLM policy in the NeurIPS handbook for what should or should not be described. 22

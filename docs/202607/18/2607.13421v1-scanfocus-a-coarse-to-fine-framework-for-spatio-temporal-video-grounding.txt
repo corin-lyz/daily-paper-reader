@@ -1,0 +1,594 @@
+Title: ScanFocus: A Coarse-to-Fine Framework for Spatio-Temporal Video Grounding
+
+URL Source: https://arxiv.org/pdf/2607.13421v1
+
+Published Time: Thu, 16 Jul 2026 01:02:37 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+# ScanFocus: A Coarse-to-Fine Framework for Spatio-Temporal Video Grounding 
+
+Kai Chen ∗ , Ming Dai ∗ , Wenxuan Cheng , and Wankou Yang †
+
+Southeast University 
+
+Abstract. Spatio-Temporal Video Grounding (STVG) aims to retrieve the visual trajectory of a specific object from a video stream as described by a natural language expression. However, most advanced methods struggle to balance global context modeling with precise boundary lo-calization. Due to the prohibitive computational costs of processing long videos, these approaches typically resort to low-rate temporal downsam-pling and implicit motion modeling. This inevitably suppresses high-frequency boundary cues and neglects the explicit inter-frame depen-dencies required for precise boundary delineation. To address these lim-itations, we present ScanFocus , a novel coarse-to-fine framework that decouples the STVG task into a global spatio-temporal scan and a local boundary focus. Specifically, we utilize a unified vision-language fusion encoder combined with a lightweight Deformable Semantic-Motion Fu-sion module to efficiently align multimodal features and generate coarse proposals. To recover the suppressed fine-grained details, we introduce the Semantic-Guided Temporal Aggregator (SGTA) in the refinement stage. By densely sampling around coarse boundaries, SGTA explicitly models short-term temporal interactions under semantic guidance, cap-turing rapid motion changes for precise timestamp regression. Extensive experiments on three widely used benchmarks demonstrate the perfor-mance superiority of our proposed method over previous approaches. Code will be released at https://github.com/TenMinutes209/ScanFocus .
+
+Keywords: Spatio-Temporal Video Grounding · Coarse-to-fine · Multi-modal Fusion 
+
+## 1 Introduction 
+
+The objective of Spatio-Temporal Video Grounding [59] is to retrieve the visual trajectory of a specific object from a video stream as described by a natural language expression. This dual-domain localization task demands not only robust spatial object detection but also precise temporal boundary delineation, making it a sophisticated frontier for evaluating cross-modal reasoning capabilities in dynamic environments.  
+
+> ⋆
+
+Equal contribution.  
+
+> †
+
+Corresponding author. arXiv:2607.13421v1 [cs.CV] 15 Jul 2026 2 K. Chen et al. (b)  ScanFocus  (Ours)  
+
+> (a) Existing methods with ambiguous boundary
+> Video
+> 0
+> 8
+> 16
+> 484
+> 492
+> 500
+> …
+> Downsampled Frames
+> Model
+> …
+> Interval: [164, 367]
+> …
+> GT Act: [159, 376]
+
+√  
+
+> Local Boundary Focus
+> Refine: [160, 376]
+> …
+> Text : there is a dog gray biting a toy on the floor.
+> 0
+> 8
+> 16
+> 484
+> 492
+> 500
+> …
+> Sparse Downsampled
+> Coarse Model
+> … 375
+> Global ST Scan
+> Coarse: [164, 367]
+> 𝑓 𝑐
+> 𝑓 𝑐
+> Dense Sampled Frames
+> Dense Bound.
+> Sampling
+> Refine Model
+> 164 160 168
+
+…148  … 176   
+
+> 367 371 363
+
+… 380 
+
+…351  
+
+> 𝑓 𝑟
+> 156
+> 164
+> 172
+> 367
+> 375
+> `
+> 383
+> 160
+> 159
+> 161
+> 375
+> 376
+> 377
+> 164
+> 172
+> 156 367
+> 383
+> 156
+> 160
+> 164
+> 371
+> 376
+> 380
+
+Fig. 1: Comparison of temporal boundary localization paradigms. (a) Existing Transformer-based methods often produce ambiguous boundaries due to the suppres-sion of high-frequency temporal cues caused by global downsampling. (b) Our proposed method adopts a coarse-to-fine framework that first generates a coarse interval at a low frame rate, followed by boundary dense sampling to recover fine-grained details for precise localization. 
+
+Recently, capitalizing on the powerful attention mechanisms and compact pipelines of Transformers [44], researchers have introduced many Transformer-based architectures to address this challenge, achieving unprecedented results. By leveraging sophisticated encoder-decoders to comprehensively fuse visual and linguistic features, these methods [19,20,26,33,40,53] have significantly promoted the synergistic recognition of multimodal information and established new state-of-the-art (SOTA) performance in spatio-temporal alignment. Despite these advances, existing Transformer-based STVG methods are in-herently limited by the suppression of high-frequency cues . Due to the prohibitive computational costs of processing long video sequences, existing ap-proaches [19, 20, 26, 53] typically resort to low-rate temporal subsampling de-signed for global semantic alignment. Consequently, high-frequency temporal boundary cues are discarded, and critical frames corresponding to the ground-truth boundaries are often entirely skipped during sampling. This physically prevents the model from accessing exact boundary features, leading to tempo-rally ambiguous predictions, as visually explicated in Fig. 1(a). This ambiguity is further exacerbated by a lack of explicit temporal mod-eling . To maintain efficiency under global modeling, current methods primarily focus on frame-level cross-modal interaction—fusing appearance, motion, and linguistic features within each individual frame. They rely heavily on motion features implicitly encoded by the backbone, lacking a dedicated mechanism to capture the fine-grained temporal dependencies between frames for precise boundary delineation. Moreover, forcing the encoder to simultaneously accom-modate multi-modal features under the static MDETR [27] paradigm creates a ScanFocus: A Coarse-to-Fine Framework for STVG 3
+
+significant optimization bottleneck. This overloaded fusion traps the model in suboptimal solutions, limiting high-precision temporal localization. m_vIoU vIoU@0.3 vIoU@0.5 
+
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Performance (%)
+> 41.8
+> 67.5
+> 42.2
+> 73.7
+> 94.0
+> 86.9
+> Oracle Experiment on HCSTVG-v1
+> Full Model
+> GT Time (Oracle)
+
+Fig. 2: Oracle Experiment on HCSTVG-v1. Using GT timestamps instead of predicted intervals substantially improves performance, identifying tempo-ral localization as the main bottleneck. 
+
+To empirically validate this tem-poral localization bottleneck , we conduct an oracle analysis on the HC-STVGv1 dataset (for other datasets, please kindly refer to Supplementary Material). As illustrated in Fig. 2, we compare our full model’s pre-dictions against an Oracle setting where the spatial tube sequences are evaluated using Ground Truth (GT) timestamps. We observe a stagger-ing performance leap: for instance, the vIoU@0.3 surges from 67.5% to 94.0%, and the vIoU@0.5 jumps from 42.2% to 86.9%. This substantial gap demonstrates that our framework al-ready possesses highly accurate spa-tial grounding capabilities, confirming that the primary constraint on STVG is the temporal ambiguity. To address these limitations, in this paper, we introduce ScanFocus , a novel coarse-to-fine framework that decouples STVG into a global spatio-temporal scan and a local boundary focus. As illustrated in Fig. 1(b), mirroring the hu-man visual strategy of global scanning followed by local scrutiny, our framework integrates sparse global retrieval with dense boundary refinement. This design effectively recovers suppressed high-frequency cues while establishing explicit inter-frame dependencies for precise temporal delineation. Specifically, we first utilize a unified vision-language fusion encoder combined with a Deformable Semantic-Motion Fusion encoder [63] to efficiently align multimodal features, followed by dual DETR-style decoders [9] to generate spatial tubes and coarse temporal intervals, respectively. Furthermore, to capture the high-frequency cues suppressed in the global scan, we introduce a Local Boundary Focus stage. Here, we perform dense boundary sampling around the predicted coarse boundaries and employ a Semantic-Guided Temporal Aggregator module to explicitly model short-term temporal dependencies within local windows. As a result, we recover the boundary details and refine the coarse proposals into precise start-end times-tamps through the refine decoder. To sum up, our contributions include: 
+
+– We propose ScanFocus , a coarse-to-fine framework that decouples STVG into a global spatio-temporal scan and a local boundary focus. This archi-tecture effectively mitigates the suppression of high-frequency cues in global modeling by integrating sparse retrieval with dense boundary refinement. 
+
+– To resolve the lack of explicit inter-frame dependencies in existing meth-ods, we introduce the Semantic-Guided Temporal Aggregator within 4 K. Chen et al. 
+
+the refinement stage. This module explicitly models short-term temporal interactions within densely sampled boundary windows, enabling precise re-gression of start and end timestamps. 
+
+– We conduct extensive experiments on three widely used benchmarks to demonstrate the performance superiority of our proposed method over pre-vious SOTA approaches, validating the effectiveness of our strategy. 
+
+## 2 Related Work 
+
+2.1 Spatio-Temporal Video Grounding 
+
+Spatio-Temporal Video Grounding [59] aims to precisely localize a target of in-terest both spatially and temporally within an untrimmed video sequence, based on a given natural language description. Existing STVG methodologies have pri-marily evolved through several distinct paradigms. Early approaches [42, 58, 59] typically adopted a two-stage strategy, which first leveraged pre-trained object detectors to generate a redundant set of region proposals and subsequently se-lected the optimal candidate that best aligns with the textual query. However, these methods are often constrained by the quality of the external detector and suffer from high computational overhead. To mitigate these limitations, sub-sequent advancements [19, 20, 26, 33, 40, 50, 53] have shifted toward a unified one-stage framework. Inspired by the success of Transformers [44], these meth-ods employ an end-to-end encoder-decoder architecture to directly regress the spatio-temporal tubelets without relying on any pre-defined proposals. By facili-tating tighter cross-modal interaction and eliminating the heuristic proposal gen-eration process, this paradigm has established new state-of-the-art performance. Most recently, an emerging paradigm has integrated Multimodal Large Language Models (MLLMs) [1,4,22,23,62] into STVG [21,30,45,60], harnessing their pro-found reasoning capabilities to further enhance fine-grained spatio-temporal un-derstanding. However, due to the inherent ambiguity of temporal boundaries and the inevitable suppression of high-frequency boundary cues caused by temporal downsampling, existing models frequently struggle with imprecise temporal lo-calization. To address these challenges, we propose a coarse-to-fine strategy to improve the temporal grounding performance. 
+
+2.2 Vision-Language Modeling 
+
+The paradigm of Vision-Language Modeling (VLM) is designed to bridge the se-mantic gap between the visual and textual modalities, enabling a unified under-standing of heterogeneous data. Recently, it has been widely adopted in the field of visual grounding [10, 12–15, 27, 28, 31, 61], visual question answering [3, 25, 51], visual captioning [18, 38, 39, 54], video temporal grounding [2, 8, 16, 17, 29, 32, 34– 36,52,56], etc. In STVG, current mainstream frameworks [19,20,53] heavily rely on the MDETR [27] pipeline for cross-modal fusion. Despite their success, these methods typically struggle with an optimization bottleneck caused by forcing a ScanFocus: A Coarse-to-Fine Framework for STVG 5
+
+spatially-aligned encoder to simultaneously model both temporal dynamics and motion cues. Such a paradigm fails to explicitly decouple the disparate feature spaces required for spatial and temporal grounding, leading to sub-optimal per-formance due to the compromised representation capability of the overloaded multimodal encoder. In contrast, our approach eliminates the reliance on this complex encoder-decoder architecture. By leveraging a vision-language fusion encoder [5, 48] to establish robust vision-language alignments, we reformulate the intricate tri-modal interaction into a streamlined cross-modal fusion task. 
+
+2.3 Video Temporal Grounding 
+
+The objective of video temporal grounding (VTG) [2] is to establish a fine-grained alignment between linguistic descriptions and their corresponding tem-poral segments in untrimmed videos. VTG has been extensively studied through its two sub-tasks: moment retrieval (MR) and highlight detection (HD). Early methodologies [17, 52, 56] primarily relied on proposal-based paradigms, which first generated candidate segments via sliding windows or anchor mechanisms and then performed cross-modal ranking. While effective, these approaches of-ten suffer from high redundancy and struggle with coarse temporal boundaries due to their reliance on predefined heuristics. In contrast, recent advancements have predominantly shifted toward end-to-end DETR-based frameworks [6,7,11, 24,29,32,35–37,46,57]. By utilizing learnable queries to directly regress temporal boundaries, these methods eliminate the need for hand-crafted proposals and fa-cilitate global cross-modal reasoning. Subsequent studies, such as R2-Tuning [34] and FlashVTG [8], further refined this paradigm by incorporating multi-scale temporal modeling to capture events of diverse durations. However, STVG [59] presents a more formidable challenge than VTG, as it extends the grounding task from a single temporal axis to a joint spatio-temporal manifold, requiring a synergistic understanding of both object appearance and motion evolution. 
+
+## 3 Method 
+
+In this section, we first formulate the spatio-temporal video grounding task and review the prevalent MDETR-based framework in Sec. 3.1. In Sec. 3.2, we give an overview of our framework. Then, we detail the Global Spatio-Temporal Scan in Sec. 3.3 and the Local Boundary Focus in Sec. 3.4. In Sec. 3.5, we describe the training objectives and optimization strategy. 
+
+3.1 Preliminary Formulation. Given a video sequence V ∈ RT ×H×W ×3 and a natural language query D, the goal of STVG is to precisely output a spatio-temporal tube (a bounding box sequence with temporal boundaries) grounding D in V .6 K. Chen et al. Temporal  
+
+> Decoder
+> Spatial
+> Decoder
+> 𝐹 𝑎
+> ′
+> 𝐹 𝑚
+> ′
+> 𝐹 𝑐 ′
+> 𝐹 𝑡
+> ′
+> Coarse: Global ST Scan Refine: Local Boundary Focus
+> Text Input:
+> There is a cat
+> pulling a toy on
+> the blanket.
+> [𝑡 𝑐𝑠 , 𝑡 𝑐𝑒 ]
+> Multi -Modal Fusion
+> Dense ST/ED Encoding
+> Semantic -Guided
+> Temporal Aggregator
+> 𝐹 𝑟𝑠
+> 𝐹 𝑟 𝑒
+> 𝐹 𝑟𝑠
+> ′
+> 𝐹 𝑟 𝑒
+> ′
+> Multi -Modal Fusion
+> 𝑄 𝑟𝑠
+> …… …
+
+0 1 2
+
+0
+
+2
+
+4                        
+
+> …
+> Uniform Sampling
+> Sparse Frames
+> Dense
+> Boundary Sampling
+> …… …
+> 𝑡 𝑐𝑠 𝑡 𝑐𝑠 −1𝑡 𝑐𝑠 +1𝑡 𝑐𝑒 −1𝑡 𝑐 𝑒 −2𝑡 𝑐𝑒 +1
+> 𝑉 𝑟𝑠 𝑉 𝑟𝑒
+> 𝐶𝑜𝑎𝑟𝑠𝑒 𝐼𝑛𝑡𝑒𝑟𝑣𝑎𝑙 :𝑡 𝑐𝑠 ,𝑡 𝑐𝑒
+> 012
+> 𝑉 𝑟𝑠
+> 𝑉 𝑟𝑒
+> 𝑇 𝑇 −1𝑇 −2
+> 𝐵 𝑐
+> 𝑉
+> 𝑉 𝑐
+> Dense Boundary Sampling
+> 1. Coarse: Global ST Glimpse
+
+Refine: Local Boundary Gaze   
+
+> 2. Coarse: Sparse Global Probing
+> Refine: Dense Boundary Pinpoint
+> 𝑡 𝑐𝑠
+> Dense Boundary Sampling
+> 𝑡 𝑐𝑒 𝑡 𝑐𝑠 +2
+> Refine Decoder
+> 𝑄 𝑟𝑒
+> …
+> [𝑡 𝑐𝑠 , 𝑡 𝑐𝑒 ]
+> 𝑡 𝑟𝑒
+> 𝑡 𝑟𝑠
+
+there_is_a_cat_pulling_a_toy_on_the_blanket 
+
+cc_132509 
+
+1424 
+
+11992 
+
+30063 
+
+31538 
+
+33321 
+
+42568 
+
+59484           
+
+> …
+> …… …
+> 𝐷
+> 𝐷
+> 𝑃 𝑠𝑡
+> 𝑃 𝑒𝑑
+> 21 22 23 24 95 96 97 98 125 126 127
+> 126
+> 0.8
+> 0.4
+> 0.1
+> 0.1
+> 0.4
+> 0.8
+
+Fig. 3: Overview architecture of our proposed ScanFocus. The framework fol-lows a coarse-to-fine paradigm, decoupling the task into two stages: 1) Global Spatio-Temporal Scan: We first utilize a unified vision-language fusion encoder combined with a lightweight Semantic-Motion Fusion Encoder to efficiently align multimodal fea-tures. Dual DETR-style decoders are then employed to generate coarse spatial tubes and temporal intervals. 2) Local Boundary Focus: To recover high-frequency cues suppressed in the coarse stage, we perform dense sampling around the predicted coarse boundaries. The Semantic-Guided Temporal Aggregator explicitly models short-term dependencies within these local windows, which are finally fed into dual refine decoders to predict precise start and end timestamps. 
+
+As illustrated in Fig. 4(a), prevailing STVG frameworks [19, 20, 26, 53] typ-ically build upon the MDETR [27] architecture. They first extract static ap-pearance ( Fa), linguistic ( Ft), and temporal motion ( Fm) features using inde-pendent MDETR pre-trained backbones. Subsequently, a heavy MDETR pre-trained standard transformer encoder is applied to project and couple these heterogeneous representations within a shared latent space: 
+
+ˆFa, ˆFm, ˆFt = Encoder (Concat (Proj (Fa, F m, F t))) , (1) where Proj (·) denotes linear projections for channel alignment. Finally, task-specific decoders are employed to predict the spatio-temporal locations. The MDETR pre-trained spatial locator regresses bounding box se-quences B, while an auxiliary temporal decoder concurrently predicts the tem-poral boundaries (s, e ).
+
+3.2 Overview 
+
+To address the limitations described above, we propose ScanFocus . Fig. 3 illus-trates the overall architecture. Different from previous methods that rely on ScanFocus: A Coarse-to-Fine Framework for STVG 7Semantic -Motion Fusion Encoder                    
+
+> 𝐹 𝑠 =𝐹 𝑎 ,𝐹 𝑡 ,𝐹 𝑐 𝐹 𝑚
+> ……
+> Standard Transformer Encoder MDETR Pretrained
+> General Pretrained
+> Temp. Enc. Vis. Enc. Lan. Enc. Randomly Initialized
+> (a) Previous Methods (b) ScanFocus (Ours)
+> 𝐹 𝑚 𝐹 𝑎 𝐹 𝑡
+> Proj.
+> ROIPool
+> 𝐵 𝑐
+> S
+> Proj.
+> Temporal
+> Self -attn SSlice&Interp .
+> Hadamard P.
+> Add
+> 𝐹 𝑟𝑠
+> 𝑎
+> 𝐹 𝑝𝑠
+> 𝑎
+> 𝐹 𝑟𝑠
+> 𝑚
+> Proj.
+> 𝐹 𝑟𝑠
+> 𝑡
+> 𝐹 𝑠𝑔
+> 𝐹 𝑟𝑠
+> ’
+> ROIPool
+> 𝐵 𝑐 S
+> Proj.
+> Temporal
+> Self -attn
+> SSlice&Interp .
+> Hadamard P.
+> Add
+> 𝐹 𝑟𝑠
+> 𝑎 𝐹 𝑝𝑠
+> 𝑎
+> 𝐹 𝑟𝑠
+> 𝑚
+> Proj.
+> 𝐹 𝑟𝑠
+> 𝑡
+> 𝐹 𝑠𝑔
+> 𝐹 𝑟𝑠
+> ’
+> Vis. Lan. Encoder Temp. Enc.
+
+Fig. 4: Comparison of multi-modal fusion mechanisms. (a) Existing meth-ods fuse vision, language, and motion simultaneously. This fully-coupled tri-modal alignment is inherently challenging and yields suboptimal representations on limited downstream datasets. (b) We adopt a decoupled strategy leveraging a general vision-language encoder to extract visual and linguistic features pre-aligned on massive up-stream datasets, followed by a lightweight Semantic-Motion Fusion Encoder to further align these robust semantic representations with motion dynamics. 
+
+heavy static pre-training, ScanFocus adopts a coarse-to-fine philosophy. The pipeline begins with a unified vision-language fusion encoder initialized by video-language pre-training to extract aligned features, followed by a lightweight De-formable Semantic-Motion Encoder to efficiently fuse semantic and motion in-formation. The encoded features are then processed in two cascaded stages: 1) The Global Spatio-Temporal Scan stage (Sec. 3.3), which utilizes dual de-coders to generate coarse spatial tubes and temporal intervals from sparse global queries; 2) The Local Boundary Focus stage (Sec. 3.4), which performs dense boundary sampling and employs a Semantic-Guided Temporal Aggregator to capture fine-grained inter-frame dependencies for precise boundary refinement. 
+
+3.3 Coarse: Global Spatio-Temporal Scan Feature Extraction. As shown in Fig. 3, given the redundancy in adjacent video frames and the need for efficient global modeling, we first perform a sparse sampling strategy on the input video. Specifically, we uniformly sample Tc frames from the original video sequence with a low sampling rate fc to construct the coarse input, denoted as Vc ∈ RTc×H×W ×3.Subsequently, to bypass the optimization bottleneck of task-specific pre-training (Fig. 4(a)), we leverage general pre-trained foundation models for fea-ture extraction, as illustrated in Fig. 4(b), we adopt a unified Vision-Language Fusion encoder (VLF) to extract appearance and linguistic features from these sampled frames. Unlike traditional vision-language paradigms that employ sep-arate unimodal encoders to extract independent appearance and linguistic fea-tures followed by a cross-modal fusion module, our VLF is inherently unified. Pre-trained on massive-scale image-text pairs, it implicitly aligns visual and tex-tual representations within a shared semantic space during the encoding phase, eliminating the domain discrepancy often observed in late-fusion architectures. Specifically, we use BEiT-3 [48] to extract appearance, linguistic, and [CLS] fea-tures, denoted as Fa ∈ RTc×Na×Ca , Fl ∈ RTc×L×Ca , and Fc ∈ RTc×1×Ca , where 
+
+Na and L denote the token counts, and Ca represents the feature dimension. 8 K. Chen et al. 
+
+For motion feature extraction, following previous methods in [19, 20], we in-troduce an video encoder to explicitly extract motion features. Specifically, we employ a frozen pre-trained VideoMAE [43] to generate the motion represen-tation Fm ∈ RT ×Nm×Cm , where Nm and Cm are the motion token count and channel dimension, respectively. 
+
+Semantic-Motion Fusion. Previous STVG methods [19, 20, 26, 53] often rely on heavy, fully-coupled Transformer encoders for multi-modal interaction. In contrast, leveraging the inherent cross-modal alignment of our VLF encoder, we propose a lightweight Deformable Semantic-Motion Fusion module that refor-mulates this interaction as a multi-scale deformable attention task. Specifically, we project all features into a shared dimension C to form a multi-level feature pyramid X = {Fa, F m, F t, F c}, and define the concatenated query sequence as 
+
+Z ∈ RNtotal ×C . For each query token zq ∈ Z, the fused representation is com-puted by sparsely sampling from X :
+
+Fusion (zq ) = 
+
+> 4
+
+X
+
+> l=1
+> K
+
+X
+
+> k=1
+
+Alqk · Wv · Φ(X l; pq + ∆p lqk ), (2) where pq , ∆p lqk , and Alqk denote the reference point, learnable offset, and atten-tion weight, respectively. This mechanism enables linguistic tokens to sparsely attend to salient motion or appearance regions with linear complexity. Finally, after Lenc layers of stacked fusion, the unified sequence is disentangled into en-riched modality streams: 
+
+F ′
+
+> a
+
+, F ′
+
+> m
+
+, F ′ 
+
+> t
+
+, F ′ 
+
+> c
+
+= Split (ΦD (Concat (Fa, F m, F t, F c))) , (3) where ΦD denotes the stacked deformable encoder layers. Split (·) recovers the individual modality streams based on their original token lengths. 
+
+Global Spatio-Temporal Decoder. Following established practices [19, 20], we employ separate spatial and temporal decoders. To accelerate convergence and improve localization, we propose a semantic-injection strategy to explicitly incorporate linguistic and global contexts into the queries prior to decoding. Specifically, we initialize learnable queries Qs, Q t ∈ RTc×C for the spatial and temporal branches. We then sequentially inject semantic information from the text features F ′ 
+
+> t
+
+and the global context token F ′ 
+
+> c
+
+into these queries via standard cross-attention layers, yielding semantically conditioned queries Qis and Qit. This initialization ensures that the queries are target-aware before interacting with the visual ( F ′
+
+> a
+
+) and motion ( F ′
+
+> m
+
+) features. With these conditioned queries, the decoders perform iterative reasoning through K stacked layers. Finally, task-specific prediction heads generate the coarse outputs: a 3-layer MLP predicts the bounding box sequence Bc ∈ RTc×4, while a temporal head outputs frame-wise start/end probabilities to form the coarse temporal interval τc = ( tcs , t ce ).ScanFocus: A Coarse-to-Fine Framework for STVG 9
+
+3.4 Refine: Local Boundary Focus Dense Boundary Sampling. To recover the fine-grained motion details that suppressed by the sparse global scan, we introduce a boundary-focused dense sampling strategy. Given the predicted coarse interval τc, we construct two local observation windows centered at tcs and tce . Distinct from the global stage, we sample Nw frames within each window using a high sampling rate fr = kr · fc
+
+(where kr > 1 is the density factor) to ensure dense temporal coverage. This yields two dense frame sequences: Vrs and Vre , both of shape RNw ×H×W ×3.To maintain semantic consistency and maximize parameter efficiency, we strategically reuse the feature extraction and fusion modules from the coarse stage (Sec. 3.3). Specifically, Vrs and Vre are independently processed by the shared vision-language fusion encoder, Video Encoder, and the Semantic-Motion Fusion module. This yields refined multi-modal feature sequences Frs , F re , en-coding rich boundary details for precise delineation. Temporal Encoder V-L Encoder                
+
+> Semantic -Motion Fusion Encoder
+> 𝐹 𝑠 =𝐹 𝑎 ,𝐹 𝑡 ,𝐹 𝑐 𝐹 𝑚
+> ……
+> Vis. Enc. Tex. Enc.
+> Standard Transformer Encoder
+> Temp. Enc.
+> 𝐹 𝑚 𝐹 𝑎 𝐹 𝑡
+> MDETR Pretrained
+> General Pretrained
+> Randomly Initialized
+> (a) Multi -modal Fusion in previous work. (b) Multi -modal Fusion in ours.
+> Proj.
+> ROIPool
+> 𝐵 𝑐
+> S
+> Proj.
+> Temporal
+> Self -attn SSlice&Interp .
+> Hadamard P.
+> Add
+> 𝐹 𝑟𝑠
+> 𝑎
+> 𝐹 𝑝𝑠
+> 𝑎
+> 𝐹 𝑟𝑠
+> 𝑚
+> Proj.
+> 𝐹 𝑟𝑠
+> 𝑡
+> 𝐹 𝑠𝑔
+> 𝐹 𝑟𝑠
+> ’
+> ROIPool
+> 𝐵 𝑐 S
+> Proj.
+> Temporal
+> Self -attn
+> SSlice&Interp .
+> Hadamard P.
+> Add
+> 𝐹 𝑟𝑠
+> 𝑎 𝐹 𝑝𝑠
+> 𝑎
+> 𝐹 𝑟𝑠
+> 𝑚
+> Proj.
+> 𝐹 𝑟𝑠
+> 𝑡
+> 𝐹 𝑠𝑔
+> 𝐹 𝑟𝑠
+> ’
+
+Fig. 5: Detailed architecture of SGTA module. 
+
+Semantic-Guided Temporal Ag-gregator. While the shared encoder effectively extracts frame-wise repre-sentations, precise boundary delin-eation inherently requires capturing fine-grained temporal evolution, which relies on explicit inter-frame reasoning. To bridge this gap, we introduce SGTA. Leveraging the reduced temporal foot-print of the local windows ( Nw), SGTA performs efficient, dense temporal mod-eling to capture high-frequency motion cues omitted in the coarse stage. As shown in Fig. 5, taking the start branch as an example, SGTA first generates a dense spatial prior for the local window. Given the coarse bounding box sequence Bc and the predicted start timestamp 
+
+tcs , we retrieve the subset of coarse boxes corresponding to the temporal span of the refinement window. Since this window contains Nw frames sampled at a high rate fr , we perform temporal linear interpolation on this sparse subset to upsample it to the target length Nw. This efficiently generates the dense spatial prior Bst ∈ RNw ×4 without requiring heavy external object detectors. With the refined feature sequence Frs obtained from the shared encoder, we isolate its distinct modality streams: appearance ( F ars ), motion ( F mrs ), and text ( F trs ). To rigorously align the visual representations with the tracked object, we employ RoI Pooling on the appearance features guided by the spatial prior Bst . This yields the object-aligned appearance sequence F aps , which focuses exclusively on the target regions: 
+
+F aps = ROIPool (F ars , Bst ). (4) Subsequently, to explicitly align the temporal dynamics with the target object and linguistic query, we utilize these semantic features to guide the motion rep-resentation. To filter out irrelevant background dynamics, the motion features 10 K. Chen et al. 
+
+F mrs are modulated by the object-aligned appearance features F aps , effectively highlighting motion patterns associated with the visual referent. Furthermore, the text features F trs are injected as a linguistic bias. The final semantic-guided motion feature Fsg is formulated as: 
+
+Fsg =  ϕa(F aps ) ⊙ F mrs 
+
+ ⊕ ϕt(F trs ), (5) where ⊙ and ⊕ denote the Hadamard product and element-wise addition, re-spectively. ϕa and ϕt represent learnable linear projections. Finally, to capture high-frequency cues and model explicit inter-frame dependencies, we flatten Fsg 
+
+into a unified sequence of length Nw ×Nm (where Nm denotes the number of mo-tion tokens) and process it through a stack of Lt temporal self-attention layers: 
+
+F ′ 
+
+> rs
+
+= MHSA ×Lt (Flatten (Fsg )) . (6) This flattening structure ensures that all tokens within the local window are mutually perceptible, enabling fine-grained global reasoning across the boundary region. The resulting F ′ 
+
+> rs
+
+effectively aggregates dense boundary details, serving as the input for the subsequent prediction heads. 
+
+Refine Decoder. Similar to the coarse stage, a DETR-style decoder Dec rs is employed to probe the aggregated features F ′
+
+> rs
+
+. The decoded embeddings are then directly projected by task-specific prediction heads to generate the frame-wise boundary probability Pst and the auxiliary action confidence Ast . The end branch follows an identical procedure to obtain Ped and Aed .
+
+3.5 Optimization 
+
+To ensure optimization stability and prevent fine-grained gradients from perturb-ing well-learned global priors, we adopt a decoupled two-stage training paradigm. For coarse stage, we first train the global modules (backbone, fusion encoder, and coarse decoders) using Lc. The spatial decoder is supervised by L1 and GIoU losses given the ground-truth box sequence B∗, while the temporal decoder uses KL divergence to align the predicted distributions ˆPs/e with Gaussian-smoothed boundary labels t∗
+
+> s/e
+
+:
+
+Lc = λbox (LL1(Bc, B∗)+ LIoU (Bc, B∗))+ λtmp (LKL ( ˆPs, t ∗ 
+
+> s
+
+)+ LKL ( ˆPe, t ∗ 
+
+> e
+
+)) . (7) For refine stage, we freeze the coarse stage parameters and exclusively opti-mize the refinement modules (SGTA and Refine Decoders). We formulate bound-ary localization and action detection as binary classification tasks, optimized via Binary Cross-Entropy (BCE) loss: 
+
+Lr = λref LBCE (Pst/ed , y∗
+
+> st/ed
+
+) + λact LBCE (Ast/ed , y∗
+
+> act
+
+), (8) where Pst/ed and Ast/ed are the predicted boundary and action probabilities, and y∗ are the corresponding binary ground-truth labels. The hyperparameters 
+
+λ balance their respective loss terms. ScanFocus: A Coarse-to-Fine Framework for STVG 11 
+
+## 4 Experiments 
+
+4.1 Experiment Settings Datasets. The commonly used datasets in spatio-temporal video grounding are HC-STVGv1/v2 and VidSTG. HC-STVGv1 comprises 5,660 untrimmed video clips, which are partitioned into 4,500 training and 1,160 testing video-text pairs. HC-STVGv2 significantly expands upon this scale to include a total of 16,544 samples, subdivided into 10,131 samples for training, 2,000 for validation, and 4,413 for testing. Due to the unavailability of ground-truth annotations for the test set, we report results on the validation set, following prior work. VidSTG provides a more substantial corpus for evaluation, encompassing 99,943 video-text pairs derived from 5,436 source videos. This dataset is characterized by its high linguistic diversity, featuring a mix of 44,808 declarative sentences and 55,135 interrogative queries. The data is organized into training, validation, and testing subsets with 80,684, 8,956, and 10,303 sentences respectively, which are mapped across 5,436, 602, and 732 unique video sequences. 
+
+Metrics. Following prior work, we employ m_tIoU, m_vIoU, and vIoU@R as evaluation metrics. m_tIoU measures the ability of temporal grounding by computing the average temporal Intersection-over-Union (tIoU) score across all the test set. m_vIoU assesses spatial grounding quality by computing the average IoU across space and time between predicted and annotated spatio-temporal tubes, and vIoU@R measures the performance using ratios of samples with vIoU greater than R in test sets. For detailed metrics, please kindly refer to [53]. 
+
+Implementation. Our model employs BEiT-3 [48] for vision-language model-ing and VideoMAE [43] for motion representation. Inputs are resized to 384 ×384 .We sample 64 coarse frames and 8 refine frames ( kr = 2 ). Detailed network con-figurations and loss weights are provided in the Supplementary Material. 
+
+4.2 Quantitative Results Results on HC-STVGv1/v2. To validate the efficacy of our method, we com-pare it against state-of-the-art approaches on the HC-STVGv1 and v2 datasets. Table 1 and Table 2 present the comparison results on the respective test sets. As shown in Table 1, ScanFocus significantly outperforms existing methods across all metrics on HC-STVGv1. Notably, on the strict localization metrics vIoU@0.3 and vIoU@0.5, our method achieves 67.5% and 42.2%, surpassing the previous best method TA-STVG [20] by 4.4% and 5.4% , respectively. Similarly, on the HC-STVGv2 dataset (Table 2), ScanFocus establishes new state-of-the-art performance, achieving a 2.0% improvement in tiou and a 2.6% improvement in vIoU@0.5 over TA-STVG. These consistent improvements demonstrate the superiority of our coarse-to-fine paradigm in recovering high-frequency boundary cues for precise temporal delineation. 12 K. Chen et al. 
+
+Table 1: Comparison on HC-STVGv1. The best results are highlighted in bold .Methods m_tIoU m_vIoU vIoU@0.3 vIoU@0.5 STVGBert [40] - 20.4 29.4 11.3 TubeDETR [53] 43.7 32.4 49.8 23.5 STCAT [26] 49.4 35.1 57.7 30.1 SGFDN [47] 46.9 35.8 56.3 37.1 STVGFormer [33] - 36.9 62.2 34.8 VG-DINO [50] - 38.3 62.5 36.1 CG-STVG [19] 52.8 38.4 61.5 36.3 TA-STVG [20] 53.0 39.1 63.1 36.8     
+
+> ScanFocus (Ours) 55.5 41.8 67.5 42.2
+
+Table 2: Comparison on HC-STVGv2. The best results are highlighted in bold .Methods m_tIoU m_vIoU vIoU@0.3 vIoU@0.5 PCC [55] - 30.0 - -2D-Tan [41] - 30.4 50.4 18.8 MMN [49] - 30.3 49.0 25.6 TubeDETR [53] 53.9 36.4 58.8 30.6 STVGFormer [33] 58.1 38.7 65.5 33.8 VG-DINO [50] - 39.9 67.1 34.5 CG-STVG [19] 60.0 39.5 64.5 36.3 TA-STVG [20] 60.4 40.2 65.8 36.7     
+
+> ScanFocus (Ours) 62.4 41.7 68.4 39.3
+
+Table 3: Comparison on VidSTG. The best results are highlighted in bold .Methods Declarative Sentences Interrogative Sentences m_tIoU m_vIoU vIoU@0.3 vIoU@0.5 m_tIoU m_vIoU vIoU@0.3 vIoU@0.5 STGRN [59] 48.5 19.8 25.8 14.6 47.0 18.3 21.1 12.8 OMRN [58] 50.7 23.1 32.6 16.4 49.2 20.6 28.4 14.1 STGVT [42] - 21.6 29.8 18.9 - - - -STVGBert [40] - 24.0 30.9 18.4 - 22.5 26.0 16.0 TubeDETR [53] 48.1 30.4 42.5 28.2 46.9 25.7 35.7 23.2 SGFDN [47] 45.1 28.3 41.7 29.1 44.8 25.8 36.9 23.9 STVGFormer [33] - 33.7 47.2 32.8 - 28.5 39.9 26.2 STCAT [26] 50.8 33.1 46.2 32.6 49.7 28.2 39.2 26.6 CG-STVG [19] 51.4 34.0 47.7 33.1 49.9 29.0 40.5 27.5 TA-STVG [20] 51.7 34.4 48.2 33.5 50.2 29.5 41.5 28.0 SpaceVLLM-7B [45] 47.7 27.4 39.1 26.2 48.5 25.4 35.9 22.2 ASTG [60] 45.6 29.2 40.3 27.8 – – – –
+
+ScanFocus (Ours) 53.3 36.5 50.6 36.0 51.4 30.7 42.5 29.4 
+
+Results on VidSTG. To further evaluate the generalization capability of Scan-Focus, we conduct experiments on the VidSTG dataset, which is significantly more challenging due to its diverse linguistic expressions (i.e., declarative and interrogative sentences) and complex temporal variations. As summarized in Table 3, ScanFocus consistently outperforms existing state-of-the-art methods across both sentence types. 
+
+4.3 Ablation Studies 
+
+In this section, we perform ablation experiments to investigate the impact of key components in ScanFocus. Unless otherwise specified, all experiments are conducted on the HC-STVGv1 dataset with an input resolution of 224 × 224 .For brevity, tiou and viou are used to represent m_tIoU and m_vIoU. 
+
+Component-wise Effectiveness. As shown in Table 4, the baseline global scan model achieves a tIoU of 50.9%. Simply introducing the Dense Sampling (DS) strategy with refine decoders improves tIoU to 52.4% by recovering high-frequency temporal cues; however, the slight drop in vIoU@0.5 suggests that ScanFocus: A Coarse-to-Fine Framework for STVG 13                                                 
+
+> Table 4: Component-wise effectiveness analysis. Evaluated on HC-STVGv1. DS means refine stage with multi-modal fusion and start/end decoders. Method tIoU vIoU vIoU@0.3 vIoU@0.5 Coarse 50.9 38.2 60.7 38.0 + DS 52.4 39.1 62.6 37.9 + SGTA 53.7 40.0 64.0 39.5 Table 5: Impact of Window Size Nw.Performance of ScanFo-cus varies with different window sizes.
+> NwtIoU vIoU GFLOPs 452.7 39.2 10.7 653.2 39.6 16.1
+> 853.7 40.0 21.5
+> 10 53.6 39.9 26.9 12 53.5 39.8 32.2
+
+raw dense frames may introduce redundancy without explicit modeling. Finally, incorporating the proposed SGTA module yields the best performance across all metrics, demonstrating its ability to effectively aggregate dense boundary information through semantic-guided reasoning. 
+
+Impact of Refine Window Size Nw. We evaluate the influence of refine window size Nw ∈ { 4, 6, 8, 10 , 12 } to find the optimal temporal receptive field for boundary regression. Given the high sampling rate fr , this window size Nw
+
+determines the balance between local detail and temporal span. As shown in Table 5, the tIoU and vIoU initially increases and peaks at Nw = 8 . This trend suggests that a moderate window is essential for capturing sufficient temporal context to disambiguate the transition between action and background. However, performance begins to degrade when Nw exceeds 8. This degradation is likely because overly long windows introduce redundant background frames and irrele-vant motion noise, which dilutes the boundary-specific semantic features within the SGTA module. In terms of efficiency, GFLOPs increase linearly with Nw,confirming that our decoupled design maintains stable computational scalability. Given that Nw = 8 achieves the best trade-off between localization precision and resource consumption, we adopt it as our default configuration. 
+
+Components of SGTA Design. To further investigate the internal mecha-nism of the Semantic-Guided Temporal Aggregator, we perform an exhaustive ablation study on its key components: the Semantic Guide and the Temporal Attention mechanism. The results are summarized in Table 6. As observed, re-moving the Temporal Attention component leads to a noticeable performance degradation, with tIoU dropping from 53.7% to 52.8%. This decline underscores the necessity of explicit inter-frame dependency modeling for capturing long-range temporal dynamics in video sequences. Furthermore, the absence of the Semantic Guide results in a decrease across all metrics, confirming that semantic cues play a pivotal role in filtering out background noise and focusing the model on task-relevant temporal boundaries. The full SGTA configuration achieves the 14 K. Chen et al.                    
+
+> Table 6: Ablation on SGTA Design.
+> Evaluated on the HC-STVGv1 dataset. TA and SG denote Temporal Attention and Semantic Guide, respectively. Configuration tIoU vIoU vIoU@0.3 vIoU@0.5
+> Full SGTA 53.7 40.0 64.0 39.5
+> w/o TA. 52.8 39.3 63.1 38.7 w/o SG. 53.1 39.5 63.4 39.0
+> Table 7: Ablation on fusion mecha-nism. Deformable Semantic-Motion Fu-sion achieves superior performance with significantly lower complexity. Mechanism tIoU vIoU vIoU@0.5 GFLOPs Standard SA 53.3 39.8 36.5 516
+> Deform. SA 53.7 40.0 39.5 260
+
+best performance, validating that the synergy between semantic grounding and temporal relation modeling is essential for precise boundary localization. 
+
+Effectiveness of Deformable Semantic-Motion Fusion. As shown in Ta-ble 7, our Deformable Semantic-Motion Fusion significantly outperforms the standard baseline while reducing the computational overhead by 50%. Notably, our approach achieves a substantial gain in the stringent vIoU@0.5 metric. This demonstrates that by adaptively focusing on sparse sampling points rather than dense global dependencies, our method effectively mitigates spatial-temporal noise and provides superior localization precision for STVG task. 
+
+4.4 Qualitative Results 
+
+To intuitively demonstrate the effectiveness of our coarse-to-fine framework, we present qualitative grounding results in Fig. 6. As illustrated, the initial coarse stage often produces ambiguous temporal boundaries. Guided by explicit inter-frame reasoning within the local boundary focus, our refine stage successfully corrects these initial predictions by expanding or trimming the temporal win-dows, achieving more precise alignment with the Ground Truth. For more visu-alization examples, please refer to the Supplementary Material. 
+
+## 5 Conclusion 
+
+We propose ScanFocus , a novel coarse-to-fine framework that resolves tempo-ral ambiguity in STVG by decoupling the task into a global spatio-temporal scan and a local boundary focus. To capture suppressed high-frequency cues and model explicit inter-frame dependencies, we introduce SGTA for fine-grained temporal modeling with dense boundary sampling. Extensive experiments across three benchmarks demonstrate that our method significantly outperforms exist-ing SOTA approaches, establishing a highly effective paradigm for STVG. 
+
+## Acknowledgements 
+
+This work is supported by the National Natural Science Foundation of China under Nos. 62276061 and 62436002. This work is also supported by Research ScanFocus: A Coarse-to-Fine Framework for STVG 15 …  
+
+> Text: the man in the hat raises his hand turns around and walks to the door.
+> Video
+> GT
+> Coarse
+> Refine
+> …
+> Text: the man in the red suit closes his whip and hands the man in the white shirt away.
+> Video
+> GT
+> Coarse
+> Refine
+
+Fig. 6: Qualitative results of ScanFocus. The coarse stage often generates ambigu-ous boundaries. Our refine stage successfully corrects these initial proposals to align precisely with the Ground Truth. 
+
+Fund for Advanced Ocean Institute of Southeast University (Major Program MP202404). 
+
+## References 
+
+1. Achiam, J., Adler, S., Agarwal, S., Ahmad, L., Akkaya, I., Aleman, F.L., Almeida, D., Altenschmidt, J., Altman, S., Anadkat, S., et al.: Gpt-4 technical report. arXiv preprint arXiv:2303.08774 (2023) 2. Anne Hendricks, L., Wang, O., Shechtman, E., Sivic, J., Darrell, T., Russell, B.: Lo-calizing moments in video with natural language. In: ICCV. pp. 5803–5812 (2017) 3. Antol, S., Agrawal, A., Lu, J., Mitchell, M., Batra, D., Zitnick, C.L., Parikh, D.: Vqa: Visual question answering. In: ICCV. pp. 2425–2433 (2015) 4. Bai, S., Cai, Y., Chen, R., Chen, K., Chen, X., Cheng, Z., Deng, L., Ding, W., Gao, C., Ge, C., et al.: Qwen3-vl technical report. arXiv preprint arXiv:2511.21631 (2025) 5. Bao, H., Dong, L., Piao, S., Wei, F.: Beit: Bert pre-training of image transformers. arXiv preprint arXiv:2106.08254 (2021) 6. Barrios, W., Soldan, M., Ceballos-Arroyo, A.M., Heilbron, F.C., Ghanem, B.: Lo-calizing moments in long video via multimodal guidance. In: ICCV. pp. 13667– 13678 (2023) 7. Cao, M., Yang, T., Weng, J., Zhang, C., Wang, J., Zou, Y.: Locvtp: Video-text pre-training for temporal localization. In: ECCV. pp. 38–56. Springer (2022) 8. Cao, Z., Zhang, B., Du, H., Yu, X., Li, X., Wang, S.: Flashvtg: Feature layering and adaptive score handling network for video temporal grounding. In: WACV. pp. 9226–9236. IEEE (2025) 9. Carion, N., Massa, F., Synnaeve, G., Usunier, N., Kirillov, A., Zagoruyko, S.: End-to-end object detection with transformers. In: ECCV. pp. 213–229. Springer (2020) 10. Chen, W., Chen, L., Wu, Y.: An efficient and effective transformer decoder-based framework for multi-task visual grounding. In: ECCV. pp. 125–141. Springer (2024) 16 K. Chen et al. 11. Chen, Y.W., Tsai, Y.H., Yang, M.H.: End-to-end multi-modal video temporal grounding. NeurIPS 34 , 28442–28453 (2021) 12. Dai, M., Chen, K., Cheng, W., Zhuang, J., Feng, Z., Zhu, P., Yang, W.: Gc3vg: Gen-eralized multi-task visual grounding with coarse-to-fine consistency constraints. TCSVT (2025) 13. Dai, M., Cheng, W., Liu, J.J., Yang, L., Feng, Z., Yang, W., Wang, J.: Improving generalized visual grounding with instance-aware joint learning. TPAMI (2025) 14. Dai, M., Cheng, W., Liu, J.j., Yang, S., Cai, W., Sun, Y., Yang, W.: Deris: Decou-pling perception and cognition for enhanced referring image segmentation through loopback synergy. In: ICCV. pp. 19936–19946 (2025) 15. Dai, M., Yang, L., Xu, Y., Feng, Z., Yang, W.: Simvg: A simple framework for visual grounding with decoupled multi-modal fusion. NeurIPS 37 , 121670–121698 (2024) 16. Dai, M., Yang, S., Duan, B., Yang, W., Wang, J.: Momentseg: Moment-centric sampling for enhanced video pixel understanding. arXiv preprint arXiv:2510.09274 (2025) 17. Gao, J., Sun, C., Yang, Z., Nevatia, R.: Tall: Temporal activity localization via language query. In: ICCV. pp. 5267–5275 (2017) 18. Gu, X., Chen, G., Wang, Y., Zhang, L., Luo, T., Wen, L.: Text with knowledge graph augmented transformer for video captioning. In: CVPR. pp. 18941–18951 (2023) 19. Gu, X., Fan, H., Huang, Y., Luo, T., Zhang, L.: Context-guided spatio-temporal video grounding. In: CVPR. pp. 18330–18339 (2024) 20. Gu, X., Shen, Y., Luo, C., Luo, T., Huang, Y., Lin, Y., Fan, H., Zhang, L.: Knowing your target: Target-aware transformer makes better spatio-temporal video ground-ing. arXiv preprint arXiv:2502.11168 (2025) 21. Gu, X., Zhang, H., Fan, Q., Niu, J., Zhang, Z., Zhang, L., Chen, G., Chen, F., Wen, L., Zhu, S.: Thinking with bounding boxes: Enhancing spatio-temporal video grounding via reinforcement fine-tuning. arXiv preprint arXiv:2511.21375 (2025) 22. Guo, D., Yang, D., Zhang, H., Song, J., Wang, P., Zhu, Q., Xu, R., Zhang, R., Ma, S., Bi, X., et al.: Deepseek-r1: Incentivizing reasoning capability in llms via reinforcement learning. arXiv preprint arXiv:2501.12948 (2025) 23. Guo, D., Wu, F., Zhu, F., Leng, F., Shi, G., Chen, H., Fan, H., Wang, J., Jiang, J., Wang, J., et al.: Seed1. 5-vl technical report. arXiv preprint arXiv:2505.07062 (2025) 24. Hao, J., Sun, H., Ren, P., Wang, J., Qi, Q., Liao, J.: Can shuffling video benefit temporal bias problem: A novel training framework for temporal grounding. In: ECCV. pp. 130–147. Springer (2022) 25. Jiang, H., Misra, I., Rohrbach, M., Learned-Miller, E., Chen, X.: In defense of grid features for visual question answering. In: CVPR. pp. 10267–10276 (2020) 26. Jin, Y., Yuan, Z., Mu, Y., et al.: Embracing consistency: A one-stage approach for spatio-temporal video grounding. NeurIPS 35 , 29192–29204 (2022) 27. Kamath, A., Singh, M., LeCun, Y., Synnaeve, G., Misra, I., Carion, N.: Mdetr-modulated detection for end-to-end multi-modal understanding. In: ICCV. pp. 1780–1790 (2021) 28. Kang, W., Liu, G., Shah, M., Yan, Y.: Segvg: Transferring object bounding box to segmentation for visual grounding. In: ECCV. pp. 57–75. Springer (2024) 29. Lei, J., Berg, T.L., Bansal, M.: Detecting moments and highlights in videos via natural language queries. NeurIPS 34 , 11846–11858 (2021) ScanFocus: A Coarse-to-Fine Framework for STVG 17 30. Li, H., Chen, J., Wei, Z., Huang, S., Hui, T., Gao, J., Wei, X., Liu, S.: Llava-st: A multimodal large language model for fine-grained spatial-temporal understanding. In: CVPR. pp. 8592–8603 (2025) 31. Li, Z., Li, Y., Li, Q., Wang, P., Guo, D., Lu, L., Jin, D., Zhang, Y., Hong, Q.: Lvit: language meets vision transformer in medical image segmentation. IEEE transactions on medical imaging 43 (1), 96–107 (2023) 32. Lin, K.Q., Zhang, P., Chen, J., Pramanick, S., Gao, D., Wang, A.J., Yan, R., Shou, M.Z.: Univtg: Towards unified video-language temporal grounding. In: ICCV. pp. 2794–2804 (2023) 33. Lin, Z., Tan, C., Hu, J.F., Jin, Z., Ye, T., Zheng, W.S.: Collaborative static and dynamic vision-language streams for spatio-temporal video grounding. In: CVPR. pp. 23100–23109 (2023) 34. Liu, Y., He, J., Li, W., Kim, J., Wei, D., Pfister, H., Chen, C.W.: r 2-tuning: Efficient image-to-video transfer learning for video temporal grounding. In: ECCV. pp. 421–438. Springer (2024) 35. Moon, W., Hyun, S., Lee, S., Heo, J.P.: Correlation-guided query-dependency cal-ibration for video temporal grounding. arXiv preprint arXiv:2311.08835 (2023) 36. Moon, W., Hyun, S., Park, S., Park, D., Heo, J.P.: Query-dependent video repre-sentation for moment retrieval and highlight detection. In: CVPR. pp. 23023–23033 (2023) 37. Mun, J., Cho, M., Han, B.: Local-global video-text interactions for temporal grounding. In: CVPR. pp. 10810–10819 (2020) 38. Ren, Z., Huang, Z., Wei, Y., Zhao, Y., Fu, D., Feng, J., Jin, X.: Pixellm: Pixel reasoning with large multimodal model. In: CVPR. pp. 26374–26383 (2024) 39. Shen, Y., Gu, X., Xu, K., Fan, H., Wen, L., Zhang, L.: Accurate and fast compressed video captioning. In: ICCV. pp. 15558–15567 (2023) 40. Su, R., Yu, Q., Xu, D.: Stvgbert: A visual-linguistic transformer based framework for spatio-temporal video grounding. In: ICCV. pp. 1533–1542 (2021) 41. Tan, C., Lin, Z., Hu, J.F., Li, X., Zheng, W.S.: Augmented 2d-tan: A two-stage approach for human-centric spatio-temporal video grounding. arXiv preprint arXiv:2106.10634 (2021) 42. Tang, Z., Liao, Y., Liu, S., Li, G., Jin, X., Jiang, H., Yu, Q., Xu, D.: Human-centric spatio-temporal video grounding with visual transformers. TCSVT 32 (12), 8238–8249 (2021) 43. Tong, Z., Song, Y., Wang, J., Wang, L.: Videomae: Masked autoencoders are data-efficient learners for self-supervised video pre-training. NeurIPS 35 , 10078–10093 (2022) 44. Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A.N., Kaiser, Ł., Polosukhin, I.: Attention is all you need. NeurIPS 30 (2017) 45. Wang, J., Zhang, Z., Liu, Z., Li, Y., Ge, J., Xie, H., Zhang, Y.: Spacevllm: Endowing multimodal large language model with spatio-temporal video grounding capability. arXiv preprint arXiv:2503.13983 (2025) 46. Wang, L., Mittal, G., Sajeev, S., Yu, Y., Hall, M., Boddeti, V.N., Chen, M.: Protege: Untrimmed pretraining for video temporal grounding by video tempo-ral grounding. In: CVPR. pp. 6575–6585 (2023) 47. Wang, W., Liu, J., Su, Y., Nie, W.: Efficient spatio-temporal video grounding with semantic-guided feature decomposition. In: ACMMM. pp. 4867–4876 (2023) 48. Wang, W., Bao, H., Dong, L., Bjorck, J., Peng, Z., Liu, Q., Aggarwal, K., Mo-hammed, O.K., Singhal, S., Som, S., et al.: Image as a foreign language: Beit pre-training for vision and vision-language tasks. In: CVPR. pp. 19175–19186 (2023) 18 K. Chen et al. 49. Wang, Z., Wang, L., Wu, T., Li, T., Wu, G.: Negative sample matters: A renais-sance of metric learning for temporal grounding. In: AAAI. vol. 36, pp. 2613–2623 (2022) 50. Wasim, S.T., Naseer, M., Khan, S., Yang, M.H., Khan, F.S.: Videogrounding-dino: Towards open-vocabulary spatio-temporal video grounding. In: CVPR. pp. 18909– 18918 (2024) 51. Weng, Y., Han, M., He, H., Chang, X., Zhuang, B.: Longvlm: Efficient long video understanding via large language models. In: ECCV. pp. 453–470. Springer (2024) 52. Xu, H., He, K., Plummer, B.A., Sigal, L., Sclaroff, S., Saenko, K.: Multilevel lan-guage and vision integration for text-to-clip retrieval. In: AAAI. vol. 33, pp. 9062– 9069 (2019) 53. Yang, A., Miech, A., Sivic, J., Laptev, I., Schmid, C.: Tubedetr: Spatio-temporal video grounding with transformers. In: CVPR. pp. 16442–16453 (2022) 54. You, Q., Jin, H., Wang, Z., Fang, C., Luo, J.: Image captioning with semantic attention. In: CVPR. pp. 4651–4659 (2016) 55. Yu, Y., Wang, X., Hu, W., Luo, X., Li, C.: 2rd place solutions in the hc-stvg track of person in context challenge 2021. arXiv preprint arXiv:2106.07166 3(7) (2021) 56. Zhang, S., Peng, H., Fu, J., Luo, J.: Learning 2d temporal adjacent networks for moment localization with natural language. In: AAAI. vol. 34, pp. 12870–12877 (2020) 57. Zhang, Y., Chen, X., Jia, J., Liu, S., Ding, K.: Text-visual prompting for efficient 2d temporal video grounding. In: CVPR. pp. 14794–14804 (2023) 58. Zhang, Z., Zhao, Z., Lin, Z., Huai, B., Yuan, N.J.: Object-aware multi-branch relation networks for spatio-temporal video grounding. arXiv preprint arXiv:2008.06941 (2020) 59. Zhang, Z., Zhao, Z., Zhao, Y., Wang, Q., Liu, H., Gao, L.: Where does it exist: Spatio-temporal video grounding for multi-form sentences. In: CVPR. pp. 10668– 10677 (2020) 60. Zhao, H., Ong, Y.S., Zhou, J.T.: Agentic spatio-temporal grounding via collabo-rative reasoning. arXiv preprint arXiv:2602.13313 (2026) 61. Zhu, C., Zhou, Y., Shen, Y., Luo, G., Pan, X., Lin, M., Chen, C., Cao, L., Sun, X., Ji, R.: Seqtr: A simple yet universal network for visual grounding. In: ECCV. pp. 598–615. Springer (2022) 62. Zhu, J., Wang, W., Chen, Z., Liu, Z., Ye, S., Gu, L., Tian, H., Duan, Y., Su, W., Shao, J., et al.: Internvl3: Exploring advanced training and test-time recipes for open-source multimodal models. arXiv preprint arXiv:2504.10479 (2025) 63. Zhu, X., Su, W., Lu, L., Li, B., Wang, X., Dai, J.: Deformable detr: Deformable transformers for end-to-end object detection. arXiv preprint arXiv:2010.04159 (2020)

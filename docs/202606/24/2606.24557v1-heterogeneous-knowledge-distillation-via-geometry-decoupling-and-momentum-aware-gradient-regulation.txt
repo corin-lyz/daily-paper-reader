@@ -1,0 +1,705 @@
+Title: Heterogeneous Knowledge Distillation via Geometry Decoupling and Momentum-Aware Gradient Regulation
+
+URL Source: https://arxiv.org/pdf/2606.24557v1
+
+Published Time: Wed, 24 Jun 2026 01:11:09 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+> 1
+
+# Heterogeneous Knowledge Distillation via Geometry Decoupling and Momentum-Aware Gradient Regulation 
+
+Wuming Yang, Xiang Zhang, and Hongmin Zhao* 
+
+Abstract —Heterogeneous Knowledge Distillation (HKD) aims to transfer knowledge across varying architectures (e.g., from Transformer to CNN) but inherently suffers from severe training instability. We reveal that this instability stems from two highly coupled challenges: massive feature norm discrepancies that cause optimization drag, and severe gradient conflicts between the primary and distillation objectives arising from distinct inductive biases. To achieve stable distillation, we propose SPOFA, a frame-work built upon a novel Feature and Gradient Dual Stabilization mechanism. Specifically, at the feature level, we introduce a LayerNorm-based decoupling projector that explicitly decouples feature magnitude from direction, creating a bounded and stable space for semantic alignment. At the gradient level, we propose a momentum-driven Exponential Moving Average (MEMA) dy-namic scaler. By establishing a robust historical baseline of the optimization trajectory, MEMA actively evaluates instantaneous gradient conflicts and adaptively penalizes harmful distillation signals, guaranteeing stable convergence. Importantly, SPOFA achieves this dual stabilization with an extremely lightweight parameter footprint. Extensive experiments on two mainstream benchmarks demonstrate that SPOFA achieves state-of-the-art accuracy, significantly outperforming computationally expensive methods while introducing only minimal computational overhead compared to standard baselines. 
+
+Index Terms —Heterogeneous Knowledge Distillation, Train-ing Stabilization, Feature Decoupling, Gradient Conflict, Model Compression. 
+
+I. I NTRODUCTION 
+
+# DEEP neural networks achieve groundbreaking success but often sacrifice accuracy to work on practical low-resource devices, such as mobile phones and edge computing nodes. Knowledge Distillation (KD) [1] offers an alternative solution by transferring knowledge from a cumbersome, high-capacity teacher to a lightweight student. Recently, KD has even been demonstrated as a robust solution to resolve struc-tural missingness in highly compressed domains [2]. However, knowledge transfer becomes particularly challenging in hetero-geneous settings (e.g., Transformer teacher to CNN student). Unlike homogeneous distillation, where feature topologies are inherently isomorphic, heterogeneous knowledge transfer suffers from severe training instability. This instability arises from fundamentally distinct architectural priors and inductive biases—for instance, the global self-attention mechanism in Transformers versus the local receptive fields in CNNs. 
+
+W. Yang and H. Zhao are with the School of Computer and Mathematics, Central South University of Forestry and Technology, Changsha, Hunan, China (e-mail: yangwuming@csuft.edu.cn; zhm810@csuft.edu.cn). X. Zhang is with the College of Computer Science and Technology, and the Laboratory of Digitizing Software for Frontier Equipment, National University of Defense Technology, Changsha, Hunan, China (e-mail: zhangx-iang08@nudt.edu.cn). *Corresponding author: Hongmin Zhao. 
+
+Fig. 1. Observation of Gradient Conflicts and the SPOFA Rectification Mechanism. The highly volatile instantaneous cosine similarity (grey line) between the primary task (∇L GT ) and distillation (∇L KD ) gradients highlights the severe optimization noise inherent in heterogeneous knowledge distillation. Our proposed SPOFA framework introduces a Momentum-driven EMA baseline (blue line) to track the historical optimization trajectory. When severe gradient conflicts are detected—specifically, when the instantaneous similarity drops below the historical baseline (red zone)—SPOFA explicitly penalizes the conflicting distillation signals, thereby suppressing harmful distillation signals and encouraging a smoother optimization trajectory. The visualization is based on the Swin-T (Teacher) and ResNet-18 (Student) pair. 
+
+While existing approaches like OFA [3] and PAT [4] attempt to bridge this representational gap via linear projection or heavy attention modules, they overlook the root causes of this training instability. To investigate these fundamental issues, we conduct an empirical analysis on a highly representative heterogeneous pair: Swin-T (Teacher) to ResNet-18 (Student). This pair encapsulates a severe architectural clash between the global self-attention mechanism of Transformers and the local receptive fields of CNNs. By dissecting this specific combination, we reveal that the instability in Heterogeneous Knowledge Distillation (HKD) is fundamentally driven by two highly coupled challenges: First, at the feature level (Structural Gap), architectures with distinct inductive biases exhibit substantial discrepancies in feature magnitudes (L2 Norms) [5]. Specifically, the global receptive field of Swin-T intrinsically generates unbounded and massive feature mag-nitudes, whereas ResNet-18 expects normalized, localized variance. As illustrated in our preliminary analysis (detailed later in Section III-B), forcing the CNN student to mimic these unnormalized representations causes a severe representational bottleneck . The network squanders its limited capacity on fitting absolute scalar norms rather than aligning the actual semantic directions. Second, at the gradient level (Optimiza-tion Gap), optimizing across these structural gaps inherently induces severe gradient conflicts. Because the CNN and Trans-former dictate fundamentally different descent directions, the auxiliary distillation gradients ( ∇L KD ) frequently oppose the 
+
+> arXiv:2606.24557v1 [cs.CV] 23 Jun 2026 2
+
+primary task gradients ( ∇L GT ) under heterogeneous noise (as explicitly depicted in Fig. 1). Existing methods typically treat this highly non-stationary process with static or memoryless dynamic weights, which exacerbates optimization instability 
+
+and—akin to the error amplification recently observed in uncalibrated collaborative learning [6]—triggers catastrophic forgetting of the primary classification knowledge. To mitigate these two coupled challenges, we propose SPOFA(Spatial Projector and Momentum-based Adaptive One-For-All), a robust framework built upon a novel Feature and Gradient Dual Stabilization paradigm. Rather than treating the symptoms with heavy attention modules or memoryless heuristics, SPOFA explicitly maps targeted interventions to the identified root causes: Specifically, to overcome the structural gap at the feature level, we introduce a minimalist LayerNorm-based decoupling projector. By explicitly isolating feature magnitude from direction optimization, this projector bounds the semantic space and alleviates the aforementioned repre-sentational bottlenecks. Simultaneously, to resolve the opti-mization gap at the gradient level, we propose a Momentum-driven Exponential Moving Average (MEMA) dynamic scaler (as illustrated in Fig. 1). Instead of relying on volatile instanta-neous metrics, MEMA establishes a robust historical baseline of the optimization trajectory. It actively probes gradient conflicts and adaptively penalizes harmful distillation signals, thereby improving optimization stability during heterogeneous distillation. Our main contributions are summarized as follows:  
+
+> •
+
+We analyze heterogeneous knowledge distillation from a stability-oriented perspective and identify two coupled factors that are strongly associated with unstable training: feature-level norm discrepancy and optimization-level gradient conflict.  
+
+> •
+
+We propose a feature geometry decoupling strategy im-plemented by a lightweight LayerNorm-based auxiliary projector. It reduces architecture-dependent magnitude interference before intermediate-logit distillation, encour-aging the student to focus more on semantic directional alignment.  
+
+> •
+
+We develop a Momentum-driven EMA (MEMA) con-flict regulation mechanism. By maintaining a histor-ical gradient-consistency baseline, MEMA adaptively suppresses harmful distillation signals when abnormal sample-wise conflicts are detected in the output logit space.  
+
+> •
+
+Extensive experiments show that SPOFA mostly outper-forms the strong OFA baseline and achieves state-of-the-art accuracy against computationally expensive methods (e.g., PAT) on ImageNet and CIFAR, while introducing only minimal computational overhead. II. R ELATED WORK 
+
+A. Heterogeneous Knowledge Distillation 
+
+Homogeneous Knowledge Distillation typically assumes that the teacher and student models share isomorphic ar-chitectures (e.g., ResNet to ResNet) [1], [7], allowing for straightforward feature alignment. However, modern deploy-ment often requires compressing massive Transformer-based models into lightweight CNNs. Heterogeneous Knowledge Distillation (HKD) aims to bridge this severe architectural gap. Early approaches focused on intermediate feature mimicry via basic projection layers [8] or relational topology [9]. The One-for-All (OFA) framework [3] significantly advanced HKD by projecting intermediate features into a unified, architecture-agnostic logit space. Most recently, Perspective-Aware Teach-ing (PAT) [4] introduced Region-Aware Attention (RAA) and Adaptive Feedback Prompts (AFP) to re-blend features across different inductive biases. Furthermore, the necessity of het-erogeneous alignment has been echoed in complex paradigms such as masked image modeling [10], data-free federated learning [11], wearable human activity recognition [12], and asymmetric visual representation retrieval [13]. Despite improving semantic alignment, these methods en-counter two critical bottlenecks. First, methods like PAT rely on heavy attention modules, resulting in prohibitive com-putational overhead (e.g., a 3× increase in training latency compared to OFA [4]). Second, and more importantly, they overlook the inherent training instability of HKD. By ignoring the immense norm discrepancies [5] and the volatile gradient conflicts across heterogeneous topologies, existing methods force the student into a suboptimal and chaotic optimization trajectory. SPOFA addresses this fundamental flaw through a lightweight, dual-stabilization paradigm. 
+
+B. Feature-Level Alignment and Norm Decoupling 
+
+Feature normalization techniques, such as BatchNorm and LayerNorm, are foundational to stabilizing deep neural net-work training by smoothing the optimization landscape. In the context of KD, bridging the capacity gap requires proper feature transformation. While some advanced methods ex-plore complex feature whitening or correlation alignment [14] to decouple feature statistics, leverage decoupled contrastive objectives for cross-domain purification [15], or explicitly separate uncorrelated components in orthogonal spaces [16], [17] to avoid transferring ambiguous, coupled semantics [18], they incur massive computational costs in computing com-plex metrics. Consequently, mainstream HKD frameworks still predominantly rely on linear projectors or complex attention mechanisms. Crucially, these existing approaches merely per-form feature transformation rather than true structural decou-pling. As recently highlighted in heterogeneous knowledge transfers from CNNs to Vision Transformers [19], effectively bridging the representational gap requires explicitly addressing the underlying feature structures. For instance, OFA’s linear projection and PAT’s spatial blending [4] still operate on magnitude-coupled features. When transferring knowledge be-tween highly heterogeneous topologies, forcing the student to mimic absolute, unnormalized feature representations triggers severe representational bottlenecks—the student expends sig-nificant capacity trying to match the teacher’s arbitrary feature magnitudes rather than learning its semantic directions. To this end, SPOFA introduces a minimalist LayerNorm-based decoupling projector that explicitly isolates magnitude from 3
+
+directional alignment, creating a bounded and stable space to eliminate feature-level optimization inefficiencies with near-zero overhead. 
+
+C. Gradient-Level Stabilization and Momentum Dynamics 
+
+Beyond spatial feature alignment, Knowledge Distillation is fundamentally a multi-objective optimization problem, re-quiring a delicate balance between the primary task gradient (∇L GT ) and the distillation gradient ( ∇L KD ). In Multi-Task Learning (MTL), gradient conflicts are actively addressed through projection methods like PCGrad [20] and CAGrad [21]. Recently, the community has increasingly recognized that similar gradient conflicts severely bottleneck Heteroge-neous Knowledge Distillation. For instance, recent state-of-the-art studies, such as DTO-KD [22], explicitly identify that architectural mismatches inherently induce severe gra-dient conflicts between primary and distillation objectives. However, to resolve these conflicts, such methods typically rely on directly applying MTL projection algorithms, which require computing gradient similarities across the entire high-dimensional parameter space, rendering them computationally prohibitive for typical KD pipelines. Alternatively, researchers have attempted to mitigate inter-ference via dynamic weighting, heuristic loss scaling, adaptive teacher strategies that handle significant prediction discrep-ancies [23], or explicitly manipulating policy gradients to overcome misaligned objectives [24]. For instance, recent advances in robust model compression have demonstrated that timely knowledge correction integrated with dynamic weight adjustment can significantly stabilize learning trajectories un-der noisy or mismatched supervision [25]. Furthermore, Mo-mentum and Exponential Moving Average (EMA) techniques have been widely successful in self-supervised learning (e.g., MoCo) to provide stable optimization targets. Despite these advances, existing dynamic weighting mech-anisms in HKD rely almost exclusively on memoryless in-stantaneous heuristics. In heterogeneous pairs, because the student is constantly forced to map its representations onto an architecturally alien manifold, the batch-level gradients are inherently plagued by high variance and severe noise. Consequently, memoryless metrics frequently trigger chaotic weighting adjustments, exacerbating gradient conflicts and causing optimization instability. SPOFA posits that leveraging a historical baseline is key to stabilizing this chaotic process. By designing the MEMA dynamic scaler, we establish a robust optimization trajectory, adaptively penalizing ∇L KD 
+
+only when instantaneous gradient conflicts diverge from the historical expectation, thereby encouraging more stable opti-mization dynamics during heterogeneous distillation. III. M ETHOD 
+
+In this section, we present SPOFA, a robust framework designed to resolve the training instability inherent in het-erogeneous Knowledge Distillation (HKD). As illustrated in Fig. 2, our framework tackles the heterogeneous gap from two orthogonal dimensions: Feature-Level Stabilization and Gradient-Level Stabilization. We first revisit the OFA baseline to formulate the distillation objective and identify its inherent flaws (Sec. III-A). We then introduce our LayerNorm-based structural decoupling mechanism to eliminate feature-level representational bottlenecks (Sec. III-B). Next, we formulate the EMA-Guided Dynamic Scaler (MEMA) with a novel per-sample gradient probing mechanism to rectify optimization trajectories at the gradient level, supported by a sufficient-condition analysis (Sec. III-C). Finally, we summarize the overall dual-stabilization framework and training algorithm (Sec. III-D). 
+
+A. Preliminaries: The OFA Baseline and its Flaws 
+
+Consider a pre-trained teacher network T and a student network S with heterogeneous architectures (e.g., Transformer vs. CNN). Let X ∈ RB×C×H×W denote the input data and Y denote the corresponding ground-truth labels. The intermediate features extracted from the i-th selected stage of the teacher and student are denoted as F Ti ∈ RCTi ×HTi ×W Ti
+
+and F Si ∈ RCSi ×HSi ×W Si , respectively. Due to the fundamental architectural gap, directly matching 
+
+F Ti and F Si is infeasible. The One-for-All (OFA) framework [3] tackles this by introducing an auxiliary projector POF A (·)
+
+that maps the intermediate features of the student into a unified, architecture-agnostic logits space: 
+
+ZSi = POF A (F Si ) = W (i) 
+
+> cls
+
+· ϕ(F Si ) (1) where ϕ(·) denotes a lightweight spatial alignment operation and W (i) 
+
+> cls
+
+is the classifier weight. Instead of using standard KL-divergence, OFA introduces an adaptive target enhancement mechanism. Let pS = σ(ZSi /τ )
+
+and pT = σ(ZT /τ ) be the softened probabilities scaled by temperature τ , and let y be the one-hot ground-truth label. The intermediate distillation loss L(i) 
+
+> OF A
+
+is formulated as: 
+
+L(i) 
+
+> OF A
+
+=
+
+> C
+
+X
+
+> c=1
+
+−  (pTc + yc)ϵ − yc
+
+ log( pSc ) (2) where ϵ ≥ 1 is a modulating parameter. While OFA successfully bypasses dimensional mismatch, it exposes two severe underlying flaws that induce training instability: (1) Feature-Level Flaw: Linear projection and basic activations preserve absolute feature magnitudes, failing to address the massive norm discrepancy between heterogeneous architectures. (2) Gradient-Level Flaw: The constant or mem-oryless stage-wise weighting of LOF A ignores the highly volatile gradient conflicts between the primary task and the distillation process, inevitably leading to optimization noise and trajectory oscillations. 
+
+B. Feature-Level Alignment: Breaking Representational Bot-tlenecks via Norm Decoupling 
+
+In heterogeneous distillation, models with distinct induc-tive biases operate on vastly different feature scales. As demonstrated in Fig. 3 (Left), directly forcing a CNN stu-dent to mimic the feature space of a ViT teacher results in severe Norm Discrepancy. Standard projectors entangle the optimization of feature magnitude (L2 Norm) and feature 4               
+
+> Fig. 2. The overall architecture of the proposed SPOFA framework. Left: The multi-level heterogeneous distillation pipeline from a teacher to a student.
+> Middle : The intermediate distillation blocks, each integrating a LayerNorm-based decoupling projector (comprising Spatial Align , LayerNorm, and fc layers) to reduce architecture-dependent magnitude interference and alleviate representational bottlenecks, accompanied by a Stage MEMA ( ω(i)
+> t) for dynamic local loss scaling. Right : The inner workings of the Momentum-driven EMA (MEMA) scaler serve as a universal dynamic module. When applied to intermediate layers, it targets projected features with both reward and penalty mechanisms; when applied to the output layer, it targets gradient vectors and exclusively employs a penalty mechanism via one-sided truncation to regulate harmful distillation signals under gradient conflicts. Note: Only three stages are shown for convenience. In our experiments, all models are split into four stages.
+> Fig. 3. Comparative analysis of feature-level dynamics during heterogeneous distillation. The visualization is based on the Swin-T (Teacher) and ResNet18 (Student) pair. By replacing standard linear projectors with a LayerNorm-based structural decoupling mechanism, SPOFA reduces the immense feature magnitude (Left) and alleviates representational bottlenecks, thereby achieving a significantly higher semantic alignment (Right) compared to the OFA baseline.
+
+direction (Cosine Similarity). Consequently, the student squan-ders its limited representational capacity, struggling to scale its absolute feature values, leading to severe representational bottlenecks. To structurally decouple magnitude from direction—a prin-ciple recently highlighted as crucial for regularizing generaliz-able knowledge transfer [26]—SPOFA introduces a minimalist yet highly effective LayerNorm-based Projector, denoted as 
+
+PSP OF A (·). We embed Layer Normalization (LN) deeply into the auxiliary branch before the final classification projection: 
+
+ˆF Si = LayerNorm (ϕ(F Si )) = ϕ(F Si ) − μ
+
+√σ2 + ϵLN 
+
+⊙ γ + β (3) where ϕ(·) denotes a spatial pooling operation (e.g., global average pooling) that aggregates the spatial dimensions to yield a 1D channel-wise feature vector in RC ; μ and σ2 are the mean and variance computed across the channel dimension, 
+
+ϵLN is a small constant for numerical stability, and γ, β are learnable affine parameters. It is worth noting that LN is only inserted into the auxiliary distillation branch and is discarded after training together with the projector. Therefore, it does not alter the deployed student architecture. Its role is to reduce architecture-dependent magnitude bias in the distillation space rather than to normalize the student backbone itself. The SPOFA auxiliary logits are computed as ZSP OF A i =
+
+W (i) 
+
+> cls
+
+· ˆF Si . By applying LayerNorm, the feature magnitude is explicitly decoupled from the student’s architectural topology. Since the teacher is frozen with constant feature magnitudes, the student only needs to align its relative logit distribu-tion, not the absolute scale. Crucially, when paired with the temperature-scaled Softmax in the distillation loss—which inherently relies on relative probability distributions rather than absolute logit magnitudes—this single-sided structural decoupling is sufficient to forcefully cut off the gradient path-ways responsible for arbitrary magnitude scaling. As a result, the optimizer is strongly encouraged to shift its focus towards maximizing the angular consistency between the student and teacher representations. This successfully translates into a significantly higher semantic alignment, as directly validated by the Cosine Similarity improvements in Fig. 3 (Right). 5
+
+C. Gradient-Level Stabilization: Rectifying Trajectories via MEMA 
+
+While the feature-level stabilization alleviates representa-tional bottlenecks, gradient-level conflicts persist and must be addressed separately. Even with perfectly aligned features, Knowledge Distillation remains a multi-objective optimiza-tion problem. The gradients derived from the ground-truth loss ( ∇θ LGT ) and the distillation loss ( ∇θ LKD ) frequently point in opposing directions. As highlighted by recent ad-vancements in top-tier vision conferences, such unmitigated gradient conflicts can severely trap parameter updates in sub-optimal solutions [27], necessitating dynamically balanced loss weighting [28]. Previous dynamic weighting methods rely on memoryless instantaneous heuristics. However, due to the high variance of heterogeneous mini-batches, such memoryless approaches trigger chaotic weighting oscillations, exacerbating optimization instability. To resolve this, SPOFA abandons memoryless heuristics and proposes a Momentum-driven EMA (MEMA) Scaler featuring a fine-grained per-sample probing mechanism. First, at training step t, to rigorously monitor optimization dynamics while maintaining a strictly lightweight footprint, we probe gradient conflicts in the output logit space . Inspired by recent findings that sample-wise logit constraints effectively preserve structural semantics [29], let ZS denote the logit bottleneck. We compute the instantaneous Gradient Similarity 
+
+St,j specifically for the j-th sample in a mini-batch of size N :
+
+St,j = ⟨∇ ZS L(t,j ) 
+
+> GT
+
+, ∇ZS L(t,j )
+
+> KD Logit
+
+⟩∥∇ ZS L(t,j ) 
+
+> GT
+
+∥2 · ∥∇ ZS L(t,j )
+
+> KD Logit
+
+∥2
+
+(4) By computing per-sample gradients in the low-dimensional output logit space rather than across the entire parameter manifold ( θ), SPOFA avoids expensive full-parameter gradient comparison while retaining a lightweight conflict indicator. Although logit-level gradient similarity is not equivalent to parameter-level gradient similarity, it provides a computation-ally tractable proxy for detecting potential conflicts between the primary and distillation objectives. According to the chain rule, the corresponding parameter-level gradients are induced by the logit-level gradients through the shared network Ja-cobian ∂Z S /∂θ . Thus, a strong directional discrepancy in the logit space can indicate potentially harmful optimization interference and can be used to guide adaptive distillation weighting. 
+
+Theoretical Motivation: Relying solely on instantaneous similarity St,j for loss scaling is inherently susceptible to mini-batch noise. Inspired by momentum-based stabilization in deep learning optimizers, we establish a robust historical baseline. Instead of directly using St,j , we compute a historical baseline 
+
+Bt of the optimization trajectory using an Exponential Moving Average (EMA) over the batch-averaged similarity: 
+
+Bt = α · Bt−1 + (1 − α) · 1
+
+N
+
+> N
+
+X
+
+> j=1
+
+St,j (5) where α ∈ [0 , 1) is the momentum coefficient. A higher α
+
+dictates a deeper memory, shielding the distillation process from being derailed by transient sample-level outliers. To guarantee stability, SPOFA adopts a punish-only mech-anism. We utilize the baseline from the previous step Bt−1
+
+as the prior expectation. The Deviation Dt,j is calculated by comparing the instantaneous similarity against this historical expectation: 
+
+Dt,j = max(0 , B t−1 − St,j ) (6) This proactive feedback loop structurally distinguishes be-tween ”expected architectural conflict” (captured by Bt−1)and ”abnormal gradient interference” (the instantaneous drop). Only when the current conflict is more severe than the histor-ical consensus ( St,j < B t−1) does the mechanism trigger a weight decay. Finally, the dynamic distillation weight ωout t,j is computed using a bounded linear decay: 
+
+ωout t,j = Clamp (1 .0 − κ · Dt,j , ω min , ω max ) (7) where κ governs the decay sensitivity. When an abnormal conflict is detected ( Dt,j > 0), ωout t,j decays proportionally. Conversely, expected gradient directions ( Dt,j = 0 ) retain the base weight of 1.0.
+
+Theoretical Motivation of MEMA. To provide intuition for why suppressing the distillation contribution under severe gradient conflict can improve primary-task consistency, we analyze a sufficient condition under which the joint update remains consistent with the primary task gradient. 
+
+Theorem 1 (A Sufficient Condition for Primary-Task Gra-dient Consistency) . Let g(t,j ) 
+
+> gt
+
+= ∇ZS L(t,j ) 
+
+> GT
+
+and g(t,j ) 
+
+> kd
+
+=
+
+∇ZS L(t,j )
+
+> KD Logit
+
+. Assuming the primary task gradient is non-zero (i.e., ∥g(t,j ) 
+
+> gt
+
+∥2 > 0), the joint optimization step evaluated by g(t,j ) 
+
+> total
+
+= g(t,j ) 
+
+> gt
+
++ ωout t,j · g(t,j ) 
+
+> kd
+
+forms a strict descent direction for the primary task (i.e., ⟨g(t,j )
+
+> total
+
+, g (t,j ) 
+
+> gt
+
+⟩ > 0) if the dynamic weight ωout t,j satisfies: 
+
+ωout t,j < ∥g(t,j ) 
+
+> gt
+
+∥2
+
+|St,j | · ∥ g(t,j ) 
+
+> kd
+
+∥2
+
+, when St,j < 0. (8) 
+
+When St,j ≥ 0, the descent condition inherently holds for any 
+
+ωout t,j ≥ 0.Proof. To strictly ensure that the auxiliary distillation process does not degrade the primary classification task, the inner product must be positive: 
+
+⟨g(t,j ) 
+
+> gt
+
++ωout t,j ·g(t,j ) 
+
+> kd
+
+, g (t,j ) 
+
+> gt
+
+⟩ = ∥g(t,j ) 
+
+> gt
+
+∥22+ωout t,j ⟨g(t,j ) 
+
+> kd
+
+, g (t,j ) 
+
+> gt
+
+⟩ > 0
+
+(9) Using the definition from Eq. 4, we have ⟨g(t,j ) 
+
+> kd
+
+, g (t,j ) 
+
+> gt
+
+⟩ =
+
+St,j ∥g(t,j ) 
+
+> gt
+
+∥2∥g(t,j ) 
+
+> kd
+
+∥2. Dividing the inequality by ∥g(t,j ) 
+
+> gt
+
+∥2 >
+
+0 yields: 
+
+∥g(t,j ) 
+
+> gt
+
+∥2 + ωout t,j · St,j · ∥ g(t,j ) 
+
+> kd
+
+∥2 > 0 (10) When St,j < 0 (heterogeneous gradient conflict), solving for 
+
+ωout t,j establishes a strict mathematically bounded upper limit: 
+
+ωout t,j < ∥g(t,j ) 
+
+> gt
+
+∥2
+
+|St,j | · ∥ g(t,j ) 
+
+> kd
+
+∥2
+
+(11) 
+
+□6
+
+Remark 1 (Bridging Theorem 1 and MEMA). In the standard OFA framework with static weighting ( ω ≡ 1), severe het-erogeneous conflicts (large |St,j |) inevitably violate the upper bound in Eq. 8. While stochastic mini-batch training prevents immediate collapse, these continuous bound violations inject severe optimization noise, trapping the student in sub-optimal local minima. Directly calculating and applying the exact theoretical bound ∥g(t,j )   
+
+> gt ∥2
+> |St,j |·∥ g(t,j )
+> kd ∥2
+
+is practically infeasible due to extreme mini-batch volatility. MEMA provides a robust, history-aware approximation to satisfy this theorem. As the conflict deepens (i.e., St,j becomes highly negative), the deviation Dt,j =
+
+Bt−1 − St,j proportionally increases. According to Eq. 7, this immediately enforces a severe penalty on ωout t,j , smoothly com-pressing the distillation influence. By dynamically throttling 
+
+ωout t,j inversely proportional to the conflict severity, MEMA acts as a structural safeguard that strongly encourages compli-ance with the theoretical bound, thereby facilitating a stable and superior descent trajectory, as validated empirically in our subsequent experiments. Remark 2 (Computational Efficiency of Logit-Level Prob-ing). Calculating per-sample gradient similarities across the entire parameter space ( θ ∈ Rd) would incur a prohibitive computational complexity of O(N · d) per step. By struc-turally evaluating the gradients strictly at the logit bottleneck (ZS ∈ RC ), SPOFA explicitly reduces this complexity to 
+
+O(N · C). Because the number of categories C is orders of magnitude smaller than the total number of parameters 
+
+d (e.g., C ≪ d), the relative computational overhead is strictly bounded by O(C/d ). Consequently, the proposed gradient probing mechanism introduces negligible additional cost, seamlessly integrating into the standard training pipeline. 
+
+D. The Dual-Stabilization SPOFA Framework 
+
+To comprehensively guide heterogeneous distillation, SPOFA explicitly formulates dynamic distillation objectives at two distinct levels, perfectly bridging the feature-level and gradient-level flaws identified previously—a dual-level philosophy that has recently shown great promise in mitigating architectural reliance in other distillation domains [30]. First, at the output level, the gradient-stabilized distillation loss utilizes the per-sample MEMA weights to rectify opti-mization trajectories dynamically: 
+
+L(t) 
+
+> Out
+
+= 1
+
+N
+
+> N
+
+X
+
+> j=1
+
+
+
+ωout t,j · L (t,j )
+
+> KD Logit
+
+
+
+(12) where N denotes the mini-batch size, ωout t,j is the dynamic distillation weight for the j-th sample derived from the MEMA scaler (as defined in Eq. 7), and L(t,j ) 
+
+> KD Logit
+
+represents the standard output logit distillation loss for that specific sample at training step t.Simultaneously, to synchronize multi-layer representation learning, we maintain K independent EMA scalers for the intermediate auxiliary branches. Unlike the output logit space which probes gradient conflicts, the intermediate dynamic weights ω(i) 
+
+> t
+
+are evaluated based on the batch-averaged feature cosine similarities at stage i. The intermediate-level (feature-stabilized) distillation loss is aggregated as: 
+
+L(t) 
+
+> Inter
+
+=
+
+> K
+
+X
+
+> i=1
+
+
+
+ω(i) 
+
+> t
+
+· L (i,t )
+
+> SP OF A
+
+
+
+(13) where K is the total number of intermediate stages, ω(i)
+
+> t
+
+serves as the dynamic feature-level weight for the i-th stage, and L(i,t ) 
+
+> SP OF A
+
+denotes the LayerNorm-decoupled intermediate distillation loss (as defined in Sec. III-B). Finally, the overall objective function of SPOFA at training step t explicitly unifies the primary ground-truth classification task with the dual-stabilized distillation components: 
+
+L(t) 
+
+> T otal
+
+= λgt L(t) 
+
+> GT
+
++ λout L(t) 
+
+> Out
+
++ λinter L(t) 
+
+> Inter
+
+(14) where L(t) 
+
+> GT
+
+is the primary task loss (e.g., Cross-Entropy) evaluated on the ground-truth labels. The terms λgt , λout , and 
+
+λinter are global static hyperparameters introduced to balance the baseline magnitudes of the respective optimization targets. The complete training progression is summarized in Algorithm 1. 
+
+Algorithm 1 Training Pipeline of the SPOFA Framework Input: Teacher T , Student S, Dataset D, Momentum α,Sensitivity κ, Global weights λgt , λ out , λ inter , Learning rate 
+
+η.Initialize: Student parameters θ, EMA Base-lines B0, {B(i)0 }Ki=1 using first-step met-rics. 
+
+for training step t = 1 , . . . , T max do 
+
+Forward pass mini-batch (x, y ) to obtain logits ZT , Z S ,features {F Ti , F Si }Ki=1 , and L(t) 
+
+> GT
+
+.// Feature-Level Stabilization (LayerNorm & Stage EMA): 
+
+for stage i = 1 , . . . , K do 
+
+Decouple features to ˆF Si (Eq. 3) and evaluate batch-averaged similarity S(i) 
+
+> t
+
+.Compute dynamic weight ω(i) 
+
+> t
+
+via deviation B(i) 
+
+> t−1
+
+−
+
+S(i) 
+
+> t
+
+, and update baseline B(i) 
+
+> t
+
+(Eq. 5). 
+
+end for 
+
+Aggregate intermediate loss L(t) 
+
+> Inter
+
+=
+
+PKi=1 ω(i) 
+
+> t
+
+L(i,t ) 
+
+> SP OF A
+
+(Eq. 13). // Gradient-Level Stabilization (Probing & MEMA): Probing: Compute sample-wise gradients 
+
+∇ZS L(t,j ) 
+
+> GT
+
+, ∇ZS L(t,j ) 
+
+> KD Logit
+
+to get per-sample similarities 
+
+{St,j }Nj=1 (Eq. 4). Evaluate deviation Dt,j ← max(0 , B t−1 −St,j ) to update dynamic weights ωout t,j (Eq. 7). Update global baseline Bt (Eq. 5) and compute output loss L(t) 
+
+> Out
+
+(Eq. 12). // Overall Optimization: Compute L(t) 
+
+> T otal
+
+← λgt L(t) 
+
+> GT
+
++ λout L(t) 
+
+> Out
+
++ λinter L(t)
+
+> Inter
+
+.Update student parameters: θ ← θ − η∇θ L(t)
+
+> T otal
+
+.
+
+end for 7
+
+IV. E XPERIMENTAL RESULTS 
+
+We systematically and comprehensively evaluate the pro-posed SPOFA framework on two mainstream image classifi-cation benchmarks: CIFAR-100 and ImageNet-1K. 
+
+A. Experimental Settings 1) Datasets.: CIFAR-100 [31] contains 100 categories, each with an image resolution of 32 × 32 . The training set consists of 50,000 images, and the test set contains 10,000 images. It is a small-scale yet moderately difficult benchmark, widely used to evaluate model generalization and knowledge transfer under limited data scenarios. ImageNet-1K [32] in-cludes 1,000 generic categories with about 1.2 million train-ing images and 50,000 validation images, covering a wide range of classes with fine-grained granularity. It serves as an authoritative and highly challenging benchmark for visual recognition performance. Conducting experiments on both datasets allows us to examine SPOFA’s behavior in both small-and large-scale scenarios, thereby comprehensively assessing its stability, efficiency, and generality. To ensure consistency with current visual recognition practices, we strictly follow the standard settings used in recent large-scale training and distillation works [3], [33]. 
+
+2) Model Architectures.: To verify the applicability and robustness of SPOFA across severe heterogeneous gaps, we experiment with multiple teacher-student pairs encompassing three mainstream paradigms: (1) Convolutional Neural Net-works (CNNs): including ResNet, MobileNetV2, and Con-vNeXt, representing the evolution from classic to modern CNN designs [34]. (2) Transformer-based Models: such as ViT, DeiT, and Swin Transformer, which have achieved strong performance in vision tasks but differ fundamentally from CNNs in inductive biases and spatial feature scales [33], [35]. (3) MLP-based Architectures: such as MLP-Mixer and ResMLP, representing non-convolutional and non-attention spatial paradigms [35]. Experiments across these diverse archi-tectures robustly validate whether SPOFA can bridge extreme structural gaps and maintain stable distillation trajectories under disparate inductive biases [3], [36], [37]. 
+
+3) Implementation Details.: All models are implemented using PyTorch and trained under a unified experimental pro-tocol to ensure strictly fair comparisons. For optimization, we adopt distinct strategies tailored to the student architectures. CNN-based students are trained using the SGD optimizer with a momentum of 0.9 and a weight decay of 2 × 10 −3,following a cosine learning rate decay schedule. In contrast, ViT and MLP-based students utilize the AdamW optimizer with a weight decay of 0.05 . A cosine learning rate schedule with a 20-epoch linear warmup is adopted to facilitate stable convergence. To further regularize training and prevent over-fitting in these data-hungry architectures, we employ gradient clipping with a maximum norm of 5.0 and apply a strong augmentation strategy that combines AutoAugment, Mixup (α = 0 .8), and CutMix ( α = 1 .0). All hyperparameters remain consistent across all competing methods to isolate algorithmic effectiveness. For SPOFA, the momentum coefficient α of the MEMA scaler is set to 0.99 by default. Crucially, to ensure a rigorous and fair comparison, our training configurations strictly adhere to the experimental protocols established by the OFA baseline. We maintain identical training durations (300 epochs for all models on CIFAR-100; 100 epochs for CNN students and 300 epochs for others on ImageNet-1K). By eliminating confounding variables such as extended training schedules or specialized tricks, we ensure that the observed performance gains are entirely attributable to the inherent algorithmic advancements of the SPOFA framework. 
+
+4) Comparison Methods.: We compare SPOFA against three broad categories of state-of-the-art distillation meth-ods: (1) Response-based KD: KD [1], DKD [38], and DIST [39]. (2) Feature-based KD: FitNet [8], RKD [9], and CRD [40]. (3) Heterogeneous KD: The strong baseline OFA [3] (NeurIPS 2023) and the recent state-of-the-art method PAT [4] (ICCV 2025). These comparisons comprehensively demonstrate SPOFA’s superiority in handling spatial norm discrepancies and temporal gradient conflicts compared to both traditional and specialized heterogeneous distillation ap-proaches. 
+
+B. Main Results on CIFAR-100 
+
+Table I summarizes the Top-1 classification accuracy across 12 highly heterogeneous teacher-student pairs on the CIFAR-100 benchmark. Thanks to the spatial structural decou-pling and the temporal MEMA-guided trajectory rectification, SPOFA demonstrates exceptionally robust performance. No-tably, SPOFA outperforms the strong heterogeneous baseline OFA [3] in 11 out of 12 settings. Furthermore, while maintain-ing a strictly lightweight and efficient training footprint (intro-ducing virtually zero extra computational overhead), SPOFA achieves strictly superior results to the recent computationally heavy SOTA method PAT [4] in 9 out of 12 settings. Even in the few cases where PAT marginally leads, SPOFA offers a highly favorable trade-off between distillation performance and training efficiency. 
+
+Analysis of Results. The experimental results on CIFAR-100 demonstrate that SPOFA consistently outperforms existing baselines across diverse architectural pairs, validating the efficacy of our spatial decoupling and temporal trajectory rectification strategies. First, regarding the robustness of CNN students, SPOFA proves exceptionally effective in transferring knowledge from global-attention Transformers or MLPs to local-bias CNNs. This scenario typically suffers from massive feature norm dis-crepancies. However, SPOFA completely dominates this track (winning 6 out of 6 settings). For instance, when distilling from Swin-T to ResNet18, SPOFA reaches a top-1 accuracy of 82.39%, significantly outperforming the recent SOTA PAT (81.22%) by +1.17% and the strong baseline OFA (80.54%) by +1.85%. Similarly, in the Mixer-B/16 → MobileNetV2 setting, SPOFA outperforms OFA by a striking margin of +2.18% (80.96% vs. 78.78%). These substantial gains confirm that our LayerNorm-based decoupling projector successfully suppresses arbitrary magnitude scaling, strictly decoupling feature norm from direction to break representational inertia. This is visually corroborated by the feature maps in Fig. 3, 8                                                                                                                                                                             
+
+> TABLE I CIFAR-100 T OP -1 T EST RESULTS (%). R ESULTS ARE THE AVERAGE OF 3INDEPENDENT TRIALS . T HE BEST VALUES ARE IN BOLD ,AND THE SECOND BEST ARE UNDERLINED .
+> Teacher Student From Scratch Feature-based Response-based Heterogeneous-KD
+> T. S. FitNet RKD CRD KD DKD DIST OFA PAT SPOFA
+> ICLR’15 ICCV’19 ICLR’20 ArXiv’15 CVPR’22 NeurIPS’22 NeurIPS’23 ICCV’25 Ours
+> CNN-based students
+> Swin-T ResNet18 89.26 74.01 78.87 74.11 77.63 78.74 80.26 77.75 80.54 81.22 82.39
+> ViT-S ResNet18 92.04 74.01 77.71 73.72 76.60 77.26 78.10 76.49 80.15 80.11 81.26
+> Mixer-B/16 ResNet18 87.29 74.01 77.15 73.75 76.42 77.79 78.67 76.36 79.39 80.07 81.89
+> Swin-T MobileNetV2 89.26 73.68 74.28 69.00 79.80 74.68 71.07 72.89 80.98 78.78 81.25
+> ViT-S MobileNetV2 92.04 73.68 73.54 68.46 78.14 72.77 69.80 72.54 78.45 78.87 80.01
+> Mixer-B/16 MobileNetV2 87.29 73.68 73.78 68.95 78.15 73.33 70.20 73.26 78.78 78.62 80.96 ViT-based students
+> ConvNeXt-T DeiT-T 88.41 68.00 60.78 69.79 65.94 72.99 74.60 73.55 75.76 79.59 78.91 Mixer-B/16 DeiT-T 87.29 68.00 71.05 69.89 71.36 73.44 71.67 73.90 73.90 74.66 77.02
+> ConvNeXt-T Swin-P 88.41 72.63 24.06 71.73 67.09 76.44 76.80 76.41 78.32 80.74 81.17
+> Mixer-B/16 Swin-P 87.29 72.63 75.20 70.82 75.93 76.39 75.85 76.65 78.93 78.44 80.41 MLP-based students
+> ConvNeXt-T ResMLP-S12 88.41 66.56 45.47 65.82 63.35 72.25 73.22 71.93 81.22 83.50 82.32 Swin-T ResMLP-S12 89.26 66.56 63.12 64.66 61.72 71.89 72.82 11.05 80.63 80.94 79.81
+
+where SPOFA demonstrates a sharper, more concentrated semantic alignment on target objects compared to OFA. Second, for architectures with weak inductive biases (Trans-formers and MLPs), SPOFA also exhibits highly competitive improvements, preventing optimization instability. Notably, in the distillation from Mixer-B/16 to DeiT-T, SPOFA achieves 77.02%, surpassing PAT (74.66%) by a massive +2.36%. In the ConvNeXt-T → Swin-P setting, SPOFA continues to outperform PAT by +0.43% (81.17% vs. 80.74%). These architectures are highly susceptible to gradient variance and optimization instability under heterogeneous noise. The re-sults verify that our Momentum-driven EMA (MEMA) scaler establishes a robust historical baseline, effectively penalizing conflicting gradient signals to guarantee monotonic and stable convergence. Finally, concerning the efficiency-accuracy trade-off, a com-parative analysis reveals the definitive superiority of our frame-work. We acknowledge that PAT demonstrates a marginal performance advantage on 3 specific non-CNN student settings (e.g., ConvNeXt-T → ResMLP-S12, 83.50% vs. 82.32%). However, to bridge the heterogeneous gap, PAT relies on heavy auxiliary attention modules and necessitates dual teacher forwarding, resulting in approximately 3 × the training latency and significantly higher memory footprint. In stark contrast, SPOFA achieves SOTA-level results on 9 out of 12 set-tings while requiring zero extra parameters during inference and introducing virtually zero computational overhead during training. This highly favorable trade-off makes SPOFA asignificantly more practical and elegant solution for real-world, resource-constrained deployments. 
+
+C. Distillation Results on ImageNet-1K 
+
+To rigorously evaluate the scalability and robustness of SPOFA under large-scale data regimes, we strategically select four highly representative heterogeneous teacher-student set-tings on the ImageNet-1K benchmark. Rather than exhaustive enumeration, these specific pairs are deliberately chosen be-cause they encompass the most extreme and challenging archi-tectural gaps—spanning from MLP-to-CNN (e.g., Mixer-B/16 to MobileNetV2) and CNN-to-Transformer (e.g., ConvNeXt-T to DeiT-T) paradigms. By testing the framework against these fundamental shifts in inductive biases, we comprehensively validate its generalized applicability and stability. The results are presented in Table II. With the significant increase in data scale and diversity, SPOFA exhibits robust scalability and highly competitive performance. Specifically, SPOFA attains state-of-the-art performance in three out of four evaluated pairs and secures the second-best position in the remaining one, outperforming the strong OFA baseline in all evaluated settings. For instance, we achieve 72.24% on MobileNetV2 and 74.46% on DeiT-T when distill-ing from Mixer-B/16 and ConvNeXt-T, respectively. Notably, in the difficult Mixer-B/16 → MobileNetV2 (MLP-to-CNN) setting, SPOFA surpasses both OFA (72.12%) and the recent SOTA method PAT (72.22%), suggesting its scalability to large-scale settings on a massive dataset. Previous feature-based methods (e.g., FitNet, CRD) achieve distinctly inferior performance as they force direct global feature matching, remaining vulnerable to the immense feature norm discrepancies inherent in heterogeneous architectures. While the OFA framework mitigates dimensional mismatch via a unified projection, it still suffers from representational inertia due to unbounded feature magnitudes and memoryless temporal optimization. In contrast, SPOFA’s performance confirms that structurally decoupling feature magnitude via a LayerNorm-based decou-pling projector, combined with explicitly rectifying conflicting gradients via the Momentum-driven EMA (MEMA) scaler, en-sures highly efficient and stable knowledge transfer. Compared to PAT, which relies on heavy auxiliary attention modules and necessitates dual teacher forwarding, SPOFA achieves superior results in 3 out of 4 settings (e.g., consistently outperforming PAT on both Mixer-B/16 → MobileNetV2 and ConvNeXt-T → DeiT-T) using a strictly lightweight pipeline. Even when marginally trailing behind PAT in an isolated case (e.g., 9      
+
+> TABLE II TOP -1 ACCURACY (%) ON IMAGE NET -1K. T HE BEST RESULTS ARE INDICATED IN BOLD ,WHILE THE SECOND BEST ARE UNDERLINED .
+
+Teacher Student From Scratch Feature-based Response-based Heterogeneous-KD 
+
+T. S. FitNet RKD CRD KD DKD DIST OFA PAT SPOFA         
+
+> ICLR’15 ICCV’19 ICLR’20 ArXiv’15 CVPR’22 NeurIPS’22 NeurIPS’23 ICCV’25 Ours
+
+CNN-based students 
+
+Swin-T ResNet18 81.38 69.75 71.18 68.89 69.09 71.14 71.10 70.91 71.85 71.54 71.92 
+
+Mixer-B/16 MobileNetV2 76.62 68.87 71.59 69.86 68.89 71.92 70.93 71.74 72.12 72.22 72.24 ViT-based students 
+
+ConvNeXt-T DeiT-T 82.05 72.17 70.45 71.47 69.18 74.00 73.95 74.07 74.41 74.44 74.46 MLP-based students 
+
+Swin-T ResMLP-S12 81.38 76.65 76.48 75.10 73.40 76.67 76.99 77.25 77.31 77.59 77.41 
+
+Swin-T → ResMLP-S12), SPOFA offers a vastly superior and practical trade-off between distillation performance and training cost. Comparing the results on ImageNet-1K with those on CIFAR-100, we observe that while the relative performance margins are narrower due to the increased complexity of the large-scale dataset, SPOFA exhibits superior stability and consistency. This confirms that our fine-grained distillation mechanism scales effectively to high-complexity classification tasks, providing robust improvements across heterogeneous architectures—including CNNs, Transformers, and MLPs. 
+
+D. Efficiency Analysis 
+
+Following the performance comparison, to further validate the efficiency advantages of SPOFA mentioned above, we compare the additional trainable parameters required by dif-ferent frameworks during the training phase in Table III. While the OFA framework maintains a relatively low pa-rameter count, it suffers from rigid optimization and represen-tational inertia. The SOTA method PAT, although effective, introduces massive computational overhead due to its heavy auxiliary attention mechanisms and dual-teacher forwarding. For instance, in the Mixer-B/16 → ResNet18 setting, PAT requires a staggering 87.82M extra parameters, which is com-putationally prohibitive for resource-constrained scenarios. In stark contrast, SPOFA achieves an optimal efficiency-accuracy trade-off. By leveraging a minimalist LayerNorm-based decoupling projector and a highly efficient MEMA scaler, SPOFA introduces a virtually negligible number of parameters (i.e., merely the channel-wise affine scaling pa-rameters for normalization). Consequently, SPOFA maintains a minimal parameter footprint that is practically identical to the lightweight OFA baseline. For instance, in the Swin-T 
+
+→ ResNet18 setting, SPOFA remains at exactly 1.63M. Even in cases where it slightly exceeds OFA (e.g., Mixer-B/16 →
+
+MobileNetV2), the increment is a marginal +0.01M (2.54M vs. 2.53M), completely preserving the model’s lightweight nature. Crucially, for complex ViT-based students (e.g., ConvNeXt-T → DeiT-T), SPOFA strictly caps the extra parameters at 3.78M, which is almost 4 × fewer than PAT (14.48M) while achieving superior accuracy. This confirms that SPOFA is not only highly accurate but also strictly minimalist and resource-efficient, effectively bypassing the massive overhead typical of recent heterogeneous KD advancements. Most importantly, it is worth noting that for all evaluated methods, the auxiliary              
+
+> TABLE III COMPARISON OF EXTRA TRAINABLE PARAMETERS (IN MILLIONS )
+> REQUIRED BY OFA, PAT, AND OUR METHOD (SPOFA) DURING THE TRAINING PHASE . N OTE THAT FOR ALL EVALUATED METHODS ,THE AUXILIARY MODULES ARE DISCARDED AFTER TRAINING ,RESULTING IN AN IDENTICAL DEPLOYED STUDENT SIZE (E.G., 11.69M PARAMETERS FOR RES NET -18) WITH ZERO EXTRA INFERENCE COST . B OLD INDICATES THE BEST RESULTS ,AND UNDERLINED INDICATES THE SECOND BEST .
+
+Teacher Student Extra Params (M) 
+
+OFA PAT SPOFA 
+
+CNN-based students 
+
+Swin-T ResNet18 1.63 38.52 1.63 
+
+ViT-S ResNet18 1.19 32.57 1.20 Mixer-B/16 ResNet18 1.63 87.82 1.63 
+
+Swin-T MobileNetV2 2.53 32.36 2.54 ViT-S MobileNetV2 2.53 26.41 2.54 Mixer-B/16 MobileNetV2 2.53 81.66 2.54 
+
+ViT-based students 
+
+ConvNeXt-T DeiT-T 3.78 14.48 3.78 
+
+Mixer-B/16 DeiT-T 3.78 81.33 3.78 
+
+ConvNeXt-T Swin-P 14.86 17.77 14.86 
+
+Mixer-B/16 Swin-P 14.86 84.63 14.86 
+
+MLP-based students 
+
+ConvNeXt-T ResMLP-S12 14.94 20.77 14.94 
+
+Swin-T ResMLP-S12 14.94 38.33 14.94 
+
+projection branches and dynamic scalers are safely discarded post-training. This results in an identical deployed student size (e.g., 11.69M parameters for a standard ResNet-18) with strictly zero extra inference cost across all approaches. Because SPOFA achieves state-of-the-art accuracy under this identical deployment budget, it establishes a new standard for practical and high-performance heterogeneous distillation. 
+
+E. Ablation Study 
+
+To comprehensively evaluate the independent and synergis-tic contributions of the proposed components, we conducted a step-by-step ablation study. We selected the challenging heterogeneous pair Swin-T → ResNet18 on CIFAR-100 as the representative setting. This pair distills knowledge from a global-attention Transformer teacher to a local-bias CNN student, representing a scenario where feature geometry mis-alignment is exceptionally severe, and gradient conflicts are prominent. As detailed in Table IV, we decompose the SPOFA frame-work into four progressive configurations to isolate the specific 10                     
+
+> TABLE IV ABLATION STUDY ON CIFAR-100 WITH SWIN-T - RESNET18 AS THE TEACHER-STUDENT PAIR.
+> Method Variant Components Acc (%) Gain LayerNorm MEMA
+> Baseline (OFA) ××80.54 0.00 + Decoupling ✓×81.19 +0.65 + MEMA ×✓81.80 +1.26
+> SPOFA (Full) ✓✓82.39 +1.85
+
+effects of the LayerNorm-based decoupling projector and the Momentum-driven EMA (MEMA) Scaler. 
+
+Variant 1: Baseline (OFA). The original OFA framework is employed. It uses a standard non-linear projection (e.g., GELU/Identity) without structural magnitude constraints, and applies a fixed, static weight for the distillation loss. This serves as our lower bound for performance comparison (80.54%). 
+
+Variant 2: Baseline + Decoupling. We intervene in the representational space by replacing the standard projection activation with our LayerNorm-based design. The distillation weight remains fixed. This explicitly decouples feature mag-nitude from direction, suppressing representational inertia and yielding a direct performance boost to 81.19% (+0.65%). 
+
+Variant 3: Baseline + MEMA. We revert to the stan-dard projector but intervene in the optimization trajectory by introducing the Momentum-driven EMA (MEMA) Scaler. This replaces the fixed loss weight with a momentum-based dynamic scaling that actively penalizes conflicting gradients. This trajectory rectification alone improves the accuracy to 81.80% (+1.26%). 
+
+Variant 4: SPOFA (Full). This is our complete proposal, seamlessly integrating both geometry decoupling (LayerNorm) and gradient rectification (MEMA). The combination success-fully bridges both structural and optimization gaps, achieving the peak performance of 82.39% (+1.85% over the baseline). To further validate our specific architectural choice for the decoupling projector, we comprehensively compare Lay-erNorm (LN) against other mainstream normalization tech-niques, including BatchNorm (BN), GroupNorm (GN), and a baseline without normalization (Identity). For a fair com-parison, to strictly isolate the effect of spatial decoupling, all evaluated variants are jointly equipped with the temporal MEMA scaler and evaluated on the highly heterogeneous Swin-T → ResNet18 setting. As reported in Table V, omitting normalization (Identity) yields an accuracy of 81.80%. When applying the standard BatchNorm, the performance marginally improves to 81.87% (a mere +0.07% gain). This negligible improvement highlights a fundamental limitation of BN in heterogeneous distillation scenarios: because heterogeneous feature distributions exhibit massive variance across different samples, forcing batch-wise statistical calculations disrupts the intrinsic manifold of indi-vidual features. Replacing BN with GroupNorm mitigates the cross-sample contamination issue by performing intra-sample normalization, yielding a better accuracy of 82.13% (+0.33% gain over the baseline). However, GN still yields suboptimal results compared to LN. GN restricts holistic feature alignment by imposing artificial boundaries (groups) across the channel di-mension. This heuristic grouping disrupts the global semantic topologies that are inherently coupled across all channels in Transformer representations. In stark contrast, LayerNorm normalizes activations across the entire channel dimension for each spatial token indepen-dently [41]. This design perfectly addresses the severe norm disparities that induce representational inertia in heterogeneous feature spaces [41]. By strictly bounding the feature magnitude of individual tokens and preserving the global channel-wise context, LN yields a significant performance leap to 82.39%, confirming its absolute necessity for optimal spatial decou-pling.                  
+
+> TABLE V IMPACT OF DIFFERENT NORMALIZATION STRATEGIES IN THE SPATIAL PROJECTOR (S WIN -T →RES NET 18). T O STRICTLY ISOLATE THE EFFECT OF SPATIAL DECOUPLING ,ALL EVALUATED VARIANTS ARE JOINTLY EQUIPPED WITH THE TEMPORAL MEMA SCALER .
+> Variant Configuration Top-1 Acc (%) ∆vs. None
+> None (Identity) 81.80 0.00 BatchNorm (BN) 81.87 +0.07 GroupNorm (GN) 82.13 +0.33 LayerNorm (LN) 82.39 +0.59
+
+F. Hyperparameter Sensitivity Analysis 
+
+To further demonstrate the robustness of the SPOFA frame-work, we conduct a sensitivity analysis on the two critical hyperparameters introduced in the MEMA scaler: the momen-tum coefficient α and the penalty decay factor λ. We evaluate their impact on the highly heterogeneous Swin-T → ResNet18 setting on CIFAR-100. Impact of the Momentum Coefficient ( α). The momentum 
+
+α dictates the memory depth of the historical baseline. As shown in Figure 4 (Left), we vary α ∈ { 0.85 , 0.90 , 0.95 , 0.99 }.While a slight performance dip is observed at α = 0 .95 , the system generally exhibits strong robustness against this tem-poral parameter. Setting α = 0 .99 yields the optimal accuracy (82.39%), indicating that a relatively long and stable historical memory is beneficial for tracking true gradient trajectories rather than reacting to instantaneous mini-batch noise. No-tably, SPOFA maintains high performance ( > 81 .9% ) across all tested values, proving it does not rely on heavily fine-tuned “magic numbers”. Impact of the Penalty Decay Factor (λ). The factor 
+
+λ controls the sensitivity of the weight penalty when a gradient conflict is detected. We uniformly test λ ∈{0.05 , 0.1, 0.2, 0.3, 0.4}. As illustrated in Figure 4 (Right), the performance exhibits a clear inverted-U trend. A moderate penalty ( λ = 0 .2) yields the highest accuracy (82.39%). A highly aggressive penalty (e.g., λ = 0 .4) over-suppresses the distillation signals even during minor expected fluctuations, while a weak penalty ( λ = 0 .05 ) fails to adequately rectify divergent gradients. Nonetheless, the overall variance remains minimal and consistently outperforms the baseline, further confirming the inherent stability of our momentum-guided rectification mechanism. 11         
+
+> Fig. 4. Hyperparameter sensitivity analysis of the MEMA scaler on CIFAR-100 (Swin-T →ResNet18). We ablate the momentum coefficient α(Left) and the penalty decay factor λ(Right). SPOFA demonstrates robust and consistent improvements over the baseline across a wide range of parameter settings.
+> Fig. 5. Comparison of Teacher-Student logits cosine similarity. SPOFA (Orange) demonstrates a distinct shift towards higher similarity compared to the baseline OFA (Blue), indicating superior knowledge transfer. The visualization is conducted on CIFAR-100 with Swin-T - ResNet18 as the teacher-student pair.
+
+G. Visualization and Convergence Analysis 
+
+To provide intuitive insights into the inner workings of SPOFA, we conduct a series of visualizations to verify how our method enhances teacher-student alignment and ensures the stability of the optimization trajectory. 1) Improved Semantic Alignment. We first examine whether SPOFA effectively bridges the semantic gap at the output level. Figure 5 visualizes the distribution of the logits cosine similarity between the teacher and student models on the CIFAR-100 dataset. Compared to the OFA baseline, SPOFA exhibits a significantly more compact distribution that is clearly shifted towards higher similarity values. This qualita-tive evidence confirms that our dual-intervention strategy suc-cessfully overcomes representational inertia. By maintaining a stable optimization path, SPOFA forces the student to achieve a much higher degree of semantic and distributional alignment with the teacher’s predictions. 2) Qualitative Feature Visualization. To further intuitively demonstrate the synergistic effect of our framework in over-coming both representational inertia and optimization insta-bility, we visualize the feature attention maps of the last convolutional layer of the student network via Grad-CAM. As shown in Fig. 6, due to unmitigated gradient conflicts and heterogeneous norm discrepancies, the optimization trajectory of the baseline OFA-KD frequently drifts. This causes its attention to diverge or collapse into local, sub-optimal dis-criminative regions (e.g., merely focusing on a local patch of the Tulip or erroneously constraining to the lower wall of   
+
+> Fig. 6. Qualitative comparison of feature attention maps (Grad-CAM) on the CIFAR-100 test set. Compared to the OFA-KD baseline, SPOFA-KD effectively eliminates representational inertia, leading to a much sharper and more comprehensive semantic focus on the holistic structure of the target objects.
+> Fig. 7. Quantitative analysis of feature alignment using Centered Kernel Alignment (CKA). SPOFA ensures a stable, monotonic increase in similarity, ultimately achieving a significantly higher alignment score (0.86) at the final stage compared to the OFA baseline (0.56). The visualization is conducted on CIFAR-100 with Swin-T - ResNet18 as the teacher-student pair.
+
+the House ). In contrast, by leveraging the MEMA scaler to actively penalize conflicting gradients within the structurally decoupled space provided by the spatial projector, SPOFA-KD maintains a highly stable learning trajectory. Consequently, it generates much sharper and structurally complete heatmaps, comprehensively covering the core semantic regions of the target objects (e.g., extending to the roof of the house and en-capsulating the entire beaver’s profile). This visually confirms that the stable temporal guidance from MEMA successfully prevents optimization instability, guiding the student to learn the correct holistic semantic topology. 3) Quantitative Feature Alignment via CKA. To strictly quantify the representational similarity between the highly het-erogeneous teacher and student, we employ Centered Kernel Alignment (CKA), a widely recognized metric for measuring the similarity of feature geometries across different network architectures. We calculate the Linear CKA scores across all four backbone stages using the test set. As depicted in Figure 7, the standard OFA framework (grey dashed line) struggles significantly with the architectural gap. It suffers from a severe alignment collapse at the early-to-12   
+
+> Fig. 8. Convergence analysis of training losses over 120,000 steps. SPOFA exhibits accelerated and deeper convergence, particularly in the Distillation Loss (LKD ) and Feature Alignment Loss ( LF eat ), validating the efficacy of LayerNorm and MEMA in stabilizing heterogeneous optimization. The visualization is conducted on CIFAR-100 with Swin-T - ResNet18 as the teacher-student pair.
+
+mid stages (e.g., dropping to 0.21 at Stage 2) and plateaus at a suboptimal similarity of 0.56 at the final stage. In stark contrast, SPOFA (red solid line) exhibits a healthy, mono-tonically increasing alignment trajectory. The incorporation of the MEMA scaler effectively prevents the mid-stage collapse. Furthermore, powered by the LayerNorm-based decoupling projector, SPOFA achieves a remarkably high CKA score of 0.86 at Stage 4. This massive gap (+0.30 over OFA) provides rigorous quantitative evidence that SPOFA achieves an unprecedented level of deep semantic alignment. 4) Accelerated and Stabilized Optimization. To explicitly verify the role of our spatial decoupling (LayerNorm) and temporal rectification (MEMA) mechanisms during training, we track the convergence trajectories of three primary loss components: Ground Truth Loss (LGT ), Distillation Loss (LKD ), and Feature Alignment Loss ( LF eat ). As illustrated in Figure 8, while both methods achieve comparable convergence on the basic ground truth task (left), SPOFA demonstrates a definitive superiority in the distillation dynamics:  
+
+> •
+
+Feature Alignment (Right): The LF eat curve of SPOFA drops much more rapidly and maintains a strictly lower bound than OFA. This visually validates that replacing standard activations with our LayerNorm-based projector successfully eliminates the magnitude discrepancy, pro-viding an inherently bounded and stable space for feature matching.  
+
+> •
+
+Distillation Trajectory (Middle): In the response-based distillation phase ( LKD ), SPOFA achieves a smoother and deeper convergence. This confirms that the MEMA scaler effectively penalizes conflicting gradients and pre-vents the ”optimization instability” often observed in heterogeneous distillation, ensuring steady descent. These visualizations collectively validate the architectural design of SPOFA. The spatial LayerNorm projector effectively decouples feature magnitude from direction, as evidenced by the rapid convergence of LF eat (Fig. 8) and the significantly higher CKA scores across all stages (Fig. 7). Meanwhile, the temporal MEMA scaler stabilizes the optimization trajectory, reflected in the smooth descent of LKD (Fig. 8) and the sharper, more complete Grad-CAM heatmaps (Fig. 6). To-gether, these components enable superior semantic alignment at the output level (Fig. 5). V. C ONCLUSION 
+
+In this paper, we presented SPOFA, a robust and highly efficient framework tailored for heterogeneous knowledge distillation. SPOFA addresses the highly coupled feature and optimization misalignments that severely hinder effective knowledge transfer between architecturally divergent models (e.g., CNNs, ViTs, and MLPs). At the core of our frame-work is a synergistic dual-intervention strategy. At the feature level, SPOFA introduces a minimalist LayerNorm-based de-coupling projector that explicitly decouples feature magnitude from direction. This targeted structural alignment effectively suppresses representational inertia and bounds the feature matching space. At the gradient level, to prevent optimization instability caused by heterogeneous architectural biases, we incorporate a Momentum-driven EMA (MEMA) Scaler. By dynamically evaluating gradient consistency and penalizing conflicting optimization steps, MEMA ensures a highly stable and consistent training trajectory. Extensive experiments on CIFAR-100 and ImageNet-1K demonstrate that SPOFA con-sistently outperforms the strong OFA baseline and surpasses the recent state-of-the-art method PAT (ICCV 2025) across diverse heterogeneous pairs. Crucially, unlike PAT, which relies on heavy auxiliary attention mechanisms and massive computational overhead, SPOFA achieves these state-of-the-art gains with a virtually negligible parameter footprint during training and strictly zero extra inference cost, establishing a new standard for the accuracy-efficiency trade-off. In future work, we plan to extend the principles of SPOFA to more challenging dense prediction tasks, such as object detection and semantic segmentation, and further explore its theoretical potential for resolving norm discrepancies and gradient con-flicts in multimodal alignment scenarios. ACKNOWLEDGMENTS 
+
+This work was supported by the Key Project of Hunan Provincial Department of Education, China (Grant 23A0213), and the Research Fund for Introduced Talents of Central 13 
+
+South University of Forestry and Technology (Project Number: 2022YJ006). REFERENCES [1] G. Hinton, O. Vinyals, and J. Dean, “Distilling the knowledge in a neural network,” arXiv preprint arXiv:1503.02531 , 2015. [2] H. Jing, A. Wang, Y. Zhang, D. Bu, and J. Hou, “Reflectance prediction-based knowledge distillation for robust 3d object detection in com-pressed point clouds,” IEEE Transactions on Image Processing , vol. 35, pp. 85–97, 2026. [3] Z. Hao, J. Guo, K. Han, Y. Tang, H. Hu, Y. Wang, and C. Xu, “One-for-all: Bridge the gap between heterogeneous architectures in knowledge distillation,” in Advances in Neural Information Processing Systems (NeurIPS) , vol. 36, 2023, pp. 2826–2847. [4] J.-H. Lin, Y. Yao, C.-F. Hsu, H. Xie, H.-H. Shuai, and W.-H. Cheng, “Perspective-aware teaching: Adapting knowledge for heterogeneous distillation,” in Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , 2025. [5] M. Raghu, T. Unterthiner, S. Kornblith, C. Zhang, and A. Dosovitskiy, “Do vision transformers see like convolutional neural networks?” in 
+
+Advances in Neural Information Processing Systems (NeurIPS) , vol. 34, 2021, pp. 12 116–12 128. [6] H. Zhou and T. Luo, “Trust-calibrated collaborative learning for long-tailed visual recognition,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2026, pp. 40 866–40 875. [7] S. Zagoruyko and N. Komodakis, “Paying more attention to attention: Improving the performance of convolutional neural networks via atten-tion transfer,” in International Conference on Learning Representations (ICLR) , 2017. [8] A. Romero, N. Ballas, S. E. Kahou, A. Chassang, C. Gatta, and Y. Ben-gio, “Fitnets: Hints for thin deep nets,” in International Conference on Learning Representations (ICLR) , 2015. [9] W. Park, D. Kim, Y. Lu, and M. Cho, “Relational knowledge distilla-tion,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2019, pp. 3967–3976. [10] Z. Wang, S. Han, X. Wang, J. Hao, X. Cao, and B. Zhang, “Heteroge-neous generative knowledge distillation with masked image modeling,” 
+
+arXiv preprint arXiv:2309.09571 , 2023. [11] Z. Zhu, J. Hong, and J. Zhou, “Data-free knowledge distillation for het-erogeneous federated learning,” in International Conference on Machine Learning (ICML) . PMLR, 2021, pp. 12 878–12 889. [12] Z. Xiao, H. Xing, R. Qu, H. Li, X. Cheng, L. Xu, L. Feng, and Q. Wan, “Heterogeneous mutual knowledge distillation for wearable human activity recognition,” IEEE transactions on neural networks and learning systems , 2025. [13] Y. Xie, Y. Lin, W. Cai, X. Xu, H. Zhang, Y. Du, and S. He, “D3still: Decoupled differential distillation for asymmetric image retrieval,” in 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024, pp. 17 181–17 190. [14] W.-J. Ahn, G.-Y. Yang, H.-D. Choi, and M.-T. Lim, “Style blind domain generalized semantic segmentation via covariance alignment and semantic consistence contrastive learning,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2024, pp. 3325–3335. [15] Y. Li, M. Liu, Z. Cui, Y. Ding, Y. Zong, W. Zheng, S. Shan, and C. Guan, “Decoupled doubly contrastive learning for cross domain facial action unit detection,” IEEE Transactions on Image Processing , 2025. [16] Z. Wang, J. Peng, H. Zhao, L. Yao, and K. Zhao, “Orthogonal decoupling contrastive regularization: Towards uncorrelated feature decoupling for unpaired image restoration,” IEEE Transactions on Pattern Analysis and Machine Intelligence , 2025. [17] R. Miles, I. Elezi, and J. Deng, “Vkd: Improving knowledge distillation using orthogonal projections,” in Proceedings of the IEEE/CVF Confer-ence on Computer Vision and Pattern Recognition , 2024, pp. 15 720– 15 730. [18] S. Wei, C. Luo, and Y. Luo, “Scaled decoupled distillation,” in Pro-ceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024, pp. 15 975–15 983. [19] D. Chen, X. Teng, X. Shen, X. Yang, and L. Lan, “Distilling structural knowledge from cnns to vision transformers for data-efficient visual recognition,” Neural Networks , p. 108601, 2026. [20] T. Yu, S. Kumar, A. Gupta, S. Levine, K. Hausman, and C. Finn, “Gradient surgery for multi-task learning,” in Advances in Neural Information Processing Systems (NeurIPS) , vol. 33, 2020, pp. 5824– 5836. [21] B. Liu, X. Liu, X. Jin, P. Stone, and Q. Liu, “Conflict-averse gradient descent for multi-task learning,” in Advances in Neural Information Processing Systems (NeurIPS) , vol. 34, 2021, pp. 18 878–18 890. [22] Z. Hayder, A. Cheraghian, L. Petersson, M. Harandi, and R. Hart-ley, “Dto-kd: Dynamic trade-off optimization for effective knowledge distillation,” in The Fourteenth International Conference on Learning Representations , 2026. [23] T. Huang, S. You, F. Wang, C. Qian, and C. Xu, “Dist+: Knowledge distillation from a stronger adaptive teacher,” IEEE Transactions on Pattern Analysis and Machine Intelligence , 2025. [24] S. Gu, B. Sel, Y. Ding, L. Wang, Q. Lin, A. Knoll, and M. Jin, “Safe and balanced: A framework for constrained multi-objective reinforce-ment learning,” IEEE Transactions on Pattern Analysis and Machine Intelligence , 2025. [25] L. Lan, J. Wang, X. Wu, B. Han, and X. Liu, “Continuous review and timely correction: Enhancing the resistance to noisy labels via self-not-true and class-wise distillation,” IEEE Transactions on Pattern Analysis and Machine Intelligence , 2025. [26] X. Yang, X. Zhong, D. Kong, and N. Wang, “Toward generalizable prompt learning via multi-regularization guided knowledge distillation,” 
+
+IEEE Transactions on Image Processing , vol. 34, pp. 7600–7612, 2025. [27] G. Patel and Q. Qiu, “Learning to unlearn while retaining: Combat-ing gradient conflicts in machine unlearning,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , 2025, pp. 4211–4221. [28] R. Sun, H. Mai, W. Li, Y. Chen, and Y. Wang, “Two losses, one goal: Balancing conflict gradients for semi-supervised semantic segmen-tation,” in Proceedings of the IEEE/CVF international conference on computer vision , 2025, pp. 20 357–20 367. [29] W. Zhu, X. Zhou, P. Zhu, Y. Wang, and Q. Hu, “Ckd: Contrastive knowl-edge distillation from a sample-wise perspective,” IEEE Transactions on Image Processing , 2025. [30] L. Wu, H. Lin, Z. Gao, G. Zhao, and S. Z. Li, “A teacher-free graph knowledge distillation framework with dual self-distillation,” IEEE Transactions on Knowledge and Data Engineering , vol. 36, no. 9, pp. 4375–4385, 2024. [31] A. Krizhevsky, G. Hinton et al. , “Learning multiple layers of features from tiny images,” University of Toronto, Tech. Rep., 2009. [32] J. Deng, W. Dong, R. Socher, L.-J. Li, K. Li, and L. Fei-Fei, “Ima-genet: A large-scale hierarchical image database,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) .IEEE, 2009, pp. 248–255. [33] Z. Liu, H. Hu, Y. Lin, Z. Yao, Z. Xie, Y. Wei, J. Ning, Y. Cao, Z. Zhang, L. Dong et al. , “Swin transformer v2: Scaling up capacity and resolution,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2022, pp. 12 009–12 019. [34] Z. Liu, H. Mao, C.-Y. Wu, C. Feichtenhofer, T. Darrell, and S. Xie, “A convnet for the 2020s,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2022, pp. 11 976– 11 986. [35] S. Khan, M. Naseer, M. Hayat, S. W. Zamir, F. S. Khan, and M. Shah, “Transformers in vision: A survey,” ACM Computing Surveys (CSUR) ,vol. 54, no. 10s, pp. 1–41, 2022. [36] J. Wang et al. , “Crosskd: Cross-head knowledge distillation for object detection,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2024, pp. 1–10. [37] J. Ma, X. Xiang, K. Wang, Y. Wu, and Y. Li, “Aligning logits genera-tively for principled black-box knowledge distillation,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,2024, pp. 23 148–23 157. [38] B. Zhao, Q. Cui, R. Song, Y. Qiu, and J. Liang, “Decoupled knowledge distillation,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2022, pp. 11 953–11 962. [39] T. Huang, S. Y. Yuan, F. Wang, C. Qian, and C. Xu, “Knowledge distillation from a stronger teacher,” in Advances in Neural Information Processing Systems (NeurIPS) , vol. 35, 2022, pp. 33 716–33 727. [40] Y. Tian, D. Krishnan, and P. Isola, “Contrastive representation distil-lation,” in Proceedings of the International Conference on Learning Representations (ICLR) , 2020. [41] B. Li, X. Xue, S. Yang, Y. Shi, X. Chen, Y. Guan, Y. Zhang, and W. Zhang, “The unseen bias: How norm discrepancy in pre-norm mllms leads to visual information loss,” arXiv preprint arXiv:2512.08374 ,2025.

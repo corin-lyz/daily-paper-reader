@@ -1,0 +1,268 @@
+Title: StereoGeo: an end-to-end stereo camera calibration method
+
+URL Source: https://arxiv.org/pdf/2606.14619v1
+
+Published Time: Mon, 15 Jun 2026 01:08:12 GMT
+
+Number of Pages: 5
+
+Markdown Content:
+# StereoGeo: an end-to-end stereo camera calibration method 
+
+Imane MEDDOUR 
+
+Universite Paris-Saclay, CEA, List, 
+
+F-91120, Palaiseau, France imane.meddour@cea.fr 
+
+Andr´ ea MACARIO BARROS 
+
+Universite Paris-Saclay, CEA, List, 
+
+F-91120, Palaiseau, France andrea.barros@cea.fr 
+
+C´ edric GOUY-PAILLER 
+
+Universite Paris-Saclay, CEA, List, 
+
+F-91120, Palaiseau, France cedric.gouy-pailler@cea.fr 
+
+Abstract —In this work, we propose StereoGeo, an end-to-end network-based approach for stereo camera calibration. Our method estimates the focal lengths and gravity directions of the left and right cameras, as well as the relative extrinsic transformation relating them. Existing methods often rely on calibration patterns in structured environments or address only a single camera configuration, being limited to either intrinsic or extrinsic estimation, and depending on a multi-view setups. StereoGeo extends the GeoCalib algorithm, integrating deep neural network feature extraction with a differentiable optimizer. Extensive experiments on real-world benchmarks demonstrate that StereoGeo achieves competitive performance for intrinsic calibration and provides accurate stereo extrinsic estimation, outperforming existing methods that are limited to monocular settings. The dataset used in this work is partially publicly avail-able at https://github.com/meddourimane/StereoGeo-dataset. 
+
+Index Terms —Stereo camera calibration, Deep learning, End-to-end learning. 
+
+I. I NTRODUCTION 
+
+Stereo camera calibration is the task of estimating the intrinsic parameters of each camera, such as focal length, principal point, and lens distortion, as well as the rigid body transformation that defines the relative pose between them. This task plays a crucial role in computer vision such as Simultaneous Localization and Mapping (SLAM), Structure from Motion (SfM), and 6D object pose tracking [1]. Stereo camera calibration pipelines can be divided into geometric and learning-based categories. Geometric methods often use known calibration patterns such as checkerboards or planar grids [2]. Among them, one of the most employed algorithms is the Zhang’s method [3], which estimates in-trinsic and extrinsic parameters from multiple planar pattern observations, providing high accuracy but requiring carefully captured images and being sensitive to noise or imperfect pattern detection. Recent learning-based calibration approaches overcome these limitations by leveraging neural networks to predict cam-era parameters [4]–[6]. In particular, GeoCalib [7] represents a hybrid learning–geometry framework, achieving state-of-the-art performance in single-view calibration by estimating intrinsic parameters and gravity direction from a single RGB image, and refining parameters through differentiable opti-mization without calibration patterns or multi-view constraints. 
+
+Fig. 1. The StereoGeo architecture. The network predicts per-view perspective fields and camera parameters (focal, gravity, rotation and translation), which are refined using a differentiable Levenberg-Marquardt optimization. 
+
+Nevertheless, most learning-based methods primarily focus on single-view intrinsic calibration, including GeoCalib. UGCL approach [8] represents a notable effort toward stereo learning-based calibration, jointly estimating intrinsic and extrinsic parameters from stereo pairs under geometric constraint losses. However, UGCL assumes both cameras share identical intrin-sic parameters, which does not hold in many practical setups where left and right cameras may have different focal lengths or principal points. Furthermore, it does not explicitly estimate per-camera gravity directions. To address these limitations, we propose StereoGeo, a novel stereo calibration framework that extends GeoCalib to stereo configurations. StereoGeo jointly predicts per-camera focal lengths, per-camera gravity directions, and extrinsic param-eters using a hybrid learning and differentiable optimization pipeline, without relying on calibration patterns or feature matching. Our method leverages deep networks to predict per-view perspective fields, which are then refined through a differentiable Levenberg–Marquardt optimization, ensuring robustness even for cameras with distinct intrinsics. Addition-ally, we construct a large-scale synthetic stereo calibration 
+
+> arXiv:2606.14619v1 [cs.CV] 12 Jun 2026
+
+dataset composed of both indoor and outdoor scenes. The dataset combines stereo panorama-based image generation and CARLA-rendered images, resulting in over 50k stereo pairs with diverse geometric layouts and environmental conditions. The paper is structured as follows: Section II formalizes the problem; Section III describes the proposed method; Section IV presents experiments and discusses the results; Section V concludes the work. II. P ROBLEM FORMULATION 
+
+Accurate camera calibration is crucial for 3D perception tasks, ensuring image measurements correspond to real-world geometry. We formulate the calibration problem by modeling the camera as a sensor transforming 3D scene points into 2D image observations. 
+
+A. Static Camera Sensor Model 
+
+Let Xk ∈ R3 be a 3D point in the camera coordinate system and yk ∈ R2 its pixel observation. The image formation can be expressed as: 
+
+yk = f (Xk, θ) + νk, (1) where f (·, θ) is the non-linear projection model, θ represents the intrinsic parameters (focal length fx, f y , gravity direction) and the term νk ∼ N (0 , σ 2I) represents the additive measure-ment noise in the image plane, usually modeled as Gaussian white noise. 
+
+B. Monocular Camera Calibration 
+
+The goal of monocular calibration is to estimate the optimal parameters ˆθ from a set of N known 3D points Xk and their detected image projections yk. Therefore, instead of minimizing the error in the 3D scene, we minimize the reprojection error in the image plane [3]: 
+
+ˆθ = arg min 
+
+> θ
+
+1
+
+N
+
+> N
+
+X
+
+> k=1
+
+∥yk − f (Xk, θ)∥2 , (2) where k = 1 , . . . , N indexes the point correspondences. The noise νk is implicitly handled by this least-squares formula-tion, which yields the Maximum Likelihood Estimate (MLE) under Gaussian assumptions. 
+
+C. Stereo Camera Calibration 
+
+In a stereo setup, two cameras, denoted as left ( L) and right (R), observe the same scene points from different viewpoints. Each camera follows its own projection model: 
+
+yk,L = fL(Xk,L , θL) + νL,
+
+yk,R = fR(Xk,R , θR) + νR. (3) The 3D coordinates of a point in the two camera frames are related by a rigid body transformation: 
+
+Xk,R = RsXk,L + ts, (4) where Rs ∈ SO (3) (the Special Orthogonal group of 3×3 rotation matrices) is the relative rotation between the cameras, 
+
+ts ∈ R3 is the relative translation vector. The calibration problem for a stereo system consists of jointly estimating the intrinsics (θL, θR) and the relative transforma-tion (Rs, ts) by minimizing the total reprojection error: 
+
+min 
+
+> θL,θR,Rs,ts
+> N
+
+X
+
+> k=1
+
+
+
+∥yk,L − fL(Xk,L , θL)∥2
+
++ ∥yk,R − fR(RsXk,L + ts, θR)∥2 
+
+.
+
+(5) III. S TEREO CALIBRATION FRAMEWORK 
+
+A. StereoGeo Architecture 
+
+StereoGeo addresses joint intrinsic and extrinsic calibra-tion from stereo image pairs without relying on calibration patterns or explicit feature correspondences. Given a pair of uncalibrated images (IL, IR) acquired by stereo camera, the proposed framework estimates for each camera the in-trinsic parameters (focal length), gravity directions (gL, gR)
+
+decomposed into roll and pitch, and the relative pose (Rs, ts)
+
+between the cameras. As illustrated in Fig. 1, the proposed architecture is organized into four main stages: (I) Independent camera-wise feature extraction, (II) Perspective field, (III) Stereo-view fusion for relative pose estimation, and (IV) Optimization via Levenberg-Marquardt (LM). Following, each stage is detailed: 
+
+(I) Independent camera-wise feature extraction: The left and right images are processed independently by two identical encoder–decoder networks. This design maintains the modularity of each camera branch and avoids any cross-view information exchange during the estimation of intrinsic parameters and gravity directions. We employ aSegNeXt [9] based encoder–decoder architecture, adapted to preserve the original spatial resolution of the input images via progressive upsampling and low-level feature fusion, which is critical for dense geometric prediction. We chose SegNeXt for its multi-scale convolutional attention mechanism, which effectively captures both local vanishing point cues and global scene geometry essential for gravity estimation. 
+
+(II) Perspective Fields: Perspective Fields [6], [7] provide a dense geometric representation of the scene by encoding, for each pixel, the local gravity direction and viewing angle with respect to the world coordinate system. Following this formulation, each camera branch based on SegNeXt [9] predicts up-vectors ˆup and latitude values ˆϕp for each pixel 
+
+p. Each pixel p ∈ R2 on the image frame corresponds to a light ray n ∈ R3 emitted from a 3D point X ∈ R3 in the world frame. The up-vector represents the projection of the gravity direction into the image plane and can be inferred from both low-level geometric structures (e.g., vertical edges, line segments) and high-level semantic cues (e.g., upright objects). The latitude encodes the angle between the viewing ray and the horizontal plane, with zero latitude corresponding to the horizon. Formally, considering a pixel p observing a 3D point X ∈ R3 under gravity direction g, these quantities are defined as showed by Eqs. (6) and (7) [6]: 
+
+up = lim 
+
+> c→0
+
+π(X − cg) − π(X)
+
+∥π(X − cg) − π(X)∥2
+
+, (6) 
+
+ϕp = arcsin 
+
+ n⊤g
+
+∥n∥2
+
+
+
+. (7) where π(·) denotes the camera projection function and n is the corresponding viewing ray. In addition to these fields, the network predicts pixel-wise confidence maps (σup , σ ϕp ) that quantify the reliability of each prediction. These confidences allow subsequent optimization to focus on informative regions (e.g., near vertical structures or the horizon) while down-weighting ambiguous or textureless areas. 
+
+(III) Stereo-view fusion for relative pose estimation: To estimate the extrinsic parameters, StereoGeo employs a dedi-cated stereo-view fusion module that correlates features from the left and right encoder branches. Our design preserves the independence of monocular intrinsic and gravity predictions, using stereo-view information exclusively for pose estimation. Let FL and FR denote the feature maps from the left and right encoders. These features are concatenated along the channel dimension and aggregated through global pooling. The resulting feature vector is then passed to two separate MLP-based regression heads for rotation and translation prediction. Rotation is predicted as a unit quaternion qs =[qx, q y , q z , q w]T and normalized via L2 normalization to en-sure a valid representation on the unit sphere. This quaternion is subsequently converted to the rotation matrix Rs ∈ SO (3) .Translation is predicted as a 3D vector ts = [ tx, t y , t z ]⊤ that encodes both magnitude and direction. 
+
+(IV) Optimization via Levenberg-Marquardt: Given the predicted Perspective Fields (ˆ up, ˆϕp) from the SegNeXt encoder–decoder, we refine the camera parameters θ = {f, g}
+
+(focal length and gravity direction) for each camera through non-linear optimization. Since each camera has independent parameters, we define separate objective functions for the left and right views. For a given camera, let up(θ) and ϕp(θ) denote the Perspective Fields induced by the current parameters. We define the confidence-weighted per-pixel residuals as: 
+
+rup = up(θ) − ˆup, rϕp = sin ϕp(θ) − sin ˆϕp, (8) and minimize the per-camera objective function: 
+
+Ecam (θ) = X
+
+> p∈H×W
+
+σup ∥rup ∥22 + σϕp ∥rϕp ∥22, (9) where σup and σϕp are the predicted confidence maps. We employ the Levenberg–Marquardt (LM) algorithm [10], [11] to minimize Ecam . The gravity vector g is parametrized on the unit sphere S2 [12], [13], and the focal length as 
+
+log f to enforce positivity. At each iteration, the LM update is computed as: 
+
+δ = −(H + λ diag( H)) −1J⊤Wr , (10) where r stacks all residuals, W is the diagonal confidence weight matrix, J is the Jacobian, H = J⊤WJ is the Hessian, and λ is the damping factor. Following [7], we initialize grav-ity to g0 = [0 , 1, 0] ⊤ and focal length to f0 = 0 .7·max( W, H ).The optimization terminates when the update δ becomes sufficiently small, producing refined parameters θL and θR
+
+for the left and right cameras. 
+
+B. Loss Formulation and Training Strategy 
+
+StereoGeo is trained in a fully supervised, end-to-end manner. Thanks to the differentiability of the Levenberg– Marquardt (LM), gradients can be backpropagated through the refinement layer, enabling joint learning of Perspective Fields and camera parameters. 
+
+1) Supervision of intrinsic parameters and Perspective Fields: For each camera, let (ˆ up, ˆϕp) denote the predicted Perspective Fields and ˆθ the refined parameters (focal length and gravity) after LM optimization. Given ground-truth param-eters ¯θ, we define a per-camera loss that jointly supervises the refined parameters and intermediate geometric cues, as shown in Eq. (11): 
+
+Lcam = ∥ˆθ − ¯θ∥ + β X
+
+> p∈H×W
+
+σup ∥ˆup − u(¯θ)p∥
+
++ σϕp ∥ ˆϕp − ϕ(¯θ)p∥, (11) where β balances the Perspective Field contribution and 
+
+σup , σ ϕp are the predicted confidence maps. 
+
+2) Supervision of stereo relative pose: We supervise the predicted rotation ˆRs and translation ˆts with respect to ground-truth ( ¯Rs, ¯ts) using Huber loss H(·) to improve robustness, as proposed in [14]. For rotation, we compute the error in the rotation angle as defined in Eq. (12): 
+
+LRs = H arccos Tr( ˆR⊤ 
+
+> s
+
+¯Rs) − 12
+
+!! 
+
+, (12) For translation, the error is computed in both normalized and unnormalized forms. To further enhance accuracy, we also incorporate the angular error of translation, resulting in the following three loss terms [14] described in Eq. (13): 
+
+Ltrans = λtH(ˆ ts − ¯ts)+ λtn H
+
+ ˆts
+
+∥ˆts∥ − ¯ts
+
+∥¯ts∥
+
+
+
++ λta H
+
+
+
+arccos ˆts · ¯ts
+
+∥ˆts∥∥ ¯ts∥
+
+
+
+.
+
+(13) where λt, λtn , and λta are scalar coefficients used to balance the contributions of the different loss terms. The total pose loss is Lpose = LRs + Ltrans .
+
+3) Full training loss: The final loss combines the per-camera losses for left and right views with the relative pose loss: 
+
+L = LL 
+
+> cam
+
++ LR 
+
+> cam
+
++ Lpose . (14) TABLE I PER -CAMERA INTRINSIC CALIBRATION PERFORMANCE ON THE TEST SET .
+
+Approach Roll [degrees] Pitch [degrees] FoV [degrees] err ↓ AUC@1 @5 @10 ↑ err ↓ AUC@1 @5 @10 ↑ err ↓ AUC@1 @5 @10 ↑
+
+StereoGeo Right (ours) 0.56 70.5 84.8 90.2 0.75 57.0 76.6 85.5 1.82 31.7 58.8 75.7 StereoGeo Left (ours) 0.48 75.3 87.2 91.4 0.67 60.0 78.7 86.8 1.57 35.9 62.8 78.2 
+
+GeoCalib [7] 0.45 77.2 88.4 92.2 0.63 62.4 79.6 87.3 1.65 33.8 61.4 77.4 
+
+IV. E XPERIMENTS 
+
+We evaluate StereoGeo on joint intrinsic and extrinsic calibration from stereo pairs across diverse scenarios. First, we assess intrinsic parameter and gravity direction estimation in the monocular case. Second, we evaluate joint intrinsic and extrinsic parameter recovery in the stereo setting. Finally, we analyze extrinsic parameter estimation independently, compar-ing against established geometric baselines. 
+
+A. Implementation Details 
+
+Training Dataset: Following [6], [7], we construct a large-scale synthetic stereo calibration dataset combining stereo panorama-based rendering and photorealistic simulation. The dataset contains both indoor and outdoor environments to ensure strong geometric diversity and robustness across scene types. From 2,500 stereo equirectangular panoramas collected from SUNCG [15] via 3D60 [16], we generate 38,324 stereo pairs by sampling 16 crops per panorama. For each crop, roll and pitch are uniformly sampled within [±45 ◦], and the vertical field of view within [20 ◦, 105 ◦]. The stereo baseline is fixed around 0.26 m. Since some panoramas contain padding artifacts, stereo pairs with more than 1% black pixels are discarded. To complement panorama-based data with realistic driving scenarios, we generated 12,220 stereo pairs using CARLA [17]. Scenes are rendered across multiple towns and weather conditions, providing diverse outdoor urban layouts. For each capture, a physically consistent stereo rig with vari-able baseline is instantiated. The baseline is uniformly sampled in [0 .20 , 0.70] m, the base orientation of the stereo rig is defined by roll and pitch angles uniformly sampled in [±0.5◦],and the vertical field of view is sampled in [55 ◦, 75 ◦]. Addi-tionally, 5,000 stereo pairs are extracted from TartanAir [18] across 12 diverse simulated environments, further increasing variability in scene structure and viewpoint distribution. In total, the dataset contains 55,913 stereo pairs spanning both indoor and outdoor environments. The data are split into 90% 
+
+training, 5% validation, and 5% test sets. 
+
+Training: StereoGeo is trained end-to-end from scratch without pre-training or fine-tuning from GeoCalib for 48 epochs using the AdamW [19] optimizer with a learning rate of 10 −4 and a batch size of 24 stereo pairs. The learning rate is linearly warmed up over the first 4,000 steps and decayed by a factor of 10 at steps 80,000 and 130,000. Training requires approximately 48 hours on two NVIDIA H200 GPUs. Inference takes about 464 ms per stereo pair.                                   
+
+> TABLE II STEREO INTRINSIC AND EXTRINSIC CALIBRATION .
+> Dataset Method vFoV Med. (°) Pitch Med. (°) Trans. Error (m) LRMean Med. Std Test Set UGCL 14.68 14.68 6.39 0.40 0.36 0.10 StereoGeo (ours) 1.61 1.82 0.10 0.024 0.012 0.039
+> KITTI UGCL 5.04 5.04 6.35 0.62 0.62 0.0001
+> StereoGeo (ours) 10.81 10.82 0.18 0.40 0.40 0.070
+
+B. Intrinsic Parameter and Gravity Direction Estimation (Monocular Case) 
+
+We evaluate per-camera intrinsic calibration by comparing StereoGeo with the single-view SOTA method GeoCalib [7], retrained on our data. We report median angular errors and Area Under the Curve (AUC) at 1◦, 5◦, and 10 ◦ thresholds for roll, pitch, and vertical field-of-view (vFoV). Left and right cameras are evaluated independently on the held-out test set. Table I shows that StereoGeo achieves median errors of 
+
+0.48 ◦/0.67 ◦/1.57 ◦ for the left camera and 0.56 ◦/0.75 ◦/1.82 ◦
+
+for the right camera (roll/pitch/vFoV). These results confirm-ing that StereoGeo achieves comparable SOTA single-view calibration quality while additionally estimating stereo extrin-sics. The small differences between left and right cameras demonstrate the stability of the dual-branch architecture. 
+
+C. Intrinsic and Extrinsic Parameter Estimation (Stereo Case) 
+
+We evaluate StereoGeo on relative pose and intrinsic pa-rameter recovery for stereo cameras using both our held-out test set and the KITTI dataset [20]. Results are compared with UGCL [8], a method jointly estimating intrinsic and extrinsic parameters and presented on Sec. I. As shown in Table II, StereoGeo recovers the full rotation matrix and per-camera focal lengths without feature matching or RANSAC [21]. On our test set, StereoGeo outperforms UGCL across all metrics, demonstrating its effectiveness on diverse synthetic scenarios. On KITTI, UGCL achieves lower vFoV error due to the dataset’s fixed camera optics and limited focal length variability. However, StereoGeo remains significantly more accurate in estimating extrinsic parameters, which are critical for stereo vision applications. These results highlight StereoGeo as a robust learning-based method that provides superior relative pose estimation, even on real-world data with different characteristics from the training set. 
+
+D. Extrinsic Parameter Estimation 
+
+We evaluate relative pose estimation on KITTI Stereo [20] using 200 image pairs against feature-based geometric TABLE III EXTRINSIC PARAMETER ESTIMATION ON KITTI S TEREO .            
+
+> Method Rotation Error (°) Mean Med. Std ORB + EM 0.57 0.47 0.30 SuperPoint + SuperGlue 1.43 0.46 12.64 StereoGeo (ours) 0.57 0.58 0.094
+
+pipelines that use RANSAC for robust Essential Matrix esti-mation: ORB [22] and SuperPoint with SuperGlue [23], [24]. These geometric methods assume known intrinsic parameters, whereas StereoGeo jointly estimates both intrinsics and extrin-sics. We report rotation errors with mean, median, and standard deviation. Translation results are presented in Table II. As shown in Table III, StereoGeo achieves competitive rotation accuracy with mean error matching ORB with EM and median error close to SuperPoint with SuperGlue. No-tably, StereoGeo exhibits lower standard deviation ( 0.094 ◦)compared to both baselines ( 0.30 ◦ and 12 .64 ◦), demonstrating superior robustness and consistency. Critically, unlike geomet-ric baselines that cannot recover metric translation due to scale ambiguity, StereoGeo recovers metric translation (Table II, KITTI row). This demonstrates that StereoGeo provides a robust, learning-based alternative for complete extrinsic cal-ibration in stereo setups without requiring feature matching, RANSAC, or prior knowledge of camera parameters. V. C ONCLUSION 
+
+We presented StereoGeo, the first learning-based framework for pattern-free stereo camera calibration, jointly estimating per-camera focal lengths, gravity directions, and extrinsic parameters without assuming identical intrinsics. By extending GeoCalib to the stereo setting, our dual-branch architecture inherits end-to-end differentiable geometric optimization and learned confidence weighting, while addressing the additional challenge of joint intrinsic and extrinsic estimation. StereoGeo operates without calibration patterns, feature matching, or multi-view constraints, and recovers metric translation directly from image. Experiments on synthetic benchmarks and real-world sequences validate the approach, showing robust extrin-sic estimation and competitive intrinsic accuracy relative to single-view baselines. Current limitations, notably the absence of lens distortion modeling and principal point estimation, are natural directions for future extensions. Beyond stereo cameras, this work opens a path toward learning-based calibra-tion of more complex multi-sensor systems in unconstrained environments. VI. A CKNOWLEDGEMENTS 
+
+CGP has benefited from French State aid managed by the Agence Nationale de la Recherche (ANR) under France 2030 program with the reference ANR-23-PEIA-005 (REDEEM project). REFERENCES [1] K. Liao, L. Nie, S. Huang, C. Lin, J. Zhang, Y. Zhao, M. Gabbouj, and D. Tao, “Deep learning for camera calibration and beyond: A survey,” 2025. [Online]. Available: https://arxiv.org/abs/2303.10559 [2] J.-Y. Bouguet, “Camera calibration toolbox for matlab,” https://robots. stanford.edu/cs223b04/JeanYvesCalib/, 2004. [3] Z. Zhang, “A flexible new technique for camera calibration,” IEEE TPAMI , vol. 22, no. 11, pp. 1330–1334, 2000. [4] M. Lopez, R. Mari, P. Gargallo, Y. Kuang, J. Gonzalez-Jimenez, and G. Haro, “Deep single image camera calibration with radial distortion,” in Proceedings of the IEEE/CVF CVPR , June 2019. [5] X. Song, H. Kang, A. Moteki, G. Suzuki, Y. Kobayashi, and Z. Tan, “Mscc: Multi-scale transformers for camera calibration,” in Proceedings of the IEEE/CVF WACV , January 2024, pp. 3262–3271. [6] L. Jin, J. Zhang, Y. Hold-Geoffroy, O. Wang, K. Matzen, M. Sticha, and D. F. Fouhey, “Perspective fields for single image camera calibration,” in CVPR , 2023. [7] A. Veicht, P.-E. Sarlin, P. Lindenberger, and M. Pollefeys, “GeoCalib: Single-image Calibration with Geometric Optimization,” in ECCV , 2024. [8] M. Waleed, A. Rauf, and M. Taj, “Camera calibration through geometric constraints from rotation and projection matrices,” in ICIP , 2024. [9] M.-H. Guo, C.-Z. Lu, Q. Hou, Z. Liu, M.-M. Cheng, and S.-M. Hu, “Segnext: Rethinking convolutional attention design for semantic segmentation,” in NeurIPS , 2022. [10] K. Levenberg, “A method for the solution of certain non – linear problems in least squares,” Quarterly of Applied Mathematics , vol. 2, pp. 164–168, 1944. [11] D. W. Marquardt, “An algorithm for least-squares estimation of non-linear parameters,” Journal of the Society for Industrial and Applied Mathematics , vol. 11, no. 2, pp. 431–441, 1963. [12] R. Hartley and A. Zisserman, Multiple View Geometry in Computer Vision , 2nd ed. Cambridge University Press, 2004. [13] C. Hertzberg, R. Wagner, U. Frese, and L. Schr¨ oder, “Integrating generic sensor fusion algorithms with sound state representations through encap-sulation of manifolds,” Information Fusion , vol. 14, no. 1, pp. 57–77, 2013. [14] R. Yin, Y. Zhang, Z. Pan, J. Zhu, C. Wang, and B. Jia, “Srpose: Two-view relative pose estimation with sparse keypoints,” in ECCV , 2024. [15] S. Song, F. Yu, A. Zeng, A. X. Chang, M. Savva, and T. Funkhouser, “Semantic scene completion from a single depth image,” in CVPR , 2016. [16] N. Zioulis, A. Karakottas, D. Zarpalas, F. Alvarez, and P. Daras, “Spherical view synthesis for self-supervised 360 o depth estimation,” in International Conference on 3D Vision (3DV) , September 2019. [17] A. Dosovitskiy, G. Ros, F. Codevilla, A. Lopez, and V. Koltun, “CARLA: An open urban driving simulator,” in Proceedings of the 1st Annual Conference on Robot Learning , 2017, pp. 1–16. [18] W. Wang, D. Zhu, X. Wang, Y. Hu, Y. Qiu, C. Wang, Y. Hu, A. Kapoor, and S. Scherer, “Tartanair: A dataset to push the limits of visual slam,” in 2020 IEEE/RSJ IROS . IEEE Press, 2020, p. 4909–4916. [19] I. Loshchilov and F. Hutter, “Decoupled weight decay regularization,” in ICLR , 2019. [20] A. Geiger, P. Lenz, and R. Urtasun, “Are we ready for autonomous driving? the kitti vision benchmark suite,” in 2012 IEEE CVPR , 2012, pp. 3354–3361. [21] M. A. Fischler and R. C. Bolles, “Random sample consensus: a paradigm for model fitting with applications to image analysis and automated cartography,” Commun. ACM , vol. 24, no. 6, p. 381–395, Jun. 1981. [22] E. Rublee, V. Rabaud, K. Konolige, and G. Bradski, “Orb: An efficient alternative to sift or surf,” in 2011 ICCV , 2011, pp. 2564–2571. [23] D. DeTone, T. Malisiewicz, and A. Rabinovich, “Superpoint: Self-supervised interest point detection and description,” in CVPR , 2018. [24] P.-E. Sarlin, D. DeTone, T. Malisiewicz, and A. Rabinovich, “Superglue: Learning feature matching with graph neural networks,” in CVPR , 2020.

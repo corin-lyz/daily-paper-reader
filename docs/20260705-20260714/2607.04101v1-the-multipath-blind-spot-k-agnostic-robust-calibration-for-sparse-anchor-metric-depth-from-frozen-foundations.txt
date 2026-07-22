@@ -1,0 +1,893 @@
+Title: The Multipath Blind Spot: K-Agnostic Robust Calibration for Sparse-Anchor Metric Depth from Frozen Foundations
+
+URL Source: https://arxiv.org/pdf/2607.04101v1
+
+Published Time: Tue, 07 Jul 2026 01:57:03 GMT
+
+Number of Pages: 25
+
+Markdown Content:
+> UNDER REVIEW AT IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 1
+
+# The Multipath Blind Spot: K-Agnostic Robust Calibration for Sparse-Anchor Metric Depth from Frozen Foundations 
+
+Sohag Roy, Rajesh Misra, Swami Shastravidyananda, and Tamal Maharaj 
+
+Abstract —Monocular depth foundations predict domain-general relative depth but lack absolute scale; a handful of sparse metric anchors from a range sensor can calibrate them to metric depth, an attractive alternative to metric-supervised training. Existing sparse-anchor calibration methods, however, assume the anchors are clean, whereas real sensors produce outliers that are present with the wrong value—time-of-flight multipath, mixed pixels—not merely missing. We show that the established residual-on-CFA calibration recipe collapses under such outliers, and that the strongest publicly deployed method, VI-Depth, has a structural multipath blind spot: robust to missing anchors, it falls behind an unprotected baseline on three of four datasets when anchors are present but wrong. We propose Multipath-Robust Anchor Calibration (MRAC), a parameter-free, inference-time wrapper that gates anchors by foundation consistency—a Theil–Sen fit and a median-absolute-deviation test against the foundation’s own relative-depth ordering—before a single call to the calibration head. MRAC adds no learned parameters, runs its selection in ≈ 50 μs on CPU, and serves anchor budgets K ∈ [5 , 200] from one checkpoint. On a 320 -cell benchmark with a same-backbone, same-architecture control, MRAC strictly wins 84% of same-backbone cells across all four outlier families and, against VI-Depth, wins all twelve corrupted multipath cells and all sixteen KITTI cells, reducing KITTI multipath AbsRel by 3.2× (0.489 to 0.151 ) at zero retraining. 
+
+Index Terms —Monocular depth estimation, metric depth, sparse depth, robust estimation, depth foundation models, sensor outliers, calibration. 
+
+I. I NTRODUCTION 
+
+# MONOCULAR depth foundations now predict strong, domain-general relative depth from a single image [1]– [3]. Their output is affine-invariant: it encodes scene structure but carries no absolute scale. A small set of sparse metric anchors—a few hundred or even a few dozen points from a time-of-flight sensor, LiDAR, or structured-light module— is enough to recover that scale and turn a relative-depth foundation into a metric one. This frozen-foundation-plus-sparse-anchor paradigm is attractive precisely because it is light: it inherits the foundation’s cross-domain prior, needs no metric-supervised retraining, and runs at interactive rates. VI-Depth [4], the sparse-LiDAR rescaling of Marsal et al. [5], and a growing line of recent methods [6]–[8] all follow it. These methods share an unstated assumption: that the anchors are clean. Real range sensors violate it. Time-of-
+
+The authors are with the Department of Computer Science, Ramakrishna Mission Vivekananda Educational and Research Institute (RKMVERI), Belur, Howrah, West Bengal 711202, India. E-mail: roysohag95@gmail.com; rajesh2025.misra@gmail.com; shastravidyananda@gm.rkmvu.ac.in; tamal@gm.rkmvu.ac.in. 
+
+flight multipath off glass and specular surfaces returns depths biased toward the sensor; LiDAR saturates at maximum range and reports a constant sentinel value; beam footprints that straddle a depth discontinuity return a blend of foreground and background. Most of these corruptions are present with the wrong value , not missing—and a present-but-wrong an-chor is categorically harder than a missing one, because a calibrator cannot simply skip a measurement that looks valid. Yet no prior work systematically measures how sparse-anchor calibration behaves under sensor outliers. We measure it, and the result is surprising. VI-Depth, the strongest publicly deployed method of this kind, has a structural blind spot on multipath outliers. It is robust to anchor dropout—the corruption its training implicitly simulates—but on present-with-wrong-value multipath anchors its accuracy degrades sharply, falling behind even an unprotected base-line on three of four datasets. On KITTI at 25% multipath corruption its AbsRel is 0.489 , a 3.2× error inflation over the method we propose (Fig. 1). The failure is not a tuning artifact: it persists at VI-Depth’s own training anchor budget, and it follows from a missing mechanism. The pipeline has no step that tests whether a present anchor’s value is consistent with the scene geometry the foundation already encodes. We propose Multipath-Robust Anchor Calibration (MRAC), a parameter-free, inference-time wrapper that supplies exactly that test. The frozen foundation’s relative-depth field is an independent witness on scene geometry: legitimate anchors obey a single affine relationship with it, and outliers—whether multipath, dropout, or mixed-pixel—violate it. MRAC fits this relationship robustly with a Theil–Sen estimator, gates anchors by a median-absolute-deviation test, and passes only the consistent anchors to a single call of the established residual-on-CFA calibration head. It adds no learned parameters and no K-dependent ones, calls the head exactly once, runs its selection in ≈ 50 μs on CPU, and serves anchor budgets from 
+
+K=5 to K=200 from a single checkpoint—in contrast to the per-budget heads the deployed alternative requires. This paper makes four contributions.  
+
+> •
+
+We identify and explain a structural multipath blind spot in the strongest publicly deployed sparse-anchor calibration method, showing it is robust to missing an-chors but fails on present-with-wrong-value ones, and that the failure persists at its own training anchor budget (Secs. V, IX).  
+
+> •
+
+We propose MRAC , a parameter-free, single-forward-pass, K-agnostic inference-time wrapper that closes          
+
+> arXiv:2607.04101v1 [cs.CV] 5 Jul 2026 UNDER REVIEW AT IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 2
+> Fig. 1. Sparse-anchor calibration under multipath outliers. The strongest deployed method, VI-Depth, is robust to missing anchors but blind to present-but-wrong-value multipath anchors, inflating KITTI AbsRel to 0.489 at 25% corruption. MRAC, a parameter-free inference-time wrapper, gates the foundation-inconsistent anchors and reduces this to 0.151 , a 3.2×improvement at zero retraining.
+
+this gap by gating anchors on foundation consistency, at ≈ 50 μs CPU overhead and no added parameters (Secs. III, VIII).  
+
+> •
+
+We construct the first systematic anchor-outlier robust-ness benchmark for this setting, to our knowledge: 320 
+
+cells spanning four datasets, four sensor-grounded outlier families, four corruption fractions, and five methods, with a same-backbone, same-architecture control that isolates the method from the backbone (Sec. IV).  
+
+> •
+
+We show MRAC strictly wins 84% of cells against its same-backbone controls across all four outlier families, and against VI-Depth wins all twelve corrupted multi-path cells and all sixteen KITTI cells, reducing KITTI multipath AbsRel by 3.2× at zero retraining (Sec. V). Section II situates these contributions, Section III defines MRAC, and Sections IV–VIII present the benchmark, the headline robustness result, the substrate and diagnostic studies, and the inference cost; Section IX discusses limitations and Section X concludes. II. R ELATED WORK 
+
+A. Monocular Depth Foundations 
+
+Affine-invariant monocular depth estimation has matured into general-purpose foundations. MiDaS established robust relative-depth prediction by training across mixed datasets with a scale-and-shift-invariant loss [1]; DPT replaced the convolutional backbone with a vision transformer [2]; and Depth Anything scaled training to large unlabeled corpora [9], with Depth Anything V2 improving fine detail and robustness [3]. Diffusion-based estimation reaches comparable affine-invariant accuracy [10]. The appeal of these models is that a single frozen network supplies a strong geometric prior across domains without per-scene or per-sensor training. Other foundations target metric scale directly—monocular geometry with metric output [11], fast metric depth [12], and zero-shot metric prediction [13]—though typically at the cost of generality or with additional metric supervision. The relative-depth models output a field that encodes scene structure but no absolute scale; recovering metric depth from them requires an external cue, which is the problem this paper addresses. We keep the foundation frozen throughout and never fine-tune it. 
+
+B. Metric Depth from Sparse Cues 
+
+One route to metric depth is full supervision, regressing metric depth directly: from the multi-scale network of Eigen et al. [14] through ordinal regression [15], local planar guid-ance [16], adaptive bins [17], neural-window CRFs [18], and the relative-plus-metric combination of ZoeDepth [19]. These require metric-supervised training and do not exploit a frozen foundation at inference. The route we follow instead calibrates a frozen relative-depth model with a handful of sparse metric anchors—a lightweight alternative that inherits the foundation’s cross-domain prior. VI-Depth aligns monocular depth to sparse visual-inertial points by a global scale-and-shift fit followed by a learned dense alignment head, and is the most widely deployed method of this kind [4]. Marsal et al. rescale Depth Anything to a 2D-LiDAR’s sparse points by linear regression, using RANSAC for robustness [5]. More recent work conditions on denser or more general cues: Prompt Depth Anything fuses a low-resolution LiDAR depth as a decoder prompt for 4K metric depth [6], Prior Depth Anything incorporates arbitrary depth priors [7], and SLIM injects sparse LiDAR into a geometry foundation for long-range driving [8]. The closed-form fit plus learned residual that we adopt as a calibration substrate is established by VI-Depth and Marsal et al.; our contribution is orthogonal to it. Critically, none of these methods addresses anchor outliers. They assume the sparse cues are clean—Marsal’s RANSAC stage being the only explicit robustness, and one we show fails on correlated dropout (Sec. V)—whereas real range sensors produce multi-path, dropout, and mixed-pixel corruption. UNDER REVIEW AT IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 3
+
+C. Robust Regression in Vision 
+
+Robust estimation supplies the fitting tools for corrupted data. The Theil–Sen estimator takes the median of pairwise slopes and attains a breakdown point of ≈ 29% [20], [21]; least median of squares [22] and M-estimators [23] provide alternative robust criteria. In vision, RANSAC [24] and its maximum-likelihood variant MLESAC [25] are the standard consensus estimators for geometric fitting [26]. Consensus sampling is known to degrade when outliers are structured or mutually consistent rather than independent, because a coherent outlier set can itself form a high-consensus model. The anchor-outlier setting contains exactly this case: dropout outliers share one constant depth and are therefore correlated. We adapt the median-based Theil–Sen fit with a MAD inlier gate and use the frozen foundation’s relative depth as the con-sistency reference, which is what lets the fit reject correlated outliers that a consensus step would accept (Secs. III-E, V). 
+
+D. Sparse Depth Completion 
+
+The adjacent field of depth completion predicts a dense depth map from a sparse depth input and an image, from early image-guided CNNs [27], [28] through spatial-propagation networks [29], [30], guided convolution [31], [32], transformer hybrids [33], bilateral propagation [34], and unsupervised calibrated backprojection [35]. Completion differs from our problem in two ways. It learns the full dense prediction, which requires heavy training specific to a sensor and a sparsity pattern, whereas we calibrate a frozen foundation with a single small head that is agnostic to the anchor budget. And, like the sparse-cue calibration methods above, completion networks take the sparse input at face value; outlier robustness is outside their scope. Our method is complementary: it makes the calibration of a frozen foundation robust to the corrupted measurements that both calibration and completion otherwise trust. III. M ETHOD 
+
+A. Problem Setup 
+
+We recover a dense metric depth map from a single RGB image I and a small set of sparse depth measurements. A frozen monocular depth foundation F maps I to a normalized relative depth field drel = F (I) ∈ [0 , 1] H×W , which encodes the scene’s relative geometry but carries no absolute scale. The metric cue is a set of K sparse anchors {(pk, z k)}Kk=1 , where 
+
+pk is a pixel coordinate and zk is the depth reported by a range sensor (ToF, LiDAR, or structured light) at pk. The objective is the metric depth map D ∈ RH×W . Fig. 2 overviews the pipeline. The foundation is frozen throughout: no gradients propagate into F , and F is never specialized to a sensor, scene, or anchor budget. The number of anchors K is small ( K ∈ [5 , 200] in our experiments) and is a property of the deployed sensor, not a design choice. Crucially, and in contrast to all prior sparse-anchor calibration work, we do not assume the zk are clean: a fraction of the anchors may be corrupted by sensor-realistic outlier processes (Sec. III-D). The method must therefore be              
+
+> Fig. 2. MRAC pipeline. A frozen foundation F(DAv2, ∼330 M parameters) predicts a relative-depth field drel ; the Ksparse anchors are tested for consistency with that field by a Theil–Sen slope fit and a MAD inlier gate (|rk| ≤ κ σ MAD ); only the surviving cleaned anchors are passed to a single call of the residual-on-CFA head Rθ(0.47 M parameters), which produces the metric depth map. The robust selection adds no parameters and no second forward pass ( ∼50 μs CPU overhead).
+
+robust to corrupted anchors, agnostic to K, and add negligible cost over the frozen forward pass. 
+
+B. Closed-Form Anchor Fit (CFA) Substrate 
+
+The simplest metric calibration aligns drel to the anchors by a global affine transform. Writing xk = drel (pk), the closed-form anchor fit (CFA) solves the least-squares problem 
+
+(acfa , b cfa ) = arg min 
+
+> a,b K
+
+X
+
+> k=1
+
+ a x k + b − zk
+
+2, (1) which admits the closed-form solution acfa =Cov( x, z )/ Var( x) and bcfa = ¯ z − acfa ¯x, costing a constant number of operations per image. The metric depth map is then D(u) = acfa drel (u) + bcfa at every pixel u.This global-affine alignment is established prior art, not a contribution of this work. It is the global scale-and-shift alignment stage of VI-Depth [4], the pseudo-metric rescaling of Marsal et al. [5], and the standard scale-shift recovery used throughout the affine-invariant depth literature [1]. We adopt CFA unchanged as the calibration substrate on which both the learned residual (Sec. III-C) and our robust selection (Sec. III-E) operate. The CFA estimator is the maximum-likelihood affine fit under i.i.d. Gaussian anchor noise, and for K ≥ 2 it is exact whenever Var( x) > 0; its weakness is that least squares has a breakdown point of zero, so a single gross outlier can dominate the fit. That weakness is the subject of Sec. III-E. 
+
+C. Residual-on-CFA Architecture 
+
+A purely global affine map cannot correct spatially varying misalignment between drel and the true depth. The commu-nity’s response is to add a lightweight network that predicts a per-pixel correction to the affine coefficients. A compact U-Net Rθ (0.47 M trainable parameters) takes the image, the relative depth, and the anchors rendered as a sparse mask and depth channel, 
+
+ ∆a, ∆b, s  = Rθ
+
+ I, d rel , m, z, (2) and emits per-pixel residual coefficients ∆a(u), ∆b(u) and a log-variance s(u) used by an uncertainty-weighted training term (Sec. III-F). The metric depth is 
+
+D(u) =  acfa + ∆ a(u) drel (u) +  bcfa + ∆ b(u). (3) UNDER REVIEW AT IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 4
+
+The residual branch is zero-initialized, so ∆a = ∆ b = 0 
+
+at the start of training and the network is exactly CFA at initialization. The architecture therefore degrades gracefully by construction: in the worst case it reduces to the closed-form affine fit, which is the K ≥ 2 maximum-likelihood estimator under a global affine model, and it can only improve on CFA where the data support a spatially varying correction. We stress that this residual-on-CFA architecture is, again, prior art. It is the learned dense alignment of VI-Depth [4] and the refine-where-reliable stage of Marsal et al. [5]; the broader strategy of conditioning a small head on a frozen foundation plus sparse metric cues is shared by Prompt Depth Anything [6] at a denser anchor regime. We treat residual-on-CFA as the substrate the field has converged on. Our contribution is orthogonal to it: a robust selection of which anchors the substrate is allowed to see , introduced next. 
+
+D. The Anchor-Outlier Problem 
+
+Real range sensors do not deliver clean anchors. We model four sensor-grounded outlier processes, each of which replaces a fraction p of the anchor depths zk with a corrupted value. 
+
+Uniform outliers replace zk with a value drawn uniformly across the scene’s depth range, modeling spurious returns and gross measurement faults [36], [37]. Near (multipath/specular) 
+
+outliers replace zk with a near-biased value, modeling time-of-flight multipath off glass and reflective geometry and the foreshortened returns of retro-reflective surfaces [38], [39]. 
+
+Dropout outliers replace zk with a single constant value, modeling sensor max-range saturation and no-return pixels reported as a fixed sentinel depth [37], [39]. Mixed-pixel 
+
+outliers replace zk with a depth blended between foreground and background, modeling beam footprints that straddle depth discontinuities at object edges [36], [40]. These families are not interchangeable, and the distinction drives our design. Uniform, near, and mixed-pixel outliers are 
+
+present with the wrong value ; dropout outliers are additionally 
+
+correlated , because every corrupted anchor takes the same constant depth. Correlation defeats consensus methods such as RANSAC [24]: a sufficiently large cluster of identical dropout anchors forms a self-consistent pseudo-inlier set that a sampling-based estimator can mistake for the true model. A robust estimator for this setting must reject outliers that are present rather than missing, and must not be fooled by correlated outlier clusters. 
+
+E. Multipath-Robust Anchor Calibration (MRAC) 
+
+We propose Multipath-Robust Anchor Calibration (MRAC), an inference-time wrapper that identifies trustworthy anchors before calibration and feeds only those anchors to the residual substrate. MRAC adds no learned parameters and requires no retraining. Its operating principle is foundation consistency : the relative depth drel is an independent witness on scene geom-etry, so legitimate anchors satisfy a single affine relationship with drel , whereas outliers—however they were produced— violate it. MRAC has three stages. 
+
+Theil–Sen robust fit. We estimate the affine relationship between xk = drel (pk) and zk by the Theil–Sen estimator [20], [21], the median of pairwise slopes over all distinct-x
+
+anchor pairs, 
+
+ˆa = median  
+
+> i<j, x i̸=xj
+
+zi − zj
+
+xi − xj
+
+, ˆb = median 
+
+> k
+
+ zk − ˆa x k
+
+. (4) The Theil–Sen slope is threshold-free, scale-adaptive, and has an asymptotic breakdown point of 1 − 1/√2 ≈ 29% .Critically, it resists the correlated-dropout failure of RANSAC: the median of slopes is dominated by the abundant pairs drawn from true anchors, and the near-zero slopes contributed by dropout-pair samples remain a minority so long as the inlier fraction exceeds the breakdown point. 
+
+MAD inlier gate. Using the robust fit, we compute anchor residuals rk = zk −(ˆ a x k +ˆb) and a robust scale via the median absolute deviation, 
+
+σMAD = 1 .4826 median  
+
+> k
+
+rk − median j rj . (5) Because the Theil–Sen intercept (4) is the median residual, the residuals are median-centered, and we retain the inlier set 
+
+M = { k : |rk| ≤ κ σ MAD }, κ = 2 . (6) The multiplier κ is the single deployment knob MRAC intro-duces; we quantify its sensitivity at the end of this subsection. 
+
+Calibration on the cleaned set. The residual substrate of Sec. III-C is then evaluated using only the inlier anchors M.The substrate recomputes its internal CFA on M, so the affine base in (3) is now fit to clean measurements, and the learned residual operates on a consistent anchor set. This is a single 
+
+forward pass of Rθ : MRAC replaces the anchor set passed to the vanilla head, it does not add a second head call. Theil–Sen and the MAD gate are inexpensive scalar operations on the K
+
+anchors and run on CPU. Foundation consistency is what unifies the four outlier families under one filter. A multipath, dropout, or mixed-pixel anchor is inconsistent with the drel -implied affine relationship in exactly the same way a uniform outlier is, and (4)–(6) reject it without any outlier-type-specific tuning and without per-dataset thresholds. The same code handles indoor NYUv2 (1–10 m) and outdoor KITTI ( 1–80 m). MRAC introduces no 
+
+K-dependent parameters; the robust fit and gate are defined for any K ≥ 2, and the shared residual head is the same across the full anchor range (Secs. VI, VIII). Algorithm 1 summarizes the procedure. 
+
+a) Sensitivity to κ.: The gate width κ is a single scalar; we set it to κ = 2 , the conventional two-MAD threshold for robust outlier rejection. A sweep of κ ∈ { 1.5, 2.0, 2.5, 3.0}
+
+on the eight headline cells (four datasets × { near, dropout } at 
+
+25% ) confirms that κ = 2 sits in a flat region: MRAC AbsRel varies by at most 0.011 across the swept range on six of eight cells and by at most 0.04 on the two hardest (DIODE dropout, KITTI near). Per-cell numbers are tabulated in the supplement. 
+
+F. Training 
+
+MRAC is an inference-time procedure and requires no dedicated training: the residual head Rθ is trained once, on clean anchors, with the standard recipe. We optimize for 80 epochs with AdamW (learning rate 10 −3, 2 warmup UNDER REVIEW AT IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 5
+
+Algorithm 1 Multipath-Robust Anchor Calibration (inference) 
+
+Require: image I; frozen foundation F ; anchors 
+
+{(pk, z k)}Kk=1 ; residual head Rθ ; MAD multiplier 
+
+κ
+
+Ensure: metric depth map D 
+
+> 1:
+
+drel ← F (I) ▷ frozen forward pass  
+
+> 2:
+
+xk ← drel (pk) for k = 1 , . . . , K  
+
+> 3:
+
+ˆa ← median {(zi −zj )/(xi −xj ) : i < j, x i̸ = xj } ▷
+
+Theil–Sen  
+
+> 4:
+
+ˆb ← median {zk − ˆa x k} 
+
+> 5:
+
+rk ← zk − (ˆ a x k + ˆb) for k = 1 , . . . , K  
+
+> 6:
+
+σ ← 1.4826 · median |rk − median( r)| 
+
+> 7:
+
+M ← { k : |rk| ≤ κ σ } ▷ MAD inlier gate, κ = 2  
+
+> 8:
+
+(∆ a, ∆b, ·) ← Rθ
+
+ I, d rel , mM, zM
+
+ ▷ single head call on cleaned anchors; CFA recomputed on M 
+
+> 9:
+
+D ← (aM 
+
+> cfa
+
++ ∆ a) ⊙ drel + ( bM 
+
+> cfa
+
++ ∆ b) 
+
+> 10:
+
+return D
+
+epochs, cosine decay), batch size 12 , and mixed-precision (fp16), taking roughly 10 hours on one A100; foundation predictions are cached so F is evaluated once per image over training. Anchors are drawn uniformly at random per minibatch from K ∈ { 5, 10 , 25 , 50 }, which is what makes a single trained head serve the full deployment range without per-K checkpoints. Training uses four loss terms—a scale-invariant log term (SILog) [14] as the primary objective, together with confidence-weighting (CWA), structural-scale consistency (SSC), and feature-matching (FMP) terms with weights 1.0, 1.0, 0.5, and 0.2 respectively; their interaction with the architecture is analyzed in Sec. VII. The residual architecture additionally carries an auxiliary regularization term Lres = |Ω|−1 P
+
+> p∈Ω
+
+(|ap − a⋆| + |bp − b⋆|) that penalizes the per-pixel deviation of the residual (a, b ) fields from the global CFA fit (a⋆, b ⋆); the loss study of Sec. VII finds it is best removed, and the recommended configuration omits it ( wres = 0 ). No outlier injection is used at training time. Robustness is supplied entirely at inference by MRAC, which is what makes the method a drop-in wrapper for any already-trained residual-on-CFA head. 
+
+G. Inference Cost 
+
+MRAC’s overhead over the vanilla pipeline is the Theil– Sen fit and the MAD gate. The Theil–Sen slope is O(K2)
+
+in the number of anchor pairs—about K(K − 1) /2 ≈ 1.2kslopes at K = 50 —and the MAD gate is O(K); together they cost approximately 50 μs on CPU. No new learned parameters are added, and the residual head is called exactly once, on the cleaned anchor set, in place of the vanilla call. The net deployment overhead relative to vanilla inference is therefore under 0.1 ms, leaving end-to-end latency dominated by the two forward passes already present in the baseline (Sec. VIII). IV. E XPERIMENTAL SETUP 
+
+A. Datasets 
+
+We evaluate on four datasets spanning indoor and outdoor scenes. On NYUv2 [41] we use the official Eigen test split [14] of 654 images with colorization-filled depth (the depths 
+
+field), the standard BTS protocol [16]; we train and test on the same filled ground truth. On KITTI [42] we use the Eigen test split of 651 images after removing 45 frames with no valid ground-truth line, with the standard Garg crop [43] and an 
+
+80 m cap. DIODE [44] contributes its 771 -image validation set, mixing indoor and outdoor scenes. SUN RGB-D [45] is evaluated at stride 5 (2067 images); we disclose that the official 5050 -image test split requires the SUNRGBD-toolbox split files, which are not shipped with the public release, and that the stride-5 subset yields stable averages. We drop ETH3D: its bundled preparation derives depth from sparse structure-from-motion points at roughly 0.01% pixel coverage, which is not a credible dense benchmark. 
+
+B. Backbones 
+
+The primary frozen foundation is Depth Anything V2 Large [3]. For the backbone ablation we additionally use MiDaS v3.x / DPT-Large [1], [2]. Both are frozen. The competitor VI-Depth [4] is run in its public config-uration, dpt-swin2-large-384 with the SML head trained at K=150 ; its strongest published backbone, 
+
+dpt-beit-large-512 , was unreachable at download time. Our method and VI-Depth therefore differ in backbone, and VI-Depth’s SML head is evaluated below its training budget at K=50 . We address both points directly: a strict same-backbone, same-architecture control (Sec. IV-C) isolates the method from the backbone, and a supplementary K=150 
+
+sweep at VI-Depth’s own budget is reported in Sec. IX. 
+
+C. Baselines and the Five-Way Comparison 
+
+Our headline protocol is a controlled five-way comparison on a single evaluation harness: (i) the published residual-on-CFA recipe on DAv2, denoted vanilla ; (ii) B′, the identical head trained with random anchor-dropout augmentation—the sole configuration change is dropout_rate_max =0 .4—which isolates implicit augmentation-based robustness on the same backbone and architecture; (iii) MRAC applied to the vanilla head; (iv) MRAC applied to the B ′ head; and (v) VI-Depth official, plugged into the identical outlier-injection harness. We further report a fixed-RANSAC [24] robust residual—the obvious patch—and three closed-form CFA references (ordinary least squares, Huber, and RANSAC) that anchor the absolute error levels; deeper inlier-selection ablations appear in Secs. VI–VII. Published full-supervision and depth-completion baselines (BTS [16], AdaBins [17], ZoeDepth [19], NLSPN [30]) are cited for context only in Sec. V. 
+
+D. Metrics 
+
+We report the standard metric-depth measures: absolute relative error (AbsRel), squared relative error (SqRel), RMSE, RMSE-log, log 10 error, and threshold accuracies δi at 1.25 i
+
+for i ∈ { 1, 2, 3}. The maximum evaluation depth is 80 m. Headline comparisons report AbsRel and δ1; complete metric tables are provided in the supplementary material. UNDER REVIEW AT IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 6                                      
+
+> TABLE I ABS REL UNDER 25% DROPOUT OUTLIERS (MAX -RANGE /NO -RETURN ). MEAN ±STD OVER 3SEEDS . L OWER IS BETTER ;BEST PER COLUMN IN BOLD . V ANILLA AND B′COLLAPSE ; MRAC RESTORES ROBUST ACCURACY ON THE SAME BACKBONE WITH NO ADDED PARAMETERS .Method NYUv2 KITTI DIODE SUN RGB-D vanilla (DAv2) 0.347 ±0.001 1.490 ±0.005 1.471 ±0.003 0.429 ±0.001
+> B′(DAv2) 0.336 ±0.002 1.479 ±0.005 1.432 ±0.003 0.411 ±0.001
+> MRAC/van (ours) 0.105 ±0.001 0.125 ±0.001 0.348 ±0.009 0.161 ±0.001
+> MRAC/B ′(ours) 0.100 ±0.001 0.128 ±0.001 0.340 ±0.008 0.151 ±0.001
+> VI-Depth 0.144 ±0.001 0.174 ±0.001 0.323 ±0.002 0.195 ±0.000
+
+E. Anchor Protocol 
+
+The default budget is K=50 anchors per image, sampled uniformly at random from valid-ground-truth pixels; we sweep 
+
+K ∈ [5 , 200] in Sec. VI. The anchor draw is fixed by a per-image random seed and is identical across all five methods , so every method is calibrated from the same measurements. The default protocol uses seed 0, and the eight headline cells addi-tionally report mean ± std over seeds {0, 1, 2} (Sec. V). Out-liers are injected by replacing a fraction p ∈ { 0, 0.1, 0.25 , 0.4}
+
+of the anchor depths with one of the four sensor-grounded processes of Sec. III-D. The full evaluation is therefore a grid of 4 datasets × 4 outlier types × 4 fractions × 5 methods 
+
+= 320 cells. V. A NCHOR -O UTLIER ROBUSTNESS 
+
+This section reports the headline result. We first show that the published residual-on-CFA recipe collapses under sensor outliers and that augmentation-based robustness does not res-cue it (Sec. V-A); we then show that the strongest deployed competitor, VI-Depth, is robust to missing anchors but has a blind spot on present-but-wrong multipath anchors (Sec. V-B); and we show that MRAC, a parameter-free inference-time wrapper, repairs both failure modes (Secs. V-C–V-E). All AbsRel values are means over three seeds; standard deviations are reported in Tables I and II. 
+
+A. The Recipe Collapses; Augmentation Barely Helps 
+
+Table I reports AbsRel under 25% dropout outliers, the max-range/no-return failure of real range sensors. The faithful residual-on-CFA re-implementation (vanilla) collapses: Ab-sRel reaches 1.490 on KITTI and 1.471 on DIODE, an order of magnitude above its clean accuracy. The same-backbone, same-architecture augmentation control B ′, whose only difference from vanilla is training-time random anchor dropout, recovers almost nothing— 0.347 → 0.336 on NYUv2 (≈ 3% ) and 1.490 → 1.479 on KITTI ( < 1% )—and the absolute error on KITTI and DIODE remains catastrophic. Implicit augmentation does not scale down to a compact 
+
+0.47 M-parameter residual head: the head lacks the capacity to internalize an outlier-rejection mechanism from data alone. The obvious robust patch fails for the same reason Sec. III-D anticipates. Replacing the residual head’s internal fit with a fixed-threshold RANSAC [24] robust residual makes dropout 
+
+worse , not better: on KITTI it reaches 2.894 ± 0.058 at 25%                                       
+
+> TABLE II ABS REL UNDER 25% NEAR (MULTIPATH /SPECULAR )OUTLIERS —THE PRESENT -BUT -WRONG -VALUE REGIME . M EAN ±STD OVER 3SEEDS .MRAC WINS EVERY DATASET ; VI-D EPTH IS THE WORST METHOD ON
+> NYU V2AND KITTI. Method NYUv2 KITTI DIODE SUN RGB-D vanilla (DAv2) 0.192 ±0.001 0.170 ±0.000 0.366 ±0.001 0.244 ±0.000
+> B′(DAv2) 0.199 ±0.001 0.164 ±0.001 0.364 ±0.001 0.249 ±0.001
+> MRAC/van (ours) 0.109 ±0.001 0.149 ±0.002 0.273 ±0.004 0.160 ±0.002
+> MRAC/B ′(ours) 0.105 ±0.001 0.151 ±0.002 0.267 ±0.005 0.152 ±0.001
+> VI-Depth 0.250 ±0.001 0.489 ±0.002 0.421 ±0.001 0.244 ±0.001
+
+dropout and 6.082 ± 0.008 at 40% —above even the unpro-tected vanilla head—because the correlated dropout anchors form a self-consistent pseudo-inlier set that the consensus step selects. The same RANSAC patch is unremarkable on the uncorrelated families (KITTI uniform 0.198 , mixed 0.220 at 
+
+40% ), confirming that correlation, not outlier magnitude, is what defeats it. 
+
+B. The Strongest Competitor Has a Multipath Blind Spot 
+
+VI-Depth tells the opposite half of the story. On dropout (Table I) its per-K SML head is genuinely robust ( 0.144 –
+
+0.323 ), because anchor-dropout is precisely the corruption its training simulates. But on 25% near (multipath/specular) outliers (Table II) it fails: AbsRel rises to 0.250 on NYUv2 and 
+
+0.489 on KITTI. VI-Depth is beaten by the unprotected vanilla head on three of the four datasets and ties it on SUN RGB-D (0.244 vs 0.244 ); on KITTI it is 2.9× worse than vanilla and 
+
+3.2× worse than MRAC. The mechanism is structural: implicit anchor-dropout training teaches a model to tolerate anchors that are missing , but a multipath anchor is present with a wrong value , and VI-Depth’s pipeline contains no explicit step that can reject it. The headline cell is KITTI/near/ 25% : VI-Depth 
+
+0.489 ±0.002 , vanilla 0.170 ±0.000 , B ′ 0.164 ±0.001 , MRAC 
+
+0.151 ± 0.002 —a 3.2× error reduction over the strongest deployed competitor, with standard deviations two orders of magnitude below the gap. 
+
+C. MRAC Dominates the Same-Backbone Comparison 
+
+Tables I and II already show the per-cell outcome; Table III aggregates it. Against its own substrate, MRAC strictly wins 
+
+54 of 64 cells ( 84% ) whether the underlying head is the vanilla head or the augmentation-trained B ′ head, and the win holds across all four outlier families. Two controls bound the result from the other side: augmentation alone (B ′ vs vanilla) wins only 52 /64 and concentrates on dropout ( 15 /16 
+
+dropout, 10 /16 near), and VI-Depth’s larger per-K head beats B ′ on 51 /64 . MRAC closes the gap that augmentation cannot, at zero added parameters. The gain is mechanism-orthogonal : applying MRAC on top of the augmentation-trained head reaches the best or near-best AbsRel in both tables, so the robust selection and the implicit augmentation are complementary rather than redundant. Fig. 3 plots AbsRel against outlier fraction for the four methods across all four families, averaged over the four datasets; the MRAC curves remain flat where vanilla and B ′ diverge and where VI-Depth’s near curve climbs steeply. UNDER REVIEW AT IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 7                                 
+
+> Fig. 3. AbsRel versus outlier fraction pfor the four outlier families, averaged over NYUv2, KITTI, DIODE, and SUN RGB-D. Four methods: vanilla (DAv2), B′(DAv2), MRAC on the B ′head (ours), and VI-Depth official. MRAC remains flat where the baselines diverge on dropout and where VI-Depth’s curve climbs on near (multipath). Shaded bands show ±1standard deviation across the four datasets. TABLE III STRICT PER -CELL WIN COUNTS ON THE SEED -0GRID (64 CELLS PER PAIRWISE COMPARISON :4DATASETS ×4OUTLIER TYPES ×4
+> FRACTIONS ). MRAC’ S SAME -BACKBONE GAIN (84% )IS INVARIANT TO WHICH HEAD IT WRAPS .Comparison Wins By outlier type MRAC vs its vanilla head 54/64 (84%) universal across types MRAC vs its B ′head 54/64 (84%) gain orthogonal to aug. B′vs vanilla 52/64 (81%) drop 15 /16 ; near 10 /16
+> VI-Depth vs B ′51/64 (80%) scale +per-Ktraining MRAC vs VI-Depth 34/64 (53%) near 13 /16 ; KITTI 16 /16
+
+D. Mechanism Orthogonality and K-Agnosticism 
+
+MRAC is an inference-time wrapper with no learned pa-rameters, so it inherits two deployment properties that the per-K SML pipeline cannot offer. First, because it adds no training, it improves any already-trained residual-on-CFA head by the same selection mechanism—the 84% win in Table III is identical for the vanilla and B ′ substrates. Second, MRAC is K-agnostic: the Theil–Sen fit and MAD gate are defined for any K ≥ 2, and the single shared head serves 
+
+K ∈ [5 , 200] (Sec. VI). VI-Depth’s public release instead ships three separate SML checkpoints at K = 150 , 500 , 1500 ;changing the anchor budget requires changing checkpoints, and any budget outside those three values is out of distribution for its heads. For a sensor that delivers a handful of anchors, MRAC’s accuracy edge on multipath and its freedom from per-K retraining are two facets of the same parameter-free design. 
+
+E. Cross-Backbone Comparison Against VI-Depth 
+
+Against VI-Depth, MRAC runs on a different backbone (DAv2 vs dpt-swin2-large-384 ), so the comparison is not backbone-matched; the same-backbone result above is B ′.With that caveat, MRAC wins 34 of 64 cells overall ( 53% ), and the losses are concentrated exactly where VI-Depth’s stronger backbone is expected to win: the clean and low-p cells on DIODE and SUN RGB-D. Where the corruption is the failure mode that matters, MRAC dominates. It wins 13 /16 near cells (81% ); the only three near cells it loses are the clean p=0 cells on NYUv2, DIODE, and SUN RGB-D, so MRAC wins all twelve cells in which multipath corruption is actually present .On KITTI, where DAv2 is in domain, MRAC wins all 16 
+
+cells on the seed-0 grid, including the 3.2× multipath gap of Sec. V-B. We attribute VI-Depth’s DIODE/SUN RGB-D clean wins to its backbone, not its calibration, and discuss the backbone confound in Sec. IX. 
+
+F. Operating Limits 
+
+At 40% outliers the inlier fraction falls below the Theil– Sen breakdown point of ≈ 29% , and MRAC degrades; we report this honestly. On KITTI dropout at 40% , vanilla and B′ are unusable ( 2.420 ± 0.007 and 2.416 ± 0.007 ) and the RANSAC patch is far worse ( 6.082 ± 0.008 ), while MRAC stays at 0.324 ± 0.036 and VI-Depth at 0.314 ± 0.006 . MRAC and VI-Depth are therefore a statistical tie at this cell: MRAC wins it on two of three seeds ( 0.314 , 0.294 ) but loses the third (0.363 ), and the resulting ±0.036 standard deviation—against 
+
+≈ ± 0.001 everywhere else—is the breakdown signature, the trace of draws that leave too few true inliers for the Theil– Sen median to recover. This is the single headline cell whose outcome lies within seed noise; it is why we state 16 /16 on the seed-0 grid rather than as a seed-robust claim. The breakdown is dropout-specific: on KITTI near at 40% the order does not invert against VI-Depth ( 0.299 ± 0.004 vs 0.596 ± 0.001 , a 
+
+2× MRAC win), though here the less-destructive near outliers leave the unprotected vanilla head ( 0.275 ) marginally ahead of MRAC, the same effect that produces MRAC’s two scorecard losses at KITTI near. Within the ≤ 29% regime that the Theil– Sen guarantee covers, and which spans the realistic sensor-outlier rates this paper targets, MRAC is robust; past it, every method degrades and MRAC remains competitive with the best. UNDER REVIEW AT IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 8
+
+VI. C ALIBRATION SUBSTRATE STUDY 
+
+MRAC operates on top of a calibration substrate it does not modify. This section characterizes that substrate—its zero-shot behavior, its operating range in the anchor budget K, its insensitivity to anchor placement, and its response to non-outlier noise—to establish why residual-on-CFA is the right object to make robust. 
+
+A. Zero-Shot Generalization 
+
+Table IV reports clean (p=0 ) AbsRel for a raw-depth learned calibrator (a compact U-Net regressing depth directly from the image, relative depth, and anchors, with no closed-form substrate), the three closed-form CFA variants, the residual-on-CFA architecture, and MRAC. The first obser-vation is that a learned calibrator without the closed-form substrate is worse than a closed-form affine fit in the zero-shot regime: the raw-depth head reaches 0.484 on DIODE and 0.301 on SUN RGB-D, behind cfa-ransac ( 0.321 ) and cfa-huber ( 0.166 ) respectively. A small network given the anchors directly does not, on its own, recover a reliable metric scale across domains; the closed-form fit is the more robust starting point. The residual-on-CFA architecture closes most of this gap. By predicting a correction to the closed-form fit rather than the depth itself, it improves on every CFA variant on NYUv2 (0.104 ), KITTI ( 0.133 ), and SUN RGB-D ( 0.149 ); on DIODE the residual alone ( 0.351 ) still trails cfa-ransac ( 0.321 ), leaving one dataset where the substrate is not yet sufficient. MRAC adds negligible clean-accuracy cost, and on the augmentation-trained head it removes the remaining DIODE deficit. On the B ′ head, MRAC improves KITTI ( 0.146 →
+
+0.128 ) and DIODE ( 0.348 → 0.304 )—the only DAv2 configu-ration to beat cfa-ransac on DIODE—and stays within 0.003 –
+
+0.005 AbsRel of the best DAv2 number on NYUv2 ( 0.100 vs 
+
+0.097 ) and SUN RGB-D ( 0.147 vs 0.142 ). On the vanilla head, MRAC slightly regresses clean NYUv2 ( 0.104 → 0.111 ) and SUN RGB-D ( 0.149 → 0.163 ) while still improving KITTI and DIODE. Robustness is therefore not purchased at the cost of clean accuracy: the robust selection that repairs the outlier be-havior of Sec. V is at worst mildly conservative on clean data and is net beneficial on the augmentation-trained substrate. VI-Depth attains the lowest clean AbsRel on NYUv2 ( 0.079 ), DIODE ( 0.218 ), and SUN RGB-D ( 0.114 ); we attribute this to its swin2 backbone rather than its calibration, consistent with Sec. V-E and discussed in Sec. IX. 
+
+B. Anchor-Budget Operating Curve 
+
+Fig. 4 overlays the AbsRel-vs-K curves of three architec-tures on NYUv2; the residual-on-CFA curve dominates the alternatives for all K ≥ 5. The curve is U-shaped. At K=1 
+
+the architecture is degenerate—the closed-form fit (1) requires 
+
+K ≥ 2 to determine a slope—and AbsRel is 1.586 . Accuracy then improves sharply ( 0.178 at K=5 , 0.135 at K=10 ) to                                                   
+
+> TABLE IV CLEAN (p=0 ) A BS REL . T HE RAW -DEPTH LEARNED CALIBRATOR LOSES TO A CLOSED -FORM FIT ON DIODE AND SUN RGB-D;
+> RESIDUAL -ON -CFA RESCUES MOST CELLS ; MRAC ADDS NEGLIGIBLE CLEAN COST AND REMOVES THE DIODE DEFICIT ON THE B′HEAD . B EST PER COLUMN IN BOLD . VI-D EPTH USES A DIFFERENT (SWIN 2)
+> BACKBONE .Method NYUv2 KITTI DIODE SUN RGB-D raw-depth head (no CFA) 0.207 0.175 0.484 0.301 cfa-ols 0.155 0.333 0.386 0.173 cfa-huber 0.144 0.233 0.339 0.166 cfa-ransac 0.155 0.204 0.321 0.167 residual (vanilla) 0.104 0.133 0.351 0.149 B′(dropout-aug) 0.097 0.146 0.348 0.142 MRAC/van (ours) 0.111 0.126 0.314 0.163 MRAC/B ′(ours) 0.100 0.128 0.304 0.147 VI-Depth (swin2) 0.079 0.169 0.218 0.114
+
+a sweet spot of 0.099 at K∗=50 ,1 after which it rises again (0.104 at K=100 , 0.123 at K=200 ) as the network begins to overfit the denser anchor mask. The practical consequence is that a single trained head is accurate across more than an order of magnitude in anchor budget. This is the basis of the K-agnosticism claim of Sec. V-D: MRAC introduces no K-dependent parameters, and the substrate it wraps spans 
+
+K ∈ [5 , 200] from one checkpoint, in contrast to the per-K
+
+SML checkpoints of the deployed competitor. 
+
+C. Anchor Placement and Pattern 
+
+A natural question is whether the anchor placement matters as much as the anchor count . Under the residual-on-CFA sub-strate it largely does not: the substrate extracts depth structure from the global relative-depth field, so it is insensitive to where the sparse anchors fall, and random sampling is near-optimal. We present the controlled placement evidence—random, farthest-point, uncertainty-active, and stratified sampling—in Sec. VII, where uncertainty-active placement is shown to hurt 
+
+monotonically. The implication for the present section is that the substrate absorbs the placement degree of freedom, which is what makes anchor trustworthiness , rather than anchor location, the lever that Sec. V targets. 
+
+D. Robustness to Gaussian Anchor Noise 
+
+Outlier robustness must be distinguished from robustness to ordinary measurement noise. We perturb every anchor depth with zero-mean Gaussian noise of standard deviation σ and sweep σ ∈ [0 .05 , 0.50] m. AbsRel is essentially flat across this range—moving from the clean value only at the smallest 
+
+σ and then remaining constant to within 0.001 AbsRel out to 
+
+σ=0 .5 m—because averaging K=50 zero-mean perturbations into the affine fit cancels the noise by the central limit theorem. Outliers are categorically different: they are not zero-mean,                      
+
+> 1The clean NYUv2 AbsRel reported here ( 0.099 at K=50 ) is from the K-sweep evaluation, whereas Table IV reports 0.104 for the same configuration from the outlier-injection harness. These are independent evaluation runs with independent per-image anchor draws; they differ by ≤0.005 AbsRel at
+> K=50 , within run-to-run anchor-sampling variance. UNDER REVIEW AT IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 9
+> Fig. 4. AbsRel versus anchor budget Kon NYUv2 for three architectures. Residual-on-CFA dominates for K≥5;K=1 is the architectural degenerate point (the closed-form fit needs K≥2); the curve is U-shaped with a sweet spot at K∗=50 .
+
+do not average out, and a single one can dominate a least-squares fit (Sec. III-B). This is precisely why Gaussian-noise robustness is cheap and outlier robustness is not, and why this paper studies the latter as a separate problem requiring an explicit mechanism rather than relying on anchor-count pooling. VII. D IAGNOSTIC FINDINGS 
+
+This section reports two diagnostics that inform deployment. Both were run during the raw-depth training phase rather than the filled pipeline of Secs. V–VI; we therefore report them as ordinal and architectural findings—rankings and sign effects that the filled pipeline inherits—rather than as absolute numbers comparable to the preceding tables. 
+
+A. Anchor Placement Is a Red Herring 
+
+Table V sweeps four anchor-placement strategies on NYUv2: uniform random sampling, farthest-point sampling, uncertainty-active sampling, and stratified sampling. The result is counterintuitive. Random sampling is at or near the best AbsRel at every budget, and stratified sampling matches it to within 0.003 ; the two “clever” geometric and information-theoretic strategies do not help. Farthest-point sampling is uni-formly worse than random, and uncertainty-active sampling— placing anchors where a model is least confident—is not merely worse but degrades monotonically as the budget grows, from 0.266 at K=5 to 0.546 at K=100 , the opposite of the expected trend.                                
+
+> TABLE V ABS REL BY ANCHOR -PLACEMENT STRATEGY ON NYU V2 ( RAW -DEPTH PHASE ;ORDINAL RESULT ). R ANDOM AND STRATIFIED SAMPLING ARE NEAR -OPTIMAL ;FARTHEST -POINT IS WORSE ;UNCERTAINTY -ACTIVE SAMPLING DEGRADES MONOTONICALLY AS KGROWS . B EST PER COLUMN IN BOLD .Strategy K=5 K=10 K=25 K=50 K=100
+> random 0.142 0.121 0.117 0.109 0.113 farthest-point 0.252 0.232 0.194 0.177 0.160 uncertainty-active 0.266 0.361 0.444 0.480 0.546 stratified 0.132 0.125 0.112 0.112 0.111
+
+The explanation is the frozen foundation. Because drel 
+
+already encodes global scene structure, the marginal value of a geometrically optimized anchor is small, and concentrating anchors in high-uncertainty regions starves the affine fit of the well-spread support it needs, producing a fit that is accurate locally and biased globally. The practical message is that anchor placement is not the lever: a deployed system gains nothing from sophisticated anchor selection and should instead spend its effort on anchor trustworthiness , which is the failure mode Sec. V addresses. This subsumes the anchor-pattern question of Sec. VI-C: once the substrate is fixed, where the anchors fall is second-order. 
+
+B. Loss–Architecture Interaction 
+
+The second diagnostic concerns the training losses, and its conclusion is that loss design is architecture-dependent: a term that helps one parameterization can harm another. We ablate the loss terms of Sec. III-F on the raw-depth head (four terms) and on the residual-on-CFA architecture (which adds the auxiliary res term), reported in Table VI. Three findings stand out. First, removing the scale-invariant log term (SILog) is catastrophic on the raw-depth head, where NYUv2 AbsRel rises from 0.143 to 0.697 , and clearly harmful on the residual architecture ( 0.096 → 0.123 ). Second, and most diagnostic, the confidence-weighting term (CWA) reverses sign across the two architectures. On the raw-depth head, removing CWA improves zero-shot accuracy ( 0.143 → 0.113 
+
+on NYUv2); on the residual-on-CFA architecture, removing the same term is catastrophic for zero-shot generalization, with cross-domain AbsRel exploding on DIODE ( 0.671 ) and SUN RGB-D ( 0.675 ). The residual parameterization changes what uncertainty weighting does: where the raw-depth model is better off without it, the residual substrate depends on it to remain calibrated off the training domain. Third, the structural-scale (SSC) and feature-matching (FMP) terms are largely redundant under the residual architecture—both ablations sit within ≈ 0.01 AbsRel of the full model—so they contribute little once the closed-form substrate is in place. Finally, the residual model’s auxiliary res term is itself harmful: removing it improves accuracy ( 0.096 → 0.084 on NYUv2, 0.214 →
+
+0.139 on KITTI), and this −res setting is the recommended configuration carried into the filled pipeline of Secs. V–VI. The deployment implication is that loss recipes do not transfer across calibration architectures, and that the residual-on-CFA substrate this paper builds on specifically requires UNDER REVIEW AT IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 10                                                                                                    
+
+> TABLE VI LOSS –ARCHITECTURE ABLATION (RAW -DEPTH PHASE ; A BS REL ). T OP :
+> THE ORIGINAL UNCONSTRAINED -U-N ET RAW -DEPTH HEAD ON NYU V2. BOTTOM :RESIDUAL -ON -CFA ON FOUR DATASETS . R EMOVING CWA
+> IMPROVES THE RAW -DEPTH MODEL BUT IS CATASTROPHIC ON THE RESIDUAL ARCHITECTURE (DIODE/SUN RGB-D), THE SIGN REVERSAL OF SEC . VII-B. T HE RECOMMENDED CONFIGURATION DROPS THE AUXILIARY res TERM (−RES ), THE BEST RESIDUAL ROW .Config NYUv2 KITTI DIODE SUN RGB-D
+> Raw-depth head (original U-Net)
+> full 0.143 ———
+> −silog 0.697 ———
+> −cwa 0.113 ———
+> −ssc 0.258 ———
+> −fmp 0.162 ———
+> Residual-on-CFA
+> full 0.096 0.214 0.336 0.160
+> −silog 0.123 0.324 0.368 0.170
+> −cwa 0.109 0.227 0.671 0.675
+> −ssc 0.100 0.239 0.353 0.162
+> −fmp 0.096 0.217 0.330 0.161
+> −res (recommended) 0.084 0.139 0.326 0.155
+> TABLE VII PER -IMAGE INFERENCE LATENCY ON ONE NVIDIA A100 (80 GB), MEAN OVER 100 ITERATIONS (10 WARMUP ), K=50 . T HE FROZEN FOUNDATION DOMINATES END -TO -END TIME . MRAC’ S ANCHOR SELECTION
+> (T HEIL –S EN +MAD) RUNS ON CPU AT ≈50 μS,BELOW THE RESOLUTION OF THE END -TO -END TIMING ,AND ADDS NO FORWARD PASS ;
+> THE RESIDUAL HEAD IS CALLED ONCE ,ON THE CLEANED ANCHORS .Component NYUv2 ( 480 ×640 )KITTI ( 352 ×1216 )Foundation (DAv2-L) 24.2 ±0.26 26.4 ±0.09
+> Residual head ( Rθ)10.5 ±0.02 15.0 ±0.01
+> MRAC selection (CPU) ≈0.05 ≈0.05
+> End-to-end 34.5 ±0.03 41.0 ±0.10
+> Throughput (FPS) 29.0 24.4
+
+the confidence-weighting term that a raw-depth model would discard. Anyone porting a loss configuration between the two parameterizations should expect to re-tune CWA in particular. VIII. I NFERENCE COST AND DEPLOYMENT 
+
+MRAC is designed for deployment, and its cost claim is concrete: it adds no parameters and no second forward pass. Table VII reports per-image latency on a single NVIDIA A100, measured over 100 iterations after 10 warmup iterations at 
+
+K=50 .The frozen foundation is the bottleneck, at 24 .2 ms on NYUv2 and 26 .4 ms on KITTI, with the 0.47 M-parameter residual head adding 10 .5 and 15 .0 ms respectively. End-to-end latency is 34 .5 ms ( 29 .0 FPS) on NYUv2 and 41 .0 ms (24 .4 FPS) on KITTI—real time on a single accelerator. Be-cause the foundation dominates, any faster foundation trans-lates directly into a faster pipeline. MRAC’s overhead over the vanilla pipeline is the Theil–Sen fit and the MAD gate of Sec. III-E. The Theil–Sen slope is 
+
+O(K2) in the anchor pairs—about K(K−1) /2 ≈ 1.2k slopes at K=50 —and the MAD gate is O(K); together they cost ≈
+
+50 μs on CPU, four orders of magnitude below the end-to-end time and below what Table VII can resolve. The decisive point is architectural: MRAC replaces the anchor set passed to the residual head and calls that head exactly once, so it introduces no second forward pass. Its end-to-end latency therefore equals the vanilla pipeline’s to within measurement noise—robustness is free at inference. A naive alternative that ran the head twice, once to detect and once to recalibrate, would add a full head forward ( 10 –15 ms, a 30 –40% latency increase); MRAC avoids this by performing all outlier reasoning in the 50 μs CPU step. Two further properties matter for deployment. First, MRAC adds zero learned parameters; the only trainable component is the 0.47 M-parameter head, which is trained once and shared. Second, MRAC is K-agnostic: a single checkpoint serves K ∈ [5 , 200] (Sec. VI-B), so a deployed system whose anchor budget varies with range, scene, or sensor mode needs no per-budget retraining or checkpoint switching. The deployed competitor instead ships three separate SML heads at K = 150 , 500 , 1500 ; matching an arbitrary anchor budget requires selecting and loading the nearest head, and budgets far from those values are out of distribution. For an embedded metric-depth stack, MRAC is a single small head plus a 50 μsCPU routine that delivers the outlier robustness of Sec. V without enlarging the model, the latency, or the checkpoint inventory. IX. D ISCUSSION AND LIMITATIONS 
+
+A. Why the Blind Spot Exists 
+
+VI-Depth’s scale-map learner predicts a per-pixel scale and shift field conditioned on the sparse anchors, and is trained with augmentation that varies anchor count and placement— in effect simulating missing anchors. This is exactly why it is robust to dropout (Sec. V): a missing anchor lies inside its training distribution. But its conditioning contains no step that tests whether a present anchor’s value is consistent with the scene geometry the foundation already encodes. A multipath anchor is present and carries a plausible near-biased depth, so the scale-map learner absorbs it and propagates the error spatially—an effect measured in the supplement (Fig. S1), where AbsRel decays monotonically with distance from the corrupted anchor for VI-Depth and stays flat for MRAC. The blind spot is therefore structural rather than a tuning defi-ciency: the pipeline has no present-but-wrong-value rejection mechanism. Foundation consistency is that missing mechanism. By testing each anchor against the relative-depth ordering through the Theil–Sen fit (Sec. III-E)—an independent witness the scale-map learner never consults—MRAC rejects anchors that violate the foundation’s geometry regardless of whether the corruption is missing or present-with-wrong-value. Fig. 5makes this concrete: on multipath-corrupted KITTI frames, VI-Depth’s depth is distorted in the neighborhood of the cor-rupted anchors, while MRAC—having gated those anchors out before the single head call—remains faithful to the scene. The augmentation that makes VI-Depth robust to missing anchors is silent on present-wrong ones; the foundation-consistency gate that makes MRAC robust to present-wrong anchors is, by Sec. V, equally effective on missing ones. 
+
+B. Limitations 
+
+We state the study’s limitations plainly. UNDER REVIEW AT IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 11             
+
+> Fig. 5. Mechanism of the multipath blind spot on three KITTI frames under 25% near (multipath) outliers. Columns: RGB, ground truth, the vanilla residual head, VI-Depth, and MRAC. Small white squares mark clean anchors that are kept (subsampled to a representative ∼10 per panel); red crosses mark injected multipath outliers; green circles in the MRAC column mark anchors rejected by the Theil–Sen +MAD gate before the single head call. VI-Depth absorbs the present-but-wrong-value anchors into its scale field and distorts the surrounding depth; MRAC rejects most of them and stays faithful to the scene. Red crosses without green circles in the MRAC column are outliers the gate missed. Harness-wide gate P/R on this cell (KITTI, near, 25% ,κ= 2 ): 0.60 /0.64 .
+
+Backbone. Our method runs on DAv2-Large and VI-Depth on dpt-swin2-large-384 , so the cross-backbone comparison (Sec. V-E) confounds method and backbone. We close this three ways. The load-bearing strength claim is the same-backbone, same-architecture comparison against vanilla and B′ on DAv2, where MRAC’s only changed variable is inlier selection and it wins 84% of cells (Sec. V-C)— establishing the method’s value with no backbone comparison at all. The multipath blind spot is structural and reproduces at VI-Depth’s own training budget (below), so it is not a backbone artifact. And we attribute VI-Depth’s clean-cell wins (Sec. VI) to its backbone rather than its calibration, and do not claim them. VI-Depth’s strongest published backbone (dpt-beit-large-512 ) was unreachable at download time; a stronger backbone would likely improve its clean accuracy, but it cannot supply the present-wrong rejection the pipeline structurally lacks. 
+
+Anchor-budget mismatch. VI-Depth’s head is trained at 
+
+K=150 and we evaluate it at the K=50 operating point our 
+
+K-agnosticism argument targets. To rule out a mismatch arti-fact, we re-evaluate it at its own K=150 on the multipath cells. The blind spot persists and, if anything, widens: near/ 25% 
+
+AbsRel moves from 0.250 to 0.271 on NYUv2, 0.420 to 
+
+0.432 on DIODE, and 0.243 to 0.258 on SUN RGB-D, and is unchanged on KITTI ( 0.491 to 0.490 ). The multipath failure is therefore not a consequence of evaluating below the training budget. 
+
+Breakdown. MRAC inherits the Theil–Sen breakdown point of ≈ 29% ; beyond 40% outliers it degrades, and KITTI/dropout/ 40% is a statistical tie with VI-Depth (Sec. V-F). This bounds the guarantee to the realistic sensor-outlier rates this paper targets; past it, no method we tested is reliable. 
+
+Gate diagnostics. Fig. 5 concedes that the MAD gate misses some outliers; here we quantify those misses. On the eight headline cells at κ = 2 the gate has mean precision 
+
+0.75 and mean recall 0.83 against the injected-outlier ground truth. Dropout is essentially perfect (recall ≥ 0.90 on three datasets and 1.00 on KITTI); near is weaker, and the hardest cell is KITTI near, where the driving-scene depth spread gives precision 0.60 and recall 0.64 : 40% of clean anchors are falsely rejected and 36% of injected multipath outliers are missed, which is precisely the visible gap between MRAC and vanilla on that cell. The residual error propagates spatially (supplement Fig. S1). Per-cell precision and recall are listed in the supplement. 
+
+Protocol. The strict-win scorecard is computed on a single (seed-0) realization of the anchor draw, and per-cell counts can shift slightly under reseeding, as the KITTI/dropout/ 40% 
+
+tie illustrates; the headline tables carry 3-seed bars. SUN RGB-D is evaluated on a stride-5 subset, since the official 
+
+5050 -image split requires toolbox files absent from the public release; ETH3D is excluded for inadequate dense coverage; and NYUv2 uses the standard filled-depth protocol, applied identically to all methods. 
+
+C. Future Work 
+
+Two directions follow. Foundation consistency is presently a hand-built robust fit; a learned consistency model that scores anchors against the relative-depth field could be folded into the head at the same single-forward-pass cost, particularly for the multipath cells where the MAD gate’s recall trails its dropout ceiling. The wrapper is foundation-agnostic by construction, so applying it to other frozen geometry foundations—MoGe-2, Marigold, Depth Pro—is immediate and would test whether the blind spot is specific to VI-Depth’s scale-map learner or general to anchor-conditioned calibration. X. C ONCLUSION 
+
+Sparse-anchor metric depth calibration from frozen foun-dations has assumed clean anchors, yet real range sensors produce outliers that are present with the wrong value, not merely missing. We showed that the published residual-on-CFA recipe collapses under such outliers, and that VI-Depth, the strongest publicly deployed sparse-anchor method, has a structural multipath blind spot: its anchor-conditioned scale map has no mechanism to reject present-but-wrong-value anchors. MRAC, our proposed parameter-free inference-time wrap-per, gates anchors by foundation consistency (Theil–Sen + UNDER REVIEW AT IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 12 
+
+MAD) before a single call to the residual-on-CFA head, adds no learned parameters, and runs at ≈ 50 μs on CPU. It strictly wins 84% of the same-backbone cells and, against VI-Depth, all twelve corrupted multipath cells and all sixteen KITTI cells, reducing KITTI multipath AbsRel by 3.2× (0.489 → 0.151 )with no retraining, and serves K ∈ [5 , 200] from one check-point. The broader lesson is that robustness to missing anchors and robustness to wrong-valued anchors are distinct problems, and that the foundation’s relative-depth geometry is a cheap, sufficient witness for the second. ACKNOWLEDGMENT 
+
+The authors gratefully acknowledge the support from the Department of Science and Technology (DST), Govern-ment of India, through the DST-FIST grant [Sanction No.: SR/FST/MS-I/2022/116]. REFERENCES 
+
+[1] R. Ranftl, K. Lasinger, D. Hafner, K. Schindler, and V. Koltun, “Towards robust monocular depth estimation: Mixing datasets for zero-shot cross-dataset transfer,” 
+
+IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 44, no. 3, pp. 1623–1637, 2022, arXiv:1907.01341. [2] R. Ranftl, A. Bochkovskiy, and V. Koltun, “Vision transformers for dense pre-diction,” in Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , 2021, pp. 12 179–12 188, arXiv:2103.13413. [3] L. Yang, B. Kang, Z. Huang, Z. Zhao, X. Xu, J. Feng, and H. Zhao, “Depth anything v2,” in Advances in Neural Information Processing Systems (NeurIPS) ,2024, arXiv:2406.09414. [4] D. Wofk, R. Ranftl, M. M¨ uller, and V. Koltun, “Monocular visual-inertial depth estimation,” in Proceedings of the IEEE International Conference on Robotics and Automation (ICRA) , 2023, pp. 6095–6101, arXiv:2303.12134. [5] R. Marsal, A. Chapoutot, P. Xu, and D. Filliat, “Recovering dense metric depth in indoor scenes from monocular depth foundation models and 2D LiDARs,” in European Robotics Forum 2025 (ERF), Springer Proceedings in Advanced Robotics . Springer, 2025, vol. 36, pp. 236–241. [6] H. Lin, S. Peng, J. Chen, S. Peng, J. Sun, M. Liu, H. Bao, J. Feng, X. Zhou, and B. Kang, “Prompting depth anything for 4k resolution accurate metric depth estimation,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2025, pp. 17 070–17 080, arXiv:2412.14015. [7] Z. Wang, S. Chen, L. Yang, J. Wang, Z. Zhang, H. Zhao, and Z. Zhao, “Depth anything with any prior,” arXiv preprint arXiv:2505.10565 , 2025. [8] K. Zheng, Q. Feng, X. Liu, W. Tan, and Y. Li, “Sparse-lidar prompting of monocular geometry foundations: An empirical study toward long-range driving depth,” arXiv preprint arXiv:2605.26456 , 2026. [9] L. Yang, B. Kang, Z. Huang, X. Xu, J. Feng, and H. Zhao, “Depth anything: Unleashing the power of large-scale unlabeled data,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2024, pp. 10 371–10 381, arXiv:2401.10891. [10] B. Ke, A. Obukhov, S. Huang, N. Metzger, R. C. Daudt, and K. Schindler, “Repurposing diffusion-based image generators for monocular depth estimation,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2024, pp. 9492–9502, arXiv:2312.02145. [11] R. Wang, S. Xu, Y. Dong, Y. Deng, J. Xiang, Z. Lv, G. Sun, X. Tong, and J. Yang, “Moge-2: Accurate monocular geometry with metric scale and sharp details,” in Advances in Neural Information Processing Systems (NeurIPS) , 2025, arXiv:2507.02546. [12] A. Bochkovskii, A. Delaunoy, H. Germain, M. Santos, Y. Zhou, S. R. Richter, and V. Koltun, “Depth pro: Sharp monocular metric depth in less than a second,” 
+
+arXiv preprint arXiv:2410.02073 , 2024. [13] W. Yin, C. Zhang, H. Chen, Z. Cai, G. Yu, K. Wang, X. Chen, and C. Shen, “Metric3d: Towards zero-shot metric 3d prediction from a single image,” in 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , 2023, pp. 9043–9053, arXiv:2307.10984. [14] D. Eigen, C. Puhrsch, and R. Fergus, “Depth map prediction from a single image using a multi-scale deep network,” in Advances in Neural Information Processing Systems (NeurIPS) , 2014, arXiv:1406.2283. [15] H. Fu, M. Gong, C. Wang, K. Batmanghelich, and D. Tao, “Deep ordinal regression network for monocular depth estimation,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2018, pp. 2002–2011, arXiv:1806.02446. [16] J. H. Lee, M.-K. Han, D. W. Ko, and I. H. Suh, “From big to small: Multi-scale local planar guidance for monocular depth estimation,” arXiv preprint arXiv:1907.10326 , 2019. [17] S. F. Bhat, I. Alhashim, and P. Wonka, “Adabins: Depth estimation using adaptive bins,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2021, pp. 4009–4018, arXiv:2011.14141. [18] W. Yuan, X. Gu, Z. Dai, S. Zhu, and P. Tan, “Neural window fully-connected crfs for monocular depth estimation,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2022, pp. 3916–3925, arXiv:2203.01502. [19] S. F. Bhat, R. Birkl, D. Wofk, P. Wonka, and M. M¨ uller, “Zoedepth: Zero-shot transfer by combining relative and metric depth,” arXiv preprint arXiv:2302.12288 ,2023. [20] H. Theil, “A rank-invariant method of linear and polynomial regression analysis,” 
+
+Proceedings of the Koninklijke Nederlandse Akademie van Wetenschappen, Series A, vol. 53, pp. 386–392, 521–525, 1397–1412, 1950. [21] P. K. Sen, “Estimates of the regression coefficient based on kendall’s tau,” Journal of the American Statistical Association , vol. 63, no. 324, pp. 1379–1389, 1968. [22] P. J. Rousseeuw, “Least median of squares regression,” Journal of the American Statistical Association , vol. 79, no. 388, pp. 871–880, 1984. [23] P. J. Huber, “Robust estimation of a location parameter,” The Annals of Mathe-matical Statistics , vol. 35, no. 1, pp. 73–101, 1964. [24] M. A. Fischler and R. C. Bolles, “Random sample consensus: A paradigm for model fitting with applications to image analysis and automated cartography,” 
+
+Communications of the ACM , vol. 24, no. 6, pp. 381–395, 1981. [25] P. H. S. Torr and A. Zisserman, “Mlesac: A new robust estimator with application to estimating image geometry,” Computer Vision and Image Understanding ,vol. 78, no. 1, pp. 138–156, 2000. [26] R. Hartley and A. Zisserman, Multiple View Geometry in Computer Vision , 2nd ed. Cambridge University Press, 2004. [27] F. Ma and S. Karaman, “Sparse-to-dense: Depth prediction from sparse depth samples and a single image,” in Proceedings of the IEEE International Conference on Robotics and Automation (ICRA) , 2018, pp. 4796–4803, arXiv:1709.07492. [28] F. Ma, G. V. Cavalheiro, and S. Karaman, “Self-supervised sparse-to-dense: Self-supervised depth completion from lidar and monocular camera,” in Proceedings of the IEEE International Conference on Robotics and Automation (ICRA) , 2019, pp. 3288–3295. [29] X. Cheng, P. Wang, and R. Yang, “Learning depth with convolutional spatial propagation network,” in Proceedings of the European Conference on Computer Vision (ECCV) , 2018, pp. 103–119, arXiv:1808.00150. [30] J. Park, K. Joo, Z. Hu, C.-K. Liu, and I. S. Kweon, “Non-local spatial propagation network for depth completion,” in Proceedings of the European Conference on Computer Vision (ECCV) , 2020, pp. 120–136, arXiv:2007.10042. [31] J. Tang, F.-P. Tian, W. Feng, J. Li, and P. Tan, “Learning guided convolutional network for depth completion,” IEEE Transactions on Image Processing , vol. 30, pp. 1116–1129, 2021. [32] M. Hu, S. Wang, B. Li, S. Ning, L. Fan, and X. Gong, “Penet: Towards precise and efficient image guided depth completion,” in Proceedings of the IEEE International Conference on Robotics and Automation (ICRA) , 2021, pp. 13 656–13 662. [33] Y. Zhang, X. Guo, M. Poggi, Z. Zhu, G. Huang, and S. Mattoccia, “Com-pletionformer: Depth completion with convolutions and vision transformers,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2023, arXiv:2304.13030. [34] J. Tang, F.-P. Tian, B. An, J. Li, and P. Tan, “Bilateral propagation network for depth completion,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2024, pp. 9763–9772, arXiv:2403.11270. [35] A. Wong and S. Soatto, “Unsupervised depth completion with calibrated back-projection layers,” in Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , 2021, pp. 12 747–12 756, arXiv:2108.10531. [36] J. Tuley, N. Vandapel, and M. Hebert, “Analysis and removal of artifacts in 3-D LADAR data,” in Proceedings of the IEEE International Conference on Robotics and Automation (ICRA) , 2005, pp. 2203–2210. [37] M. Hebert and E. Krotkov, “3D measurements from imaging laser radars: How good are they?” Image and Vision Computing , vol. 10, no. 3, pp. 170–178, 1992. [38] S. Fuchs, “Multipath interference compensation in time-of-flight camera images,” in Proceedings of the International Conference on Pattern Recognition (ICPR) ,2010, pp. 3583–3586. [39] M. Hansard, S. Lee, O. Choi, and R. Horaud, Time-of-Flight Cameras: Principles, Methods and Applications , ser. SpringerBriefs in Computer Science. Springer, 2013. [40] J. P. Godbaz, A. A. Dorrington, and M. J. Cree, “Understanding and ameliorating mixed pixels and multipath interference in AMCW lidar,” in TOF Range-Imaging Cameras . Springer, 2013, pp. 91–116. [41] N. Silberman, D. Hoiem, P. Kohli, and R. Fergus, “Indoor segmentation and support inference from rgbd images,” in Proceedings of the European Conference on Computer Vision (ECCV) , 2012, pp. 746–760. [42] A. Geiger, P. Lenz, and R. Urtasun, “Are we ready for autonomous driving? the kitti vision benchmark suite,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2012, pp. 3354–3361. [43] R. Garg, V. K. B G, G. Carneiro, and I. Reid, “Unsupervised CNN for single view depth estimation: Geometry to the rescue,” in Proceedings of the European Conference on Computer Vision (ECCV) , 2016, pp. 740–756, arXiv:1603.04992. [44] I. Vasiljevic, N. Kolkin, S. Zhang, R. Luo, H. Wang, F. Z. Dai, A. F. Daniele, M. Mostajabi, S. Basart, M. R. Walter, and G. Shakhnarovich, “Diode: A dense indoor and outdoor depth dataset,” arXiv preprint arXiv:1908.00463 , 2019. [45] S. Song, S. P. Lichtenberg, and J. Xiao, “Sun rgb-d: A rgb-d scene understanding benchmark suite,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2015, pp. 567–576. UNDER REVIEW AT IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 13 
+
+# Supplementary Material 
+
+I. S ENSITIVITY TO THE MAD MULTIPLIER κ
+
+Section III-E of the main paper fixes κ = 2 and reports a sensitivity sweep on the eight headline cells (four datasets, near and dropout at 25% ). Table SI gives the per-cell AbsRel numbers behind that summary. All rows are MRAC on the B′ head. The paper’s headline numbers (Table I and Table II) correspond to the κ = 2 .0 column and agree with it to within 
+
+±0.008 AbsRel across the eight cells, the run-to-run anchor-sampling variance. Two observations. First, κ = 1 .5 is marginally best on seven of the eight cells: by at most 0.004 AbsRel on six of them and by 0.015 on DIODE dropout. The mean cost of the paper’s chosen κ = 2 across the eight cells is therefore about 0.004 
+
+AbsRel, with the compensating benefit of higher gate precision (Table SII). Second, KITTI dropout is essentially invariant to 
+
+κ over the swept range because the injected outliers (sensor max range, ≈ 80 m) sit so far from the Theil–Sen residual median that the gate identifies them at every κ; the observed movement is entirely at the second decimal. The hardest cell is DIODE dropout, where the wide outdoor depth range gives the MAD gate a broader residual distribution and κ = 1 .5
+
+outperforms κ = 3 .0 by 0.039 AbsRel. II. MAD-GATE PRECISION AND RECALL 
+
+Section IX-B of the main paper reports mean gate precision 
+
+0.75 and mean recall 0.83 at κ = 2 over the eight headline cells and identifies KITTI near as the hardest cell. Table SII gives the per-cell precision and recall for the full κ sweep. Precision (fraction of MAD-rejected anchors that were true injected outliers) rises monotonically with κ; recall (fraction of injected outliers actually rejected) falls monotonically. The two cross near κ ≈ 2 for most cells, which is the empirical justification for the paper’s default. KITTI dropout is the exception: recall stays at 1.00 across the sweep because Theil– Sen’s median slope is essentially undisturbed by max-range corruption, so precision alone is left to move. KITTI near is the hardest cell, matching the qualitative gate misses visible as bare red crosses in Fig. 5 of the main paper. III. M ECHANISM FIGURE : SPATIAL PROPAGATION OF THE MULTIPATH ERROR 
+
+Section IX-A of the main paper asserts that VI-Depth’s anchor-conditioned scale map absorbs a present-but-wrong-value anchor and propagates the resulting error into its spatial neighborhood, while MRAC’s gate removes the anchor before it can trigger the field. Fig. S1 makes that claim measurable. For each of the three KITTI frames shown in main-paper Fig. 5 (25% near outliers, K = 50 , seed 0), we compute the Euclidean distance from every valid pixel to the nearest injected outlier anchor, bin pixels into six distance ranges (0– 20, 20–40, 40–60, 60–80, 80–120, 120–200 px), and report the per-bin AbsRel aggregated across the three frames. VI-Depth is elevated at every distance and shows the prop-agation signature: AbsRel decays monotonically from 0.55 at 0–20 px to 0.42 at 80–120 px, then plateaus. Vanilla shows the same spatial shape at roughly half the amplitude ( 0.26 →
+
+0.14 ). MRAC is flat and low ( ≈ 0.12 ) across the full distance range, because the Theil–Sen + MAD gate—at KITTI-near harness-wide precision/recall 0.60 /0.64 (Table SII)—rejects most of the triggering anchors before the head is called. IV. C OMPLETE METRIC TABLES 
+
+This section provides the complete metric tables promised in Sec. IV-C of the main paper. All values are computed on the seed-0 anchor realization, the same realization on which the strict-win scorecard (Table III, main paper) is computed; the eight headline cells of the main paper additionally report mean ± std over seeds {0, 1, 2}, and the seed-0 values here are consistent with those spreads. Eight metrics are reported: AbsRel, SqRel, RMSE, RMSE-log, log 10 , and δi at 1.25 i;lower is better for the first five, higher for the last three. Six methods appear: the five-way comparison of the main paper plus the fixed-RANSAC robust residual of Sec. V-A. VI-Depth runs on its public dpt-swin2-large-384 backbone, so rows comparing it to the DAv2 methods are not backbone-matched. The clean p=0 row is the same evaluation in all four outlier-family tables of a dataset and is repeated in each for readability. Bold marks the best value per metric within each corruption fraction. V. C LOSED -FORM CFA REFERENCES 
+
+AbsRel of the three closed-form CFA references (ordinary least squares, Huber, RANSAC) that anchor absolute error levels in Sec. V of the main paper, across the full grid ( K=50 ,seed 0). Bold: best per row. VI. VI-D EPTH AT ITS TRAINING BUDGET (K=150 )Complete metric grid for VI-Depth official evaluated at its training anchor budget K=150 (seed 0), expanding the near/ 25% AbsRel values quoted in Sec. IX-B of the main paper. UNDER REVIEW AT IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 14 
+
+TABLE SI MRAC A BS REL ACROSS κ, PER CELL . L OWER IS BETTER . B EST PER ROW IN BOLD . A LL ROWS ARE MRAC ON THE B′ HEAD AT K = 50 , 25% OUTLIER FRACTION , SEED 0. Dataset Cell κ = 1 .5 κ = 2 .0 κ = 2 .5 κ = 3 .0
+
+NYUv2 near 0.104 0.106 0.109 0.113 NYUv2 dropout 0.097 0.101 0.104 0.108 KITTI near 0.148 0.152 0.157 0.165 KITTI dropout 0.128 0.127 0.128 0.128 DIODE near 0.267 0.269 0.271 0.273 DIODE dropout 0.333 0.348 0.359 0.372 SUN RGB-D near 0.148 0.150 0.153 0.157 SUN RGB-D dropout 0.147 0.150 0.154 0.158 TABLE SII MAD-GATE PRECISION / RECALL VS κ, PER CELL . E ACH ENTRY IS P/R WHERE P = FRACTION OF MAD-REJECTED ANCHORS THAT WERE TRUE INJECTED OUTLIERS , R = FRACTION OF INJECTED OUTLIERS ACTUALLY REJECTED . B EST PRECISION PER ROW IN BOLD ; BEST RECALL PER ROW UNDERLINED .Dataset Cell κ = 1 .5 κ = 2 .0 κ = 2 .5 κ = 3 .0
+
+NYUv2 near 0.73 / 0.86 0.77 / 0.82 0.80 / 0.77 0.83 / 0.72 NYUv2 dropout 0.80 / 0.88 0.84 / 0.83 0.86 / 0.78 0.88 / 0.73 KITTI near 0.60 / 0.73 0.60 / 0.64 0.60 / 0.55 0.58 / 0.46 KITTI dropout 0.74 / 1.00 0.77 / 1.00 0.79 / 1.00 0.81 / 1.00 DIODE near 0.65 / 0.75 0.68 / 0.70 0.70 / 0.66 0.72 / 0.62 DIODE dropout 0.74 / 0.96 0.78 / 0.94 0.81 / 0.93 0.83 / 0.91 SUN RGB-D near 0.72 / 0.86 0.76 / 0.81 0.79 / 0.77 0.82 / 0.72 SUN RGB-D dropout 0.78 / 0.93 0.81 / 0.90 0.84 / 0.87 0.86 / 0.84 0–20 20–40 40–60 60–80 80–120 120–200 
+
+distance to nearest injected multipath anchor (px) 
+
+0.0 
+
+0.1 
+
+0.2 
+
+0.3 
+
+0.4 
+
+0.5 
+
+> AbsRel  ↓
+
+KITTI, 25% near (multipath) outliers | 3-frame aggregate 
+
+vanilla 
+
+VI-Depth 
+
+MRAC 
+
+Fig. S1. Mechanism of the multipath blind spot, measured. For each valid pixel in the three KITTI frames of main-paper Fig. 5, we bin by Euclidean distance to the nearest injected outlier anchor and plot the per-bin AbsRel. VI-Depth’s error is elevated at every distance and decays monotonically with range from the trigger—the spatial signature of the anchor-conditioned scale-map absorption. Vanilla shows the same shape at half the amplitude. MRAC keeps AbsRel flat at 
+
+≈ 0.12 because its foundation-consistency gate—running at harness-wide precision/recall 0.60 /0.64 on this cell (KITTI near, 25% , κ = 2 ; Table SII)—rejects most of the triggering anchors before the head is called. This is the spatial expression of the mean-P/R measurement in main-paper §IX-B. UNDER REVIEW AT IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 15 
+
+TABLE SIII NYU V2, UNIFORM OUTLIERS : COMPLETE METRICS AT K=50 , SEED 0.
+
+p Method AbsRel SqRel RMSE RMSE log log 10 δ1 δ2 δ3
+
+0% vanilla (DAv2) 0.104 0.065 0.392 0.141 0.044 0.891 0.978 0.994 B′ (DAv2) 0.097 0.059 0.374 0.132 0.041 0.904 0.980 0.995 
+
+fixed-RANSAC residual 0.141 0.200 0.558 0.195 0.060 0.839 0.939 0.971 MRAC/van (ours) 0.111 0.110 0.435 0.162 0.047 0.892 0.966 0.984 MRAC/B ′ (ours) 0.100 0.068 0.415 0.150 0.045 0.898 0.970 0.988 VI-Depth (swin2) 0.079 0.050 0.390 0.130 0.036 0.925 0.981 0.994 10% vanilla (DAv2) 0.134 0.104 0.455 0.165 0.054 0.839 0.966 0.993 B′ (DAv2) 0.125 0.087 0.420 0.155 0.050 0.857 0.969 0.992 fixed-RANSAC residual 0.142 0.199 0.559 0.197 0.060 0.838 0.938 0.970 MRAC/van (ours) 0.104 0.085 0.425 0.155 0.045 0.898 0.969 0.986 MRAC/B ′ (ours) 0.096 0.065 0.409 0.145 0.043 0.905 0.972 0.989 VI-Depth (swin2) 0.087 0.060 0.424 0.139 0.039 0.908 0.976 0.993 
+
+25% vanilla (DAv2) 0.186 0.175 0.545 0.208 0.071 0.753 0.933 0.983 B′ (DAv2) 0.174 0.147 0.502 0.197 0.066 0.778 0.940 0.983 fixed-RANSAC residual 0.146 0.209 0.576 0.201 0.062 0.828 0.934 0.970 MRAC/van (ours) 0.104 0.084 0.421 0.150 0.045 0.897 0.972 0.989 MRAC/B ′ (ours) 0.095 0.063 0.403 0.139 0.042 0.906 0.976 0.992 VI-Depth (swin2) 0.115 0.081 0.489 0.162 0.051 0.860 0.970 0.992 
+
+40% vanilla (DAv2) 0.251 0.287 0.667 0.263 0.090 0.665 0.884 0.959 B′ (DAv2) 0.237 0.251 0.618 0.250 0.085 0.691 0.894 0.962 fixed-RANSAC residual 0.156 0.259 0.597 0.210 0.065 0.819 0.929 0.966 MRAC/van (ours) 0.120 0.089 0.448 0.159 0.050 0.863 0.968 0.990 MRAC/B ′ (ours) 0.113 0.081 0.432 0.150 0.047 0.877 0.971 0.990 
+
+VI-Depth (swin2) 0.154 0.117 0.573 0.195 0.067 0.775 0.954 0.991 
+
+TABLE SIV NYU V2, NEAR (MULTIPATH / SPECULAR ) OUTLIERS : COMPLETE METRICS AT K=50 , SEED 0.
+
+p Method AbsRel SqRel RMSE RMSE log log 10 δ1 δ2 δ3
+
+0% vanilla (DAv2) 0.104 0.065 0.392 0.141 0.044 0.891 0.978 0.994 B′ (DAv2) 0.097 0.059 0.374 0.132 0.041 0.904 0.980 0.995 
+
+fixed-RANSAC residual 0.141 0.200 0.558 0.195 0.060 0.839 0.939 0.971 MRAC/van (ours) 0.111 0.110 0.435 0.162 0.047 0.892 0.966 0.984 MRAC/B ′ (ours) 0.100 0.068 0.415 0.150 0.045 0.898 0.970 0.988 VI-Depth (swin2) 0.079 0.050 0.390 0.130 0.036 0.925 0.981 0.994 10% vanilla (DAv2) 0.123 0.080 0.489 0.177 0.056 0.869 0.973 0.992 
+
+B′ (DAv2) 0.120 0.075 0.473 0.174 0.055 0.878 0.975 0.992 
+
+fixed-RANSAC residual 0.141 0.189 0.563 0.202 0.062 0.831 0.933 0.968 MRAC/van (ours) 0.110 0.113 0.436 0.167 0.048 0.889 0.963 0.983 MRAC/B ′ (ours) 0.100 0.068 0.417 0.155 0.046 0.892 0.967 0.987 VI-Depth (swin2) 0.143 0.140 0.685 0.229 0.072 0.766 0.928 0.973 25% vanilla (DAv2) 0.193 0.153 0.716 0.268 0.095 0.575 0.951 0.986 
+
+B′ (DAv2) 0.200 0.154 0.707 0.277 0.099 0.541 0.949 0.985 fixed-RANSAC residual 0.156 0.248 0.590 0.234 0.071 0.809 0.916 0.956 MRAC/van (ours) 0.110 0.094 0.453 0.179 0.051 0.866 0.957 0.981 MRAC/B ′ (ours) 0.105 0.074 0.440 0.170 0.050 0.867 0.961 0.984 VI-Depth (swin2) 0.250 0.329 1.059 0.375 0.135 0.428 0.761 0.914 40% vanilla (DAv2) 0.299 0.313 1.020 0.416 0.159 0.165 0.769 0.962 
+
+B′ (DAv2) 0.313 0.320 1.014 0.435 0.168 0.141 0.720 0.955 fixed-RANSAC residual 0.184 0.294 0.684 0.318 0.102 0.758 0.865 0.907 MRAC/van (ours) 0.208 0.216 0.776 0.312 0.109 0.519 0.853 0.961 MRAC/B ′ (ours) 0.216 0.218 0.770 0.321 0.114 0.487 0.836 0.958 VI-Depth (swin2) 0.365 0.589 1.421 0.557 0.215 0.209 0.463 0.733 UNDER REVIEW AT IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 16 
+
+TABLE SV NYU V2, DROPOUT (MAX -RANGE / NO -RETURN ) OUTLIERS : COMPLETE METRICS AT K=50 , SEED 0.
+
+p Method AbsRel SqRel RMSE RMSE log log 10 δ1 δ2 δ3
+
+0% vanilla (DAv2) 0.104 0.065 0.392 0.141 0.044 0.891 0.978 0.994 B′ (DAv2) 0.097 0.059 0.374 0.132 0.041 0.904 0.980 0.995 
+
+fixed-RANSAC residual 0.141 0.200 0.558 0.195 0.060 0.839 0.939 0.971 MRAC/van (ours) 0.111 0.110 0.435 0.162 0.047 0.892 0.966 0.984 MRAC/B ′ (ours) 0.100 0.068 0.415 0.150 0.045 0.898 0.970 0.988 VI-Depth (swin2) 0.079 0.050 0.390 0.130 0.036 0.925 0.981 0.994 10% vanilla (DAv2) 0.189 0.203 0.556 0.207 0.070 0.746 0.937 0.982 B′ (DAv2) 0.181 0.164 0.511 0.199 0.067 0.772 0.942 0.982 fixed-RANSAC residual 0.143 0.205 0.563 0.197 0.060 0.837 0.937 0.969 MRAC/van (ours) 0.107 0.105 0.423 0.157 0.045 0.897 0.968 0.985 MRAC/B ′ (ours) 0.097 0.066 0.405 0.145 0.043 0.906 0.972 0.989 VI-Depth (swin2) 0.089 0.061 0.410 0.137 0.038 0.908 0.978 0.994 
+
+25% vanilla (DAv2) 0.346 0.524 0.850 0.324 0.114 0.553 0.811 0.931 B′ (DAv2) 0.335 0.461 0.809 0.313 0.111 0.567 0.827 0.936 fixed-RANSAC residual 0.160 0.303 0.608 0.209 0.065 0.825 0.929 0.964 MRAC/van (ours) 0.105 0.079 0.415 0.151 0.045 0.891 0.971 0.989 MRAC/B ′ (ours) 0.098 0.067 0.403 0.141 0.043 0.902 0.974 0.991 
+
+VI-Depth (swin2) 0.143 0.113 0.506 0.180 0.056 0.823 0.960 0.991 
+
+40% vanilla (DAv2) 0.534 1.130 1.229 0.442 0.160 0.427 0.679 0.839 B′ (DAv2) 0.524 1.062 1.201 0.433 0.158 0.425 0.690 0.849 fixed-RANSAC residual 0.767 3.838 1.828 0.489 0.178 0.577 0.685 0.759 MRAC/van (ours) 0.303 0.592 0.801 0.277 0.098 0.670 0.860 0.934 MRAC/B ′ (ours) 0.297 0.563 0.790 0.270 0.096 0.677 0.867 0.937 VI-Depth (swin2) 0.253 0.258 0.715 0.263 0.091 0.627 0.891 0.973 
+
+TABLE SVI NYU V2, MIXED -PIXEL OUTLIERS : COMPLETE METRICS AT K=50 , SEED 0.
+
+p Method AbsRel SqRel RMSE RMSE log log 10 δ1 δ2 δ3
+
+0% vanilla (DAv2) 0.104 0.065 0.392 0.141 0.044 0.891 0.978 0.994 B′ (DAv2) 0.097 0.059 0.374 0.132 0.041 0.904 0.980 0.995 
+
+fixed-RANSAC residual 0.141 0.200 0.558 0.195 0.060 0.839 0.939 0.971 MRAC/van (ours) 0.111 0.110 0.435 0.162 0.047 0.892 0.966 0.984 MRAC/B ′ (ours) 0.100 0.068 0.415 0.150 0.045 0.898 0.970 0.988 VI-Depth (swin2) 0.079 0.050 0.390 0.130 0.036 0.925 0.981 0.994 10% vanilla (DAv2) 0.119 0.080 0.431 0.154 0.049 0.866 0.974 0.993 
+
+B′ (DAv2) 0.110 0.071 0.406 0.145 0.046 0.881 0.976 0.993 
+
+fixed-RANSAC residual 0.144 0.212 0.568 0.198 0.061 0.835 0.937 0.970 MRAC/van (ours) 0.106 0.093 0.431 0.157 0.046 0.897 0.968 0.986 MRAC/B ′ (ours) 0.097 0.066 0.413 0.145 0.043 0.904 0.972 0.989 VI-Depth (swin2) 0.086 0.059 0.426 0.140 0.039 0.908 0.976 0.992 25% vanilla (DAv2) 0.148 0.114 0.498 0.182 0.060 0.811 0.958 0.990 B′ (DAv2) 0.137 0.101 0.464 0.172 0.055 0.833 0.961 0.990 fixed-RANSAC residual 0.144 0.201 0.583 0.202 0.063 0.829 0.931 0.967 MRAC/van (ours) 0.105 0.086 0.439 0.153 0.046 0.892 0.969 0.988 MRAC/B ′ (ours) 0.096 0.068 0.422 0.142 0.043 0.902 0.973 0.990 
+
+VI-Depth (swin2) 0.109 0.084 0.508 0.162 0.050 0.864 0.967 0.991 
+
+40% vanilla (DAv2) 0.186 0.166 0.586 0.220 0.073 0.743 0.929 0.981 B′ (DAv2) 0.173 0.147 0.546 0.208 0.068 0.773 0.935 0.981 fixed-RANSAC residual 0.157 0.229 0.620 0.218 0.069 0.805 0.918 0.958 MRAC/van (ours) 0.120 0.098 0.492 0.168 0.053 0.853 0.961 0.987 MRAC/B ′ (ours) 0.111 0.087 0.473 0.157 0.049 0.869 0.963 0.988 
+
+VI-Depth (swin2) 0.144 0.126 0.626 0.200 0.066 0.778 0.946 0.985 UNDER REVIEW AT IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 17 
+
+TABLE SVII KITTI, UNIFORM OUTLIERS : COMPLETE METRICS AT K=50 , SEED 0.
+
+p Method AbsRel SqRel RMSE RMSE log log 10 δ1 δ2 δ3
+
+0% vanilla (DAv2) 0.133 0.764 5.175 0.178 0.056 0.845 0.967 0.991 
+
+B′ (DAv2) 0.146 0.849 5.351 0.189 0.061 0.817 0.963 0.990 fixed-RANSAC residual 0.192 2.399 9.626 0.367 0.107 0.653 0.821 0.902 MRAC/van (ours) 0.126 1.240 7.289 0.233 0.063 0.820 0.923 0.965 MRAC/B ′ (ours) 0.128 1.263 7.352 0.236 0.064 0.822 0.923 0.963 VI-Depth (swin2) 0.169 0.807 5.151 0.228 0.083 0.710 0.956 0.989 10% vanilla (DAv2) 0.361 2.456 6.591 0.339 0.129 0.377 0.817 0.962 B′ (DAv2) 0.367 2.510 6.763 0.344 0.132 0.359 0.809 0.963 fixed-RANSAC residual 0.191 2.369 9.562 0.363 0.106 0.656 0.824 0.905 MRAC/van (ours) 0.126 1.221 7.225 0.231 0.062 0.823 0.925 0.966 MRAC/B ′ (ours) 0.128 1.244 7.287 0.233 0.063 0.824 0.925 0.965 VI-Depth (swin2) 0.155 0.915 5.658 0.222 0.076 0.747 0.949 0.984 
+
+25% vanilla (DAv2) 0.716 7.280 9.304 0.560 0.220 0.160 0.419 0.746 B′ (DAv2) 0.708 7.043 9.379 0.555 0.220 0.155 0.405 0.748 fixed-RANSAC residual 0.193 2.338 9.452 0.361 0.107 0.653 0.823 0.904 MRAC/van (ours) 0.130 1.189 7.044 0.225 0.062 0.824 0.930 0.968 MRAC/B ′ (ours) 0.132 1.216 7.105 0.228 0.063 0.822 0.929 0.967 VI-Depth (swin2) 0.152 1.026 6.069 0.223 0.071 0.763 0.942 0.980 
+
+40% vanilla (DAv2) 1.144 16.705 12.957 0.773 0.305 0.108 0.246 0.450 B′ (DAv2) 1.129 16.108 12.933 0.766 0.305 0.107 0.239 0.436 fixed-RANSAC residual 0.196 2.436 9.283 0.352 0.105 0.658 0.832 0.911 MRAC/van (ours) 0.176 1.379 6.971 0.246 0.077 0.739 0.917 0.968 MRAC/B ′ (ours) 0.177 1.392 7.024 0.248 0.077 0.739 0.916 0.968 VI-Depth (swin2) 0.219 1.465 6.653 0.275 0.092 0.626 0.901 0.971 
+
+TABLE SVIII KITTI, NEAR (MULTIPATH / SPECULAR ) OUTLIERS : COMPLETE METRICS AT K=50 , SEED 0.
+
+p Method AbsRel SqRel RMSE RMSE log log 10 δ1 δ2 δ3
+
+0% vanilla (DAv2) 0.133 0.764 5.175 0.178 0.056 0.845 0.967 0.991 
+
+B′ (DAv2) 0.146 0.849 5.351 0.189 0.061 0.817 0.963 0.990 fixed-RANSAC residual 0.192 2.399 9.626 0.367 0.107 0.653 0.821 0.902 MRAC/van (ours) 0.126 1.240 7.289 0.233 0.063 0.820 0.923 0.965 MRAC/B ′ (ours) 0.128 1.263 7.352 0.236 0.064 0.822 0.923 0.963 VI-Depth (swin2) 0.169 0.807 5.151 0.228 0.083 0.710 0.956 0.989 10% vanilla (DAv2) 0.122 0.795 5.619 0.187 0.056 0.853 0.959 0.986 
+
+B′ (DAv2) 0.127 0.849 5.766 0.194 0.057 0.844 0.957 0.985 fixed-RANSAC residual 0.195 2.403 9.600 0.371 0.109 0.647 0.818 0.899 MRAC/van (ours) 0.130 1.263 7.352 0.238 0.065 0.809 0.921 0.964 MRAC/B ′ (ours) 0.131 1.280 7.401 0.240 0.066 0.813 0.920 0.963 VI-Depth (swin2) 0.360 3.233 9.866 0.551 0.209 0.155 0.548 0.797 25% vanilla (DAv2) 0.170 1.153 6.648 0.252 0.084 0.690 0.929 0.974 
+
+B′ (DAv2) 0.163 1.140 6.702 0.249 0.080 0.719 0.932 0.974 
+
+fixed-RANSAC residual 0.196 2.332 9.399 0.362 0.108 0.641 0.825 0.907 MRAC/van (ours) 0.148 1.382 7.555 0.259 0.076 0.759 0.911 0.959 MRAC/B ′ (ours) 0.150 1.388 7.579 0.261 0.077 0.754 0.912 0.958 VI-Depth (swin2) 0.491 4.856 11.625 0.773 0.312 0.017 0.154 0.520 40% vanilla (DAv2) 0.275 1.999 8.164 0.385 0.146 0.277 0.801 0.939 B′ (DAv2) 0.263 1.904 8.106 0.374 0.140 0.315 0.818 0.945 
+
+fixed-RANSAC residual 0.248 3.065 10.063 0.474 0.159 0.568 0.749 0.830 MRAC/van (ours) 0.295 2.709 9.622 0.441 0.164 0.269 0.731 0.886 MRAC/B ′ (ours) 0.298 2.657 9.543 0.444 0.166 0.251 0.718 0.893 VI-Depth (swin2) 0.597 6.529 13.205 0.994 0.413 0.004 0.022 0.144 UNDER REVIEW AT IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 18 
+
+TABLE SIX KITTI, DROPOUT (MAX -RANGE / NO -RETURN ) OUTLIERS : COMPLETE METRICS AT K=50 , SEED 0.
+
+p Method AbsRel SqRel RMSE RMSE log log 10 δ1 δ2 δ3
+
+0% vanilla (DAv2) 0.133 0.764 5.175 0.178 0.056 0.845 0.967 0.991 
+
+B′ (DAv2) 0.146 0.849 5.351 0.189 0.061 0.817 0.963 0.990 fixed-RANSAC residual 0.192 2.399 9.626 0.367 0.107 0.653 0.821 0.902 MRAC/van (ours) 0.126 1.240 7.289 0.233 0.063 0.820 0.923 0.965 MRAC/B ′ (ours) 0.128 1.263 7.352 0.236 0.064 0.822 0.923 0.963 VI-Depth (swin2) 0.169 0.807 5.151 0.228 0.083 0.710 0.956 0.989 10% vanilla (DAv2) 0.683 6.735 9.124 0.541 0.213 0.151 0.423 0.796 B′ (DAv2) 0.673 6.664 9.324 0.537 0.212 0.159 0.414 0.794 fixed-RANSAC residual 0.190 2.346 9.523 0.361 0.105 0.659 0.826 0.906 MRAC/van (ours) 0.125 1.212 7.197 0.229 0.062 0.826 0.926 0.966 MRAC/B ′ (ours) 0.127 1.238 7.263 0.232 0.062 0.827 0.925 0.965 VI-Depth (swin2) 0.151 0.794 5.118 0.209 0.072 0.756 0.962 0.990 
+
+25% vanilla (DAv2) 1.496 27.564 16.771 0.915 0.368 0.074 0.161 0.291 B′ (DAv2) 1.485 27.334 16.860 0.912 0.367 0.077 0.166 0.291 fixed-RANSAC residual 2.934 189.772 35.715 1.097 0.439 0.357 0.439 0.482 MRAC/van (ours) 0.125 1.165 7.000 0.222 0.060 0.833 0.931 0.969 MRAC/B ′ (ours) 0.127 1.195 7.070 0.225 0.061 0.832 0.930 0.967 VI-Depth (swin2) 0.175 1.068 5.501 0.225 0.075 0.719 0.947 0.988 
+
+40% vanilla (DAv2) 2.428 69.210 26.080 1.213 0.492 0.050 0.104 0.172 B′ (DAv2) 2.424 69.175 26.142 1.212 0.492 0.052 0.107 0.175 fixed-RANSAC residual 6.086 406.707 62.944 1.906 0.803 0.018 0.035 0.050 MRAC/van (ours) 0.310 6.729 7.800 0.282 0.092 0.765 0.879 0.919 MRAC/B ′ (ours) 0.314 6.800 7.920 0.286 0.094 0.761 0.878 0.917 VI-Depth (swin2) 0.317 2.415 6.896 0.325 0.116 0.489 0.813 0.966 
+
+TABLE SX KITTI, MIXED -PIXEL OUTLIERS : COMPLETE METRICS AT K=50 , SEED 0.
+
+p Method AbsRel SqRel RMSE RMSE log log 10 δ1 δ2 δ3
+
+0% vanilla (DAv2) 0.133 0.764 5.175 0.178 0.056 0.845 0.967 0.991 
+
+B′ (DAv2) 0.146 0.849 5.351 0.189 0.061 0.817 0.963 0.990 fixed-RANSAC residual 0.192 2.399 9.626 0.367 0.107 0.653 0.821 0.902 MRAC/van (ours) 0.126 1.240 7.289 0.233 0.063 0.820 0.923 0.965 MRAC/B ′ (ours) 0.128 1.263 7.352 0.236 0.064 0.822 0.923 0.963 VI-Depth (swin2) 0.169 0.807 5.151 0.228 0.083 0.710 0.956 0.989 10% vanilla (DAv2) 0.159 0.984 5.674 0.204 0.066 0.782 0.955 0.987 
+
+B′ (DAv2) 0.172 1.060 5.832 0.214 0.071 0.757 0.951 0.985 fixed-RANSAC residual 0.194 2.407 9.615 0.369 0.108 0.651 0.818 0.899 MRAC/van (ours) 0.129 1.308 7.471 0.241 0.065 0.815 0.918 0.962 MRAC/B ′ (ours) 0.131 1.331 7.530 0.243 0.065 0.816 0.917 0.960 VI-Depth (swin2) 0.175 1.270 6.826 0.265 0.089 0.693 0.915 0.969 25% vanilla (DAv2) 0.212 1.383 6.384 0.251 0.086 0.659 0.922 0.978 
+
+B′ (DAv2) 0.219 1.415 6.506 0.257 0.089 0.643 0.918 0.977 fixed-RANSAC residual 0.199 2.459 9.680 0.375 0.111 0.641 0.812 0.896 MRAC/van (ours) 0.136 1.444 7.799 0.256 0.069 0.797 0.908 0.955 MRAC/B ′ (ours) 0.138 1.463 7.855 0.258 0.069 0.798 0.908 0.954 VI-Depth (swin2) 0.176 1.673 8.054 0.300 0.093 0.690 0.882 0.946 40% vanilla (DAv2) 0.285 2.036 7.222 0.316 0.111 0.520 0.849 0.955 B′ (DAv2) 0.284 1.969 7.291 0.314 0.112 0.511 0.853 0.958 
+
+fixed-RANSAC residual 0.223 2.779 9.973 0.407 0.124 0.604 0.783 0.877 MRAC/van (ours) 0.168 1.775 8.439 0.298 0.085 0.735 0.880 0.938 MRAC/B ′ (ours) 0.164 1.777 8.479 0.297 0.084 0.744 0.882 0.937 VI-Depth (swin2) 0.204 2.233 9.304 0.365 0.111 0.623 0.830 0.912 UNDER REVIEW AT IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 19 
+
+TABLE SXI DIODE, UNIFORM OUTLIERS : COMPLETE METRICS AT K=50 , SEED 0.
+
+p Method AbsRel SqRel RMSE RMSE log log 10 δ1 δ2 δ3
+
+0% vanilla (DAv2) 0.351 3.944 3.705 0.318 0.092 0.734 0.873 0.928 B′ (DAv2) 0.348 3.921 3.701 0.315 0.092 0.736 0.875 0.929 fixed-RANSAC residual 0.322 5.278 4.923 0.376 0.105 0.738 0.845 0.899 MRAC/van (ours) 0.314 4.284 4.148 0.328 0.088 0.769 0.878 0.926 MRAC/B ′ (ours) 0.304 4.253 4.132 0.320 0.085 0.779 0.883 0.928 VI-Depth (swin2) 0.218 2.129 4.180 0.295 0.088 0.743 0.873 0.930 
+
+10% vanilla (DAv2) 0.530 5.695 4.337 0.417 0.134 0.588 0.773 0.872 B′ (DAv2) 0.526 5.407 4.215 0.415 0.135 0.584 0.768 0.869 fixed-RANSAC residual 0.324 5.123 4.919 0.378 0.105 0.737 0.845 0.899 MRAC/van (ours) 0.320 4.386 4.142 0.328 0.089 0.766 0.878 0.926 MRAC/B ′ (ours) 0.312 4.391 4.132 0.321 0.086 0.775 0.882 0.927 
+
+VI-Depth (swin2) 0.239 2.296 4.466 0.314 0.096 0.710 0.856 0.922 25% vanilla (DAv2) 0.791 9.057 5.301 0.536 0.186 0.458 0.659 0.779 B′ (DAv2) 0.769 8.459 5.116 0.525 0.183 0.463 0.661 0.783 fixed-RANSAC residual 0.348 6.350 5.089 0.388 0.109 0.732 0.841 0.894 MRAC/van (ours) 0.336 4.502 4.104 0.328 0.090 0.758 0.875 0.924 MRAC/B ′ (ours) 0.328 4.506 4.095 0.322 0.087 0.767 0.879 0.926 
+
+VI-Depth (swin2) 0.284 2.481 4.714 0.351 0.114 0.625 0.827 0.908 40% vanilla (DAv2) 1.095 14.349 6.574 0.655 0.238 0.360 0.561 0.690 B′ (DAv2) 1.065 13.502 6.354 0.641 0.234 0.368 0.567 0.692 fixed-RANSAC residual 0.351 6.346 5.071 0.387 0.110 0.729 0.836 0.894 MRAC/van (ours) 0.391 5.241 4.173 0.343 0.100 0.722 0.852 0.914 MRAC/B ′ (ours) 0.382 5.125 4.131 0.336 0.097 0.731 0.856 0.915 
+
+VI-Depth (swin2) 0.358 2.863 5.055 0.401 0.138 0.496 0.773 0.889 TABLE SXII DIODE, NEAR (MULTIPATH / SPECULAR ) OUTLIERS : COMPLETE METRICS AT K=50 , SEED 0.
+
+p Method AbsRel SqRel RMSE RMSE log log 10 δ1 δ2 δ3
+
+0% vanilla (DAv2) 0.351 3.944 3.705 0.318 0.092 0.734 0.873 0.928 B′ (DAv2) 0.348 3.921 3.701 0.315 0.092 0.736 0.875 0.929 fixed-RANSAC residual 0.322 5.278 4.923 0.376 0.105 0.738 0.845 0.899 MRAC/van (ours) 0.314 4.284 4.148 0.328 0.088 0.769 0.878 0.926 MRAC/B ′ (ours) 0.304 4.253 4.132 0.320 0.085 0.779 0.883 0.928 VI-Depth (swin2) 0.218 2.129 4.180 0.295 0.088 0.743 0.873 0.930 
+
+10% vanilla (DAv2) 0.345 3.481 3.889 0.331 0.101 0.718 0.875 0.931 
+
+B′ (DAv2) 0.342 3.448 3.886 0.329 0.100 0.717 0.876 0.931 
+
+fixed-RANSAC residual 0.320 5.041 4.972 0.383 0.107 0.734 0.843 0.897 MRAC/van (ours) 0.295 3.720 4.204 0.329 0.090 0.763 0.876 0.925 MRAC/B ′ (ours) 0.286 3.690 4.187 0.323 0.087 0.771 0.881 0.927 VI-Depth (swin2) 0.308 2.691 5.672 0.442 0.154 0.455 0.720 0.857 25% vanilla (DAv2) 0.367 3.034 4.429 0.385 0.129 0.484 0.850 0.928 B′ (DAv2) 0.365 2.992 4.424 0.385 0.129 0.476 0.851 0.929 
+
+fixed-RANSAC residual 0.317 4.810 5.070 0.404 0.116 0.722 0.832 0.886 MRAC/van (ours) 0.273 2.986 4.414 0.337 0.096 0.730 0.861 0.918 MRAC/B ′ (ours) 0.268 2.956 4.395 0.334 0.095 0.735 0.862 0.920 VI-Depth (swin2) 0.420 3.575 6.924 0.632 0.243 0.210 0.422 0.668 40% vanilla (DAv2) 0.416 2.948 5.265 0.486 0.177 0.209 0.687 0.903 
+
+B′ (DAv2) 0.415 2.902 5.257 0.487 0.178 0.210 0.670 0.903 
+
+fixed-RANSAC residual 0.329 4.742 5.473 0.504 0.161 0.677 0.779 0.830 MRAC/van (ours) 0.308 2.624 5.308 0.423 0.143 0.502 0.748 0.879 MRAC/B ′ (ours) 0.306 2.594 5.285 0.422 0.144 0.501 0.744 0.878 VI-Depth (swin2) 0.519 4.551 7.899 0.830 0.334 0.113 0.231 0.396 UNDER REVIEW AT IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 20 
+
+TABLE SXIII DIODE, DROPOUT (MAX -RANGE / NO -RETURN ) OUTLIERS : COMPLETE METRICS AT K=50 , SEED 0.
+
+p Method AbsRel SqRel RMSE RMSE log log 10 δ1 δ2 δ3
+
+0% vanilla (DAv2) 0.351 3.944 3.705 0.318 0.092 0.734 0.873 0.928 B′ (DAv2) 0.348 3.921 3.701 0.315 0.092 0.736 0.875 0.929 fixed-RANSAC residual 0.322 5.278 4.923 0.376 0.105 0.738 0.845 0.899 MRAC/van (ours) 0.314 4.284 4.148 0.328 0.088 0.769 0.878 0.926 MRAC/B ′ (ours) 0.304 4.253 4.132 0.320 0.085 0.779 0.883 0.928 VI-Depth (swin2) 0.218 2.129 4.180 0.295 0.088 0.743 0.873 0.930 
+
+10% vanilla (DAv2) 0.815 9.772 5.510 0.549 0.189 0.435 0.655 0.770 B′ (DAv2) 0.792 9.044 5.283 0.541 0.187 0.441 0.653 0.771 fixed-RANSAC residual 0.354 7.315 5.152 0.384 0.107 0.737 0.842 0.895 MRAC/van (ours) 0.316 4.151 4.128 0.326 0.088 0.768 0.878 0.925 MRAC/B ′ (ours) 0.307 4.126 4.114 0.319 0.085 0.777 0.882 0.927 VI-Depth (swin2) 0.239 2.282 4.149 0.299 0.088 0.740 0.877 0.933 
+
+25% vanilla (DAv2) 1.473 23.800 8.694 0.785 0.294 0.261 0.441 0.597 B′ (DAv2) 1.434 22.680 8.461 0.771 0.290 0.265 0.444 0.604 fixed-RANSAC residual 1.730 99.801 14.666 0.635 0.224 0.606 0.690 0.743 MRAC/van (ours) 0.351 5.343 4.187 0.330 0.090 0.767 0.878 0.922 MRAC/B ′ (ours) 0.342 5.312 4.175 0.325 0.087 0.776 0.882 0.925 VI-Depth (swin2) 0.323 2.956 4.353 0.345 0.107 0.647 0.854 0.927 
+
+40% vanilla (DAv2) 2.246 49.731 12.715 0.992 0.386 0.170 0.323 0.453 B′ (DAv2) 2.208 48.326 12.520 0.982 0.383 0.170 0.325 0.454 fixed-RANSAC residual 3.452 192.790 24.732 1.039 0.409 0.356 0.425 0.504 MRAC/van (ours) 0.763 20.018 6.446 0.448 0.143 0.664 0.788 0.853 MRAC/B ′ (ours) 0.753 19.715 6.393 0.444 0.141 0.668 0.790 0.855 VI-Depth (swin2) 0.510 4.736 5.141 0.446 0.152 0.418 0.727 0.885 
+
+TABLE SXIV DIODE, MIXED -PIXEL OUTLIERS : COMPLETE METRICS AT K=50 , SEED 0.
+
+p Method AbsRel SqRel RMSE RMSE log log 10 δ1 δ2 δ3
+
+0% vanilla (DAv2) 0.351 3.944 3.705 0.318 0.092 0.734 0.873 0.928 B′ (DAv2) 0.348 3.921 3.701 0.315 0.092 0.736 0.875 0.929 fixed-RANSAC residual 0.322 5.278 4.923 0.376 0.105 0.738 0.845 0.899 MRAC/van (ours) 0.314 4.284 4.148 0.328 0.088 0.769 0.878 0.926 MRAC/B ′ (ours) 0.304 4.253 4.132 0.320 0.085 0.779 0.883 0.928 VI-Depth (swin2) 0.218 2.129 4.180 0.295 0.088 0.743 0.873 0.930 
+
+10% vanilla (DAv2) 0.367 4.024 3.832 0.328 0.098 0.713 0.863 0.923 B′ (DAv2) 0.363 3.960 3.809 0.324 0.097 0.713 0.863 0.923 fixed-RANSAC residual 0.315 4.965 4.945 0.381 0.107 0.735 0.843 0.897 MRAC/van (ours) 0.312 4.165 4.202 0.330 0.089 0.766 0.875 0.923 MRAC/B ′ (ours) 0.303 4.168 4.191 0.323 0.086 0.776 0.878 0.925 
+
+VI-Depth (swin2) 0.222 2.114 4.385 0.307 0.092 0.728 0.860 0.923 25% vanilla (DAv2) 0.390 4.146 4.019 0.345 0.106 0.680 0.847 0.915 B′ (DAv2) 0.384 4.034 3.969 0.339 0.104 0.685 0.847 0.915 fixed-RANSAC residual 0.337 5.543 5.102 0.395 0.112 0.726 0.833 0.888 MRAC/van (ours) 0.310 4.073 4.323 0.337 0.093 0.754 0.868 0.919 MRAC/B ′ (ours) 0.300 4.027 4.300 0.330 0.089 0.765 0.873 0.922 
+
+VI-Depth (swin2) 0.235 2.171 4.749 0.332 0.101 0.700 0.843 0.911 40% vanilla (DAv2) 0.434 4.514 4.285 0.376 0.120 0.630 0.812 0.899 B′ (DAv2) 0.425 4.338 4.215 0.369 0.117 0.638 0.811 0.898 fixed-RANSAC residual 0.343 5.643 5.305 0.415 0.120 0.710 0.820 0.877 MRAC/van (ours) 0.317 3.853 4.523 0.352 0.101 0.730 0.855 0.911 MRAC/B ′ (ours) 0.307 3.793 4.492 0.345 0.097 0.742 0.859 0.913 
+
+VI-Depth (swin2) 0.259 2.343 5.040 0.361 0.114 0.660 0.821 0.896 UNDER REVIEW AT IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 21 
+
+TABLE SXV SUN RGB-D, UNIFORM OUTLIERS : COMPLETE METRICS AT K=50 , SEED 0.
+
+p Method AbsRel SqRel RMSE RMSE log log 10 δ1 δ2 δ3
+
+0% vanilla (DAv2) 0.149 0.219 0.478 0.196 0.053 0.875 0.956 0.976 B′ (DAv2) 0.142 0.214 0.458 0.186 0.050 0.888 0.960 0.978 fixed-RANSAC residual 0.174 0.315 0.580 0.225 0.063 0.845 0.936 0.965 MRAC/van (ours) 0.163 0.269 0.519 0.213 0.057 0.874 0.951 0.971 MRAC/B ′ (ours) 0.147 0.235 0.492 0.199 0.052 0.886 0.955 0.973 VI-Depth (swin2) 0.114 0.143 0.448 0.169 0.045 0.891 0.959 0.980 
+
+10% vanilla (DAv2) 0.181 0.257 0.527 0.218 0.063 0.827 0.947 0.974 B′ (DAv2) 0.172 0.247 0.499 0.208 0.059 0.846 0.951 0.975 fixed-RANSAC residual 0.173 0.305 0.579 0.226 0.063 0.843 0.936 0.965 MRAC/van (ours) 0.158 0.256 0.512 0.208 0.056 0.876 0.952 0.973 MRAC/B ′ (ours) 0.144 0.228 0.487 0.195 0.051 0.889 0.956 0.975 VI-Depth (swin2) 0.124 0.150 0.470 0.178 0.049 0.874 0.954 0.978 
+
+25% vanilla (DAv2) 0.239 0.328 0.608 0.260 0.082 0.724 0.915 0.964 B′ (DAv2) 0.226 0.307 0.569 0.247 0.076 0.755 0.924 0.966 fixed-RANSAC residual 0.175 0.307 0.587 0.228 0.064 0.838 0.933 0.964 MRAC/van (ours) 0.155 0.241 0.508 0.204 0.055 0.875 0.954 0.974 MRAC/B ′ (ours) 0.142 0.225 0.485 0.192 0.050 0.889 0.957 0.975 VI-Depth (swin2) 0.151 0.165 0.524 0.200 0.060 0.829 0.945 0.976 
+
+40% vanilla (DAv2) 0.315 0.450 0.718 0.315 0.104 0.622 0.852 0.940 B′ (DAv2) 0.298 0.414 0.673 0.299 0.098 0.652 0.870 0.946 fixed-RANSAC residual 0.181 0.331 0.595 0.232 0.066 0.833 0.931 0.962 MRAC/van (ours) 0.168 0.245 0.522 0.212 0.060 0.849 0.947 0.972 MRAC/B ′ (ours) 0.156 0.234 0.500 0.199 0.055 0.867 0.952 0.974 
+
+VI-Depth (swin2) 0.194 0.201 0.595 0.233 0.077 0.742 0.928 0.971 TABLE SXVI SUN RGB-D, NEAR (MULTIPATH / SPECULAR ) OUTLIERS : COMPLETE METRICS AT K=50 , SEED 0.
+
+p Method AbsRel SqRel RMSE RMSE log log 10 δ1 δ2 δ3
+
+0% vanilla (DAv2) 0.149 0.219 0.478 0.196 0.053 0.875 0.956 0.976 B′ (DAv2) 0.142 0.214 0.458 0.186 0.050 0.888 0.960 0.978 fixed-RANSAC residual 0.174 0.315 0.580 0.225 0.063 0.845 0.936 0.965 MRAC/van (ours) 0.163 0.269 0.519 0.213 0.057 0.874 0.951 0.971 MRAC/B ′ (ours) 0.147 0.235 0.492 0.199 0.052 0.886 0.955 0.973 VI-Depth (swin2) 0.114 0.143 0.448 0.169 0.045 0.891 0.959 0.980 
+
+10% vanilla (DAv2) 0.174 0.213 0.550 0.232 0.070 0.828 0.948 0.974 B′ (DAv2) 0.171 0.212 0.535 0.227 0.068 0.835 0.951 0.975 
+
+fixed-RANSAC residual 0.175 0.317 0.583 0.230 0.064 0.839 0.934 0.963 MRAC/van (ours) 0.158 0.250 0.516 0.213 0.057 0.870 0.951 0.972 MRAC/B ′ (ours) 0.145 0.226 0.493 0.200 0.053 0.879 0.954 0.973 VI-Depth (swin2) 0.163 0.193 0.649 0.243 0.075 0.760 0.914 0.963 25% vanilla (DAv2) 0.244 0.256 0.726 0.320 0.111 0.490 0.914 0.966 B′ (DAv2) 0.250 0.260 0.718 0.323 0.114 0.469 0.912 0.966 fixed-RANSAC residual 0.179 0.318 0.593 0.243 0.068 0.826 0.925 0.957 MRAC/van (ours) 0.158 0.224 0.534 0.223 0.063 0.837 0.936 0.967 MRAC/B ′ (ours) 0.151 0.212 0.515 0.214 0.060 0.839 0.937 0.968 
+
+VI-Depth (swin2) 0.243 0.304 0.919 0.356 0.125 0.499 0.787 0.914 40% vanilla (DAv2) 0.341 0.370 0.967 0.458 0.175 0.137 0.692 0.936 
+
+B′ (DAv2) 0.351 0.381 0.964 0.471 0.181 0.124 0.651 0.930 fixed-RANSAC residual 0.208 0.387 0.687 0.329 0.104 0.767 0.869 0.904 MRAC/van (ours) 0.245 0.285 0.771 0.346 0.122 0.491 0.802 0.935 MRAC/B ′ (ours) 0.248 0.286 0.761 0.351 0.125 0.479 0.781 0.931 VI-Depth (swin2) 0.337 0.479 1.189 0.502 0.190 0.280 0.560 0.785 UNDER REVIEW AT IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 22 
+
+TABLE SXVII SUN RGB-D, DROPOUT (MAX -RANGE / NO -RETURN ) OUTLIERS : COMPLETE METRICS AT K=50 , SEED 0.
+
+p Method AbsRel SqRel RMSE RMSE log log 10 δ1 δ2 δ3
+
+0% vanilla (DAv2) 0.149 0.219 0.478 0.196 0.053 0.875 0.956 0.976 B′ (DAv2) 0.142 0.214 0.458 0.186 0.050 0.888 0.960 0.978 fixed-RANSAC residual 0.174 0.315 0.580 0.225 0.063 0.845 0.936 0.965 MRAC/van (ours) 0.163 0.269 0.519 0.213 0.057 0.874 0.951 0.971 MRAC/B ′ (ours) 0.147 0.235 0.492 0.199 0.052 0.886 0.955 0.973 VI-Depth (swin2) 0.114 0.143 0.448 0.169 0.045 0.891 0.959 0.980 
+
+10% vanilla (DAv2) 0.247 0.390 0.638 0.264 0.081 0.725 0.918 0.964 B′ (DAv2) 0.239 0.363 0.601 0.255 0.078 0.754 0.922 0.965 fixed-RANSAC residual 0.176 0.326 0.586 0.227 0.064 0.842 0.934 0.963 MRAC/van (ours) 0.158 0.264 0.510 0.209 0.055 0.878 0.952 0.972 MRAC/B ′ (ours) 0.145 0.241 0.487 0.196 0.051 0.890 0.956 0.974 VI-Depth (swin2) 0.131 0.168 0.472 0.182 0.049 0.874 0.954 0.978 
+
+25% vanilla (DAv2) 0.430 0.744 0.910 0.381 0.132 0.497 0.775 0.906 B′ (DAv2) 0.412 0.683 0.868 0.366 0.127 0.517 0.800 0.917 fixed-RANSAC residual 0.189 0.394 0.607 0.233 0.066 0.836 0.930 0.960 MRAC/van (ours) 0.160 0.278 0.511 0.207 0.055 0.877 0.952 0.973 MRAC/B ′ (ours) 0.150 0.263 0.492 0.195 0.051 0.889 0.956 0.974 
+
+VI-Depth (swin2) 0.195 0.237 0.571 0.230 0.069 0.783 0.934 0.973 40% vanilla (DAv2) 0.650 1.387 1.277 0.506 0.185 0.350 0.612 0.794 B′ (DAv2) 0.633 1.309 1.243 0.493 0.182 0.344 0.627 0.812 fixed-RANSAC residual 0.677 3.075 1.461 0.441 0.155 0.652 0.743 0.795 MRAC/van (ours) 0.348 0.797 0.819 0.312 0.102 0.692 0.847 0.915 MRAC/B ′ (ours) 0.338 0.776 0.804 0.302 0.099 0.698 0.854 0.920 VI-Depth (swin2) 0.321 0.424 0.766 0.317 0.108 0.565 0.860 0.954 
+
+TABLE SXVIII SUN RGB-D, MIXED -PIXEL OUTLIERS : COMPLETE METRICS AT K=50 , SEED 0.
+
+p Method AbsRel SqRel RMSE RMSE log log 10 δ1 δ2 δ3
+
+0% vanilla (DAv2) 0.149 0.219 0.478 0.196 0.053 0.875 0.956 0.976 B′ (DAv2) 0.142 0.214 0.458 0.186 0.050 0.888 0.960 0.978 fixed-RANSAC residual 0.174 0.315 0.580 0.225 0.063 0.845 0.936 0.965 MRAC/van (ours) 0.163 0.269 0.519 0.213 0.057 0.874 0.951 0.971 MRAC/B ′ (ours) 0.147 0.235 0.492 0.199 0.052 0.886 0.955 0.973 VI-Depth (swin2) 0.114 0.143 0.448 0.169 0.045 0.891 0.959 0.980 
+
+10% vanilla (DAv2) 0.161 0.220 0.500 0.205 0.058 0.855 0.952 0.975 B′ (DAv2) 0.151 0.215 0.476 0.194 0.053 0.871 0.956 0.976 fixed-RANSAC residual 0.175 0.314 0.586 0.228 0.064 0.840 0.934 0.963 MRAC/van (ours) 0.158 0.250 0.515 0.209 0.056 0.873 0.951 0.972 MRAC/B ′ (ours) 0.143 0.223 0.490 0.195 0.051 0.887 0.955 0.974 VI-Depth (swin2) 0.121 0.149 0.480 0.179 0.049 0.872 0.952 0.977 
+
+25% vanilla (DAv2) 0.183 0.230 0.540 0.224 0.067 0.807 0.942 0.973 B′ (DAv2) 0.171 0.222 0.510 0.211 0.061 0.831 0.947 0.974 
+
+fixed-RANSAC residual 0.178 0.317 0.599 0.233 0.067 0.831 0.930 0.961 MRAC/van (ours) 0.155 0.226 0.519 0.207 0.057 0.864 0.949 0.972 MRAC/B ′ (ours) 0.141 0.206 0.495 0.193 0.052 0.880 0.953 0.974 
+
+VI-Depth (swin2) 0.140 0.158 0.540 0.199 0.059 0.831 0.940 0.973 40% vanilla (DAv2) 0.217 0.263 0.604 0.254 0.079 0.740 0.918 0.966 B′ (DAv2) 0.203 0.248 0.566 0.239 0.073 0.772 0.926 0.968 fixed-RANSAC residual 0.182 0.295 0.621 0.244 0.072 0.809 0.918 0.954 MRAC/van (ours) 0.167 0.213 0.559 0.220 0.065 0.823 0.936 0.968 MRAC/B ′ (ours) 0.152 0.199 0.534 0.206 0.059 0.845 0.940 0.969 
+
+VI-Depth (swin2) 0.168 0.178 0.619 0.228 0.072 0.768 0.922 0.967 UNDER REVIEW AT IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 23 
+
+TABLE SXIX NYU V2: CFA REFERENCES , A BS REL ACROSS THE OUTLIER GRID .Family p cfa-ols cfa-huber cfa-ransac uniform 0% 0.155 0.144 0.155 uniform 10% 0.169 0.144 0.156 uniform 25% 0.204 0.153 0.158 uniform 40% 0.261 0.175 0.164 
+
+near 0% 0.155 0.144 0.155 near 10% 0.155 0.141 0.155 near 25% 0.201 0.152 0.164 near 40% 0.297 0.219 0.193 
+
+dropout 0% 0.155 0.144 0.155 dropout 10% 0.216 0.153 0.156 dropout 25% 0.352 0.188 0.171 
+
+dropout 40% 0.534 0.380 0.774 mixed-pixel 0% 0.155 0.144 0.155 mixed-pixel 10% 0.158 0.143 0.155 mixed-pixel 25% 0.171 0.146 0.158 mixed-pixel 40% 0.197 0.157 0.165 TABLE SXX KITTI: CFA REFERENCES , A BS REL ACROSS THE OUTLIER GRID .Family p cfa-ols cfa-huber cfa-ransac uniform 0% 0.333 0.233 0.204 
+
+uniform 10% 0.440 0.246 0.203 
+
+uniform 25% 0.722 0.287 0.207 
+
+uniform 40% 1.133 0.457 0.214 
+
+near 0% 0.333 0.233 0.204 
+
+near 10% 0.297 0.221 0.207 
+
+near 25% 0.276 0.215 0.212 
+
+near 40% 0.315 0.239 0.264 dropout 0% 0.333 0.233 0.204 
+
+dropout 10% 0.701 0.264 0.203 
+
+dropout 25% 1.481 0.374 2.921 dropout 40% 2.417 1.155 5.955 mixed-pixel 0% 0.333 0.233 0.204 
+
+mixed-pixel 10% 0.311 0.221 0.206 
+
+mixed-pixel 25% 0.301 0.208 0.211 mixed-pixel 40% 0.322 0.205 0.234 TABLE SXXI DIODE: CFA REFERENCES , A BS REL ACROSS THE OUTLIER GRID .Family p cfa-ols cfa-huber cfa-ransac uniform 0% 0.386 0.339 0.321 
+
+uniform 10% 0.511 0.358 0.320 
+
+uniform 25% 0.744 0.404 0.338 
+
+uniform 40% 1.040 0.538 0.344 
+
+near 0% 0.386 0.339 0.321 
+
+near 10% 0.375 0.317 0.320 near 25% 0.392 0.302 0.313 near 40% 0.437 0.334 0.330 
+
+dropout 0% 0.386 0.339 0.321 
+
+dropout 10% 0.753 0.389 0.360 
+
+dropout 25% 1.403 0.509 1.821 dropout 40% 2.190 1.224 3.545 mixed-pixel 0% 0.386 0.339 0.321 
+
+mixed-pixel 10% 0.384 0.334 0.314 
+
+mixed-pixel 25% 0.384 0.325 0.329 mixed-pixel 40% 0.412 0.329 0.334 TABLE SXXII SUN RGB-D: CFA REFERENCES , A BS REL ACROSS THE OUTLIER GRID .Family p cfa-ols cfa-huber cfa-ransac uniform 0% 0.173 0.166 0.167 
+
+uniform 10% 0.193 0.169 0.167 
+
+uniform 25% 0.240 0.177 0.168 
+
+uniform 40% 0.312 0.204 0.175 
+
+near 0% 0.173 0.166 0.167 
+
+near 10% 0.176 0.163 0.169 near 25% 0.232 0.178 0.172 
+
+near 40% 0.325 0.254 0.198 
+
+dropout 0% 0.173 0.166 0.167 
+
+dropout 10% 0.254 0.180 0.168 
+
+dropout 25% 0.425 0.223 0.181 
+
+dropout 40% 0.645 0.422 0.674 mixed-pixel 0% 0.173 0.166 0.167 
+
+mixed-pixel 10% 0.173 0.164 0.167 mixed-pixel 25% 0.182 0.163 0.168 mixed-pixel 40% 0.208 0.172 0.173 UNDER REVIEW AT IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 24 
+
+TABLE SXXIII NYU V2: VI-D EPTH OFFICIAL AT K=150 , COMPLETE METRICS (SEED 0). Family p AbsRel SqRel RMSE RMSE log log 10 δ1 δ2 δ3
+
+uniform 0% 0.063 0.037 0.334 0.108 0.029 0.948 0.987 0.996 uniform 10% 0.081 0.049 0.387 0.124 0.036 0.925 0.984 0.996 uniform 25% 0.114 0.069 0.456 0.150 0.050 0.879 0.981 0.996 uniform 40% 0.155 0.105 0.549 0.186 0.066 0.773 0.970 0.996 near 0% 0.063 0.037 0.334 0.108 0.029 0.948 0.987 0.996 near 10% 0.145 0.132 0.679 0.215 0.072 0.756 0.944 0.984 near 25% 0.271 0.357 1.118 0.386 0.146 0.332 0.722 0.924 near 40% 0.371 0.593 1.436 0.551 0.217 0.180 0.426 0.735 dropout 0% 0.063 0.037 0.334 0.108 0.029 0.948 0.987 0.996 dropout 10% 0.082 0.051 0.370 0.126 0.035 0.922 0.982 0.996 dropout 25% 0.150 0.106 0.485 0.180 0.058 0.815 0.965 0.994 dropout 40% 0.257 0.234 0.688 0.261 0.094 0.594 0.900 0.984 mixed-pixel 0% 0.063 0.037 0.334 0.108 0.029 0.948 0.987 0.996 mixed-pixel 10% 0.080 0.052 0.403 0.126 0.037 0.922 0.982 0.995 mixed-pixel 25% 0.110 0.078 0.501 0.154 0.050 0.870 0.975 0.994 mixed-pixel 40% 0.143 0.115 0.608 0.189 0.065 0.784 0.960 0.991 TABLE SXXIV KITTI: VI-D EPTH OFFICIAL AT K=150 , COMPLETE METRICS (SEED 0). Family p AbsRel SqRel RMSE RMSE log log 10 δ1 δ2 δ3
+
+uniform 0% 0.160 0.708 4.833 0.208 0.078 0.753 0.973 0.994 uniform 10% 0.127 0.720 5.207 0.185 0.061 0.831 0.967 0.991 uniform 25% 0.140 0.831 5.528 0.195 0.062 0.814 0.961 0.988 uniform 40% 0.229 1.291 6.218 0.262 0.093 0.591 0.928 0.983 near 0% 0.160 0.708 4.833 0.208 0.078 0.753 0.973 0.994 near 10% 0.338 2.805 9.353 0.487 0.189 0.132 0.625 0.865 near 25% 0.490 4.756 11.664 0.738 0.305 0.008 0.096 0.521 near 40% 0.590 6.381 13.223 0.949 0.400 0.001 0.009 0.101 dropout 0% 0.160 0.708 4.833 0.208 0.078 0.753 0.973 0.994 dropout 10% 0.123 0.576 4.446 0.172 0.057 0.845 0.978 0.995 dropout 25% 0.174 0.865 4.665 0.203 0.070 0.740 0.971 0.995 dropout 40% 0.355 2.315 6.354 0.336 0.127 0.368 0.812 0.983 mixed-pixel 0% 0.160 0.708 4.833 0.208 0.078 0.753 0.973 0.994 mixed-pixel 10% 0.154 1.142 6.690 0.238 0.078 0.750 0.933 0.976 mixed-pixel 25% 0.161 1.608 8.129 0.285 0.084 0.725 0.892 0.950 mixed-pixel 40% 0.190 2.159 9.338 0.350 0.102 0.662 0.843 0.919 TABLE SXXV DIODE: VI-D EPTH OFFICIAL AT K=150 , COMPLETE METRICS (SEED 0). Family p AbsRel SqRel RMSE RMSE log log 10 δ1 δ2 δ3
+
+uniform 0% 0.209 2.017 4.001 0.275 0.082 0.757 0.881 0.936 uniform 10% 0.228 2.053 4.228 0.292 0.090 0.727 0.868 0.931 uniform 25% 0.277 2.212 4.520 0.328 0.109 0.640 0.846 0.925 uniform 40% 0.346 2.444 4.896 0.380 0.135 0.490 0.789 0.905 near 0% 0.209 2.017 4.001 0.275 0.082 0.757 0.881 0.936 near 10% 0.307 2.488 5.461 0.413 0.150 0.408 0.753 0.884 near 25% 0.432 3.469 6.982 0.631 0.250 0.160 0.359 0.658 near 40% 0.523 4.469 7.960 0.822 0.335 0.092 0.200 0.365 dropout 0% 0.209 2.017 4.001 0.275 0.082 0.757 0.881 0.936 dropout 10% 0.229 2.080 3.953 0.284 0.083 0.756 0.884 0.938 dropout 25% 0.326 2.580 4.103 0.337 0.107 0.627 0.864 0.934 dropout 40% 0.495 3.792 4.695 0.431 0.150 0.383 0.744 0.906 mixed-pixel 0% 0.209 2.017 4.001 0.275 0.082 0.757 0.881 0.936 mixed-pixel 10% 0.214 2.012 4.262 0.289 0.087 0.740 0.869 0.929 mixed-pixel 25% 0.229 2.023 4.612 0.315 0.097 0.712 0.850 0.917 mixed-pixel 40% 0.252 2.200 5.040 0.350 0.111 0.673 0.825 0.900 UNDER REVIEW AT IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 25 
+
+TABLE SXXVI SUN RGB-D: VI-D EPTH OFFICIAL AT K=150 , COMPLETE METRICS (SEED 0). Family p AbsRel SqRel RMSE RMSE log log 10 δ1 δ2 δ3
+
+uniform 0% 0.096 0.110 0.395 0.147 0.039 0.903 0.965 0.984 uniform 10% 0.114 0.121 0.439 0.163 0.047 0.881 0.959 0.981 uniform 25% 0.150 0.143 0.502 0.190 0.061 0.832 0.952 0.979 uniform 40% 0.190 0.174 0.568 0.222 0.076 0.742 0.941 0.976 near 0% 0.096 0.110 0.395 0.147 0.039 0.903 0.965 0.984 near 10% 0.161 0.170 0.643 0.229 0.075 0.753 0.921 0.971 near 25% 0.258 0.315 0.970 0.365 0.135 0.419 0.759 0.922 near 40% 0.341 0.484 1.215 0.500 0.193 0.245 0.538 0.792 dropout 0% 0.096 0.110 0.395 0.147 0.039 0.903 0.965 0.984 dropout 10% 0.122 0.136 0.439 0.170 0.047 0.881 0.959 0.981 dropout 25% 0.202 0.212 0.547 0.230 0.073 0.763 0.939 0.976 dropout 40% 0.322 0.372 0.729 0.312 0.110 0.524 0.872 0.965 mixed-pixel 0% 0.096 0.110 0.395 0.147 0.039 0.903 0.965 0.984 mixed-pixel 10% 0.111 0.116 0.450 0.163 0.047 0.878 0.956 0.981 mixed-pixel 25% 0.138 0.136 0.536 0.190 0.060 0.831 0.943 0.976 mixed-pixel 40% 0.165 0.160 0.613 0.219 0.072 0.770 0.927 0.970

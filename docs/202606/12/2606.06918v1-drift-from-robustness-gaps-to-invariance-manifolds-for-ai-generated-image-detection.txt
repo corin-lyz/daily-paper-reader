@@ -1,0 +1,551 @@
+Title: DRIFT: From Robustness Gaps to Invariance Manifolds for AI-Generated Image Detection
+
+URL Source: https://arxiv.org/pdf/2606.06918v1
+
+Published Time: Mon, 08 Jun 2026 00:33:57 GMT
+
+Number of Pages: 30
+
+Markdown Content:
+# DRIFT: From Robustness Gaps to Invariance Manifolds for AI-Generated Image Detection 
+
+Abhishek Ameta, Sayan Banerjee, Shreyas Pandith, Harshit, Ankita Chatterjee, Akshay Janardan Bankar , and Amit Satish Unde 
+
+Samsung Research Institute, Bangalore, India 
+
+Abstract. The rapid evolution of generative image models challenges existing AI-generated image detectors, particularly in open-world set-tings with unseen generators. Recent training-free approaches measure robustness gaps in frozen vision foundation models (VFMs), detecting fakes via perturbation-induced embedding drift. However, these methods rely on fixed invariance geometry inherited from pretraining and lack principled adaptation to the detection task. We instead formulate AI-generated image detection as learning a structured invariance manifold of real images under one-class supervision. Building upon a frozen VFM, we introduce lightweight projection heads that decompose representation space into complementary robust and fragile subspaces. The robust sub-space is explicitly trained to suppress variations induced by physically plausible imaging transformations, approximating tangent directions of a real-image manifold, while the fragile subspace retains sensitivity to edit-like perturbations. A structured ordering margin enforces hierarchi-cal separation between physical invariance and edit-induced variability, enabling detection as a margin-violation test relative to the learned man-ifold. At inference, multi-scale patch-wise drift under both transforma-tion families yields a dual-channel invariance signature and interpretable localization. Extensive experiments demonstrate strong open-world gen-eralization across unseen generators and resolutions, consistently out-performing training-free robustness-based baselines while providing in-terpretable invariance-violation maps. 
+
+# 1 Introduction 
+
+The rapid advancement of generative models has made AI-generated images increasingly photorealistic and difficult to distinguish from real photographs [13, 33, 36]. As generation quality improves, detection methods must general-ize beyond specific architectures and training paradigms, motivating generator-agnostic detection strategies capable of generalizing across evolving generative paradigms. Early detection approaches relied primarily on supervised training with la-beled real and synthetic data, often exploiting model-specific artifacts or fre-quency inconsistencies [9,47]. While effective in closed-world settings, such meth-
+
+> arXiv:2606.06918v1 [cs.CV] 5 Jun 2026
+
+2 A. Ameta, S. Banerjee et al.       
+
+> (a) Real image. (b) Real: Detection heatmap.
+> (c) AI-generated image. (d) AI: Detection heatmap.
+
+Fig. 1: Visualization of robust-fragile drift violation. Real images maintain drift con-sistency, whereas AI-generated images show strong drift violations, producing high-response heatmaps. 
+
+ods frequently degrade under unseen generators or distribution shifts. More re-cent work has explored training-free detection strategies using vision foundation models (VFMs) [6, 35], such as DINOv2 [31], based on the observation that real and synthetic images exhibit different robustness behavior in representation space [8, 17, 37]. In particular, prior studies have shown that AI-generated im-ages tend to produce larger embedding drift under certain perturbations (e.g., noise, cropping, resampling), enabling detection via perturb-and-measure scor-ing [43, 45]. Although promising, existing methods inherit two fundamental lim-itations. First, they depend directly on the invariance geometry learned during foundation model pretraining, which is not optimized for authenticity detection. Second, their performance is highly sensitive to the choice of perturbation fam-ily, as different corruptions may induce domain-specific biases [8, 17, 43]. Con-sequently, the robustness signal remains passive and fixed, rather than being explicitly shaped for the detection objective. Furthermore, treating robustness as a scalar property overlooks a deeper structural insight: real images lie on a constrained manifold shaped by natural image statistics and physical imaging processes [24, 26, 37]. DRIFT 3
+
+In this work, we reformulate AI-generated image detection as a structured invariance learning problem. Rather than measuring drift under a single trans-formation family, we explicitly decompose representation space into two com-plementary subspaces: a robust subspace that reduces sensitivity to natural nui-sance variations (e.g., mild blur or compression), and a fragile subspace that amplifies sensitivity to edit-like or structurally inconsistent perturbations. We enforce a margin-based ordering constraint between robust and fragile drift mag-nitudes, thereby learning an invariance hierarchy instead of a scalar robustness score. To stabilize this inequality-constrained optimization under real-only su-pervision, we introduce an exponential moving average (EMA) [6,15] teacher that provides temporally smoothed geometric targets. EMA acts as a stability opera-tor, decoupling fast parameter updates from invariance ordering evaluation and mitigating collapse or oscillatory margin violations. At inference time, detection is formulated as a geometric margin-violation test. We compute patchwise rep-resentation drift under both robust (tangent-like) and fragile (normal-inducing) transformation families, and classify images based on violations of the learned invariance hierarchy between these two subspaces. We project the drift back to image space to produce a heatmap and aggregate scores using a top-k median statistic, yielding both a global authenticity score and interpretable localization. This design bridges global detection and local artifact analysis within a unified invariance-based framework as shown in Fig. 1. Our contributions are summarized as follows: 
+
+– We propose DRIFT: a real-only, one-class learning framework that explicitly models the physical invariance manifold of real images in representation space. 
+
+– We introduce a robust–fragile representation factorization with an order-ing loss that enforces structured drift geometry under different transform families. Our method separates nuisance physical variations from stronger edit-like variations, reducing sensitivity to perturbation choice and improv-ing calibration in the one-class regime. 
+
+– We develop a patch-wise invariance drift scoring mechanism that provides both a drift score and interpretable localization, which is not inherent to typical global drift detectors. 
+
+– Extensive experiments demonstrate that learning structured invariance ge-ometry from real images improves generalization to unseen generators, while maintaining interpretability and robustness in open-world settings. 
+
+# 2 Related Work 
+
+Early work focused on identifying artifacts introduced by generative models. CNN-based GAN detectors demonstrated that upsampling artifacts and convo-lutional inconsistencies can be exploited for detection [44,46]. Subsequent works improved cross-model generalization by explicitly modeling generative artifacts in gradients [44] or revisiting upsampling operations in CNN generators [43]. 4 A. Ameta, S. Banerjee et al. 
+
+Universal fake detectors were proposed to improve cross-generator generaliza-tion [30], and transformation-based training strategies were introduced to en-hance robustness to post-processing [23]. While effective in closed-world settings, these supervised methods often rely on model-specific artifacts and degrade un-der unseen generators or distribution shifts. Some works study synthetic im-age detection from a transformation perspective, showing that certain image manipulations amplify artifacts and improve generalization [23]. These meth-ods enhance robustness but still operate within supervised detection paradigms. FerretNet models local pixel dependencies and Markovian structure to detect synthetic images efficiently [24]. By focusing on local statistical inconsistencies, it improves computational efficiency while maintaining generalization. Nonethe-less, it remains supervised and artifact-driven. Frequency-domain inconsistencies have been widely studied. FIRE lever-ages frequency-guided reconstruction to detect diffusion-generated images [9]. Spectral learning approaches model real-image spectral distributions and de-tect deviations without relying on generator-specific artifacts [20]. Earlier analy-ses demonstrated that CNN-generated images exhibit distinctive frequency pat-terns [46]. These methods exploit statistical discrepancies in spectral represen-tations; however, they primarily operate in pixel or frequency space rather than learning structured representation-level invariances. Reconstruction-based methods assume that generative images exhibit re-construction inconsistencies under autoencoder or diffusion priors. DIRE mea-sures reconstruction error under diffusion inversion [47], while AEROBLADE detects latent diffusion images via autoencoder reconstruction discrepancies [37]. Other studies analyze intrinsic diffusion sampling characteristics [10]. Although reconstruction-based approaches can capture generative priors, they require generator-specific inversion or autoencoding pipelines and may depend on assumptions about generative architectures. Recent works observe that AI-generated images exhibit larger representation drift under perturbations in pretrained VFMs. RIGID measures robustness gaps under noise perturbations in frozen embeddings [17]. Follow-up work analyzes the sensitivity of such methods to perturbation choice and backbone robustness [45]. Cropping-based robustness detection leverages invariance inherited from SSL pretraining [8]. These approaches are attractive due to their generator-agnostic and training-free nature. However, they treat representation geometry as fixed and rely on carefully chosen perturbations to induce separable drift. Detection reduces to perturb-and-measure scoring rather than explicitly modeling authen-tic image variability. In contrast to supervised artifact modeling, frequency-statistics matching, reconstruction-based inversion, or training-free robustness-gap scoring, we for-mulate AI-generated image detection as learning a structured invariance mani-fold of real images under one-class supervision. DRIFT 5
+
+Fig. 2: Overview of the proposed student–teacher training framework. The student network processes the original image x while the EMA teacher processes transformed views. Two projection heads learn complementary representations. A reconstruction decoder anchors the representation to prevent collapse. 
+
+# 3 Methodology 
+
+3.1 Problem Setting and Notation 
+
+Let x ∈ RH×W ×3 denote an RGB image. We assume access to a set of real training images Dreal = {xi}Ni=1 and no AI-generated images during training (one-class setting). At test time, we receive an image x and must predict whether it is real or AI-generated. Let ϕ : RH×W ×3 → Rd×m be a frozen VFM feature extractor (e.g., DINOv2), producing m patch tokens each of dimension d. We use two lightweight projection heads: 
+
+hr (·) : Rd×m → Rkr ×m, hf (·) : Rd×m → Rkf ×m, (1) and define robust and fragile embeddings as: 
+
+zr (x) = hr (ϕ(x)) , zf (x) = hf (ϕ(x)) . (2) 
+
+3.2 Network Architecture and Training Framework 
+
+Fig. 2 illustrates the overall pipeline of the proposed framework. Given an input image x, a shared encoder extracts feature representations which are fed into 6 A. Ameta, S. Banerjee et al. 
+
+two projection heads: a robust head and a fragile head. The student network, parameterized by θ, processes the original image x to produce embeddings zθr (x)
+
+and zθf (x) corresponding to the robust and fragile branches. The teacher network, parameterized by ¯θ, processes transformed views of the image. A robust transformation gr (x) generates a nuisance-preserving view, while a fragile transformation gf (x) produces a structurally perturbing view. These transformed inputs are passed through the teacher encoder and corre-sponding projection heads to obtain z ¯θr (gr (x)) and z ¯θf (gf (x)) .The robust branch enforces invariance between the student representation of the original image and the teacher representation of the robustly transformed image through the loss 
+
+Lrob = ∥zθr (x) − z ¯θr (gr (x)) ∥2.
+
+The fragile branch captures transformation sensitivity using 
+
+Lfrag = ∥zθf (x) − z ¯θf (gf (x)) − uf ∥2,
+
+where uf denotes a fragile drift centering term. To prevent representation collapse, the embeddings are passed through a decoder to reconstruct the input image ˆx. A reconstruction loss anchors the representation 
+
+Lrec = ∥x − ˆx∥1.
+
+The teacher parameters ¯θ are updated using an exponential moving average of the student parameters. 
+
+3.3 Manifold View: Physical Invariance as Geometry 
+
+We model real images as samples from a low-dimensional physical-image man-ifold Mreal ⊂ RH×W ×3 induced by the camera imaging pipeline and natural scene statistics. We further define a group (or semigroup) of physically plausible transformations GR (e.g., mild JPEG, mild blur, photometric jitter, resampling round-trips), and assume approximate closure: 
+
+x ∈ M real , g ∈ G R ⇒ g(x) ∈ M real (up to small distortion) . (3) Training-free detectors implicitly rely on invariances already encoded in ϕ and score an image via embedding drift ∥ϕ(x) − ϕ(g(x)) ∥ for chosen perturbations. Our novelty is to learn a detection-adapted invariance geometry from real images only by introducing: (i) robust/fragile factorization, (ii) a structured ordering objective, and (iii) a stability anchor (EMA teacher + reconstruction), thereby shaping the representation manifold in which invariance violations become more discriminative and better calibrated. DRIFT 7
+
+3.4 Decomposing the Representation Space 
+
+We introduce two transformation families: 
+
+– Robust/Physical transforms GR: small camera/codec-like perturbations that preserve semantic content and are common in real acquisition/distribution. 
+
+– Fragile/Edit-like surrogate transforms GF : stronger or more “editing”-like distortions (e.g., strong blur, heavy compression, pixelation, local edits) used only during training to shape a complementary sensitivity direction. 
+
+3.5 Drift Measures as Manifold-Violation Scores 
+
+For any embedding z(·) and transform g, define patchwise drift: 
+
+∆z (x; g) = z(x) − z(g(x)) ∈ Rk×m. (4) We summarize drift via an ℓ2 token norm averaged over patches: 
+
+Dz (x; g) = 1
+
+m
+
+> m
+
+X
+
+> j=1
+
+∆(j) 
+
+> z
+
+(x; g) 2
+
+. (5) We also use expectations over sampled transforms: 
+
+DR(x) = Eg∼G R [Dzr (x; g)] , DF (x) = Eg∼G F
+
+Dzf (x; g) . (6) 
+
+3.6 Learning Objectives: Shaping the Invariance Manifold 
+
+A central difficulty in learning invariance from real-only data is avoiding repre-sentation collapse and unstable drift behavior. To stabilize training, we introduce three complementary stabilization mechanisms: (i) EMA teacher for temporally smoothed targets, (ii) auto-associative reconstruction anchor to preserve repre-sentational diversity, and (iii) a strcutured robust-fragile ordering constraint to enforce meaningful geometric separation. We detail each component below. 
+
+Collapse Under Real-Only Invariance Learning. Consider a real-only in-variance objective of the form 
+
+Linv = Ex,g ∥zθ (x) − zθ (g(x)) ∥22,
+
+which encourages embeddings of transformed views to be similar. This objective admits a degenerate solution: if the network maps all inputs to a constant vector, 
+
+zθ (x) ≡ c ∀x, 
+
+then transformation-induced drift vanishes and 
+
+Linv = 0 .8 A. Ameta, S. Banerjee et al. 
+
+Although this minimizes the objective, it destroys meaningful representation structure, since all images become indistinguishable. Such collapse is particularly likely under real-only supervision, where no explicit mechanism enforces diversity across different inputs. To mitigate this instability, we introduce EMA teacher that provides tempo-rally smoothed invariance targets and stabilizes real-only training. 
+
+EMA Teacher for Stable Invariance Targets. Let θ denote student param-eters (heads and decoder) and ¯θ the EMA teacher parameters: 
+
+¯θ ← τ ¯θ + (1 − τ )θ,  (7) with τ ∈ [0 , 1) . The teacher provides stable targets for drift matching. The student matches temporally smoothed teacher targets while gradients are applied only to the student. Because the teacher evolves slowly as a low-pass filtered ensemble of past students, collapse cannot occur instantaneously; degenerate solutions must persist over time to propagate through the EMA filter. This temporal decoupling stabilizes invariance learning and reduces collapse under real-only training. 
+
+Reconstruction Anchor to Prevent Collapse. We add a lightweight de-coder d(·) that reconstructs x from a combined latent u(x) (e.g., concatenation or fusion of zr and zf ): 
+
+ˆx = d(u(x)) , Lrec = ∥x − ˆx∥1. (8) This forces embeddings to retain image information, preventing trivial constant solutions while still allowing invariance constraints. 
+
+Robust Drift Matching (Learned Physical Invariance). For g ∼ G R, we enforce invariance in zr via teacher–student matching: 
+
+Lrob = Ex∼D real Eg∼G R
+
+
+
+zθr (x) − z ¯θr (g(x)) 22
+
+
+
+. (9) Unlike training-free scoring approaches, our model learns the invariance structure associated with the robust transformation family GR directly from real data. 
+
+Fragile Drift Centering (Avoid Degeneracy and Encourage Comple-mentarity). A potential degeneracy arises when the fragile branch collapses to a constant embedding, i.e., 
+
+zf (x) ≡ cf ∀x, 
+
+which leads to vanishing fragile drift 
+
+DF (x) = ∥zf (x) − zf (gF (x)) ∥2 = 0 .DRIFT 9
+
+In this case the fragile branch carries no meaningful transformation sensitivity and fails to play a complementary role to the robust branch. To prevent this, we impose a weak centering constraint on fragile drift to regularize magnitudes for 
+
+g ∼ G F :
+
+Lfrag = Ex∼D real Eg∼G F
+
+h Dzf (x; g) − μf
+
+2i
+
+, (10) where μf is a target drift level (estimated via running average). This centering operation discourages trivial solutions in which fragile drift collapses uniformly across samples and instead encourages non-zero variability in fragile responses. As a result, the fragile branch maintains sensitivity to structurally disruptive transformations, complementing the robust branch which suppresses nuisance-preserving variations. 
+
+Robust–Fragile Ordering Margin (Structured Geometry). To enforce complementary behavior between the two branches, we impose an ordering con-straint on transformation-induced drift. Let 
+
+DR(x) = ∥zr (x) − zr (gR(x)) ∥2, DF (x) = ∥zf (x) − zf (gF (x)) ∥2
+
+denote robust and fragile drift respectively. Robust transformations represent nuisance-preserving variations and should therefore induce smaller drift than fragile transformations, which probe structurally disruptive perturbations. We enforce this relationship using a margin constraint 
+
+Lord = max  0, D R(x) + γ − DF (x),
+
+where γ > 0 is a margin. This loss encourages fragile drift to exceed robust drift by at least γ, preventing trivial solutions in which both drifts collapse or become indistinguishable. As a result, the robust branch learns invariance to nuisance transformations while the fragile branch remains sensitive to structural deviations, producing complementary representation behavior. 
+
+Total Objective The full training objective is: 
+
+L = λrec Lrec + λrob Lrob + λfrag Lfrag + λord Lord . (11) 
+
+3.7 Inference: Detection and Localization 
+
+At inference time, only the student network is used. Given a test image x, we eval-uate transformation-induced drift under both robust and fragile transformations. The student network produces robust and fragile embeddings zr (x), z f (x), re-spectively, along with embeddings of the transformed views zr (gr (x)) , z f (gf (x)) .We compute the corresponding drift magnitudes 
+
+DR(x) = ∥zr (x) − zr (gr (x)) ∥2, DF (x) = ∥zf (x) − zf (gf (x)) ∥2.10 A. Ameta, S. Banerjee et al. 
+
+Detection is formulated as a margin violation test based on the learned robust–fragile ordering 
+
+S(x) = DR(x) + γ − DF (x),
+
+where γ is the ordering margin. Images with S(x) > 0 violate the learned invariance hierarchy and are classified as AI-generated, while images satisfying the ordering constraint are classified as real. 
+
+Drift Map. Let {xp}Pp=1 denote image patches. We define the patchwise drift score as the margin violation between robust and fragile drift: 
+
+S(p) = DR(p) + γ − DF (p),
+
+where DR(p) and DF (p) denote robust and fragile drift respectively. Collecting scores over all patches forms the spatial drift map 
+
+SDM = {S(p)}Pp=1 .
+
+This map highlights regions that violate the learned invariance ordering and is visualized as a localization heatmap after bilinear interpolation to the original image resolution. 
+
+Robust Global Scoring via Top-k Median Aggregation. Patchwise mar-gin violation scores S(p) can be noisy due to stochastic transformations and lo-cal texture variability. To obtain a robust image-level score, we aggregate patch scores using a Top-k median rule. Let SDM = {S(p)}Pp=1 denote the patchwise drift map and let S↓ be the same set sorted in descending order. We select the Top-k most suspicious patches 
+
+Tk = {S↓(1) , . . . , S ↓(k)},
+
+and define the global detection score as 
+
+Sglobal (x) = median  Tk
+
+.
+
+This aggregation emphasizes localized artifacts by focusing on high-scoring re-gions, while the median reduces sensitivity to outlier patches, yielding a stable global score for detection. 
+
+# 4 Experimental Results 
+
+4.1 Dataset Construction Training data. We train our model using only real images from the MIT-5K [5], LSUN [48] and RAISE [11] datasets. These datasets provide diverse photographs captured under varying illumination conditions, resolutions and camera characteristics. In accordance with our one-class formulation, no AI-generated images are used during training. DRIFT 11                                     
+
+> Table 1: Accuracy and average precision comparisons of different methods on Foren-Synth test set. The best, second-best and third-best results are highlighted in red, blue, and green colors, respectively. Refer to Supplemental for detailed analysis. Methods StyleGAN BigGAN CycleGAN GauGAN Deepfake Mean Ojha [30] 89.0/98.7 90.5/99.1 87.9/99.8 89.9/100.0 80.2/90.2 89.1/98.3 FreqNet [42] 90.2/99.7 90.5/96.0 95.8/99.6 93.4/98.6 88.9/94.4 91.5/98.5 NPR [43] 96.3/99.8 87.5/94.5 95.0/99.5 86.6/88.8 77.4/86.2 92.5/96.1 FatFormer [26] 97.2/99.8 99.5/100.0 99.3/100.0 99.4/100.0 93.2/98.0 98.4/99.7 SAFE [23] 98.0/99.9 89.7/95.9 98.9/99.8 91.5/97.2 93.1/97.5 96.2/98.8 CO-SPY [7] 63.9/70.2 71.6/83.9 58.5/55.8 69.6/83.4 65.7/79.7 65.7/76.1 FerretNet [24] 98.0/100.0 92.6/98.5 98.8/99.9 91.4/99.8 89.2/96.7 95.9/99.3 DRIFT (Ours) 98.6/100.0 94.3/99.3 99.1/100 92.8/100 91.2/97.8 97.8/99.8
+
+Testing Datasets. We evaluate our method on the same benchmark test set adopted in FerretNet [24] to ensure fair comparison. The evaluation benchmark contains real images and AI-generated images using multiple state-of-the-art generative models, including both GAN-based and diffusion-based approaches. Specifically, we test on the following datasets: 
+
+– ForenSynths : A forensic-oriented benchmark containing synthetic images generated by multiple GAN-based architectures: StyleGAN [22], BigGAN [4], CycleGAN [49], GauGAN [32], and Deepfake [39]. Real images are sourced from six widely-used datasets: LSUN [48], ImageNet [40], CelebA [28], CelebA-HQ [21], COCO [25], and FaceForensics++ [39]. 
+
+– Diffusion-6-Class (Diffusion-6cls) : A diffusion-based benchmark com-prising synthetic images generated by six distinct diffusion model variants, representing modern large-scale generative systems including DALL-E [36], Guided [12], PNDM [27], VQ-Diffusion [16], Glide [29], and LDM [38]. 
+
+– Synthetic Real-World Test Set (PromptWorld-1K) : To evaluate gen-eralization to modern generative models, we construct a synthetic test set using two widely used generative systems: Gemini and ChatGPT. We gen-erate 1000 images from diverse prompts, covering common real-world scenes such as people, animals, landscapes, objects, and indoor environments. . 
+
+4.2 Implementation and Optimization Details Backbone and heads. We use a frozen DINOv2 ViT-B/14 backbone to extract a 768-d global image representation. On top of the backbone, we attach two lightweight projection heads (robust head zr and fragile head zf ). Each head is a 2-layer MLP with architecture 768 → 512 → 256 using GELU activation, with LayerNorm applied before the first linear layer. The output embedding dimension is d=256 . Only the projection heads are trainable. 
+
+Hyperparameters. We optimize a weighted sum of robust invariance, frag-ile sensitivity, and ordering margin losses, with ordering margin γ=0 .3 and 12 A. Ameta, S. Banerjee et al.                                         
+
+> Table 2: Accuracy and average precision comparisons of different methods on Diffusion-6-cls test dataset. The best, second-best and third-best results are highlighted in red, blue, and green colors, respectively. Refer to Supplemental for detailed analysis. Dataset RIGID [17] FatFormer [26] SAFE [23] FerretNet [24] DRIFT (Ours) Dall-E 43.5/48.0 98.8/99.8 97.5/99.7 91.4/98.2 92.1/99.2 Guided 58.0/94.9 76.1/92.0 82.4/95.8 92.1/98.6 92.9/98.9 PNDM 53.9/90.6 99.3/100.0 78.9/98.6 96.9/100.0 94.3/100 VQ-Diffusion 53.6/90.9 98.0/100.0 100.0/100.0 99.9/100.0 97.0/100.0 Glide-50-27 83.8/83.1 94.7/99.4 96.6/99.2 97.2/99.7 96.8/99.3 LDM-100 53.8/58.6 98.7/99.9 98.8/100.0 95/100.0 98.6/100.0
+
+weights (λrob , λ f rag , λ ord ) = (1 .0, 1.0, 0.5) . We additionally use a reconstruction anchor regularizer with weight 0.1 to avoid degenerate collapse. 
+
+EMA teacher. To stabilize one-class training, we maintain an exponential moving average (EMA) teacher for the projection heads. Teacher parameters are updated as θema ← λema θema + (1 − λema )θ with momentum λema =0 .996 , and are used to compute stable targets during drift estimation. 
+
+Optimization. We train with AdamW using learning rate 3×10 −4, weight decay 0.01 , batch size 64 , for 50 epochs. We apply a cosine learning-rate schedule with linear warmup for the first 5 epochs and clip gradients to a maximum norm of 1.0. All images are resized to 224 ×224 during training and evaluation. 
+
+Performance Evaluation. Following previous work [17,24], Accuracy (ACC) and Average Precision (AP) are used as the primary evaluation metrics. 
+
+4.3 Main Results Results on GAN-based generators (ForenSynths). On the ForenSynth benchmark, our method achieves consistently strong performance across all gen-erator families as shown in Table 1. These results indicate that explicitly learning the invariance manifold of real images leads to a more stable detection signal than relying solely on pretrained feature geometry. 
+
+Results on diffusion-based generators (Diffusion-6cls). We further eval-uate in Table 2 the performance of the proposed method on the Diffusion-6cls benchmark. Compared with training-free detectors such as RIGID, our method provides more stable performance across different diffusion sampling strategies. This demonstrates that the learned invariance manifold captures structural prop-erties of real images that generalize beyond specific generator architectures. 
+
+Results on synthetic real-world test set (PromptWorld-1K). As shown in Table 3, our method achieves 93 .2% ACC / 92 .0% AP on Gemini and 94 .8% 
+
+ACC / 95 .0% AP on ChatGPT, outperforming training-free robustness detectors such as RIGID and frequency-based approaches such as FIRE. These results demonstrate that learning a structured invariance manifold from real images enables strong generalization to unseen prompt-based generators DRIFT 13 
+
+Table 3: Accuracy and average precision comparisons of different methods on Synthetic real-world test set (PromptWorld-1K). The best, second-best and third-best results are highlighted in red, blue, and green colors, respectively. FIRE [9] RIGID [17] FerretNet [24] NPR [43] DRIFT (Ours) Ref CVPR‘25 Arxiv‘25 NeurIPS‘25 CVPR‘24 -Training data Labelled real/fake data Training-free Labelled real/fake data Labelled real/fake data Only real data Gemini 78.3/61.2 40.3/30.5 50.9/66 91.9/95.2 93.2/92 ChatGPT 77.04/56.2 41.3/34 99.09/99.1 95.5/98.3 94.8/95        
+
+> (a) t-SNE of embeddings under robust and fragile transformations.
+> (b) t-SNE of robust vs fragile embedding drift.
+
+Fig. 3: Representation geometry under robust and fragile transformations. 
+
+4.4 Ablation Studies 
+
+We perform ablations in Table 4 to analyze the contribution of each component of the proposed framework. 
+
+Robust vs. Fragile Heads. We compare the proposed dual-head design with three alternatives: robust-only, fragile-only, and a shared single-head representa-tion. The robust-only model achieves reasonable performance, while the fragile-only variant performs significantly worse. The dual-head model consistently achieves the best results, confirming that robust invariance and fragile sensi-tivity provide complementary signals for detecting AI-generated images. 
+
+Training Stability Mechanisms. We evaluate the importance of the EMA teacher, reconstruction anchor, and ordering margin. Removing the EMA teacher leads to reduced accuracy due to unstable representation targets. Removing the reconstruction anchor causes a larger degradation, indicating that reconstruction regularization helps prevent representation collapse when training only on real images. 
+
+Transformation Sensitivity. We analyze different robust and fragile pertur-bation families. Robust transformations such as mild blur and JPEG compression produce stable detection performance, while fragile perturbations such as pixela-tion, resampling, and defocus blur consistently reveal structural inconsistencies 14 A. Ameta, S. Banerjee et al. 
+
+in generated images. A leave-one-out analysis confirms that the detector does not rely on any single perturbation family. 
+
+Table 4: Ablation results on the SDXL-Turbo dataset 
+
+Variant AUC ↑ AP ↑
+
+Robust-only 96.3 98.4 Fragile-only 61.2 78.3 Shared single head 94.6 97.3 Dual-head 98.1 100.0  
+
+> (a) Robust vs Fragile decomposition
+
+Variant AUC ↑ AP ↑
+
+Full model 98.1 100.0 – EMA teacher 94.3 97.5 – Reconstruction anchor 81.3 84.2 – Ordering margin 96.7 95.3  
+
+> (b) Network architecture
+
+Robust family AUC ↑ AP ↑
+
+JPEG 85.7 88.4 Mild blur 85.3 90.2 Resampling 87.3 93.5 Photometric jitter 61.3 79.2  
+
+> (c) Robust perturbation family sensitivity
+
+Fragile family AUC ↑ AP ↑
+
+Pixelation 66.3 79.3 Defocus blur 63.1 80.3 Resampling 68.7 78.3 Photometric jitter 59.3 76.4.  
+
+> (d) Fragile perturbation family sensitivity
+
+4.5 Visualization of representation geometry. 
+
+Fig. 3 visualizes the embedding behavior under robust and fragile transforma-tions using t-SNE projections. As shown in Fig. 3(a), embeddings of the orig-inal images and their robustly transformed versions lie close in the represen-tation space, indicating that the robust branch successfully learns invariance to nuisance-preserving transformations. In contrast, embeddings under fragile transformations exhibit larger dispersion, as shown in Fig. 3(b). This confirms that the fragile branch remains sensitive to structurally disruptive perturbations, producing larger representation drift. These observations validate the comple-mentary roles of the robust and fragile subspaces in modeling the invariance structure of real images. 
+
+# 5 Conclusions 
+
+In this work, we reformulated AI-generated image detection as a structured invariance learning problem. Instead of relying on fixed robustness gaps in pre-trained representations, we explicitly learned the physical invariance manifold of real images using only real data. By decomposing the representation space into complementary robust and fragile subspaces and enforcing an ordering constraint between their transformation-induced drifts, the proposed framework captures the geometric structure of natural images and detects violations introduced by DRIFT 15 
+
+generative models. Extensive experiments across GAN-based, diffusion-based, and prompt-driven generators demonstrate that the learned invariance geom-etry provides strong open-world generalization while maintaining interpretable localization through patch-wise drift maps. The results indicate that modeling invariance structure rather than generator-specific artifacts offers a promising direction for robust AI-generated image detection. 
+
+# References 
+
+1. Prompthero. Openjourney. https://openjourney.art (2023) 2. Yiffymix v31. https://huggingface.co/Yntec/YiffyMix (2023) 3. Proteus v0.3. https://huggingface.co/dataautogpt3/ProteusV0.3 (2024) 4. Brock, A., Donahue, J., Simonyan, K.: Large scale gan training for high fidelity natural image synthesis. arXiv preprint arXiv:1809.11096 (2018) 5. Bychkovsky, V., Paris, S., Chan, E., Durand, F.: Learning photographic global tonal adjustment with a database of input/output image pairs. Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) (2011) 6. Caron, M., Touvron, H., Misra, I., Jégou, H., Mairal, J., Bojanowski, P., Joulin, A.: Emerging properties in self-supervised vision transformers. In: Proceedings of the IEEE/CVF international conference on computer vision. pp. 9650–9660 (2021) 7. Cheng, S., Lyu, L., Wang, Z., Zhang, X., Sehwag, V.: Co-spy: Combining semantic and pixel features to detect synthetic images by ai. In: Proceedings of the Computer Vision and Pattern Recognition Conference. pp. 13455–13465 (2025) 8. Choi, S., Lee, H., Lee, M.: Training-free detection of ai-generated images via crop-ping robustness. arXiv preprint arXiv:2511.14030 (2025) 9. Chu, B., Xu, X., Wang, X., Zhang, Y., You, W., Zhou, L.: Fire: Robust detection of diffusion-generated images via frequency-guided reconstruction error. In: Proceed-ings of the Computer Vision and Pattern Recognition Conference. pp. 12830–12839 (2025) 10. Corvi, R., Cozzolino, D., Zingarini, G., Poggi, G., Nagano, K., Verdoliva, L.: On the detection of synthetic images generated by diffusion models. In: ICASSP 2023-2023 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP). pp. 1–5. IEEE (2023) 11. Dang-Nguyen, D.T., Pasquini, C., Conotter, V., Boato, G.: Raise: A raw images dataset for digital image forensics. In: Proceedings of the ACM Multimedia Systems Conference (MMSys) (2015) 12. Dhariwal, P., Nichol, A.: Diffusion models beat gans on image synthesis. Advances in neural information processing systems 34 , 8780–8794 (2021) 13. Esser, P., Kulal, S., Blattmann, A., Entezari, R., Müller, J., Saini, H., Levi, Y., Lorenz, D., Sauer, A., Boesel, F., et al.: Scaling rectified flow transformers for high-resolution image synthesis. In: Forty-first international conference on machine learning (2024) 14. Esser, P., Kulal, S., Blattmann, A., Entezari, R., Müller, J., Saini, H., Levi, Y., Lorenz, D., Sauer, A., Boesel, F., et al.: Scaling rectified flow transformers for high-resolution image synthesis. In: Forty-first international conference on machine learning (2024) 15. Grill, J.B., Strub, F., Altché, F., Tallec, C., Richemond, P., Buchatskaya, E., Do-ersch, C., Avila Pires, B., Guo, Z., Gheshlaghi Azar, M., et al.: Bootstrap your own latent-a new approach to self-supervised learning. Advances in neural information processing systems 33 , 21271–21284 (2020) 16 A. Ameta, S. Banerjee et al. 16. Gu, S., Chen, D., Bao, J., Wen, F., Zhang, B., Chen, D., Yuan, L., Guo, B.: Vector quantized diffusion model for text-to-image synthesis. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 10696– 10706 (2022) 17. He, Z., Chen, P.Y., Ho, T.Y.: Rigid: A training-free and model-agnostic framework for robust ai-generated image detection. arXiv preprint arXiv:2405.20112 (2024) 18. Jeong, Y., Kim, D., Min, S., Joe, S., Gwon, Y., Choi, J.: Bihpf: Bilateral high-pass filters for robust deepfake detection. In: Proceedings of the IEEE/CVF winter conference on applications of computer vision. pp. 48–57 (2022) 19. Jeong, Y., Kim, D., Ro, Y., Choi, J.: Frepgan: robust deepfake detection using frequency-level perturbations. In: Proceedings of the AAAI conference on artificial intelligence. vol. 36(1), pp. 1060–1068 (2022) 20. Karageorgiou, D., Papadopoulos, S., Kompatsiaris, I., Gavves, E.: Any-resolution ai-generated image detection by spectral learning. In: Proceedings of the Computer Vision and Pattern Recognition Conference. pp. 18706–18717 (2025) 21. Karras, T., Aila, T., Laine, S., Lehtinen, J.: Progressive growing of gans for im-proved quality, stability, and variation. arXiv preprint arXiv:1710.10196 (2017) 22. Karras, T., Laine, S., Aila, T.: A style-based generator architecture for generative adversarial networks. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 4401–4410 (2019) 23. Li, O., Cai, J., Hao, Y., Jiang, X., Hu, Y., Feng, F.: Improving synthetic image detection towards generalization: An image transformation perspective. In: Pro-ceedings of the 31st ACM SIGKDD Conference on Knowledge Discovery and Data Mining V. 1. pp. 2405–2414 (2025) 24. Liang, S., Liu, J., Chen, R., Guan, Q.: Ferretnet: Efficient synthetic image detection via local pixel dependencies. arXiv preprint arXiv:2509.20890 (2025) 25. Lin, T.Y., Maire, M., Belongie, S., Hays, J., Perona, P., Ramanan, D., Dollár, P., Zitnick, C.L.: Microsoft coco: Common objects in context. In: European conference on computer vision. pp. 740–755. Springer (2014) 26. Liu, H., Tan, Z., Tan, C., Wei, Y., Wang, J., Zhao, Y.: Forgery-aware adaptive transformer for generalizable synthetic image detection. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 10770– 10780 (2024) 27. Liu, L., Ren, Y., Lin, Z., Zhao, Z.: Pseudo numerical methods for diffusion models on manifolds. arXiv preprint arXiv:2202.09778 (2022) 28. Liu, Z., Luo, P., Wang, X., Tang, X.: Deep learning face attributes in the wild. In: Proceedings of the IEEE international conference on computer vision. pp. 3730– 3738 (2015) 29. Nichol, A., Dhariwal, P., Ramesh, A., Shyam, P., Mishkin, P., McGrew, B., Sutskever, I., Chen, M.: Glide: Towards photorealistic image generation and editing with text-guided diffusion models. arXiv preprint arXiv:2112.10741 (2021) 30. Ojha, U., Li, Y., Lee, Y.J.: Towards universal fake image detectors that gener-alize across generative models. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 24480–24489 (2023) 31. Oquab, M., Darcet, T., Moutakanni, T., Vo, H., Szafraniec, M., Khalidov, V., Fernandez, P., Haziza, D., Massa, F., El-Nouby, A., et al.: Dinov2: Learning robust visual features without supervision. arXiv preprint arXiv:2304.07193 (2023) 32. Park, T., Liu, M.Y., Wang, T.C., Zhu, J.Y.: Semantic image synthesis with spatially-adaptive normalization. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 2337–2346 (2019) DRIFT 17 33. Podell, D., English, Z., Lacey, K., Blattmann, A., Dockhorn, T., Müller, J., Penna, J., Rombach, R.: Sdxl: Improving latent diffusion models for high-resolution image synthesis. arXiv preprint arXiv:2307.01952 (2023) 34. Qian, Y., Yin, G., Sheng, L., Chen, Z., Shao, J.: Thinking in frequency: Face forgery detection by mining frequency-aware clues. In: European conference on computer vision. pp. 86–103. Springer (2020) 35. Radford, A., Kim, J.W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., et al.: Learning transferable visual models from natural language supervision. In: International conference on machine learning. pp. 8748–8763. PmLR (2021) 36. Ramesh, A., Pavlov, M., Goh, G., Gray, S., Voss, C., Radford, A., Chen, M., Sutskever, I.: Zero-shot text-to-image generation. In: International conference on machine learning. pp. 8821–8831. Pmlr (2021) 37. Ricker, J., Lukovnikov, D., Fischer, A.: Aeroblade: Training-free detection of latent diffusion images using autoencoder reconstruction error. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 9130– 9140 (2024) 38. Rombach, R., Blattmann, A., Lorenz, D., Esser, P., Ommer, B.: High-resolution image synthesis with latent diffusion models, 2022. URL https://arxiv. org/abs/2112.10752 2112 (2021) 39. Rossler, A., Cozzolino, D., Verdoliva, L., Riess, C., Thies, J., Nießner, M.: Face-forensics++: Learning to detect manipulated facial images. In: Proceedings of the IEEE/CVF international conference on computer vision. pp. 1–11 (2019) 40. Russakovsky, O., Deng, J., Su, H., Krause, J., Satheesh, S., Ma, S., Huang, Z., Karpathy, A., Khosla, A., Bernstein, M., et al.: Imagenet large scale visual recog-nition challenge. International journal of computer vision 115 (3), 211–252 (2015) 41. Schuhmann, C., Beaumont, R., Vencu, R., Gordon, C., Wightman, R., Cherti, M., Coombes, T., Katta, A., Mullis, C., Wortsman, M., et al.: Laion-5b: An open large-scale dataset for training next generation image-text models. Advances in neural information processing systems 35 , 25278–25294 (2022) 42. Tan, C., Zhao, Y., Wei, S., Gu, G., Liu, P., Wei, Y.: Frequency-aware deepfake detection: Improving generalizability through frequency space domain learning. In: Proceedings of the AAAI Conference on Artificial Intelligence. vol. 38(5), pp. 5052–5060 (2024) 43. Tan, C., Zhao, Y., Wei, S., Gu, G., Liu, P., Wei, Y.: Rethinking the up-sampling op-erations in cnn-based generative network for generalizable deepfake detection. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recog-nition. pp. 28130–28139 (2024) 44. Tan, C., Zhao, Y., Wei, S., Gu, G., Wei, Y.: Learning on gradients: Generalized artifacts representation for gan-generated images detection. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 12105– 12114 (2023) 45. Tsai, C.T., Ko, C.Y., Chung, I., Wang, Y.C.F., Chen, P.Y., et al.: Understanding and improving training-free ai-generated image detections with vision foundation models. arXiv preprint arXiv:2411.19117 (2024) 46. Wang, S.Y., Wang, O., Zhang, R., Owens, A., Efros, A.A.: Cnn-generated images are surprisingly easy to spot... for now. In: Proceedings of the IEEE/CVF confer-ence on computer vision and pattern recognition. pp. 8695–8704 (2020) 47. Wang, Z., Bao, J., Zhou, W., Wang, W., Hu, H., Chen, H., Li, H.: Dire for diffusion-generated image detection. In: Proceedings of the IEEE/CVF International Con-ference on Computer Vision. pp. 22445–22455 (2023) 18 A. Ameta, S. Banerjee et al. 48. Yu, F., Seff, A., Zhang, Y., Song, S., Funkhouser, T., Xiao, J.: Lsun: Construction of a large-scale image dataset using deep learning with humans in the loop. arXiv preprint arXiv:1506.03365 (2015) 49. Zhu, J.Y., Park, T., Isola, P., Efros, A.A.: Unpaired image-to-image translation using cycle-consistent adversarial networks. In: Proceedings of the IEEE interna-tional conference on computer vision. pp. 2223–2232 (2017) DRIFT 1
+
+# DRIFT: From Robustness Gaps to Invariance Manifolds for AI-Generated Image Detection 
+
+# Supplementary Material 
+
+# 6 Geometric Interpretation of Robust and Fragile Transformations 
+
+We provide a geometric interpretation of robust and fragile transformations in terms of tangent and normal directions of the real-image manifold. 
+
+Real-image manifold. Let X ⊂ Rn denote the ambient image space. Natural images concentrate on a low-dimensional manifold: 
+
+M ⊂ X , dim( M) ≪ n. 
+
+For each x ∈ M , the ambient space admits a local orthogonal decomposition: 
+
+Rn = TxM ⊕ NxM,
+
+where TxM is the tangent space and NxM is the normal space. 
+
+Tangent directions induced by robust transforms. Consider a smooth transfor-mation family gR(x; α) satisfying: 
+
+gR(x; 0) = x, 
+
+and for sufficiently small α,
+
+gR(x; α) ∈ M .
+
+Then its infinitesimal variation 
+
+vR = ddα gR(x; α)
+
+> α=0
+
+lies in the tangent space: 
+
+vR ∈ TxM.
+
+Robust transformations such as mild blur, JPEG compression, resampling, and photometric adjustments simulate physically plausible acquisition variabil-ity. For small severity, these operations preserve natural image statistics and therefore approximate motion along the manifold. Consequently, robust pertur-bations predominantly induce tangent directions. 2 A. Ameta, S. Banerjee et al. 
+
+Normal components induced by fragile transforms. In contrast, consider a trans-formation family gF (x; α) for which small perturbations violate manifold con-straints: 
+
+gF (x; α) /∈ M for small α. 
+
+Its first-order variation 
+
+vF = ddα gF (x; α)
+
+> α=0
+
+generally decomposes as 
+
+vF = vT + vN , vT ∈ TxM, v N ∈ NxM.
+
+For edit-like perturbations (pixelation, aggressive resampling, strong defocus blur, strong photometric distortion), the normal component dominates: 
+
+∥vN ∥ ≫ ∥ vT ∥.
+
+Thus fragile transformations approximate directions with significant normal components, corresponding to off-manifold deviations. 
+
+6.1 Connection to Representation Drift 
+
+For a small perturbation  g(x) = x + δx , first-order Taylor expansion gives 
+
+zr (g(x)) ≈ zr (x) + Jzr (x) δx, 
+
+where  Jzr (x) ∈ Rd×n is the Jacobian. Thus drift magnitude satisfies 
+
+∥zr (g(x)) − zr (x)∥ ≈ ∥ Jzr (x) δx ∥.
+
+If  δx = vR(x) ∈ TxM, training enforces 
+
+Jzr (x) vR(x) ≈ 0,
+
+which suppresses tangent directions (robust invariance). If  δx  contains strong normal components (fragile transforms), then 
+
+∥Jzr (x) δx ∥
+
+remains large. Thus, drift magnitude acts as a proxy for deviation from the learned manifold. DRIFT 3
+
+# 7 Proof of Representation Drift 
+
+Let x is an image belongs to the image space X ∈ Rn. Let the feature projection, 
+
+z : X → M project an image to a smooth k (k << n ) dimensional Riemannian manifold (M, g ), where g is the Riemannian metric tensor. We have two classes of transforms, one class is the robust/physical transforms denoted as Gr and an-other class is the fragile/edit-like surrogate transform denoted as Gf . The robust transformation is a transformation that does not change semantic information of the input image (the Lp norm of the perturbation is bounded). We can express the robust transformation as a linear path γr (t) = x + tδx in the image space, where δx is the direction of the perturbation with t is the scale ( t → 0). This transformation creates a corresponding feature transformation gr (x + tδx ) ∈ M ,a curve γgr (t) in the manifold where gr ∈ G r . Hence, the length of the curve 
+
+L(γgr ) signifies the feature drift denoted as dz gr (δx ) caused by the transforma-tion gr (·):
+
+L(γgr ) = dz gr (δx ) = 
+
+Z t
+
+> 0
+
+dγ gr (τ )
+
+dτ g
+
+dτ =
+
+Z t
+
+> 0
+
+∂g r (x + τ δx )
+
+∂τ g
+
+dτ  (12) For a sufficiently small t, the feature drift can be further simplified to, 
+
+dz gr (δx ) = t|| Jgr (x)δx || g (13) where Jgr (x) ∈ Rk×n is the Jacobian of the image feature z(x) with respect to the image x. For sufficiently small t, the feature drift dz gr (δx ) is the linear map that takes your perturbation vector δx in the image space and translates it into the corresponding velocity vector in the feature manifold’s tangent space, 
+
+Tz(x)M. It measures the feature sensitivity of the neural network with respect to image pixels. It tells us exactly which pixel-level changes, the network cares about and which ones it ignores. The Jacobian, Jgr (x) can be further decomposed using SVD, resulting the following equation, 
+
+dz gr (δx ) = t|| U ΣV T δx || g = t
+
+> k
+
+X
+
+> i=1
+
+uiσivTi δ(x) g
+
+(14) The columns of U ∈ Rk×k (called left singular vectors, ui ∈ Rn) form an or-thonormal basis for the directions of movement in the feature manifold. The columns of V ∈ Rn×n (called right singular vectors, vi) form an orthonormal basis for every possible way you can perturb the image pixels. Σ ∈ Rk×n is a diagonal matrix consists of singular values σ1 ≥ σ2 ≥ ... ≥ σk as diagonal ele-ments. These singular values represent how much a specific pixel perturbation is amplified into a semantic shift. Because gr (·) is a semantic-preserving transfor-mation, it aligns almost entirely with the right singular vectors associated with the smallest, near-zero singular values in the tail of Σ. Let σgr be the maximum singular value, specific to a particular robust transform gr ∈ G r , among all of this smallest near-zero singular values. Then dzr (δx ) can be bounded as, 
+
+dz gr (δx ) ≤ tσ gr || δx || g (15) 4 A. Ameta, S. Banerjee et al. 
+
+We can express any fragile transformation gf ∈ G f as a non-semantic preserving path γf (t) in the image space. This transformation creates a corresponding fea-ture transformation, gf (γf (t)) ∈ M , a curve γgf (t) in the manifold. The feature drift denoted as dz gf (γf (t)) of the transformation gf (·) can be expressed as: 
+
+dz gf (γf (t)) = 
+
+Z t
+
+> 0
+
+dγ gf (τ )
+
+dτ g
+
+dτ  (16) Here dγ gf (τ ) 
+
+> dτ
+
+is the direction of the feature drift, a vector field defined at the tangent space Tγgf (t) M. This vector field can be represented as, 
+
+dγ gf (τ )
+
+dτ = Jgf (γf (τ )) dγ f (τ )
+
+dτ  (17) Resulting the following expression of the feature drift, 
+
+dz gf (γf (t)) = 
+
+Z t
+
+> 0
+
+D
+
+Jgf (γf (τ )) dγ f (τ )
+
+dτ , J gf (γf (τ )) dγ f (τ )
+
+dτ 
+
+E  
+
+> γgf(τ)
+
+dτ  (18) where ⟨· , ·⟩ γgf (τ ) is the Riemannian inner product defined in the tangent space 
+
+Tγgf (τ ) M. And Jgf ∈ Rk×n is the Jacobian of the transformation gf (·). For fragile transformation, as it incur semantic edit, the drift in the image space    
+
+> dγ f(τ)
+> dτ
+
+aligns with the right singular vectors with the largest singular values in the head of the singular matrix obtained by the SVD of Jgf .Let σgf is the lowest singular value among all of those largest singular values pertaining to the transformation gf . Then the feature drift corresponding to the transformation can be represented as, 
+
+dz gf (γf (t)) ≥
+
+Z t
+
+> 0
+
+σgf (τ )|| ˙γf (τ )|| g dτ  (19) Conclusion: As σgf >> σ gr , ∀gf ∈ G f and gr ∈ G r , the expected feature drift for all of the class of fragile transformation, Egf ∼G f dzgf (γf (t)) is much much greater than the expected feature drift for all of the class of robust trans-formation, Egr ∼G r dzgr (δx ).
+
+Testing Datasets. We evaluate our method on the same benchmark suite adopted in FerretNet [24] to ensure fair comparison. The evaluation benchmark contains real images and synthetic images generated by multiple state-of-the-art generative models, including both GAN-based and diffusion-based approaches. Specifically, we test on the following datasets: 
+
+– ForenSynths : A forensic-oriented benchmark containing synthetic images generated by multiple GAN-based architectures: StyleGAN [22], BigGAN [4], CycleGAN [49], GauGAN [32], and Deepfake [39]. Real images are sourced from six widely-used datasets: LSUN [48], ImageNet [40], CelebA [28], CelebA-HQ [21], COCO [25], and FaceForensics++ [39]. DRIFT 5                                                            
+
+> Table 5: Accuracy and average precision comparisons of different methods on Foren-Synth test set. The best, second-best and third-best results are highlighted in red, blue, and green colors, respectively. Methods StyleGAN BigGAN CycleGAN GauGAN Deepfake Mean Wang [46] 63.8/91.4 52.9/73.3 72.7/88.6 63.9/92.2 51.7/62.3 67.1/86.9 F3Net [34] 92.6/99.7 65.3/69.9 76.4/84.3 58.1/56.7 63.5/78.8 80.4/86.2 FrePGAN [19] 80.7/89.6 69.2/71.1 71.1/74.4 60.3/71.7 70.9/91.9 79.4/87.2 BiHPF [18] 76.9/75.1 84.9/81.7 81.9/78.9 69.5/78.1 54.4/54.6 78.6/77.9 LGrad [44] 94.8/99.9 82.9/90.7 85.3/94.0 72.4/79.3 58.0/67.9 86.1/91.5 Ojha [30] 89.0/98.7 90.5/99.1 87.9/99.8 89.9/100.0 80.2/90.2 89.1/98.3 FreqNet [42] 90.2/99.7 90.5/96.0 95.8/99.6 93.4/98.6 88.9/94.4 91.5/98.5 NPR [43] 96.3/99.8 87.5/94.5 95.0/99.5 86.6/88.8 77.4/86.2 92.5/96.1 FatFormer [26] 97.2/99.8 99.5/100.0 99.3/100.0 99.4/100.0 93.2/98.0 98.4/99.7 SAFE [23] 98.0/99.9 89.7/95.9 98.9/99.8 91.5/97.2 93.1/97.5 96.2/98.8 CO-SPY [7] 63.9/70.2 71.6/83.9 58.5/55.8 69.6/83.4 65.7/79.7 65.7/76.1 FerretNet [24] 98.0/100.0 92.6/98.5 98.8/99.9 91.4/99.8 89.2/96.7 95.9/99.3 DRIFT (Ours) 98.6/100.0 94.3/99.3 99.1/100 92.8/100 91.2/97.8 97.8/99.8
+
+– Diffusion-6-Class (Diffusion-6cls) : A diffusion-based benchmark com-prising synthetic images generated by six distinct diffusion model variants, representing modern large-scale generative systems including DALL-E [36], Guided [12], PNDM [27], VQ-Diffusion [16], Glide [29], and LDM [38]. Vari-ants produced by Glide and LDM with different parameter configurations are treated as separate categories. Each subset includes 1,000 synthetic and 1,000 real images. 
+
+– Synthetic-Pop : A collection of stylistically vivid synthetic images char-acterized by high-frequency textures and diverse semantic categories. This dataset captures latest progress in high-resolution image generation, includ-ing Openjourney [1], Proteus-0.3 [3], RealVisXL-4.0, SD-3.5-Medium [14], SDXL-Turbo [33], and YiffyMix [2]. Each subset includes 1,000 synthetic and 1,000 real images, with real images were drawn from COCO [25] and LAION-Aesthetics V2 (6.5+) [41] datasets. 
+
+7.1 Main Results Results on GAN-based generators (ForenSynths). On the ForenSynth benchmark, which includes GAN-based and Deepfake images, our method achieves consistently strong performance across all generator families as shown in Table 5. In particular, the proposed approach achieves near-perfect detection for several generators such as StyleGAN and CycleGAN while maintaining strong perfor-mance on more challenging cases such as BigGAN and Deepfake. Compared with recent learning-based detectors and training-free robustness methods, our approach improves the overall mean performance and achieves a mean ACC/AP of approximately 97 .8/99 .8. These results indicate that explicitly learning the 6 A. Ameta, S. Banerjee et al. 
+
+Table 6: Accuracy and average precision comparisons of different methods on Diffusion-6-cls test dataset. The best, second-best and third-best results are highlighted in red, blue, and green colors, respectively. Dataset RIGID [17] FatFormer [26] SAFE [23] FerretNet [24] DRIFT (Ours) Dall-E [36] 43.5/48.0 98.8/99.8 97.5/99.7 91.4/98.2 92.1/99.2 Guided [12] 58.0/94.9 76.1/92.0 82.4/95.8 92.1/98.6 92.9/98.9 PNDM [27] 53.9/90.6 99.3/100.0 78.9/98.6 96.9/100.0 94.3/100 VQ-Diffusion [16] 53.6/90.9 98.0/100.0 100.0/100.0 99.9/100.0 97.0/100.0 Glide-50-27 [29] 83.8/83.1 94.7/99.4 96.6/99.2 97.2/99.7 96.8/99.3 Glide-100-10 [29] 82.8/82.4 94.2/99.2 97.3/99.4 97.9/99.9 97.4/100.0 Glide-100-27 [29] 82.1/82.3 94.4/99.1 95.8/98.9 97.3/99.7 96.4/99.4 LDM-100 [38] 53.8/58.6 98.7/99.9 98.8/100.0 95/100.0 98.6/100.0 LDM-200 [38] 53.8/58.4 98.6/99.8 94.2/100.0 98.8/100.0 98.5/100.0 
+
+Table 7: Accuracy and average precision comparisons of different methods on Synthetic-Pop test dataset. The best, second-best and third-best results are highlighted in red, blue, and green colors, respectively. Methods Openjourney [1] Proteus-0.3 [3] SD-3.5-Medium [13] SDXL-Turbo [33] FreqNet [42] 56.3/63.6 44.0/41.2 78.5/86.8 77.5/86.0 NPR [43] 78.8/83.5 68.6/69.3 80.4/84.1 78.2/82.9 FatFormer [26] 58.8/65.4 93.9/97.6 81.9/89.1 58.7/65.3 SAFE [23] 94.7/99.3 99.2/99.9 98.1/99.7 98.1/99.8 CO-SPY [7] 92.4/97.6 88.8/93.0 80.9/87.8 79.9/88.3 FerretNet [24] 98.4/99.7 98.6/99.7 97.2/99.6 98.9/100.0 DRIFT (Ours) 97.4/99.1 96.6/98.3 97.5/98.3 98.1/100.0 DRIFT 7
+
+invariance manifold of real images leads to a more stable detection signal than relying solely on pretrained feature geometry. 
+
+Results on diffusion-based generators (Diffusion-6cls). We further eval-uate in Table 6 the performance of various methods on the Diffusion-6cls bench-mark containing multiple diffusion-based generators. Diffusion-generated images are known to be significantly more challenging to detect due to their high vi-sual fidelity and reduced artifacts. Despite these challenges, our method achieves consistently high detection accuracy across all diffusion variants, often approach-ing perfect ACC and AP values. Compared with training-free detectors such as RIGID and reconstruction-based approaches such as FIRE, our method pro-vides more stable performance across different diffusion sampling strategies. This demonstrates that the learned invariance manifold captures structural properties of real images that generalize beyond specific generator architectures. 
+
+Results on text-to-image generators (Synthetic-Pop). The Synthetic-Pop dataset contains recent high-resolution text-to-image generators. These gen-erators produce images with strong semantic realism and high-frequency details, making detection particularly difficult. Our method achieves strong results across all generators, with ACC values typically above 96% and near-perfect AP scores as shown in Table 7. Compared with previous detectors, our approach remains stable across stylistically diverse generators, highlighting its robustness to dis-tribution shifts in generative models. 
+
+7.2 Qualitative Analysis 
+
+Figs. 4 and 5 provide qualitative evidence that real images largely preserve robust-fragile drift consistency. Although the detector produces spatially varying responses, the corresponding heatmaps remain relatively smooth and moderate in intensity, without large contiguous regions of saturated activation. This be-havior is consistent with our hypothesis that, for real images, both robust and fragile transformations induce representation changes that remain locally com-patible with the natural-image manifold. In other words, even when perturba-tions alter texture, blur level, or local photometric statistics, the induced feature drift does not strongly violate the learned invariance structure. The responses observed in these figures therefore reflect normal acquisition variability rather than synthetic inconsistency. Fig. 4 is particularly informative because it includes examples with diverse scene structure, including people, man-made objects, and motion-corrupted con-tent. Despite these variations, the detector does not collapse to object-specific cues; instead, it produces broadly distributed and comparatively low-confidence responses. This suggests that the proposed criterion is not simply reacting to semantics, foreground saliency, or scene complexity. Rather, it is measuring whether the image remains stable under the contrast between robust and fragile perturbation pathways. Similarly, Fig. 5 shows that even in crowded scenes and 8 A. Ameta, S. Banerjee et al.    
+
+> (a) Real image. (b) Real image: Detection heatmap.
+
+Fig. 4: Visualization of robust-fragile drift violation. Real images maintain drift con-sistency. DRIFT 9   
+
+> (a) Real image. (b) Real: Detection heatmap.
+
+Fig. 5: Visualization of robust-fragile drift violation. Real images maintain drift con-sistency. 10 A. Ameta, S. Banerjee et al. 
+
+close-up content with strong perspective or blur, the detector still avoids the highly concentrated high-response patterns that are typical of synthetic sam-ples. These examples support the claim that real images occupy regions where the robust and fragile feature trajectories remain mutually consistent. In contrast, Figs. 6 and 7 show that AI-generated images produce substan-tially stronger and more spatially extensive activations. The heatmaps are no-ticeably more intense and often cover semantically meaningful regions such as faces, text-bearing areas, structural boundaries, or highly textured content. This indicates that the representations extracted from synthetic images are much less stable under the discrepancy between robust and fragile transformations. From the manifold perspective introduced in the supplementary theory section, these responses are consistent with larger off-manifold deviations: fragile transforma-tions expose directions in feature space that are not well aligned with the local geometry of real images, causing a pronounced drift violation signal. Another notable observation in Figs. 6 and 7 is that the detector responds not only to obviously unrealistic artifacts, but also to globally coherent synthetic images that may appear visually plausible at first glance. For example, even when object layout, illumination, and color composition are convincing, the heatmaps still reveal broad inconsistency patterns. This suggests that the proposed method captures a deeper structural property than superficial artifact detection. Instead of depending on a single local anomaly, it aggregates evidence of instability across multiple regions and scales, which is especially important for modern generative models whose outputs are often photorealistic in isolated patches but inconsistent in their transformation behavior. Taken together, these supplementary visualizations reinforce the central claim of the paper: real images tend to preserve drift consistency under the proposed transformation families, whereas AI-generated images exhibit stronger invariance violations that manifest as high-response heatmaps. The qualitative examples therefore complement the quantitative results by showing that the detector’s decision is spatially interpretable and aligned with the intended mechanism. They also indicate that the method generalizes across diverse image content, including portraits, natural scenes, urban environments, text-rich regions, and crowded real-world photographs, further supporting the robustness of the pro-posed drift-based detection principle. DRIFT 11    
+
+> (a) AI-generated image. (b) AI-generated image: Detection heatmap.
+
+Fig. 6: Visualization of robust-fragile drift violation. AI-generated images show strong drift violations, producing high-response heatmaps. 12 A. Ameta, S. Banerjee et al.    
+
+> (a) AI-generated image. (b) AI-generated image: Detection heatmap.
+
+Fig. 7: Visualization of robust-fragile drift violation. AI-generated images show strong drift violations, producing high-response heatmaps.

@@ -1,0 +1,2601 @@
+LinStereo: Linear-Complexity Global Attention
+for Multi-Scale Iterative Stereo Matching
+Yiran Wang⋆, Oliver Turner, and Viorela Ila⋆⋆
+Australian Centre for Robotics (ACFR), School of Aerospace, Mechanical and
+Mechatronic Engineering (AMME), Faculty of Engineering, The University of
+Sydney, Sydney, NSW, Australia
+Abstract. Existing Vision Foundation Model (VFM)-based iterative
+stereo pipelines under-exploit three information pathways: multi-scale
+backbone features are collapsed into single-level correlations, geometric
+priors remain untapped at initialization, and context propagates only lo-
+cally. These gaps widen under degraded photometric cues, making under-
+water scenes a stringent generalization test. To address this, we propose
+LinStereo, built upon Depth Anything V3, whose core is a Position-
+Aware Linear Attention (PALA) module that replaces local recurrence
+with global aggregation at linear cost, propagating reliable estimates
+from well-matched regions into degraded areas while preserving dispar-
+ity structure. PALA is made effective by two enabling components: Hi-
+erarchical Semantic Cost Volumes (HSCV), which supply scale-aligned
+correlations from the VFM feature hierarchy, and a Depth Prior Initial-
+ization (DPI) that converts monocular depth into a metrically calibrated
+warm start. LinStereo achieves state-of-the-art-level accuracy on stan-
+dard benchmarks and strong cross-domain generalization, particularly
+on underwater scene where severe photometric degradation makes stereo
+matching particularly challenging, attaining the best overall accuracy
+with consistent gains (28% lower AbsRel on TartanAir-UW, 26% on
+SQUID, a real-world underwater dataset).
+Keywords: Depth Estimation · Stereo Matching · Underwater Vision
+1
+Introduction
+Stereo depth estimation recovers dense metric 3D geometry from calibrated im-
+age pairs and is fundamental for vision-based navigation, manipulation, and in-
+spection, where both accuracy and inference speed directly affect performance [11,
+42]. Depth estimation remains difficult in textureless, occluded, or repetitive
+regions, which require strong contextual reasoning under limited computation.
+These challenges intensify underwater, where wavelength-dependent attenuation
+and volumetric scattering degrade visual signals, and limited annotated subsea
+⋆Corresponding author.
+⋆⋆Project lead.
+arXiv:2606.25437v1  [cs.CV]  24 Jun 2026
+
+
+2
+Y. Wang et al.
+data causes models trained on synthetic or in-air datasets to suffer significant
+performance drops [1,4,25].
+The core difficulty in dense stereo depth estimation lies in establishing reli-
+able correspondences over large, ambiguous regions while keeping computation
+tractable. Some approaches construct explicit cost volumes and regularize them
+with 3D aggregation networks [7,44]; others adopt iterative refinement, using a
+recurrent operator to progressively refine depth estimates by indexing a corre-
+lation volume [24,39]. The iterative family has become dominant and has been
+further strengthened by replacing conventional encoders with vision foundation
+model (VFM) backbones to improve cross-domain robustness [19,41] and by fus-
+ing monocular depth priors to regularize ill-posed regions [3, 52]. These efforts
+have substantially raised the accuracy ceiling, yet they focus on improving the
+inputs to the update loop; the update mechanism itself has received less atten-
+tion. Crucially, VFM backbones provide semantically rich multi-scale features
+and implicit geometric priors for global reasoning, yet their effective use within
+the update loop remains underexplored.
+We observe a growing mismatch between the capabilities of modern back-
+bones and what the iterative update loop actually exploits. Even in recent VFM-
+based pipelines, three bottlenecks persist: updates reason primarily over local
+neighborhoods, multi-scale features are often reduced to single-level correlations,
+and the backbone’s geometric priors remain largely unused at initialization. Al-
+though recent works address some of these aspects individually [3, 44, 52], as
+backbone capacity continues to grow, the backbone–update interface remains a
+key bottleneck.
+LinStereo closes this gap with a redesigned decoder whose core is Position-
+Aware Linear Attention (PALA): a global, linear-complexity update opera-
+tor that, unlike local recurrent operators [24,41], propagates information across
+the entire feature map at every refinement step. Two components make this
+global aggregation effective: Hierarchical Semantic Cost Volumes (HSCV)
+supply each refinement level with a correlation volume built from the VFM’s
+matching-scale features, giving PALA semantically aligned matching evidence;
+and Depth Prior Initialization (DPI) converts the backbone’s monocular
+depth into a disparity-space initialization, so PALA refines from a geometrically
+plausible state. LinStereo is thus a single PALA-centred decoder enabled by
+HSCV and DPI, rather than three independent modules.
+These components address complementary aspects of the backbone–update
+interface and yield consistent improvements across all settings (Sec. 4). LinStereo
+achieves state-of-the-art accuracy among methods trained on comparable data
+on standard stereo benchmarks and demonstrates strong cross-domain general-
+ization, particularly in underwater scenes with severe photometric degradation,
+achieving 28% lower AbsRel on TartanAir-UW [38] and 26% on SQUID [4].
+The main contributions of this work are summarized as follows:
+– LinStereo, an iterative stereo framework whose core is PALA, a position-
+aware linear-attention operator that replaces local recurrence with global
+aggregation at linear complexity. PALA is paired with HSCV, a hierarchical
+
+
+LinStereo: Linear-Complexity Global Attention for Stereo Matching
+3
+cost-volume design that contributes both a strategy for using the backbone’s
+multi-scale features and a new structure for each per-scale volume; and with
+DPI, which provides a warm start for refinement from monocular depth.
+Together, these reach state-of-the-art-level accuracy with significantly fewer
+refinement iterations at linear per-iteration cost.
+– Trained only on SceneFlow with no underwater data, LinStereo achieves
+state-of-the-art performance on underwater stereo benchmarks without domain-
+specific adaptation, attaining the best overall accuracy, demonstrating strong
+cross-domain generalization under severe photometric degradation.
+The paper is complemented by open-source code and a new evaluation dataset
+with dense disparity ground truth and realistic subsea optical modeling, as de-
+scribed in the supplementary multimedia.
+2
+Related Work
+Stereo Depth Estimation. Cost volume-based methods [7,12,17,20,35,46] build
+explicit 3D/4D volumes regularized by 3D convolutions, but their cost scales with
+disparity range and single-scale construction limits multi-level semantic integra-
+tion. RAFT-Stereo [24] introduced an iterative alternative: a recurrent operator
+repeatedly queries a fixed correlation volume to refine disparity through local
+updates. Subsequent works enrich this paradigm with cascaded correlation [22],
+geometry-encoded volumes [44], and frequency-adaptive units [39], yet the up-
+date operator remains spatially local, typically requiring tens of iterations for
+information to propagate across the image.
+This locality becomes increasingly significant as vision foundation models (VFMs)
+enter the pipeline. FoundationStereo [41], DEFOM-Stereo [19], MGStereo [52],
+and Stereo Anywhere [3] leverage pretrained encoders [28,50,51] to extract glob-
+ally rich features that substantially improve zero-shot generalization, yet these
+features are still consumed through a local recurrent loop, which creates an infor-
+mation utilization gap between backbone capacity and update reach. Our work
+targets this mismatch, enabling the iterative pipeline to better exploit backbone
+representations and converge in fewer iterations.
+Efficient Stereo Depth Estimation. Reducing inference cost while maintaining
+accuracy is a central challenge in stereo depth estimation. Prior work primarily
+simplifies the architecture itself: pruning the disparity search space [10,21,34,43],
+replacing 3D cost aggregation with lightweight 2D alternatives [2,16,40,46,47,49],
+or eliminating explicit volumes entirely [37]. While achieving impressive speed,
+such simplifications can limit accuracy in challenging regions. Our method pur-
+sues efficiency from a complementary direction: rather than simplifying the archi-
+tecture, we reduce the number of refinement iterations required for convergence,
+preserving rich contextual modeling while lowering inference time.
+Underwater Depth Estimation. Underwater environments amplify the challenges
+of stereo depth estimation: wavelength-dependent attenuation, volumetric backscat-
+
+
+4
+Y. Wang et al.
+tering, and refractive distortions severely degrade photometric consistency, tex-
+ture contrast, and color fidelity across stereo views [1, 4]. These degradations
+directly weaken the correspondence cues that stereo methods rely on, making
+underwater scenes a particularly demanding setting for evaluating contextual
+reasoning capability. Domain-specific methods such as UWNet [53] introduce
+attention and cross-search modules tailored to underwater imagery but remain
+tightly coupled to specific degradation patterns. On the data side, annotated un-
+derwater stereo corpora are scarce: UWStereo [25] provides dense synthetic anno-
+tations but exhibits a sim-to-real gap, and existing datasets generally lack phys-
+ically grounded underwater optical modeling paired with dense stereo ground
+truth. To address this data bottleneck, we introduce SeaStereo-Dataset, a physi-
+cally rendered underwater stereo corpus with dense disparity annotations under
+realistic subsea optical conditions.
+In summary, iterative stereo methods suffer from an information gap between
+powerful backbones and their local update interface, efficient methods sacrifice
+contextual capacity for speed, and underwater stereo remains limited by data
+scarcity. LinStereo addresses all three: it widens the update interface to leverage
+modern backbones, achieves efficiency through rapid convergence rather than
+architectural simplification, and contributes a large-scale underwater training
+and evaluation corpus.
+3
+The Proposed Method
+3.1
+Overview
+We propose LinStereo, a stereo depth estimation framework that addresses the
+growing mismatch between VFM backbone capacity and iterative update uti-
+lization in stereo pipelines. Recent methods [19, 41] have demonstrated that
+VFM backbones significantly improve stereo depth estimation through richer
+feature representations, yet they inherit the narrow-bandwidth update architec-
+ture from pre-VFM designs [24, 44], creating a fundamental mismatch between
+a high-capacity encoder and a low-capacity iterative decoder. As illustrated in
+Fig. 1, LinStereo closes this gap with three components that each target a dis-
+tinct information pathway: Hierarchical Semantic Cost Volumes (HSCV)
+exploit the VFM’s multi-scale hierarchy to provide semantically matched corre-
+lation at every refinement level (what to match); Depth Prior Initialization
+converts the backbone’s monocular depth into a geometrically informed warm
+start (where to start); and Position-Aware Linear Attention (PALA) re-
+places local convolutions with global context aggregation at linear cost (how to
+refine). These components target complementary information pathways and, as
+shown in Sec. 4, yield consistent gains across all evaluated settings. The following
+subsections present them in pipeline order: from feature construction through
+initialization to iterative refinement.
+
+
+LinStereo: Linear-Complexity Global Attention for Stereo Matching
+5
+⟨⋅, ⋅⟩
+Head
+Depth
+PALA Updater
+Hierarchical Semantic Cost Volumes
+PALA Block
+Encoder 
+🔥
+Projection
+PALA Updater
+LinStereo
+Scale-Shift
+Alignment
+PALA Updater-2
+PALA Updater-1
+Update
+Head
+PALA Block-3
+PALA Updater-3
+Layer Norm
+PALA Block
+Mlti-Head PALA Block
+CPE
+Layer Norm
+MLP
+Feature Encoding
+Context Encoding
+Spatial Mixing
+SiLU
+Linear Attention
+Feature Aggregation
+⟨⋅, ⋅⟩
+Head
+Depth
+PALA Updater
+Hierarchical Semantic Cost Volumes
+PALA Block
+Encoder 
+🔥
+Projection
+PALA Updater
+LinStereo
+Scale-Shift
+Alignment
+PALA Updater-2
+PALA Updater-1
+Update
+Head
+PALA Block-3
+PALA Updater-3
+Layer Norm
+PALA Block
+Mlti-Head PALA Block
+CPE
+Layer Norm
+MLP
+Feature Encoding
+Context Encoding
+Spatial Mixing
+SiLU
+Linear Attention
+Feature Aggregation
+Fig. 1: Detailed Architecture of LinStereo: Our model replaces the ConvGRU
+update operator with the Position-Aware Linear Attention (PALA) updater, which
+enables global spatial reasoning over cost volume features at linear complexity by at-
+tention. The attention path applies kernel-activated queries and keys with 2D rotary
+positional encoding, while a parallel context modulation branch provides adaptive gat-
+ing for selective feature aggregation.
+3.2
+Feature Extraction
+Before describing the main architectural components, we introduce the shared
+feature extraction backbone. Given a rectified stereo pair (IL, IR) ∈RH×W ×3,
+where H and W denote the image height and width, we employ Depth Any-
+thing V3 (DA3) [23] as a shared backbone for both stereo feature extraction
+and monocular depth estimation. As the latest Depth Anything release, DA3
+offers more detailed and geometrically consistent monocular depth than earlier
+versions, motivating its use here. It consists of a DINOv2 ViT-B/14 encoder [28]
+and a Dual-DPT head [30], which first reassembles multi-scale intermediate ViT
+representations through shared modules and then routes them to separate fu-
+sion branches for depth and ray prediction. We leverage the intermediate outputs
+of this architecture in two complementary ways from a single forward pass. For
+stereo correlation, we extract multi-scale feature representations after the shared
+reassembly layers but before fusion branches. This yields multi-scale features
+{FL,s, FR,s}s∈{4,8,16} with FL/R,s ∈R
+H
+s × W
+s ×Ds, where s denotes the spatial
+downsampling factor. These features retain both fine geometric detail and high-
+level semantic structure from the VFM, and are subsequently projected to a
+uniform channel dimension cf=128 for HSCV (Sec. 3.3). Meanwhile, the depth
+fusion branch produces a dense monocular depth map that provides the ini-
+tialization signal for iterative refinement (Sec. 3.4), adding only the cost of the
+lightweight fusion layers.
+
+
+6
+Y. Wang et al.
+3.3
+Hierarchical Semantic Cost Volumes(HSCV)
+Existing iterative methods [24, 44] build a single correlation volume at a fixed
+resolution (e.g., 1/4), restricting matching to a narrow semantic bandwidth and
+ignoring the hierarchy of modern VFM backbones. HSCV instead makes two
+contributions. First, utilization: we build a per-scale correlation volume from
+each VFM scale and keep the full set simultaneously accessible, so PALA can
+re-query any scale at every iteration, unlike one-shot multi-scale fusion [49] or
+coarse-to-fine cascades [13] that consume coarser volumes once and discard them.
+Second, representation: each per-scale volume carries its own internal disparity-
+axis pyramid for coarse-to-fine matching while preserving spatial resolution.
+Given the stereo feature maps {FL,s, FR,s} for each downsampling factor
+s ∈{4, 8, 16} (as defined in Sec. 3.2), we first project each through dedicated
+modules consisting of instance-normalized residual blocks and 1×1 convolutions
+to obtain ˆFL/R,s = ψs(FL/R,s). We then compute the 1D correlation volume
+along the epipolar line at each scale:
+  \ma th bf  
+{
+C
+}_
+s
+(i,j,d) = \ frac {1} {\sq
+r
+t {C_f}} \left \langle \hat {\mathbf {F}}_{L,s}(i,j), \; \hat {\mathbf {F}}_{R,s}(i, j{-}d) \right \rangle , \label {eq:corr_volume} 
+(1)
+where i, j index spatial positions and d indexes disparity displacement. To cap-
+ture correspondences at both fine-grained and large displacements, each correla-
+tion volume Cs is organized into a 4-level pyramid by repeatedly downsampling
+along the disparity dimension, providing progressively larger search ranges while
+preserving spatial resolution.
+This design introduces a two-level matching hierarchy: across semantic scales
+from the VFM backbone and within each scale’s disparity pyramid. Each level of
+the iterative refinement thus receives semantically appropriate correlation signals
+at its own operating resolution, rather than relying solely on inter-scale hidden
+state propagation.
+3.4
+Depth Prior Initialization (DPI)
+VFM-based monocular depth estimators capture rich relative structure with
+strong cross-domain generalization, yet their predictions are affine-invariant and
+lack the metric scale of a specific stereo rig. While metric monocular models [5,
+18] exist, their absolute scale is a statistical prior that drifts substantially in
+out-of-distribution scenes (e.g., underwater). Affine-invariant models avoid this
+commitment and preserve more robust relative structure across domains; since
+a calibrated stereo pair already provides geometric correspondences, the metric
+scale can be recovered directly from the data. The DA3 depth fusion branch
+produces an affine-invariant depth map ˆDmono from the shared forward pass.
+To convert it into a metrically meaningful disparity initialization, we perform a
+lightweight scale-shift alignment, replacing the zero-disparity start used in [24]
+and its descendants that wastes early iterations on gross layout recovery.
+
+
+LinStereo: Linear-Complexity Global Attention for Stereo Matching
+7
+Scale-Shift Alignment. Since disparity is inversely proportional to depth (d ∝
+1/Z), we convert the monocular prediction via d = α/ ˆDmono + β, where α
+absorbs the unknown metric scale and β accounts for any additive offset. We
+estimate α and β from sparse correspondences: SIFT keypoints are extracted
+from the rectified pair and matched along epipolar lines, yielding references
+{(pk, dsp
+k )}K
+k=1. Compared to learning-based matchers [3, 41], SIFT is sufficient
+here since only coarse sparse correspondences are needed. The parameters are
+obtained by least-squares:
+  (\ alp h a ^ *, 
+\be
+t
+a
+ ^*
+) = \arg
+ \
+m
+i
+n _{\alpha
+ ,
+ \beta
+ 
+} \sum _{k=1}^{K} \left \| d_k^{\text {sp}} - \left (\frac {\alpha }{\hat {\mathbf {D}}_{\text {mono}}(p_k)} + \beta \right ) \right \|^2, \label {eq:scale_shift} 
+(2)
+giving the initial disparity map:
+  \m a
+th
+bf {d}
+^ {(0)} = \frac {\alpha ^*}{\hat {\mathbf {D}}_{\text {mono}}} + \beta ^*. \label {eq:disp_init} 
+(3)
+When inlier matches fall below Kmin=20, we fall back to zero-disparity initializa-
+tion (Fig. 1-(a)). We note that d(0) serves as a coarse warm start; VFM depths
+do not strictly follow a global affine model, and handcrafted matches introduce
+localization noise. The iterative refinement with PALA (Sec. 3.5) is therefore
+essential to recover fine-grained disparity.
+3.5
+Position-Aware Linear Attention (PALA) Update
+Existing recurrent update operators reason over a local spatial neighborhood
+per iteration, yet effective stereo refinement should propagate context across the
+entire spatial extent of the feature map, for instance, transferring reliable depth
+estimates from textured regions to nearby textureless areas. PALA achieves this
+through linear attention, which aggregates global spatial context with O(N)
+complexity per iteration, enabling each update step to attend to the full fea-
+ture map without the quadratic cost of softmax attention. LinStereo employs
+three PALA updaters, one per scale, each containing a single PALA block that
+processes features at three resolution scales.
+Multi-Scale PALA Updater As shown in Fig. 1-(b), at each refinement iteration
+t, given the current disparity estimate d(t)
+s
+for downsampling factor s, we perform
+a lookup into Cs around the predicted correspondence across all pyramid levels,
+and concatenate the retrieved values to form the per-scale correlation feature
+c(t)
+s . A dedicated motion encoder then encodes the matching signal as m(t)
+s
+=
+MotionEncs(d(t)
+s , c(t)
+s ). Unlike prior work [24] where only the finest scale receives
+such inputs, our HSCV design supplies each scale with its own matching signal,
+
+
+8
+Y. Wang et al.
+and hidden states {hs}s∈{4,8,16} are updated in coarse-to-fine order:
+  \mat
+hb
+f  {h}_{
+1
+6}^{
+(t + 1)} 
+&=  \mat
+h
+r
+m
+ {P
+ALA}_{
+1
+6 }\!\l
+e
+ft (
+\ m athb
+f  {h}_
+{ 1 6}^{(t
+)}
+,
+\
+, \
+mathbf
+ 
+{ m}_{1
+6
+}^{(
+t ) },\,
+ \ mathbf
+ 
+{
+h}_8^{(t)}\right ), \label {eq:gru32} \\ \mathbf {h}_8^{(t+1)} &= \mathrm {PALA}_8\!\left (\mathbf {h}_8^{(t)},\, \mathbf {m}_8^{(t)},\, \mathbf {h}_4^{(t)},\, \mathbf {h}_{16}^{(t+1)}\right ), \label {eq:gru16} \\ \mathbf {h}_4^{(t+1)} &= \mathrm {PALA}_4\!\left (\mathbf {h}_4^{(t)},\, \mathbf {m}_4^{(t)},\, \mathbf {h}_8^{(t+1)}\right ), \label {eq:gru08}
+(6)
+where h(t+1)
+4
+produces the disparity update for final prediction.
+PALA Block Architecture Standard linear attention achieves O(N) complexity
+by exploiting the associativity of matrix multiplication: rather than an N×N
+attention matrix, one precomputes the key-value product K⊤V ∈RCh×Ch and
+shares it across all query positions. However, this very associativity collapses
+all pairwise spatial relationships into a single global summary, making the re-
+sulting attention position-agnostic. For stereo depth refinement this is especially
+problematic: disparity updates are inherently spatially structured. For example,
+nearby pixels generally share similar depth, and discontinuities align with object
+boundaries at specific locations. A position-blind mechanism cannot distinguish
+these cases.
+In the proposed PALA block (Fig. 1-c), we restore spatial awareness with-
+out sacrificing linear complexity by incorporating a relative position encoding
+through Rotary Position Embeddings (RoPE) [36]. Given kernel-mapped queries
+and keys ˆQ = ϕ(WQx), ˆK = ϕ(WKx) with the non-negative kernel ϕ(z), we
+apply 2D RoPE extended to both height and width axes to obtain position-aware
+variants ˜Q = RoPE( ˆQ) and ˜K = RoPE( ˆK). The linear attention output is then:
+  \ma t hb
+f
+ {O}
+_
+{
+\
+te xt
+ 
+{ a
+ttn
+}} = \tilde {\mathbf {Q}} \!\left (\tilde {\mathbf {K}}^\top \mathbf {V}\right ) \!\cdot \! \left (\hat {\mathbf {Q}} \, \overline {\hat {\mathbf {K}}}^\top + \epsilon \right )^{-1}, \label {eq:linear_attn} 
+(7)
+where ˆK= 1
+N
+P
+j ˆKj. Crucially, RoPE is appliedasymmetrically: only the nu-
+merator uses position-augmented ˜Q, ˜K to encode relative spatial relationships,
+while the denominator retains the original ˆQ, ˆK for stable normalization. Apply-
+ing RoPE uniformly would make the normalizing factor position-dependent, dis-
+torting attention magnitudes and destabilizing training. This preserves O(N·C2
+h)
+complexity, while restoring the spatial structure that vanilla linear attention
+discards. Beyond the relative encoding within the attention mechanism, stereo
+disparity fields are locally smooth: neighboring pixels on the same surface share
+similar depth. We therefore complement the attention with local spatial encod-
+ing on the value branch to reinforce this neighborhood coherence, and absolute
+position encoding flanking the block to anchor features to their spatial coor-
+dinates, which helps the network distinguish systematic depth variation across
+different image regions.
+Since PALA operates within an iterative refinement loop, we employ a gated
+update to control information flow across iterations:
+  \ mathbf {z}_g = \s i
+gma \ !\left  ( \ ma t hrm {Conv}_{3\times 3}([\mathbf {h} \| \mathbf {O}])\right ), \quad \mathbf {h}_{\text {new}} = (1{-}\mathbf {z}_g) \odot \mathbf {h} + \mathbf {z}_g \odot \tanh (\mathbf {O}), \label {eq:gru_update} 
+(8)
+
+
+LinStereo: Linear-Complexity Global Attention for Stereo Matching
+9
+Here, ∥denotes channel-wise concatenation, σ the sigmoid, and ⊙element-
+wise multiplication. In stereo matching, correlation evidence is inherently non-
+uniform: textured regions yield strong, unambiguous matches, while occluded or
+textureless areas produce noisy signals. The gate zg enables each location to ag-
+gressively incorporate new evidence where matching is confident and to preserve
+the accumulated estimate where it is not, allowing reliable disparity to gradually
+propagate into uncertain regions across iterations.
+3.6
+Loss and Training Strategy
+The finest-scale hidden state h(t+1)
+4
+is decoded into a disparity residual ∆d(t)
+through stacked depth-wise convolutional blocks. The training objective super-
+vises each iterative refinement step with exponentially increasing weights:
+  
+\
+m
+ath
+ca l { L} = \s u m _
+{t=
+1 } ^{T} \gamma ^{T - t} \Big ( \le
+f
+t \| \mathbf {d}^{(t)} - \mathbf {d}_{\text {gt}} \right \|_1 + \lambda _s \mathcal {L}_{\text {smooth}}(\mathbf {d}^{(t)}) + \lambda _g \mathcal {L}_{\text {grad}}(\mathbf {d}^{(t)}) \Big ), \label {eq:loss_total} 
+(9)
+where γ assigns progressively higher weight to later iterations. Lsmooth is an
+edge-aware smoothness term that penalizes disparity gradients in regions with
+low image intensity variation, encouraging piece-wise smooth predictions while
+preserving discontinuities at object boundaries. Lgrad [31] computes ℓ1 differ-
+ences between predicted and ground-truth disparity gradients at multiple spatial
+scales, guiding the network to recover accurate depth edges. Both auxiliary terms
+carry small weights (λs, λg). Specific values of all training hyperparameters are
+provided in Sec. 4.2.
+4
+Experiments
+4.1
+Datasets and Metrics
+Training. LinStereo is trained exclusively on SceneFlow [26], a large-scale syn-
+thetic dataset comprising approximately 35,000 stereo pairs with dense dispar-
+ity ground truth. No real-world, underwater, or domain-specific data is used
+at any stage of training. Standard Benchmarks. Cross-domain generalization is
+evaluated on five standard stereo benchmarks: KITTI 2015 [27] and KITTI
+2012 [11], which provide real-world driving scenes; Middlebury (H) [32], an
+indoor benchmark at half-resolution; ETH3D [33], a high-precision LiDAR-
+aligned dataset; and Booster (Q) [29], evaluated at quarter resolution and
+notable for containing transparent and specular surfaces. Following standard
+protocol, end-point error (EPE) and percentage of pixels with disparity error
+> k pixels (bad-k) are reported. Underwater Benchmarks. To assess generaliza-
+tion under photometric degradation, two underwater benchmarks are adopted.
+TartanAir-UW consists of 13,583 stereo pairs from 22 underwater sequences in
+TartanAir [38], representing simulated subsea scenes with realistic light scatter-
+ing. SQUID [4] provides 57 real-world underwater stereo pairs across 4 different
+
+
+10
+Y. Wang et al.
+scenes, covering a range of water visibility conditions. Both benchmarks oper-
+ate at moderate-to-large depth scales. Since these benchmarks provide depth
+rather than disparity ground truth, depth-domain metrics are adopted follow-
+ing prior work [3]: AbsRel, SqRel, RMSE, LogRMSE, and accuracy thresholds
+δ < 1.25k (k=1, 2, 3). Additionally, we contribute a synthetic underwater stereo
+corpus (SeaStereo-Dataset, ∼40K stereo pairs) with dense disparity ground
+truth under realistic subsea optical conditions; dataset details and evaluation
+are provided in the supplementary material. SeaStereo is built by rendering
+ShapeNetCore [6] foreground objects (arbitrary .obj meshes) over 3D marine
+backgrounds (coral, fish, and shipwrecks) under varying Jerlov water types.
+Real-World Evaluation. LinStereo is further validated on a controlled labora-
+tory tank dataset collected in-house at close range (< 2 m). In contrast to
+TartanAir-UW and SQUID, which evaluate at moderate-to-large depth scales,
+this benchmark tests near-range precision under genuine underwater conditions,
+where small absolute errors translate to large relative depth deviations. Ground-
+truth depth is obtained via AprilTag (16h5) markers with PnP-based pose re-
+covery; detailed experimental setup is described in the supplementary material.
+4.2
+Implementation Details
+The DA3 backbone is kept fully frozen; only the decoder is trained. For DPI,
+SIFT matching uses a minimum inlier threshold Kmin = 20, below which we fall
+back to zero-disparity initialization; this occurs for 0% of TartanAir-UW and
+3.7% of SQUID frames and costs only +0.08 px EPE. We train with AdamW for
+200K steps on SceneFlow (batch size 8, 320 × 640 crops, one NVIDIA H100),
+with a one-cycle schedule peaking at 2 × 10−4. The loss (Eq. (9)) spans T = 8
+refinement iterations (γ = 0.9) with smoothness (λs = 0.001) and gradient (λg =
+0.01) terms. For real-time use, the budget can drop to T = 2 (supplementary).
+4.3
+Main Results
+Standard-Benchmark Generalization. Tab. 1 reports zero-shot cross-domain
+results. Each method uses its official released weights (trained on SceneFlow
+unless marked ✓) and is evaluated on the training splits with public ground
+truth (Middlebury at half resolution (H)). FoundationStereo [41] (ViT-L, with
+substantial extra training data) is the strongest baseline; its larger backbone and
+extra data account for its lead on these standard benchmarks. We deliberately
+keep LinStereo a ViT-B1, SceneFlow-only model to isolate the decoder’s con-
+tribution. Even in this smaller-backbone, same-data setting, it remains highly
+competitive: it matches or beats the ViT-L BridgeDepth [14] on 13/14 metrics
+(trailing only on ETH3D bad-1) and outperforms MonSter [9] on 9/14. The
+gains thus stem from the proposed architectural components rather than back-
+bone capacity or extra data. The most pronounced improvement appears on
+occluded regions of Middlebury (H), where EPE is 37% lower than the previous
+1 ViT-B keeps training feasible on modest hardware; our design is backbone-agnostic.
+
+
+LinStereo: Linear-Complexity Global Attention for Stereo Matching
+11
+Table 1: Cross-domain generalization on standard stereo benchmarks. Booster (Q):
+quarter-resolution evaluation. Extra Data (✓): method uses additional training data
+beyond SceneFlow [26]. Bold/underline: best/second-best among methods without
+extra data.
+Method
+Extra
+Data
+KITTI 2015 KITTI 2012
+Middlebury (H)
+ETH3D
+Booster (Q)
+EPE bad3 EPE bad3
+All
+NonOcc
+Occ
+EPE bad1 EPE bad2
+EPE bad2 EPE bad2 EPE bad2
+PSMNet [7]
+—
+4.05 28.51 3.77 27.34 11.48 36.06 10.56 32.11 17.69 62.58 2.15 15.13 14.17 49.79
+RAFT-Stereo [24]
+—
+1.13
+5.69
+0.90
+4.35
+1.92
+12.6
+1.09
+8.65
+3.31 26.39 0.36
+3.3
+4.18 17.64
+UniMatch [48]
+—
+1.63 11.01 1.71 12.04
+4.21 34.72 3.96 31.52 5.70 56.51 0.69 18.61 8.57 47.30
+MoCha-Stereo [8]
+—
+1.29
+5.97
+1.02
+4.83
+2.66 10.18 2.49
+7.96
+3.84 24.16 0.28 3.47
+3.88 16.82
+NMRF [15]
+—
+1.17
+5.31
+0.92
+4.63
+2.91 13.36 2.73 10.90 4.22 29.27 0.31
+3.8
+5.05 26.22
+MGStereo [52]
+—
+1.13
+5.62
+0.87
+4.16
+1.15
+8.39
+0.85
+5.67
+2.89 26.50 0.25 1.88
+2.26 11.02
+Stereo Anywhere(ViT-L) [3]
+—
+1.07
+4.93
+0.83
+3.90
+0.94
+6.96 0.79 4.75 2.67 20.34 0.24 2.66
+2.21
+9.91
+DEFOM-Stereo (ViT-L) [19]
+—
+1.06
+4.99
+0.84
+3.76
+0.84 5.91 0.90
+5.76
+2.11 19.34 0.35 2.35
+3.52 13.20
+MonSter (ViT-L) [9]
+—
+0.89 3.58 0.75
+3.58
+1.98 10.41 2.03
+8.79
+2.62 21.56 0.23 1.41
+3.08 17.45
+BridgeDepth (ViT-L) [14]
+—
+1.13
+4.90
+0.86
+4.39
+2.21 10.27 2.25
+8.66
+2.68 20.42 0.24 1.33 4.71 18.79
+Ours(ViT-B)
+—
+1.01
+4.54
+0.76
+3.49
+0.83 6.01
+0.89
+5.67 1.33 8.69 0.24 2.41 2.14
+9.93
+IGEV-Stereo [44]
+✓
+1.21
+6.03
+1.03
+5.13
+2.63 11.93 2.27
+9.49
+5.02 26.04 0.33
+4.0
+4.26 17.58
+Selective-RAFT [39]
+✓
+1.27
+6.68
+1.08
+5.19
+2.34 12.04 2.05
+9.45
+4.17
+27.4 0.34 4.36
+4.14 19.52
+Selective-IGEV [39]
+✓
+1.25
+6.06
+1.08
+5.64
+2.59 11.79 2.31
+9.22
+4.35 28.10 0.33 4.05
+4.62 19.28
+IGEV++ [45]
+✓
+1.27
+6.22
+1.20
+6.81
+3.21 10.85 2.41
+7.86
+6.83 28.68 0.35 4.60
+5.00 18.62
+FoundationStereo (ViT-L) [41]
+✓
+0.95
+3.65
+0.71
+3.18
+0.71
+3.47
+0.42
+1.46
+2.67 16.44 0.21 1.14
+1.77
+6.89
+best [19]. This validates PALA’s global context propagation: reliable dispar-
+ity estimates from well-matched visible areas are propagated to occluded pixels
+that lack direct photometric evidence, which local-window updaters struggle to
+achieve. Booster (Q) is the most challenging benchmark, with transparent and
+specular surfaces that violate photometric consistency; even here, LinStereo re-
+mains stable, trailing the best by only a marginal Bad-2 gap (9.93 vs. 9.91 [3])
+that lies within statistical variation.
+Underwater Generalization. Underwater scenes are a stringent cross-domain
+test, with photometric degradation from scattering and attenuation. On TartanAir-
+UW and SQUID (Tab. 2, T =8), LinStereo, trained only on SceneFlow, achieves
+the best results on both, surpassing even methods trained on real-world or
+domain-specific data [39, 41, 44, 45]. The largest gains track each benchmark’s
+dominant degradation: 31% lower RMSE than FoundationStereo [41] on TartanAir-
+UW (long-range backscatter) and 26% lower AbsRel than IGEV++ [45] on
+SQUID (color attenuation), indicating PALA propagates reliable estimates to
+the most degraded regions.
+Qualitative Evaluation. Fig. 2a compares predictions on Booster (Q) and
+ETH3D. Recent SOTA methods produce visually near-identical depth maps on
+these well-conditioned scenes; LinStereo shows sharper thin structures and han-
+dles non-Lambertian surfaces (e.g., transparent bottles and car windows), consis-
+tent with its quantitative lead. This visual near-parity motivates our underwater
+evaluation, where photometric degradation amplifies inter-method differences.
+As shown in Fig. 2b, competing methods tend to overestimate depth in dis-
+tant regions and produce inconsistent near-field estimates, whereas LinStereo
+preserves accurate depth scale at both ranges.
+
+
+12
+Y. Wang et al.
+Table 2: Quantitative comparison on underwater depth estimation. TartanAir-UW:
+underwater images from TartanAir [38]. SQUID: real-world underwater dataset [4]. ✓:
+uses extra training data beyond SceneFlow [26].
+Method
+Extra
+Data
+TartanAir UW
+SQUID
+AbsRel↓SqRel↓RMSE↓LogRMSE↓A1↑
+A2↑
+A3↑AbsRel↓SqRel↓RMSE↓LogRMSE↓A1↑
+A2↑
+A3↑
+UniMatch [48]
+—
+0.17
+2.59
+6.35
+0.26
+0.759 0.830 0.837
+1.38
+20.91
+6.42
+0.66
+0.561 0.660 0.734
+MoCha-Stereo [8]
+—
+0.15
+2.30
+6.02
+0.25
+0.769 0.835 0.843
+0.15
+0.61
+1.55
+0.20
+0.875 0.931 0.958
+NMRF [15]
+—
+0.11
+1.08
+4.63
+0.21
+0.811 0.856 0.870
+0.43
+5.27
+2.57
+0.33
+0.844 0.904 0.935
+PSMNet [7]
+—
+0.10
+1.02
+4.56
+0.21
+0.813 0.857 0.871
+0.46
+4.31
+3.43
+0.51
+0.736 0.813 0.853
+RAFT-Stereo [24]
+—
+0.08
+0.65
+4.36
+0.20
+0.902 0.963 0.984
+0.07
+0.27
+1.25
+0.12
+0.937 0.971 0.987
+MGStereo [52]
+—
+0.08
+0.55
+3.69
+0.19
+0.911 0.968 0.987
+0.09
+0.71
+1.99
+0.16
+0.925 0.958 0.976
+Stereo Anywhere [3]
+—
+0.06
+0.41
+3.24
+0.18
+0.946 0.980 0.989
+0.07
+0.40
+1.46
+0.13
+0.937 0.976 0.985
+DEFOM-Stereo [19]
+—
+0.05
+0.41
+3.13
+0.17
+0.953 0.982 0.990
+0.09
+0.63
+2.00
+0.16
+0.915 0.954 0.977
+Ours
+—
+0.04
+0.19
+2.08
+0.09
+0.959 0.992 0.998
+0.04
+0.12
+0.90
+0.08
+0.970 0.990 0.996
+Selective-Stereo (RAFT) [39]
+✓
+0.09
+0.67
+4.31
+0.21
+0.902 0.962 0.981
+0.11
+0.22
+1.16
+0.16
+0.877 0.940 0.968
+Selective-Stereo (IGEV) [39]
+✓
+0.11
+1.02
+5.01
+0.23
+0.856 0.942 0.976
+0.08
+0.21
+1.05
+0.14
+0.932 0.966 0.980
+IGEV-Stereo [44]
+✓
+0.10
+0.90
+4.68
+0.21
+0.891 0.955 0.979
+0.20
+1.35
+2.68
+0.46
+0.760 0.821 0.863
+IGEV++ [45]
+✓
+0.09
+0.81
+4.37
+0.20
+0.905 0.962 0.983
+0.06
+0.22
+1.11
+0.12
+0.950 0.981 0.990
+FoundationStereo [41]
+✓
+0.05
+0.40
+3.01
+0.16
+0.959 0.984 0.991
+0.07
+0.30
+1.36
+0.13
+0.940 0.976 0.987
+Table 3: Quantitative comparison on close-range laboratory tank images (< 2 m
+depth). Extra Data (✓) indicates training data beyond SceneFlow [26]. Accuracy
+thresholds rounded to two decimal places; full-precision results in supplimentary ma-
+terials. Best results in bold.
+Method
+Extra
+Data
+Laboratory Tank
+AbsRel↓SqRel↓RMSE↓LogRMSE↓A1↑A2↑A3↑
+PSMNet [7]
+—
+0.18
+0.16
+0.34
+0.28
+0.87 0.90 0.93
+UniMatch [48]
+—
+0.08
+0.04
+0.17
+0.16
+0.93 0.96 0.98
+Stereo Anywhere [3]
+—
+0.09
+0.06
+0.20
+0.19
+0.92 0.93 0.97
+RAFT-Stereo [24]
+—
+0.06
+0.03
+0.15
+0.14
+0.94 0.96 0.99
+MGStereo [52]
+—
+0.08
+0.05
+0.18
+0.17
+0.93 0.94 0.98
+Ours (T =8)
+—
+0.04
+0.01
+0.07
+0.07
+0.98 0.99 1.00
+Selective-Stereo (RAFT) [39]
+✓
+0.07
+0.03
+0.14
+0.14
+0.94 0.97 0.99
+Selective-Stereo (IGEV) [39]
+✓
+0.08
+0.04
+0.16
+0.16
+0.91 0.95 0.99
+IGEV-Stereo [44]
+✓
+0.06
+0.02
+0.13
+0.12
+0.94 0.97 0.99
+IGEV++ [45]
+✓
+0.05
+0.02
+0.12
+0.12
+0.96 0.97 0.99
+FoundationStereo [41]
+✓
+0.07
+0.04
+0.18
+0.17
+0.93 0.94 0.98
+4.4
+Real-World Evaluation
+LinStereo is additionally evaluated on a controlled laboratory water tank at close
+range (< 2 m) with AprilTag-based ground truth (Sec. 4.1). As shown in Tab. 3,
+LinStereo outperforms all compared methods by a substantial margin, including
+those leveraging multiple additional training datasets. We note that the refer-
+ence depth comes from a CAD model of the rig (frame and ropes), localized
+in each view via AprilTags; only these valid-GT pixels are scored, so the larger
+background errors produced by some baselines fall outside this quantitative eval-
+uation. The result confirms that the proposed architecture generalizes robustly
+even under extreme near-range, real-world underwater conditions. Full-precision
+table and qualitative results are provided in supplementary materials.
+4.5
+Ablation Study
+All ablations are evaluated on KITTI 2015 and TartanAir-UW to capture the
+model’s behavior on different domains. PALA Design Ablation. Tab. 4 traces a
+
+
+LinStereo: Linear-Complexity Global Attention for Stereo Matching
+13
+Left Image
+Right Image
+Ground Truth
+IGEV++
+MGStereo
+DeFOM-Stereo
+Stereo Anywhere
+Ours
+Booster
+ETH3D
+(a) Booster(Q) and ETH3D benchmarks. Black regions in ground truth denote unavailable
+disparity.
+Left Image
+Right Image
+Ground Truth
+FoundationStereo
+MGStereo
+DeFOM-Stereo
+Stereo Anywhere
+Ours
+TartanAir
+SQUID
+(b) Underwater benchmarks. Black regions in SQUID ground truth denote unavailable depth.
+Fig. 2: Qualitative comparison on standard and underwater stereo benchmarks.
+progressive build-up of the PALA block from a position-agnostic linear atten-
+tion baseline (A). Each addition yields consistent gains on both benchmarks,
+with global spatial encoding (A→B) providing the largest single improvement,
+confirming that restoring positional structure is the most critical enhancement
+to vanilla linear attention. Within this positional encoding, an asymmetric RoPE
+further outperforms its symmetric counterpart (Tab. 4). Local spatial encoding
+and adaptive gating contribute complementary refinements, and the full PALA
+configuration (D) achieves the best overall performance.
+Component Ablation. Tab. 5 reports the results for all combinations of the three
+contributions. Each component individually improves over the baseline, with
+PALA contributing the largest single gain, consistent with its role as the pri-
+mary architectural change. Notably, the full combination yields super-additive
+improvements. This is because PALA’s global reasoning benefits from the richer
+per-scale correlations that HSCV provides, while DPI’s warm start allows con-
+vergence within fewer iterations. Among pairwise combinations, HSCV + PALA
+achieves the second best performance (EPE 1.10), suggesting that global atten-
+tion benefits most from multi-scale matching signals. Replacing the hierarchical
+design with a single pooled multi-scale feature (HSCV pooled) degrades accuracy,
+confirming that scale-aligned correlation better exploits VFM representations.
+
+
+14
+Y. Wang et al.
+Table 4: PALA design ablation: progressive addition of components to global linear
+attention (A). (B) adds global spatial encoding; (C) further adds local spatial encod-
+ing; (D) adds adaptive gating to obtain Full PALA. Evaluated on KITTI 2015 and
+TartanAir-UW (T =8). Best in bold.
+Experiment
+KITTI 2015
+TartanAir-UW
+EPE↓bad3↓AbsRel↓RMSE↓
+(A) Global linear attention
+1.18
+5.32
+0.052
+2.55
+(B) (A) + Global spatial encoding
+1.12
+5.05
+0.047
+2.38
+(C) (B) + Local spatial encoding
+1.06
+4.76
+0.043
+2.22
+(D) (C) + Adaptive gating [Full PALA] 1.01
+4.54
+0.04
+2.08
+with symmetric RoPE
+1.05
+4.76
+0.042
+2.18
+Table 5: Ablation studies. All models are trained on SceneFlow only and evaluated
+on KITTI 2015 and TartanAir-UW. Best results in bold. In (a), ✓= enabled; “HSCV
+(pooled)” uses a single pooled multi-scale feature.
+(a) Component ablation
+HSCV
+DPI
+PALA
+KITTI 2015
+TartanAir-UW
+EPE↓
+bad3↓
+AbsRel↓
+RMSE↓
+1.42
+6.58
+0.068
+3.21
+✓
+1.33
+6.14
+0.061
+2.91
+✓
+1.32
+6.02
+0.059
+2.85
+✓
+1.26
+5.78
+0.055
+2.64
+✓
+✓
+1.21
+5.51
+0.052
+2.52
+✓
+✓
+1.10
+4.95
+0.045
+2.28
+✓
+✓
+1.13
+5.12
+0.047
+2.35
+✓
+✓
+✓
+1.01
+4.54
+0.04
+2.08
+HSCV (pooled) + DPI + PALA
+1.07
+4.82
+0.043
+2.21
+(b) Training hyperparameters
+LR
+BS
+T
+KITTI 2015
+TartanAir-UW
+EPE↓
+bad3↓
+AbsRel↓
+RMSE↓
+1×10−4
+8
+8
+1.09
+4.88
+0.045
+2.27
+2×10−4
+8
+8
+1.01
+4.54
+0.04
+2.08
+4×10−4
+8
+8
+1.16
+5.22
+0.050
+2.45
+2×10−4
+4
+8
+1.07
+4.79
+0.044
+2.22
+2×10−4
+16
+8
+1.05
+4.68
+0.042
+2.16
+2×10−4
+8
+2
+1.24
+5.65
+0.055
+2.62
+2×10−4
+8
+4
+1.10
+4.93
+0.046
+2.30
+2×10−4
+8
+12
+1.03
+4.61
+0.041
+2.12
+2×10−4
+8
+16
+1.02
+4.58
+0.041
+2.10
+Training Hyperparameters. Tab. 5(b) sweeps peak learning rate, batch size, and
+refinement iterations. Performance is relatively robust across the tested ranges,
+with the optimal setting (LR = 2×10−4, BS = 8, T = 8) achieving the best
+accuracy. The most notable finding is that T = 12 yields no improvement over
+T =8, indicating diminishing returns beyond 8 iterations.
+Inference Efficiency. LinStereo’s iterative design lets the refinement budget shrink
+at test time: at T =2 it runs at 80 ms per frame (12.5 FPS at 480×640 on a single
+RTX 4500) while still surpassing every efficient stereo baseline on both under-
+water benchmarks, most strikingly reaching AbsRel 0.05 on SQUID where the
+strongest competitor stays at ≥0.71 (Tab. 6; the full efficient-method compari-
+son is given in the supplementary material). Of the 127 M parameters, ∼120 M
+(94%) lie in the frozen DA3 backbone, while the proposed PALA, HSCV, and
+DPI together add only ∼7 M; per refinement step PALA’s global update is no
+costlier than a local ConvGRU operator (Tab. 7), so linear attention supplies
+global reasoning without the quadratic cost of softmax attention.
+5
+Conclusions, Limitations and Future Work
+We proposed LinStereo, an iterative stereo depth estimation framework that
+addresses the information flow between VFM backbones and the iterative up-
+
+
+LinStereo: Linear-Complexity Global Attention for Stereo Matching
+15
+Table 6: Computational efficiency comparison. Measured at 480 × 640 resolution on
+a single NVIDIA RTX 4500 GPU (24 GB).
+Method
+Params (M)↓GFLOPs↓Time (ms)↓FPS↑
+LightStereo-S [16]
+3.44
+45.4
+9.9
+101.0
+CoEx [2]
+2.73
+70.6
+11.0
+91.0
+CGI-Stereo [47]
+3.50
+81.6
+12.8
+78.1
+Fast-ACVNet [46]
+3.08
+104.6
+13.2
+76.0
+ADStereo [40]
+7.10
+201.6
+15.4
+64.7
+RAFT-Stereo† [24]
+9.87
+296.4
+18.0
+55.7
+RT-IGEV [45]
+4.17
+354.2
+24.7
+40.5
+MobileStereoNet [34]
+2.35
+175.6
+37.7
+26.5
+AANet [49]
+3.93
+–
+65.8
+15.2
+Ours
+127.0
+770.4
+80
+12.5
+Table 7: Per-iteration update-operator latency. Measured at 480 × 640 resolution on
+a single NVIDIA RTX 4500 GPU (24 GB); ± denotes the 95% confidence interval.
+Update operator
+Latency (ms)↓
+PALA (Ours)
+3.50 ± 0.05
+RAFT-Stereo ConvGRU [24]
+3.63 ± 0.06
+IGEV ConvGRU [44]
+3.43 ± 0.03
+date through three complementary mechanisms: Position-Aware Linear Atten-
+tion for global context aggregation at linear complexity, Hierarchical Semantic
+Cost Volumes for scale-aligned semantic matching, and Depth Prior Initialization
+for geometrically informed warm start. Trained exclusively on SceneFlow, Lin-
+Stereo achieves state-of-the-art-level accuracy on standard stereo benchmarks
+and demonstrates strong cross-domain generalization to underwater environ-
+ments, achieving the best overall accuracy on both simulated and real-world
+underwater benchmarks.
+LinStereo builds upon a frozen DA3 backbone, which accounts for most of
+the inference cost and can limit deployment on resource-constrained platforms at
+the full iteration budget. Distilling the backbone into a lightweight architecture
+could reduce latency while preserving cross-domain feature quality. In addition,
+the DPI module currently relies on handcrafted SIFT features for scale–shift
+alignment. Replacing this component with a lightweight learned sparse matcher
+may provide more robust initialization and improved adaptability across domains
+in the feature.
+Acknowledgements
+We thank Jay Zhang, Dr. Gideon Billings for collecting the underwater dataset.
+This research was funded by the Australian Government through the Australian
+Research Council (ARC) Research Hub for Intelligent Robotic Systems for Real-
+Time Asset Management (IH210100030).
+
+
+16
+Y. Wang et al.
+References
+1. Akkaynak, D., Treibitz, T.: A revised underwater image formation model. In: 2018
+IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 6723–
+6732. IEEE (2018). https://doi.org/10.1109/CVPR.2018.00703
+2. Bangunharcana, A., Cho, J.W., Lee, S., Kweon, I.S., Kim, K.S., Kim, S.: Correlate-
+and-excite: Real-time stereo matching via guided cost volume excitation. In:
+IEEE/RJS International Conference on Intelligent RObots and Systems. pp. 3542–
+3548. IEEE, IEEE (2021). https://doi.org/10.1109/IROS51168.2021.9635909
+3. Bartolomei, L., Tosi, F., Poggi, M., Mattoccia, S.: Stereo anywhere: Robust zero-
+shot deep stereo matching even where either stereo or mono fail. In: Computer
+Vision and Pattern Recognition. pp. 1013–1027 (2024). https://doi.org/10.
+1109/CVPR52734.2025.00103
+4. Berman, D., Levy, D., Avidan, S., Treibitz, T.: Underwater single image color
+restoration using haze-lines and a new quantitative dataset. IEEE Transactions
+on Pattern Analysis and Machine Intelligence 43(8), 2822–2837 (2018). https:
+//doi.org/10.1109/tpami.2020.2977624
+5. Bochkovskiy, A., Delaunoy, A., Germain, H., Santos, M., Zhou, Y., Richter, S.R.,
+Koltun, V.: Depth pro: Sharp monocular metric depth in less than a second. In:
+arXiv.org (2024). https://doi.org/10.48550/arXiv.2410.02073
+6. Chang, A.X., Funkhouser, T., Guibas, L., Hanrahan, P., Huang, Q., Li, Z.,
+Savarese, S., Savva, M., Song, S., Su, H., et al.: ShapeNet: An Information-Rich
+3D Model Repository. Tech. Rep. arXiv:1512.03012 [cs.GR], Stanford University
+— Princeton University — Toyota Technological Institute at Chicago (2015)
+7. Chang, J.R., Chen, Y.S.: Pyramid stereo matching network. In: 2018 IEEE/CVF
+Conference on Computer Vision and Pattern Recognition. pp. 5410–5418. IEEE
+(2018). https://doi.org/10.1109/CVPR.2018.00567
+8. Chen, Z., Long, W., Yao, H., Zhang, Y., Wang, B., Qin, Y., Wu, J.: Mocha-stereo:
+Motif channel attention network for stereo matching. In: Computer Vision and
+Pattern Recognition. pp. 27768–27777. IEEE (June 2024). https://doi.org/10.
+1109/CVPR52733.2024.02623
+9. Cheng, J., Liu, L., Xu, G., Wang, X., Zhang, Z., Deng, Y., Zang, J., Chen, Y., Cai,
+Z., Yang, X.: Monster: Marry monodepth to stereo unleashes power. In: Computer
+Vision and Pattern Recognition. pp. 6273–6282. IEEE (2025). https://doi.org/
+10.1109/CVPR52734.2025.00588
+10. Duggal, S., Wang, S., Ma, W.C., Hu, R., Urtasun, R.: Deeppruner: Learning effi-
+cient stereo matching via differentiable patchmatch. In: IEEE International Con-
+ference on Computer Vision. pp. 4383–4392. IEEE (2019). https://doi.org/10.
+1109/ICCV.2019.00448
+11. Geiger, A., Lenz, P., Urtasun, R.: Are we ready for autonomous driving? The
+KITTI vision benchmark suite. In: 2012 IEEE Conference on Computer Vision
+and Pattern Recognition. pp. 3354–3361. IEEE (2012). https://doi.org/10.
+1109/CVPR.2012.6248074
+12. Gómez, Á.: GA-Net: Guided aggregation net for end-to-end stereo matching. In:
+Image Processing On Line. pp. 185–194 (2023). https://doi.org/10.5201/ipol.
+2023.441
+13. Gu, X., Fan, Z., Zhu, S., Dai, Z., Tan, F., Tan, P.: Cascade cost volume for high-
+resolution multi-view stereo and stereo matching. In: Computer Vision and Pattern
+Recognition. pp. 2495–2504 (2019). https://doi.org/10.1109/CVPR42600.2020.
+00257
+
+
+LinStereo: Linear-Complexity Global Attention for Stereo Matching
+17
+14. Guan, T., Guo, J., Wang, C., Liu, Y.: Bridgedepth: Bridging monocular and stereo
+reasoning with latent alignment. In: IEEE International Conference on Computer
+Vision. pp. 27681–27691. IEEE (2025). https://doi.org/10.1109/ICCV51701.
+2025.02570
+15. Guan, T., Wang, C., Liu, Y.H.: Neural markov random field for stereo matching.
+In: Computer Vision and Pattern Recognition. pp. 5459–5469. IEEE (June 2024).
+https://doi.org/10.1109/CVPR52733.2024.00522
+16. Guo, X., Zhang, C., Nie, D., Zheng, W., Zhang, Y., Chen, L.: Lightstereo: Chan-
+nel boost is all you need for efficient 2d cost aggregation. In: IEEE International
+Conference on Robotics and Automation (2024). https://doi.org/10.1109/
+ICRA55743.2025.11127711
+17. Guo, X., Yang, K., Yang, W., Wang, X., Li, H.: Group-wise correlation stereo net-
+work. In: Computer Vision and Pattern Recognition. pp. 3268–3277. IEEE (2019).
+https://doi.org/10.1109/CVPR.2019.00339
+18. Hu, M., Yin, W., Zhang, C., Cai, Z., Long, X., Chen, H., Wang, K., Yu, G.,
+Shen, C., Shen, S.: Metric3d v2: A versatile monocular geometric foundation model
+for zero-shot metric depth and surface normal estimation. IEEE Transactions on
+Pattern Analysis and Machine Intelligence 46(12), 10579–10596 (2024). https:
+//doi.org/10.1109/TPAMI.2024.3444912
+19. Jiang, H., Lou, Z., Ding, L., Xu, R., Tan, M., Jiang, W., Huang, R.: DEFOM-
+Stereo: Depth foundation model based stereo matching. In: Computer Vision and
+Pattern Recognition. pp. 21857–21867. IEEE (2025). https://doi.org/10.1109/
+CVPR52734.2025.02036
+20. Kendall, A., Martirosyan, H., Dasgupta, S., Henry, P., Kennedy, R., Bachrach, A.,
+Bry, A.: End-to-end learning of geometry and context for deep stereo regression.
+In: 2017 IEEE International Conference on Computer Vision (ICCV). pp. 66–75.
+IEEE (2017). https://doi.org/10.1109/iccv.2017.17
+21. Khamis, S., Fanello, S., Rhemann, C., Kowdle, A., Valentin, J., Izadi, S.: Stere-
+onet: Guided hierarchical refinement for real-time edge-aware depth prediction. In:
+European Conference on Computer Vision. pp. 596–613. Springer International
+Publishing (2018). https://doi.org/10.1007/978-3-030-01267-0_35
+22. Li, J., Wang, P., Xiong, P., Cai, T., Yan, Z., Yang, L., Liu, J., Fan, H., Liu, S.:
+Practical stereo matching via cascaded recurrent network with adaptive correlation.
+In: Computer Vision and Pattern Recognition. pp. 16242–16251. IEEE (2022).
+https://doi.org/10.1109/CVPR52688.2022.01578
+23. Lin, H., Chen, S., Liew, J., Chen, D.Y., Li, Z., Shi, G., Feng, J., Kang, B.: Depth
+anything 3: Recovering the visual space from any views. arXiv.org (2025). https:
+//doi.org/10.48550/arXiv.2511.10647
+24. Lipson, L., Teed, Z., Deng, J.: Raft-stereo: Multilevel recurrent field transforms for
+stereo matching. In: International Conference on 3D Vision. pp. 218–227. IEEE,
+IEEE (2021). https://doi.org/10.1109/3DV53792.2021.00032
+25. Lv, Q., Dong, J., Li, Y., Chen, S., Yu, H., Zhang, S., Wang, W.: Uwstereo: A
+large synthetic dataset for underwater stereo matching. IEEE transactions on cir-
+cuits and systems for video technology (Print) (2024). https://doi.org/10.1109/
+TCSVT.2025.3572044
+26. Mayer, N., Ilg, E., Häusser, P., Fischer, P., Cremers, D., Dosovitskiy, A., Brox,
+T.: A large dataset to train convolutional networks for disparity, optical flow, and
+scene flow estimation. In: Computer Vision and Pattern Recognition. pp. 4040–
+4048 (2015). https://doi.org/10.1109/CVPR.2016.438
+
+
+18
+Y. Wang et al.
+27. Menze, M., Geiger, A.: Object scene flow for autonomous vehicles. In: Computer
+Vision and Pattern Recognition. pp. 3061–3070. IEEE (2015). https://doi.org/
+10.1109/CVPR.2015.7298925
+28. Oquab, M., Darcet, T., Moutakanni, T., Vo, H.V., Szafraniec, M., Khalidov, V.,
+Fernandez, P., Haziza, D., Massa, F., El-Nouby, A., et al.: Dinov2: Learning robust
+visual features without supervision. Trans. Mach. Learn. Res. (2023). https://
+doi.org/10.48550/arXiv.2304.07193
+29. Ramirez, P.Z., Tosi, F., Poggi, M., Salti, S., Mattoccia, S., Stefano, L.D.: Open chal-
+lenges in deep stereo: the booster dataset. In: Computer Vision and Pattern Recog-
+nition. pp. 21136–21146. IEEE (2022). https://doi.org/10.1109/CVPR52688.
+2022.02049
+30. Ranftl, R., Bochkovskiy, A., Koltun, V.: Vision transformers for dense prediction.
+In: IEEE International Conference on Computer Vision. pp. 12159–12168. IEEE
+(October 2021). https://doi.org/10.1109/ICCV48922.2021.01196
+31. Ranftl, R., Lasinger, K., Hafner, D., Schindler, K., Koltun, V.: Towards robust
+monocular depth estimation: Mixing datasets for zero-shot cross-dataset transfer.
+IEEE Transactions on Pattern Analysis and Machine Intelligence 44(3), 1623–1637
+(2019). https://doi.org/10.1109/TPAMI.2020.3019967
+32. Scharstein, D., Hirschmüller, H., Kitajima, Y., Krathwohl, G., Nesic, N., Wang, X.,
+Westling, P.: High-resolution stereo datasets with subpixel-accurate ground truth.
+In: German Conference on Pattern Recognition. pp. 31–42. Springer International
+Publishing (2014). https://doi.org/10.1007/978-3-319-11752-2_3
+33. Schöps, T., Schönberger, J.L., Galliani, S., Sattler, T., Schindler, K., Pollefeys,
+M., Geiger, A.: A multi-view stereo benchmark with high-resolution images and
+multi-camera videos. In: Computer Vision and Pattern Recognition. pp. 2538–2547.
+IEEE (2017). https://doi.org/10.1109/CVPR.2017.272
+34. Shamsafar, F., Woerz, S., Rahim, R., Zell, A.: Mobilestereonet: Towards lightweight
+deep networks for stereo matching. In: IEEE Workshop/Winter Conference on
+Applications of Computer Vision. pp. 2417–2426 (2021). https://doi.org/10.
+1109/WACV51458.2022.00075
+35. Shen, Z., Dai, Y., Song, X., Rao, Z., Zhou, D., Zhang, L.: Pcw-net: Pyramid combi-
+nation and warping cost volume for stereo matching. In: European Conference on
+Computer Vision. pp. 280–297. Springer (2020). https://doi.org/10.1007/978-
+3-031-19824-3_17
+36. Su, J., Lu, Y., Pan, S., Wen, B., Liu, Y.: Roformer: Enhanced transformer with
+rotary position embedding. Neurocomputing 568, 127063 (2021). https://doi.
+org/10.1016/j.neucom.2023.127063
+37. Tankovich, V., Häne, C., Fanello, S., Zhang, Y., Izadi, S., Bouaziz, S.: Hitnet:
+Hierarchical iterative tile refinement network for real-time stereo matching. In:
+Computer Vision and Pattern Recognition. pp. 14362–14372 (2020). https://doi.
+org/10.1109/CVPR46437.2021.01413
+38. Wang, W., Zhu, D., Wang, X., Hu, Y., Qiu, Y., Wang, C., Hu, Y., Kapoor, A.,
+Scherer, S.: Tartanair: A dataset to push the limits of visual slam. In: IEEE/RJS
+International Conference on Intelligent RObots and Systems. pp. 4909–4916. IEEE
+(2020). https://doi.org/10.1109/IROS45743.2020.9341801
+39. Wang, X., Xu, G., Jia, H., Yang, X.: Selective-stereo: Adaptive frequency infor-
+mation selection for stereo matching. In: Computer Vision and Pattern Recogni-
+tion. pp. 19701–19710. IEEE (June 2024). https://doi.org/10.1109/CVPR52733.
+2024.01863
+
+
+LinStereo: Linear-Complexity Global Attention for Stereo Matching
+19
+40. Wang, Y., Li, K., Wang, L., Hu, J., Wu, D.O., Guo, Y.: Adstereo: Efficient stereo
+matching with adaptive downsampling and disparity alignment. IEEE Transactions
+on Image Processing 34, 1204–1218 (2025). https://doi.org/10.1109/TIP.2025.
+3540282
+41. Wen, B., Trepte, M., Aribido, J., Kautz, J., Gallo, O., Birchfield, S.: Foundation-
+Stereo: Zero-shot stereo matching. In: Computer Vision and Pattern Recognition.
+pp. 5249–5260. IEEE (2025). https://doi.org/10.1109/CVPR52734.2025.00495
+42. Wrobel, B.P.: Multiple View Geometry in Computer Vision. Cambridge University
+Press, 2nd edn. (2001)
+43. Xu, B., Xu, Y., Yang, X., Jia, W., Guo, Y.: Bilateral grid learning for stereo
+matching networks. In: Computer Vision and Pattern Recognition. pp. 12492–
+12501. IEEE (2021). https://doi.org/10.1109/CVPR46437.2021.01231
+44. Xu, G., Wang, X., Ding, X., Yang, X.: Iterative geometry encoding volume for
+stereo matching. In: Computer Vision and Pattern Recognition. pp. 21919–21928.
+IEEE (June 2023). https://doi.org/10.1109/CVPR52729.2023.02099
+45. Xu, G., Wang, X., Zhang, Z., Cheng, J., Liao, C., Yang, X.: Igev++: Iterative
+multi-range geometry encoding volumes for stereo matching. IEEE Transactions
+on Pattern Analysis and Machine Intelligence 47, 7108–7122 (2024). https://doi.
+org/10.1109/TPAMI.2025.3569218
+46. Xu, G., Wang, Y., Cheng, J., Tang, J., Yang, X.: Accurate and efficient stereo
+matching via attention concatenation volume. IEEE Transactions on Pattern Anal-
+ysis and Machine Intelligence 46(4), 2461–2474 (2022). https://doi.org/10.
+1109/TPAMI.2023.3335480
+47. Xu, G., Zhou, H., Yang, X.: Cgi-stereo: Accurate and real-time stereo matching via
+context and geometry interaction. arXiv.org (2023). https://doi.org/10.48550/
+arXiv.2301.02789
+48. Xu, H., Zhang, J., Cai, J., Rezatofighi, H., Yu, F., Tao, D., Geiger, A.: Unifying
+flow, stereo and depth estimation. IEEE Transactions on Pattern Analysis and
+Machine Intelligence 45(11), 13941–13960 (2022). https://doi.org/10.1109/
+TPAMI.2023.3298645
+49. Xu, H., Zhang, J.: Aanet: Adaptive aggregation network for efficient stereo match-
+ing. In: Computer Vision and Pattern Recognition. pp. 1956–1965. IEEE (2020).
+https://doi.org/10.1109/cvpr42600.2020.00203
+50. Yang, L., Kang, B., Huang, Z., Xu, X., Feng, J., Zhao, H.: Depth anything: Un-
+leashing the power of large-scale unlabeled data. In: Computer Vision and Pat-
+tern Recognition. pp. 10371–10381. IEEE (2024). https://doi.org/10.1109/
+CVPR52733.2024.00987
+51. Yang, L., Kang, B., Huang, Z., Zhao, Z., Xu, X., Feng, J., Zhao, H.: Depth
+anything V2. In: Neural Information Processing Systems. pp. 21875–21911. Neu-
+ral Information Processing Systems Foundation, Inc. (NeurIPS) (2024). https:
+//doi.org/10.48550/arXiv.2406.09414
+52. Yao, C., Yu, L., Liu, Z., Zeng, J., Wu, Y., Jia, Y.: Diving into the fusion of monoc-
+ular priors for generalized stereo matching. In: IEEE International Conference on
+Computer Vision. pp. 14887–14897. IEEE (2025). https://doi.org/10.1109/
+ICCV51701.2025.01381
+53. Zhu, L., Gao, Y., Zhang, J., Li, Y., Li, X.: Reliable and effective stereo matching
+for underwater scenes. Remote Sensing 16(23), 4570 (2024). https://doi.org/
+10.3390/rs16234570
+
+
+20
+Y. Wang et al.
+Appendix
+A
+Additional Ablation Studies
+We supplement the ablation studies in the main text with additional hyper-
+parameter sweeps covering HSCV structure (Tab. 8) and PALA block design
+(Tab. 9).
+Tab. 8 varies the correlation pyramid depth (Lcorr) and the number of ac-
+tive update scales (nscales). Increasing Lcorr from 2 to 4 yields monotonic gains
+with diminishing returns, as each additional pyramid level extends the dispar-
+ity search range at progressively smaller marginal benefit. The number of up-
+date scales has a larger effect: reducing nscales from 3 to 1 degrades EPE by
+12%, with underwater metrics disproportionately affected (AbsRel +20%, RMSE
++13%), since coarse-to-fine propagation is particularly important for resolving
+near-range structure under photometric degradation.
+Table 8: HSCV hyperparameters. Evaluated on KITTI 2015 and TartanAir-UW (T =
+8). Best in bold.
+Sweep
+Value
+KITTI 2015
+TartanAir-UW
+EPE↓
+bad3↓
+AbsRel↓
+RMSE↓
+Lcorr
+2
+1.09
+4.88
+0.045
+2.27
+3
+1.04
+4.69
+0.042
+2.16
+4 (ours)
+1.01
+4.54
+0.04
+2.08
+nscales
+1
+1.13
+5.14
+0.048
+2.36
+2
+1.06
+4.74
+0.043
+2.20
+3 (ours)
+1.01
+4.54
+0.04
+2.08
+Tab. 9 examines three design choices within the PALA block: stacked depth
+(Nblock), attention heads, and hidden dimension. Stacking multiple blocks per
+updater increases parameters without improving accuracy, as the outer iterative
+loop (T passes) already provides sufficient representational depth; a single block
+per scale is optimal. The number of heads exhibits an inverted-U pattern: too
+few heads limit the diversity of attended spatial patterns, while too many reduce
+the per-head dimensionality below a useful threshold (128/8 = 16); four heads
+provides the best trade-off. The hidden dimension is most effective when matched
+to the HSCV projection width (cf = 128): smaller values create an information
+bottleneck that amplifies outlier errors, while larger values add capacity without
+commensurate signal from the correlation features.
+B
+SeaStereo-Dataset
+This work introduces SeaStereo-Dataset, a synthetic underwater stereo dataset
+containing 40,320 image pairs with depth maps of simulated subsea environ-
+ments. The dataset can support the development and evaluation of stereo vision
+methods in underwater settings.
+
+
+LinStereo: Linear-Complexity Global Attention for Stereo Matching
+21
+Table 9: PALA block design hyperparameters. Evaluated on KITTI 2015 and
+TartanAir-UW (T =8). Best in bold.
+Sweep
+Value
+KITTI 2015
+TartanAir-UW
+EPE↓
+bad3↓
+AbsRel↓
+RMSE↓
+Nblock
+1 (ours)
+1.01
+4.54
+0.04
+2.08
+2
+1.03
+4.65
+0.041
+2.12
+3
+1.05
+4.70
+0.042
+2.19
+Heads
+1
+1.09
+4.94
+0.045
+2.29
+2
+1.05
+4.73
+0.043
+2.17
+4 (ours)
+1.01
+4.54
+0.04
+2.08
+8
+1.04
+4.66
+0.042
+2.16
+Hidden dim
+64
+1.10
+4.95
+0.046
+2.33
+96
+1.05
+4.74
+0.043
+2.20
+128 (ours)
+1.01
+4.54
+0.04
+2.08
+256
+1.03
+4.66
+0.041
+2.12
+Methodology. Figure 3 illustrates the synthesis pipeline of the SeaStereo-Dataset
+in Blender. The Blender Python API was used to automate the dataset genera-
+tion. For each configuration, the features, including camera path, camera model,
+ShapeNetCore [6] object subset, water type and seafloor depth, were applied to
+the scene. Stereo RGB images and corresponding depth maps were then rendered
+for the left and right camera views. The pipeline iterated through combinations
+of the dataset features to produce a diverse set of scene conditions.
+Dataset Features. A synthetic dataset is advantageous because of the customis-
+ability it affords. The underwater scene consists of submerged foreground objects
+from ShapeNetCore, with realistic marine objects in the background, including
+fish, coral, shipwrecks, seaweed and rocks. Similar to UWStereo [25], we in-
+troduce variations in the camera, illumination conditions and environment to
+construct a diverse stereo corpus. The camera path, camera model (focal length,
+interocular distance), water type, seafloor depth and ShapeNet object selection
+can all vary between configurations. An axis-aligned bounding box constraint
+was also applied to prevent overlapping placements of ShapeNet objects.
+The available water conditions are modelled by the Jerlov types I, IA, IB, II,
+IC, III and 3C. These are distinguished by their light absorption and scattering
+characteristics, leading to clear and turbid water, as shown in Figure 4.
+Dataset Details. In our implementation, 1008 configurations were animated for
+40 frames each, leading to 40,320 stereo image pairs. Seven camera trajectories
+were manually defined. Four camera models were applied, which were derived
+from combining two focal length values with two interocular distance values.
+A seafloor depth was then randomly sampled from a predefined range. Highly
+turbid water types (Jerlov III and 3C) were restricted to shallow depths to
+maintain image visibility, whereas clearer water types were sampled across both
+shallow and deep ranges to introduce variation in lighting conditions. At each
+selected depth, between three and five ShapeNet objects were randomly chosen
+
+
+22
+Y. Wang et al.
+IL
+IR
+DL
+DR
+ShapeNet
+Fig. 3: Synthesis of the SeaStereo-Dataset: The Blender Python API automated
+the rendering pipeline by iterating through each configuration of features (camera path,
+camera model, water type, depth and ShapeNet object subset). Each configuration
+generated stereo image pairs (IL, IR) and disparity maps (DL, DR).
+and placed within the scene. This process was repeated for three iterations per
+configuration, with different randomly sampled depths within the corresponding
+depth range.
+Additional Samples. Figure 5 presents additional samples from SeaStereo-Dataset,
+illustrating the diversity of water types, depth ranges, and object configurations.
+The dataset covers a wide spectrum of underwater visibility conditions, from
+clear open water (Jerlov I) to highly turbid coastal water (Jerlov 3C), providing
+a comprehensive testbed for evaluating stereo methods under varying degrees of
+photometric degradation.
+C
+Efficiency
+Reducing inference cost while maintaining accuracy is a central challenge in
+stereo depth estimation. Predominant strategies simplify the architecture it-
+self. StereoNet [21], BGNet [43], MobileStereoNet [34], and DeepPruner [10]
+reduce volume resolution or prune the disparity search space; AANet [49], Fast-
+ACVNet [46], CoEx [2], CGI-Stereo [47], ADStereo [40], and LightStereo [16]
+replace expensive 3D aggregation with lightweight 2D alternatives; HITNet [37]
+eliminates explicit volumes entirely via tile-based geometric propagation. These
+methods achieve impressive speed (LightStereo-S runs at over 100 FPS on a
+single GPU), though the architectural simplifications can limit accuracy in chal-
+lenging regions such as textureless areas, fine structures, and non-Lambertian
+surfaces. Our method pursues efficiency from a complementary direction: rather
+
+
+LinStereo: Linear-Complexity Global Attention for Stereo Matching
+23
+Fig. 4: SeaStereo-Dataset Examples: Left camera renders from SeaStereo-Dataset,
+illustrating variation in seafloor depth and water type. These examples demonstrate
+the controlled changes in underwater visibility and environmental configuration used
+during dataset generation.
+Left
+Right Disparity
+Left
+Right Disparity
+Left
+Right Disparity
+Fig. 5: Additional SeaStereo-Dataset samples. Each row shows three sets of
+stereo RGB images (left, right) and their corresponding disparity annotations under
+different Jerlov water types, seafloor depths, and cameras. The dataset captures diverse
+underwater conditions ranging from clear to highly turbid water.
+than simplifying the architecture, we reduce the number of refinement iterations
+required for convergence, maintaining rich contextual modeling while substan-
+tially lowering total inference time.
+Efficient Methods: Underwater. Tab. 10 compares LinStereo (T = 2) against
+real-time and efficient stereo methods. With only two refinement iterations, Lin-
+Stereo achieves AbsRel = 0.09, RMSE = 3.84 on TartanAir-UW, outperforming
+all efficient baselines running at full iterations. The gap is most pronounced on
+SQUID: all efficient baselines yield AbsRel ≥0.71, with the best competing
+method (RAFT-Stereo†) reaching AbsRel = 0.71 and RT-IGEV achieving Ab-
+sRel = 0.73 despite additional training data, while LinStereo at T = 2 achieves
+AbsRel = 0.05, RMSE = 1.03.
+
+
+24
+Y. Wang et al.
+Table 10: Quantitative comparison of efficient stereo depth estimation on underwater
+scenes. TartanAir-UW: underwater images from TartanAir [38]. SQUID: real-world
+underwater dataset [4]. Extra Data (✓) indicates the method uses additional training
+data beyond SceneFlow [26].
+Method
+Extra
+Data
+TartanAir UW
+SQUID
+AbsRel↓SqRel↓RMSE↓LogRMSE↓A1↑
+A2↑
+A3↑AbsRel↓SqRel↓RMSE↓LogRMSE↓A1↑
+A2↑
+A3↑
+LightStereo-S [16]
+—
+0.61
+8.71
+11.45
+1.39
+0.304 0.483 0.578
+0.91
+6.00
+4.17
+0.65
+0.452 0.572 0.674
+AANet [49]
+—
+0.24
+2.74
+5.08
+0.30
+0.815 0.910 0.949
+3.55
+57.88
+13.34
+1.34
+0.048 0.114 0.206
+MobileStereoNet [34]
+—
+0.11
+0.96
+3.92
+0.18
+0.894 0.961 0.982
+0.88
+4.32
+3.35
+0.60
+0.416 0.574 0.701
+CoEx [2]
+—
+0.13
+2.04
+4.84
+0.22
+0.890 0.951 0.972
+0.79
+5.09
+3.54
+0.57
+0.513 0.642 0.735
+CGI-Stereo [47]
+—
+0.12
+1.99
+4.94
+0.22
+0.895 0.953 0.975
+0.90
+6.13
+3.86
+0.62
+0.550 0.635 0.701
+Fast-ACVNet [46]
+—
+0.12
+2.03
+5.29
+0.27
+0.892 0.945 0.967
+0.82
+7.24
+3.84
+0.57
+0.557 0.684 0.770
+ADStereo [40]
+—
+0.12
+1.11
+4.58
+0.22
+0.863 0.946 0.975
+0.94
+8.33
+4.46
+0.64
+0.500 0.643 0.733
+RAFT-Stereo† [24]
+—
+0.14
+2.29
+5.75
+0.23
+0.867 0.934 0.963
+0.71
+10.04
+3.57
+0.45
+0.771 0.841 0.878
+RT-IGEV [45]
+✓
+0.17
+4.27
+6.89
+0.27
+0.873 0.926 0.953
+0.73
+6.21
+3.89
+0.55
+0.587 0.696 0.779
+Ours
+—
+0.09
+0.80
+3.84
+0.16
+0.910 0.967 0.986
+0.05
+0.16
+1.03
+0.09
+0.965 0.985 0.995
+D
+Real-World Evaluation: Laboratory Tank
+LinStereo is evaluated on a controlled laboratory water tank dataset at close
+range (< 2 m).
+Target Design. The evaluation target consists of pre-fabricated structural pieces
+whose geometry is known from precision CAD models created in SolidWorks.
+Taut ropes are strung between these pieces, producing thin linear structures
+(∼3 mm diameter) that serve as a stress test for fine-structure depth recovery, an
+especially challenging scenario for stereo methods, as conventional cost volumes
+struggle to maintain reliable correspondences on structures narrower than a few
+pixels.
+Data Acquisition. The target assembly is fully submerged in a glass water tank
+and imaged with a calibrated stereo camera. AprilTag (16h5) fiducial markers
+are affixed at known positions on the target frame. For each stereo pair, the
+camera-to-target pose is recovered by detecting the tags in the left image and
+solving the Perspective-n-Point (PnP) problem using the known tag geometry
+and the calibrated camera intrinsics.
+Ground-Truth Depth Generation. Given the recovered camera pose, the high-
+fidelity CAD mesh of the target (including the ropes) is rendered from the
+left camera viewpoint using standard z-buffer rasterization. Pixels that do not
+project onto any mesh surface are masked as invalid. This render-from-CAD
+pipeline yields sub-millimetre depth accuracy for the rigid prefabricated compo-
+nents, providing a ground-truth quality far higher than what photogrammetric
+reconstruction could achieve on the thin, textureless rope segments. The re-
+sulting benchmark complements the moderate-to-large depth scales covered by
+TartanAir-UW and SQUID with high-precision near-range ground truth under
+genuine underwater conditions.
+
+
+LinStereo: Linear-Complexity Global Attention for Stereo Matching
+25
+Table 11: Full-precision underwater evaluation results (three decimal places for accu-
+racy thresholds A1–A3). This is the unrounded version of the underwater comparison
+table in the main paper.
+Method
+Extra
+Data
+TartanAir UW
+SQUID
+AbsRel↓SqRel↓RMSE↓LogRMSE↓A1↑
+A2↑
+A3↑AbsRel↓SqRel↓RMSE↓LogRMSE↓A1↑
+A2↑
+A3↑
+UniMatch [48]
+—
+0.166
+2.586
+6.346
+0.258
+0.759 0.830 0.837
+1.382
+20.905
+6.416
+0.662
+0.561 0.660 0.734
+MoCha-Stereo [8]
+—
+0.155
+2.303
+6.023
+0.249
+0.769 0.835 0.843
+0.150
+0.610
+1.550
+0.200
+0.875 0.931 0.958
+NMRF [15]
+—
+0.106
+1.084
+4.633
+0.212
+0.811 0.856 0.870
+0.430
+5.270
+2.570
+0.330
+0.844 0.904 0.935
+PSMNet [7]
+—
+0.103
+1.018
+4.558
+0.210
+0.813 0.857 0.871
+0.457
+4.311
+3.428
+0.510
+0.736 0.813 0.853
+RAFT-Stereo [24]
+—
+0.083
+0.647
+4.361
+0.196
+0.902 0.963 0.984
+0.068
+0.268
+1.245
+0.123
+0.937 0.971 0.987
+MGStereo [52]
+—
+0.075
+0.552
+3.685
+0.185
+0.911 0.968 0.987
+0.093
+0.708
+1.992
+0.161
+0.925 0.958 0.976
+Stereo Anywhere [3]
+—
+0.058
+0.414
+3.241
+0.177
+0.946 0.980 0.989
+0.072
+0.401
+1.461
+0.132
+0.937 0.976 0.985
+DEFOM-Stereo [19]
+—
+0.054
+0.406
+3.127
+0.170
+0.953 0.982 0.990
+0.090
+0.630
+2.000
+0.160
+0.915 0.954 0.977
+Selective-Stereo (RAFT) [39]
+✓
+0.092
+0.670
+4.312
+0.214
+0.902 0.962 0.981
+0.106
+0.219
+1.158
+0.165
+0.877 0.940 0.968
+Selective-Stereo (IGEV) [39]
+✓
+0.114
+1.022
+5.007
+0.235
+0.856 0.942 0.976
+0.077
+0.206
+1.048
+0.137
+0.932 0.966 0.980
+IGEV-Stereo [44]
+✓
+0.100
+0.900
+4.679
+0.212
+0.891 0.955 0.979
+0.198
+1.346
+2.679
+0.455
+0.760 0.821 0.863
+IGEV++ [45]
+✓
+0.089
+0.815
+4.375
+0.201
+0.905 0.962 0.983
+0.061
+0.219
+1.107
+0.120
+0.950 0.981 0.990
+FoundationStereo [41]
+✓
+0.050
+0.398
+3.013
+0.164
+0.959 0.984 0.991
+0.066
+0.304
+1.364
+0.128
+0.940 0.976 0.987
+Ours (T =8)
+—
+0.036
+0.194
+2.079
+0.087
+0.959 0.992 0.998
+0.045
+0.121
+0.896
+0.084
+0.970 0.990 0.996
+Table 12: Full-precision evaluation on close-range laboratory tank images (< 2 m
+depth). This is the unrounded version of the laboratory-tank table in the main paper.
+Extra Data (✓) indicates training data beyond SceneFlow [26]. Best results in bold.
+Method
+Extra
+Data AbsRel↓SqRel↓RMSE↓Log RMSE↓
+A1↑
+A2↑
+A3↑
+PSMNet [7]
+—
+0.1805
+0.1595
+0.3380
+0.2841
+0.8677 0.9025 0.9300
+UniMatch [48]
+—
+0.0815
+0.0392
+0.1700
+0.1594
+0.9334 0.9595 0.9803
+Stereo Anywhere [3]
+—
+0.0868
+0.0555
+0.2009
+0.1865
+0.9216 0.9347 0.9706
+RAFT-Stereo [24]
+—
+0.0603
+0.0297
+0.1501
+0.1391
+0.9442 0.9585 0.9891
+MGStereo [52]
+—
+0.0816
+0.0487
+0.1788
+0.1661
+0.9250 0.9423 0.9777
+Selective-Stereo (RAFT) [39]
+✓
+0.0653
+0.0262
+0.1401
+0.1366
+0.9358 0.9673 0.9903
+Selective-Stereo (IGEV) [39]
+✓
+0.0819
+0.0360
+0.1603
+0.1604
+0.9111 0.9529 0.9867
+IGEV-Stereo [44]
+✓
+0.0577
+0.0212
+0.1289
+0.1246
+0.9398 0.9663 0.9949
+IGEV++ [45]
+✓
+0.0470
+0.0198
+0.1241
+0.1150
+0.9599 0.9723 0.9935
+FoundationStereo [41]
+✓
+0.0743
+0.0441
+0.1810
+0.1665
+0.9315 0.9445 0.9812
+Ours (T =8)
+—
+0.0423
+0.0067 0.0672
+0.0727
+0.9778 0.9943 0.9984
+E
+Full-Precision Underwater Results
+Tab. 11 provides full-precision accuracy thresholds for the underwater evaluation
+in the main paper. Tab. 12 reports the laboratory tank results.
+F
+Additional Qualitative Results
+We provide additional qualitative comparisons beyond those shown in the main
+paper. These visualizations further illustrate LinStereo’s advantages: PALA’s
+global context propagation recovers accurate depth in regions where local up-
+daters fail, while HSCV’s multi-scale correlation preserves fine structural detail.
+Standard Benchmarks. Figs. 6–9 present additional qualitative comparisons on
+Booster (Q), ETH3D, KITTI 2012, and KITTI 2015. LinStereo’s advantages are
+
+
+26
+Y. Wang et al.
+consistently visible across these benchmarks: (1) on non-Lambertian surfaces
+(transparent glass, specular metal, and reflective car bodies), competing meth-
+ods produce depth bleeding or erroneous estimates, whereas LinStereo recovers
+clean, geometrically consistent depth; (2) on thin structures such as pipes, poles,
+and traffic signs, baselines tend to blur or break the structure, while LinStereo
+preserves continuous, sharp boundaries; and (3) in low-light or low-texture re-
+gions, other methods exhibit large-area depth collapse (e.g., spurious foreground
+estimates), whereas LinStereo maintains stable predictions. Red and cyan boxes
+in the figures highlight representative regions where these differences are most
+pronounced.
+Underwater Benchmarks. Figs. 10–12 show additional predictions on TartanAir-
+UW and SQUID. LinStereo’s advantages are evident across both datasets: (1) in
+backscatter-affected distant regions (TartanAir-UW), baselines overestimate depth
+or produce large-area depth collapse, whereas LinStereo maintains smooth and
+accurate near-to-far depth transitions; (2) under severe scattering and low visibil-
+ity, baselines yield blocky artifacts or over-smoothed predictions that lose scene
+structure, while LinStereo still recovers coherent depth gradients for terrain and
+vegetation; and (3) in SQUID’s near-field scenes with strong color attenuation,
+baselines exhibit depth-scale inconsistencies and fail to resolve fine structural
+boundaries such as rock crevices and equipment contours, whereas LinStereo
+preserves stable, continuous depth (red boxes).
+Laboratory Tank. Fig. 13 presents qualitative results from the controlled labo-
+ratory tank experiment (see Sec. D for dataset construction details). Two key
+advantages are visible: (1) on the thin rope segments (∼3 mm diameter), base-
+lines either produce severe noise and fragmentation or lose the ropes entirely,
+whereas LinStereo recovers continuous rope depth; and (2) for the metal frame
+structure, baselines fail to fully recognize the frame geometry, resulting in miss-
+ing or incomplete depth predictions, while LinStereo recovers the complete frame
+structure.
+Synthetic Underwater Data. Figs. 14–15 show LinStereo predictions on ran-
+domly selected samples from the SeaStereo-Dataset (Sec. B), covering clear to
+highly turbid Jerlov water types. Baselines struggle with small or elongated fore-
+ground objects (merging them into the seafloor or distorting their shape) and
+degrade rapidly as turbidity increases, producing artifacts, unstable depth, or
+over-smoothed predictions that lose foreground–background layering. LinStereo
+cleanly separates object depth from the background and maintains consistent
+depth structure across all water types (red boxes).
+
+
+LinStereo: Linear-Complexity Global Attention for Stereo Matching
+27
+Left Image
+IGEV++
+MGStereo
+DeFOM-Stereo
+Stereo Anywhere
+LinStereo(Ours)
+Left Image
+IGEV++
+MGStereo
+DeFOM-Stereo
+Stereo Anywhere
+LinStereo(Ours)
+Left Image
+IGEV++
+MGStereo
+DeFOM-Stereo
+Stereo Anywhere
+LinStereo(Ours)
+Fig. 6: Additional qualitative comparison on Booster (Q). Scenes contain trans-
+parent glass bottles, specular metallic sinks, and reflective appliance surfaces. Note that
+for transparent objects, the expected depth typically corresponds to the physical sur-
+face (e.g., the glass pane of the washing machine door) rather than the depth of objects
+visible through it. Competing methods produce depth bleeding around glass boundaries
+and noisy estimates on specular metal, while LinStereo recovers clean object contours
+and consistent surface depth on these non-Lambertian materials (red boxes).
+
+
+28
+Y. Wang et al.
+Left Image
+IGEV++
+MGStereo
+DeFOM-Stereo
+Stereo Anywhere
+LinStereo(Ours)
+Left Image
+IGEV++
+MGStereo
+DeFOM-Stereo
+Stereo Anywhere
+LinStereo(Ours)
+Left Image
+IGEV++
+MGStereo
+DeFOM-Stereo
+Stereo Anywhere
+LinStereo(Ours)
+Fig. 7: Additional qualitative comparison on ETH3D. Scenes span industrial
+interiors with thin pipes, low-light building exteriors, and dense outdoor vegetation.
+Baselines lose thin-structure continuity and produce large-area depth errors in dark
+regions, while LinStereo preserves fine geometric detail and remains stable under low-
+light conditions (cyan boxes).
+
+
+LinStereo: Linear-Complexity Global Attention for Stereo Matching
+29
+Left Image
+IGEV++
+MGStereo
+DeFOM-Stereo
+Stereo Anywhere
+LinStereo(Ours)
+Left Image
+IGEV++
+MGStereo
+DeFOM-Stereo
+Stereo Anywhere
+LinStereo(Ours)
+Left Image
+IGEV++
+MGStereo
+DeFOM-Stereo
+Stereo Anywhere
+LinStereo(Ours)
+Left Image
+IGEV++
+MGStereo
+DeFOM-Stereo
+Stereo Anywhere
+LinStereo(Ours)
+Fig. 8: Additional qualitative comparison on KITTI 2012. LinStereo produces
+sharper vehicle boundaries and preserves thin structures (e.g., poles, traffic signs) that
+competing methods blur or fragment (red boxes).
+
+
+30
+Y. Wang et al.
+Left Image
+IGEV++
+MGStereo
+DeFOM-Stereo
+Stereo Anywhere
+LinStereo(Ours)
+Left Image
+IGEV++
+MGStereo
+DeFOM-Stereo
+Stereo Anywhere
+LinStereo(Ours)
+Left Image
+IGEV++
+MGStereo
+DeFOM-Stereo
+Stereo Anywhere
+LinStereo(Ours)
+Left Image
+IGEV++
+MGStereo
+DeFOM-Stereo
+Stereo Anywhere
+LinStereo(Ours)
+Fig. 9: Additional qualitative comparison on KITTI 2015. LinStereo resolves
+small distant objects and road-level details (e.g., lane markings, guard rails) that base-
+lines over-smooth or lose entirely (red boxes).
+
+
+LinStereo: Linear-Complexity Global Attention for Stereo Matching
+31
+Left Image
+FoundationStereo
+MGStereo
+DeFOM-Stereo
+Stereo Anywhere
+LinStereo(Ours)
+Left Image
+FoundationStereo
+MGStereo
+DeFOM-Stereo
+Stereo Anywhere
+LinStereo(Ours)
+Left Image
+FoundationStereo
+MGStereo
+DeFOM-Stereo
+Stereo Anywhere
+LinStereo(Ours)
+Fig. 10: Additional qualitative comparison on TartanAir-UW (1/2). Scenes
+include rocky seafloor terrain, underwater cliffs with vegetation, and coral reefs with
+fish. Baselines overestimate depth in backscatter-affected distant regions and lose small
+foreground objects, while LinStereo preserves accurate depth-scale transitions and re-
+solves individual object depth (red boxes).
+
+
+32
+Y. Wang et al.
+Left Image
+FoundationStereo
+MGStereo
+DeFOM-Stereo
+Stereo Anywhere
+LinStereo(Ours)
+Left Image
+FoundationStereo
+MGStereo
+DeFOM-Stereo
+Stereo Anywhere
+LinStereo(Ours)
+Left Image
+FoundationStereo
+MGStereo
+DeFOM-Stereo
+Stereo Anywhere
+LinStereo(Ours)
+Fig. 11: Additional qualitative comparison on TartanAir-UW (2/2). Under
+severe scattering and low visibility, baselines produce depth collapse, blocky artifacts,
+or over-smoothed predictions that erase terrain and vegetation structure. LinStereo still
+recovers coherent depth gradients and detects small foreground objects in extremely
+degraded conditions (red boxes).
+
+
+LinStereo: Linear-Complexity Global Attention for Stereo Matching
+33
+Left Image
+FoundationStereo
+MGStereo
+DeFOM-Stereo
+Stereo Anywhere
+LinStereo(Ours)
+Left Image
+FoundationStereo
+MGStereo
+DeFOM-Stereo
+Stereo Anywhere
+LinStereo(Ours)
+Left Image
+FoundationStereo
+MGStereo
+DeFOM-Stereo
+Stereo Anywhere
+LinStereo(Ours)
+Fig. 12: Additional qualitative comparison on SQUID. Scenes cover shallow
+sandy seafloor, near-field coral and rock formations, and man-made equipment. Under
+strong color attenuation, baselines exhibit depth-scale inconsistencies, over-smooth fine
+structures, and produce depth bleeding around object boundaries. LinStereo maintains
+stable depth and recovers fine structural details (red boxes). Black regions denote
+unavailable depth.
+
+
+34
+Y. Wang et al.
+Fig. 13: Qualitative results on the laboratory tank dataset. Baselines fail to
+recover the thin ropes and produce incomplete frame geometry. LinStereo recovers
+continuous rope depth and the complete frame structure under genuine near-range
+underwater conditions.
+
+
+LinStereo: Linear-Complexity Global Attention for Stereo Matching
+35
+Left Image
+Right Image
+Ground Truth
+IGEV++
+MGStereo
+FoundationStereo
+DEFOM-Stereo
+StereoAnywhere
+LinStereo (Ours)
+Left Image
+Right Image
+Ground Truth
+IGEV++
+MGStereo
+FoundationStereo
+DEFOM-Stereo
+StereoAnywhere
+LinStereo (Ours)
+Fig. 14: Qualitative comparison on SeaStereo-Dataset (1/2). Baselines merge
+small foreground objects into the seafloor or produce artifacts as turbidity increases.
+LinStereo cleanly separates foreground objects and maintains consistent depth across
+visibility conditions (red boxes).
+
+
+36
+Y. Wang et al.
+Left Image
+Right Image
+Ground Truth
+IGEV++
+MGStereo
+FoundationStereo
+DEFOM-Stereo
+StereoAnywhere
+LinStereo (Ours)
+Left Image
+Right Image
+Ground Truth
+IGEV++
+MGStereo
+FoundationStereo
+DEFOM-Stereo
+StereoAnywhere
+LinStereo (Ours)
+Fig. 15: Qualitative comparison on SeaStereo-Dataset (2/2). Baselines pro-
+duce edge noise or shape distortion on elongated structures and over-smooth vegeta-
+tion, losing depth layering. LinStereo preserves sharp object contours and foreground–
+background depth separation (red boxes).

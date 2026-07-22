@@ -1,0 +1,522 @@
+Title: SA4Depth: Consistent Pose-Depth Scale Alignment for Self-Supervised Monocular Depth Estimation
+
+URL Source: https://arxiv.org/pdf/2605.28477v1
+
+Published Time: Thu, 28 May 2026 01:18:36 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+> 1
+
+# SA4Depth: Consistent Pose-Depth Scale Alignment for Self-Supervised Monocular Depth Estimation 
+
+Changxuan Li 1,2,3, Nadine Berner 2, Nassir Navab 1,3, Federico Tombari 1,3,4, and Stefano Gasperini 1,3,5
+
+Abstract —Self-supervised depth estimation from monocular sequences relies on the joint learning of a depth and a pose network. Despite abundant research done to improve the depth network, efforts on the pose remain limited. In this context, even when depth is estimated up to scale, we highlight the importance of the alignment between the scene scales estimated by the pose and depth nets. Then, we introduce SA4Depth, an approach to improve this alignment and boost the depth predictions while keeping the inference time unchanged. Our proposed method uses the depth estimated during training to reproject learnable visual features across consecutive frames and refine the pose estimates by reducing feature alignment residuals. With our method, the estimated scene scales by the separate depth and pose networks are aligned, and the prediction scale consistency is improved across different sequences. Our differentiable refine-ment integrates seamlessly into existing self-supervised pipelines and substantially improves their depth estimates. We demonstrate this with extensive experiments both outdoors and indoors on KITTI, Cityscapes, and NYUv2. Additionally, results on KITTI Odometry confirm the effectiveness of our pose refinement. Our code is available at github.com/Runningchauncey/SA4Depth. 
+
+I. I NTRODUCTION 
+
+Depth estimation is the foundation of many essential prob-lems in computer vision, such as scene understanding [1] and 3D reconstruction [2]. Understanding object distance is crucial for systems interacting with the environment, e.g., in autonomous driving [3] and mobile robotics [4]. Although supervised depth estimation methods have achieved strong results [5], [6], they learn from ground truth data, which is expensive and time-consuming due to expensive 3D sensors (e.g., LiDAR) and substantial post-processing [7]. To address these challenges, self-supervised depth esti-mation methods have leveraged geometric constraints from stereo or monocular video sequences [8], [9]. Among these, monocular approaches are the most cost-effective [8], as they require minimal assumptions about the sensor setup, relying solely on image sequences captured by a single camera. Self-supervised monocular methods learn by assuming pho-tometric consistency across consecutive frames [9]. Exten-sive research has focused on improving the depth model by introducing new architectures [13] and losses [8]. However, despite its effectiveness in ideal settings, this framework has inherent issues with scale [7], [14], occlusions [8], dynamic scenes [15], and adverse weather [16], which prior works have addressed. Alongside the depth predictions, these approaches  
+
+> 1
+
+Technical University of Munich, Germany. (email: 
+
+firstname.lastname@tum.de ) 
+
+> 2
+
+BMW Group, Germany. (email: nadine.berner@bmw.de ) 
+
+> 3
+
+Munich Center for Machine Learning (MCML), Germany.  
+
+> 4
+
+Google Inc., Germany.  
+
+> 5
+
+VisualAIs Labs GmbH, Germany. scale             
+
+> ratio
+> 10 2
+> 10 1
+> 10 1
+> 10 2
+> 010
+> Depth
+> Pose
+> Distribution of metric -to -predicted scale ratios for depth and pose estimates.
+> MonoViT MonoViT + ours
+> Frequency
+> 20 30 40
+> We obtain the improvements above and scale consistency
+> (lower std below) by aligning the scale of depth and pose.
+> KITTI Cityscapes NYUv2
+> MonoViT
+> Up -to -scale MonoViT
+> Scale -aware MonoViT + ours
+> Up -to -scale MonoViT + ours
+> Scale -ware
+> Abs Rel Error
+> -5.3%
+> -13.5%
+> -2.8%
+> -12.6%-16.2%
+
+Fig. 1. We propose SA4Depth, a self-supervised method to make the scale estimation of depth and pose networks aligned and consistent across frames (bottom). Our SA4Depth significantly improves the monocular depth estimation both outdoors [10], [11] and indoors [12] (top). Applicable and effective on many pipelines, the results shown here are on MonoViT [13]. 
+
+predict relative camera poses of frame pairs. Specifically, pose estimates are needed to establish the geometric relationship between adjacent frames, enabling depth learning through photometric consistency without ground truth supervision. Although the pose and depth networks are trained jointly, only the depth net performs inference. The effectiveness of these methods depends critically on having pose and depth estimates on the same scale [17], [18]. To learn depth at best, depth and pose need to share a consistent scale so that the photometric loss reflects actual depth errors and not scaling issues. However, Fig. 1 and our analysis in Section IV show that direct pose regression and inherent scale ambiguity cause large fluctuations across scenes in both depth and pose scales, destabilizing the delicate self-supervision and ultimately degrading the depth estimation performance. Some works [17], [18] replace the pose network with a differentiable pose solver, but make it computationally expensive, and are incompatible with common self-supervised frameworks [8], [13]. A handful of studies improve the pose network itself [19], yet require extra frames at test time. In this paper, we tackle this problem by improving the pose estimates within the joint depth and pose self-supervised framework, while leaving inference completely unchanged. Toward this end, we show the negative impact of misaligned depth and pose scales within the framework and the benefits of consistent scene scale estimates for better depth outputs. We propose to leverage direct feature alignment to refine the pose estimates. So, we jointly train a feature net to learn 
+
+> arXiv:2605.28477v1 [cs.CV] 27 May 2026 2
+
+robust features for pose refinement and infer a confidence map to mitigate the impact of textureless regions. We use the estimated depth during training for feature projection, with the feature alignment residuals indicating the misalignment between pose and depth. By reducing these residuals using the Levenberg-Marquardt algorithm, we refine the pose toward higher accuracy and the depth scale. We then use the refined pose to calculate the photometric loss and improve the pose net estimates. By doing so, our method consistently and significantly improves the depth accuracy over many baselines and datasets, and reaches substantial improvements on visual odometry on the KITTI odometry benchmark [20]. Our main contributions can be summarized as follows:  
+
+> •
+
+We revisit the role of pose estimation in self-supervised depth training, considering the impact of the alignment between depth and pose in terms of the estimated scene scale, highlighting the importance of aligned pose-depth scale across different sequences.  
+
+> •
+
+We propose to couple depth and pose estimation through a pose refinement routine, where we refine the relative pose over the reprojected learnable correspondence fea-ture distance, directly impacting the scale consistency.  
+
+> •
+
+Extensive experiments on KITTI [10], Cityscapes [11], and NYUv2 [12] show the effectiveness of our method as it consistently and substantially outperforms the baseline methods both outdoors and indoors. II. R ELATED WORKS 
+
+A. Self-Supervised Monocular Depth Estimation 
+
+The SSMDE framework was initially proposed by [9], where the ego-motion and depth are jointly learned and supervised by the photometric loss on the warped view. Monodepth2 [8] further improves the loss robustness against occlusions and stationary pixels. Furthermore, feature warping is explored by [21] to enhance the loss robustness and general-ization. Extensive research improves the depth accuracy [13], [22], [23] from data or architecture perspectives to reach the performance level of the supervised counterpart. While standard approaches learn depth up to scale [9], metric scale with self-supervision has been achieved by using additional ubiquitous supervisory signals, such as velocity [7], camera height [3], and shape priors of vehicles [14]. The proxy task of pose estimation within self-supervised depth remains relatively underexplored, yet it is a crucial part of the framework. Commonly, this is conducted by a direct pose regressor [9]. However, with the limited geom-etry comprehension and inherent pose ambiguity from 2D images, this strategy yields suboptimal accuracy and poor scale consistency [17]. To tackle the pose inaccuracy and scale inconsistency issue, Zhao et al. [18] replace the pose net with flow predictions, estimating pose from dense correspondences. Indoor depth methods [24] chain multiple pose regressors to reduce the pose residuals. However, the relative pose is still inferred directly from 2D image pairs but lacks support from geometry comprehension. Wang et al. [17] leverage differentiable direct visual odometry, but the photometric error used for refinement is not robust, leading to suboptimal performance. A closely related approach is DualRefine [19], which alternately refines depth and pose via feature matching following epipolar constraints but requires more frames at test time. Our single-frame method does not affect the inference time and closely couples depth and pose estimates through pose refinement via a simple optimization process that better exploits the learned scene geometry. 
+
+B. Relative Pose Estimation 
+
+Relative pose estimation aims to infer the 6 Degrees of Freedom transformation from an image pair and is convention-ally accomplished by 2D feature matching. Feature matching predicts keypoints and computes correspondences across the learned features [25]. LM-Reloc [26] leverages dense feature direct alignment with geometric priors and refines the directly regressed pose. PixLoc [27] improves the feature direct align-ment for large baselines by optimizing across feature scales. We draw inspiration from direct feature alignment methods but drop the requirement for ground truth scene geometry or correspondences to jointly learn depth and pose in an unsupervised manner. MADPose [28] explores leveraging off-the-shelf 3D geometry estimates for accurate relative pose estimation with sparse correspondences. Instead, we jointly learns the depth and pose toward mutual improvements and utilize dense features for relative pose refinement. III. P RELIMINARIES 
+
+The SSMDE framework in [8] is revisited in this section. During training, given a triplet of monocular images, for the center frame It, depth net fθD and pose net fθP separately estimate depth map Dt and relative camera poses Pt→t′ to adjacent frames noted as It′ , as: 
+
+Dt = fθD (It), (1) 
+
+Pt→t′ = fθP (cat [It, It′ ]) , (2) where cat [·, ·] is channel-wise concatenation. For simplicity, the relative pose will be denoted P .With the depth Dt and the camera pose P , the adjacent frame It′ can be warped to synthesize It by reconstructing the point cloud with known camera intrinsics K and reprojecting to the adjacent frame as 
+
+It′→t = It′ ⟨reproj (recon (Dt, K ), P )⟩, (3) where ⟨·⟩ denotes the bilinear sampling and returns a warped image. The photometric loss is calculated as 
+
+Lph = min  
+
+> t∗∈{ t−1,t,t +1 }
+
+pe (It∗→t, It). (4) The pairwise photometric error pe is formulated as a weighted sum of the L1 and SSIM loss, 
+
+pe (Ia,b ) = α
+
+2 (1 − SSIM (Ia,b )) + (1 − α) |I a − I b| . (5) An edge-aware smoothness loss is applied for gradient con-sistency between the depth map and image: 
+
+Ls = |∂xd∗ 
+
+> t
+
+| e−| ∂xIt| + |∂y d∗ 
+
+> t
+
+| e−| ∂y It|, (6) where d∗ 
+
+> t
+
+= dt/mean (dt) is mean-normalized disparity dt,and the disparity is inverse depth dt = 1 /D t.3                                           
+
+> TABLE I ANALYSIS ON THE IMPACT OF POSE -DEPTH SCALE ALIGNMENT ,BUILDING UPON MD2-50 [8] ON VKITTI2 [29]. T HE 2nd COLUMN INDICATES HOW THE MODELS LEARN THE POSE . S CALING FACTOR
+> sdepth :med (Dgt )/med (Dpred ),spose :|τgt |/|τpred |.BEST .No. Pose in training Abs Rel δ < 1.25 std (sdepth )std (spose )
+> (1) self-supervised 0.165 0.808 4.33 17.00 (2) scaled GT pose 0.231 0.663 0.11 GT (3) direct GT pose 0.158 0.809 0.05 GT (4) pose supervised 0.153 0.823 0.05 0.30
+> (5) vel. supervised 0.146 0.811 0.05 0.30
+
+IV. A NALYSIS ON THE SCALE ALIGNMENT 
+
+The aligned pose-depth scale is crucial for image warping (Eq. 3), which serves as the base for joint depth and pose learning. However, due to the monocular setup, both depth and pose estimates are only up to scale. When depth estimates are accurate, pose estimates of a different scale cause erroneous pixel projections and large photometric errors (Eq. 4), resulting in incorrect gradients for the depth network. Moreover, the scale inconsistency causes depth and pose estimates to change significantly across samples, resulting in ineffective learning and suboptimal performance. To examine the impact of aligned pose-depth scale, Table I reports depth metrics alongside scale variances. The analysis is performed using the synthetic VKITTI2 dataset [29], which has perfect ground truth (GT).  
+
+> •
+
+Using the GT pose scaled by median scaling factor s
+
+of depth estimates (2) skips joint learning and refers to GT depth to align pose scale to current depth estimates. Due to noisy depth predictions at the early training stage, median scaling alone does not ensure accurate scale alignment, underscoring the need for jointly learned pose and a learnable scale alignment.  
+
+> •
+
+Using the GT pose directly (3) also skips joint learning but provides a fixed scale, achieving better depth accuracy than (1, 2). But the fixed pose cannot adapt to depth es-timates as in joint learning, the depth network must learn both depth details and metric scale from the photometric loss, resulting in worse performance than (4, 5).  
+
+> •
+
+Supervising the pose with the GT pose (4) or GT trans-lation norm (5) as in [7] achieves comparable depth error reduction and low variance in both depth and pose scale factors. In these cases, the pose, unlike in (3), can adapt to the learned depth in joint learning and is constrained to stabilize the estimation scale. These experiments indicate that jointly learning depth and pose with constraints on the pose scale is beneficial, and that explicit scale constraints improve scale consistency. V. M ETHOD 
+
+Overview of SA4Depth Our method builds upon the con-ventional SSMDE pipeline [8], [9]. The general pipeline is illustrated in Fig. 2. In particular, our pose refinement is similar to that of PixLoc [27]. Our contributions lie in integrating it into the SSMDE framework by using the current depth estimates for feature reprojection, taking the current pose net output as initialization, and self-supervising the pose net with the refined pose. 
+
+Feature extraction We utilize deep visual features as the metric for the reprojection error caused by misaligned depth and pose (as opposed to the sensitive photometric error in [17]) and employ this reprojection error to refine the pose with knowledge from the current depth prediction. So, we extract a feature map F and a confidence map C
+
+from each image I using a feature net θF :
+
+F, C = θF (I). (7) We use the confidence maps C to downweight dynamic objects or textureless areas that disrupt the reprojection. The feature net is built upon a VGG-19 backbone. 
+
+Pose refinement We formulate the pose refinement as an optimization problem with a cost function E based on the weighted feature distance between reprojected point pairs: 
+
+E(P ) = 1
+
+M
+
+X cref · cquery · ρ(|δ|22), (8) where δ = fquery − fref is the feature difference between the query feature fquery (end of reprojection) and the reference feature fref (start of reprojection). The total cost for an image pair is computed as the robust loss ρ over all reprojection pairs, weighted by the confidence values cquery and cref . For efficiency, we sample only M points in the reference frame 
+
+Iref to compute the cost E. We take the middle frame It
+
+as a reference frame where the depth map is estimated, and adjacent frames It′ as query frames. The relative pose variation changes the coordinate of a 3D point squery in the query frame, therefore shifting its projected location iquery on the query image plane. Consequently, a different feature vector fquery is interpolated from the query frame’s feature map Fquery . The Jacobian of the feature difference δ with respect to the pose update σ is thus obtained via the chain rule [27]: 
+
+J = ∂F query 
+
+∂σ = ∂F query 
+
+∂i query 
+
+· ∂i query 
+
+∂s query 
+
+· ∂s query 
+
+∂σ , (9) where the Jacobian is the chaining feature gradient, the projec-tion function derivatives, and the coordinate transformation Ja-cobian. Pose updates are solved in closed form via Levenberg-Marquardt optimization: 
+
+σ = −(H + λ · diag (H)) −1JT W∆, (10) where the Hessian H = JT WJ is weighted by W, λ is a learnable damping factor adjusting to ego-motion distribution across the dataset, and ∆ stacks all feature differences δ. The diagonal weighting matrix W is defined as: 
+
+W = to diag (
+
+h
+
+cref · cquery · ρ′(|δ|22)
+
+i
+
+> M
+
+), (11) where ρ′ denotes the robust loss function derivatives, and confidence scores weigh feature differences. To refine confidence weighting during iterations, we adopt an Iteratively Reweighted Least Squares (IRLS) to dynami-cally reweight the samples in iterations as follows: 
+
+W(k+1) = W(k) · ρ(|∆|22)
+
+ρ( ∆(k) + Jσ (k) 22) (12) 4Feature Net 
+
+> Feature Extraction
+
+𝐸 = ∙ 𝜌 ( − )Cost  
+
+> function
+
+LM Optimizer 
+
+σ
+
+P(k) 
+
+P(k+1)  
+
+> reproject feature update pose
+
+It’  It
+
+Dt
+
+> Depth Net Pose Net
+
+P(0) 
+
+It  
+
+> confidence
+> P(0) ,unproject
+
+Dt
+
+> Conventional SSMDE
+> feature
+
+It, It’ 
+
+> Inference Losses
+
+It’  It’ It
+
+Ft, Ft’  
+
+> Ct,Ct’
+> Pose Refinement
+> Depth Net
+
+P(k+1) 
+
+Ft Ft’ 
+
+Ct Ct’ 
+
+P(k) 
+
+> Pose Update
+> σ
+
+Dt
+
+Ls
+
+Lph 
+
+Lpose 
+
+Lvel 
+
+P(0) 
+
+P(N)
+
+> Image
+> warping
+> Common SSMDEs
+> use P (0) , Dt for losses.
+
+I
+
+D 
+
+> Smoothness Loss
+> Photometric Loss
+> Velocity Loss
+> Pose Self -
+> Supervision Loss
+> identical to
+> conventional
+> SSMDE .
+
+Fig. 2. Overview of the proposed SA4Depth, with our contributions to SSMDE highlighted in light blue. Compared to conventional SSMDE(left), our approach refines the initial pose P (0) using the estimated depth Dt, learned feature F{t,t ′}, and confidence C{t,t ′} maps. Our training losses use the depth 
+
+Dt and the refined pose P (N ). The inference is unchanged (right). At training time, our method takes an image triplet as input, with the center frame It
+
+and the adjacent frames It′ . A depth net estimates depth for It and a pose net estimates the camera pose of It, referring to each It′ . A feature net extracts a feature and confidence map for each image. Our pose refinement reprojects Ft by depth map into an adjacent frame and aligns it with the adjacent frame feature Ft′ by refining from P (0) to P (N ). It iteratively updates the pose by optimizing the cost function E using the Levenberg-Marquardt (LM) algorithm. Additionally, we supervise the pose net using the refined pose with Lpose and optionally Lvel to learn metric depth. 
+
+where the weight matrix for the next iteration k + 1 is updated by the ratio of the previous cost over the updated cost by the new iteration step σ(k). This ensures a larger weight is assigned to more influential point positions. The pose is then updated via exponential mapping: 
+
+P (k+1) = exp (σ(k)∧)P (k), (13) where ∧ represents the skew-symmetric matrix, and exp 
+
+denotes mapping to SE (3) . This iterative refinement process continues for N iterations. The pose refinement can be viewed as an internalized SLAM. The pose optimization in SLAM methods [30] is typically performed at test time. We apply our pose refinement during training, achieving consistent scale alignment without increasing the runtime. 
+
+Coupling between depth and pose The depth estimates define the 3D point cloud for feature reprojection, which ultimately influences the pose updates. Therefore, similar to [17], when backpropagating the photometric loss Lph , the depth estimates D receive gradients ∇D Lph both directly from the photometric loss and via the camera pose P , as: 
+
+∇D Lph = ∂Lph 
+
+∂D + ∂Lph 
+
+∂P ∂P ∂D . (14) This gradient formulation creates a coupling between depth and pose. The pose scale is constrained by the online depth estimates and refined to align with the depth scale. Meanwhile, the depth scale converges and remains stable through the indirect gradient via pose. 
+
+Loss functions We make our pose refinement differentiable to keep the whole pipeline trainable end-to-end. During train-ing, as the pose estimate improves with our refinement steps, we use this refined pose for image warping, as shown in Fig. 2. Then, as we have a better pose estimate P (N ) 
+
+> t→t′
+
+compared to the initial estimate P (0)  
+
+> t→t′
+
+from the pose net, we use the refined one to self-supervise the pose net. Toward this end, we define the following pose self-supervision loss: 
+
+Lpose (P (0) ,(N )) = τ (0) − τ (N ) + R(0) − R(N ) , (15) where τ and R are the translation vector and rotation matrix of the pose of the corresponding superscript. Furthermore, we optionally use velocity supervision from [7] for scale-awareness, which acts on the magnitude of the translation. In particular, we apply it to our refined pose P (N )
+
+instead of on the pose net output. The velocity loss is as 
+
+Lv (τ (N ), v ) = ∥τ (N )∥2 − | v| dt , (16) where the predicted translation norm ∥τ (N )∥2 is compared to the ground truth translation norm by the ego vehicle velocity 
+
+v and the time interval dt = |t − t′|.The total training loss is a weighted sum of the photometric loss Lph , smoothness loss Ls, pose self-supervision loss Lpose ,and optionally velocity loss Lv , as 
+
+L = Lph + βsLs + Lpose + βv Lv , (17) where βs = 1 e− 3 following [8], and βv = 0 .0 for up-to-scale depth or βv = 0 .02 for metric depth as in [16]. 
+
+Implementation Details We implement our model in Py-Torch, trained for 20 epochs using Adam [34] with a batch size of 12. The learning rate is 10 −4 and drops to 10 −5 after 15 epochs. With high compatibility, we apply our method on top of the baselines, inheriting their depth and pose net designs, where the rotation is represented with an axis-angle. VI. E XPERIMENTS AND RESULTS 
+
+A. Experimental Setup 
+
+Datasets and metrics We evaluated our methods on KITTI [10], Cityscapes [11], and NYUv2 [12]. For the driving datasets KITTI and Cityscapes, we train our models in both up-to-scale and scale-aware setups by switching off/on the velocity loss of Eq. 16, which uses the widely available and easy to acquire ego vehicle velocity signal. For KITTI , we follow the Eigen train-val split [35] and pre-processing in [8], resulting in 39,810 monocular triplets for training and 4,424 for validation. For evaluation, we follow the Eigen split for 652 images with improved ground truth depth by [31] in Tab. II. 
+
+Cityscapes is a driving dataset of challenging dynamic scenes. 5
+
+TABLE II COMPARISON ON THE KITTI [10] E IGEN SPLIT WITH IMPROVED GT [31]. R ESOLUTION OF 640 X 192. U PPER HALF FOR RESULTS MEDIAN -SCALED BY DEPTH GT. L OWER HALF FOR LEARNED METRIC DEPTH . T RAINING : M MONOCULAR VIDEOS , VI VIDEO INTERPOLATION , V W/ VELOCITY , SI SCRAPING DATASET , CAM H W/ CAMERA HEIGHT . A LL RESULTS ARE W/O POST -PROCESSING . W E REPRODUCED [8], [13]. 18 AND 50 ARE RES NET [32] SIZES .SCALE STD : std OF DEPTH SCALING FACTOR . H IGHLIGHTING : BEST , S ECOND .Scaling Method Training Scale Std Abs Rel Sq Rel RMSE RMSE log δ < 1.25 δ < 1.25 2 δ < 1.25 3
+
+done w/ GT PackNet-SfM [7] M 0.75 0.078 0.420 3.485 0.121 0.931 0.986 0.996 DualRefine [19] M 3.39 0.075 0.379 3.490 0.117 0.936 0.989 0.997 Mono-ViFI [22] M+VI 3.32 0.072 0.342 3.254 0.111 0.941 0.991 0.998 
+
+Md2-18 [8] M 2.79 0.090 0.545 3.942 0.137 0.914 0.983 0.995 
+
++ ours M 0.09 0.087 0.524 3.910 0.134 0.918 0.982 0.995 Md2-50 [8] M 2.65 0.085 0.468 3.674 0.128 0.921 0.985 0.996 
+
++ ours M 1.90 0.080 0.465 3.707 0.125 0.928 0.986 0.996 MonoViT [13] M 3.73 0.075 0.389 3.419 0.115 0.938 0.989 0.997 
+
++ ours M 0.16 0.071 0.380 3.341 0.111 0.945 0.989 0.997 Hybrid-depth [33] M 3.56 0.072 0.334 3.264 0.110 0.944 0.991 0.998 + ours M 2.71 0.068 0.317 3.103 0.105 0.952 0.992 0.998 
+
+scale-aware VADepth [3] M+camH 0.07 0.093 0.493 3.704 0.132 0.913 0.984 0.996 FUMET [14] M+SI 0.07 0.091 0.533 3.892 0.136 0.906 0.983 0.995 Md2-18 [8] M+v 0.07 0.092 0.549 3.995 0.142 0.902 0.980 0.994 
+
++ ours M+v 0.06 0.088 0.556 3.938 0.138 0.910 0.980 0.994 Md2-50 [8] M+v 0.07 0.093 0.559 3.984 0.140 0.901 0.981 0.995 
+
++ ours M+v 0.06 0.085 0.476 3.782 0.133 0.914 0.983 0.995 MonoViT [13] M+v 0.07 0.089 0.466 3.590 0.129 0.913 0.985 0.996 
+
++ ours M+v 0.05 0.077 0.404 3.472 0.119 0.932 0.988 0.997 
+
+We follow [36] to process 69,731 training triplets and 1,525 images for evaluation. NYUv2 is a challenging indoor dataset recorded with hand-held RGB-D cameras. We follow [24] for preprocessing and evaluation on 654 annotated test samples. We also evaluate our method on KITTI Odometry [20], following [9] in using sequences 00 to 08 for training, and sequences 09 and 10 for evaluation. 
+
+Baselines Our method is compatible with various self-supervised pipelines. To showcase this flexibility, we apply it on Monodepth2 [8], MonoViT [13], Mono-ViFI [22], and Hybrid-depth [33], following their training setups. 
+
+B. Quantitative Results 
+
+Depth on KITTI In Table II, we report the results of monocular depth estimation on KITTI [10], comparing with the state-of-the-art SSMDE methods. Notably, our method improves upon the baselines it is applied. For the up-to-scale setup (top half), the estimates are median-scaled by the depth GT. Here, our SA4Depth paired with Hybrid-depth [33] outperforms the other works on all metrics. DualRefine [19] refines an extra frame at test time, so we compare with their single-frame estimates, and ours performs better. Our work systematically improves the scale consistency over all baselines (represented by the standard deviation in the Scale Std column). The scale-aware setup (lower half) is more challenging as methods need to learn depth and metric scale simultaneously. FUMET [14] also uses extra training data from the web for scale awareness. Although FUMET performs slightly better than the Md2-50 it builds on (with Md2 using the weak velocity loss), our method outperforms FUMET by an even larger gap without any extra training data. Remarkably, paired with MonoViT, our approach achieves the best results 
+
+TABLE III COMPARISON ON CITYSCAPES [11] AT 416 X 128. A LL RESULTS ARE W/OPOST -PROCESSING . N OTATIONS AS IN TABLE II. Scaling Method Abs Rel Sq Rel RMSE RMSE log δ < 1.25                                                             
+
+> done w/ GT Md2-18 [8] 0.122 1.355 6.613 0.180 0.860 Md2-18 + ours 0.111 1.243 6.514 0.173 0.874 MonoViT [13] 0.106 1.023 6.284 0.164 0.873 MonoViT + ours 0.103 1.179 5.954 0.161 0.894
+> Mono-ViFI [22] 0.105 0.880 5.550 0.156 0.881 Mono-ViFI + ours 0.102 0.825 5.561 0.152 0.885 scale-aware FUMET [14] 0.129 1.445 6.573 0.191 0.855 Md2-18 [8] 0.140 1.904 6.807 0.196 0.852 Md2-18 + ours 0.124 1.484 6.687 0.192 0.865 MonoViT [13] 0.135 1.756 6.697 0.201 0.857 MonoViT + ours 0.118 1.296 6.283 0.191 0.879
+
+on all metrics. We also evaluate video depth as in VDA [37] and measure scale consistency using the scale standard deviation across the whole sequence; notably, our method paired with MonoViT outperforms the state-of-the-art VDA model by 34%, achieving exceptional scale consistency even though ours is trained without GT supervision. Overall, these results demonstrate the positive impact of applying our method on the current self-supervised depth framework and the value of our insights on scale alignment and consistency. 
+
+Depth on Cityscapes In Table III, we provide a comparison on Cityscapes. Our models improve all baselines on key metrics. Notably, in the scale-aware setup, we reduce the absolute relative error by 12.6% over the baseline MonoViT. 
+
+Depth on NYUv2 (indoors) In Table IV, we show the indoor results on NYUv2 [12] of our method paired with different baselines. Despite the SSMDE challenges of NYUv2 due to the complex egomotion [37], our method effectively handles them and improves over the baselines by a substantial 6   
+
+> TABLE IV
+> INDOOR RESULTS ON NYU V2 [12]. R ESOLUTION OF 320 X256.
+
+Method Abs Rel Log10 RMSE δ < 1.25 
+
+Md2-18 [8] 0.156 0.066 0.577 0.779 
+
++ ours 0.136 0.058 0.538 0.826 
+
+Md2-50 [8] 0.154 0.065 0.581 0.784 
+
++ ours 0.133 0.056 0.535 0.838 
+
+MonoViT [13] 0.142 0.061 0.547 0.813 
+
++ ours 0.119 0.051 0.493 0.864                                                     
+
+> TABLE V COMPARISON ON KITTI ODOMETRY SEQUENCES 09-10 TO VISUAL ODOMETRY METHODS (UPPER )AND SSMDE METHODS (LOWER ). Method Sequence 09 Sequence 10
+> terr (%) rerr (◦
+> 100 m)terr (%) rerr (◦
+> 100 m)
+> ORB-SLAM2 [4] 3.22 0.40 4.25 0.30 DF-VO [38] 2.40 0.24 1.82 0.38 SC-Depth [39] 7.31 3.05 7.79 4.90 Trianflow [18] 6.93 0.44 4.66 0.62
+> DualRefine [19] 3.43 1.04 6.80 1.13 Md2-50 [8] 5.26 2.06 7.91 3.64 Md2-50 + ours 2.96 0.96 3.48 1.91
+
+margin. Paired with MonoViT, our approach reduces the AbsRel error by 16.2%. These experiments, along with those on KITTI and Cityscapes, demonstrate the effectiveness of our SA4Depth both indoors and outdoors. 
+
+Visual odometry on KITTI Odometry In Table V, we show the comparison on the KITTI Odometry dataset with both methods specialized on visual odometry (upper) and those focusing on SSMDE like ours (lower). The trajectory estimates are aligned to the ground truth by 7DoF alignment. The average errors in translation and rotation are calculated following [38]. The translational error terr of ours reaches the lowest among the SSMDE methods and is on par with visual odometry methods. A good improvement over both metrics is achieved on top of the baseline Md2 [8] with ResNet-50. 
+
+Runtime Our work improves pose estimation within a self-supervised learning framework. As the depth model is unchanged, the runtime of depth inference is identical to the baseline. In Table VI (rightmost), we show the run time on an NVIDIA T4 GPU. Our SA4Depth delivers superior depth estimates without any inference time drawbacks. 
+
+Comparison with solver-based pose estimators In Ta-ble VI (7-9), we show the impact of replacing the pose net with SuperGlue [25] as a feature matcher paired with the pose solver of RANSAC (7) or PnP + RANSAC (8) to estimate the camera pose. Although for the pure pose estimation task, these methods work well, due to the large-scale discrepancy between pose and depth estimates, they harm the depth learning. Similarly to our pose refinement, we use SuperGlue and RANSAC (9) to refine the pose estimates. However, depth is poorly learned in this setup, yielding worse results than the baseline (1) and ours (6). 
+
+Ablation study In Table VI, we report an ablation study to show the impact of the main components of our method. Starting from Md2-50 (1), we add a straightforward adaptation of PixLoc [27], which replaces the pose net for pose estimation using LiDAR points for image feature reprojection (2). This re-sults in significantly worse depth estimates. This demonstrates how PixLoc is not compatible with such self-supervised frame-works out of the box, but adaptations are necessary. Then, with (3), we use the predicted depth instead of the LiDAR data to reproject the features, but it performs on par with the baseline. Then, we use the current pose estimates as initialization for the refinement process, replacing the coarse-scale pose refinement in PixLoc (4). This brings a small improvement. Furthermore, we self-supervise the pose net with the updated pose estimate from the refinement (5), which further improves the depth. Finally, with (6), we dynamically reweight the feature alignment during the refinement, which enhances the depth estimates even more (our SA4Depth). Overall, Table VI demonstrates the necessity of our modifications to outperform the baselines, showing that feature matching (7-9) or direct feature alignment (2-3) alone are not sufficient. Then, we investigate the influence of the additional gradient on the depth estimator from Eq. 14 by detaching the depth map’s gradients in the feature reprojection (10) and using the refined pose only for pose self-supervision (11). That means there’s no indirect gradient from the pose to the depth, but only a better-aligned pose (10) or extra supervision on the pose (11). These are proven insufficient to improve the depth learning, with the performance degrading due to under-constrained estimated scales. In addition, we analyze the role of pose refinement com-ponents (12-14) and choices of the feature map (15-16). We remove in the pose refinement every time a single element as feature maps (12), confidence maps (13), and learnable damping factors (14). Replacing the learnable feature map with images (12) turns the feature-based pose refinement into photometric pose refinement, resulting in inaccuracy in reflecting the pose-depth misalignment and a large perfor-mance drop. Removing the confidence map (13) or learnable damping factor λ from Eq. 10 (14) also leads to a performance decrease, showing the importance of them in refining pose and ultimately improving the depth learning. For the choice of the feature map, we replace the online learned feature with different pretrained features, specifically                                                                                          
+
+> TABLE VI ABLATION STUDY USING MD2-50 [8]. S AME SETUP AS IN TABLE II, WITH ESTIMATES UP -TO -SCALE . FPS INDICATES INFERENCE SPEED .No. Method Abs Rel δ < 1.25 FPS (1) Md2-50 [8] 0.086 0.919 61 (2) pose by PixLoc [27] w/ LiDAR points 0.398 0.365 61 (3) (2) w/ pred. depth, no LiDAR 0.086 0.920 61 (4) + pose net as init. 0.083 0.923 61 (5) + pose net self-sup (Eq. 15) 0.082 0.926 61 (6) + IRLS (Eq. 12) = SA4Depth [ours] 0.080 0.928 61 (7) pose by SG [25] + RANSAC 0.418 0.321 61 (8) (7) + PnP 0.418 0.321 61 (9) (7) + pose net 0.239 0.596 61 (10) (6), but detach depth for feat. reproj 0.118 0.857 61 (11) (6), but refined pose only for Lpose 0.096 0.910 61 (12) (6) w/o feature map 0.089 0.916 61 (13) (6) w/o confidence map 0.081 0.925 61 (14) (6) w/o learnable λin Eq.10 0.082 0.928 61 (15) (6) w/ MASt3R [40] feature 0.082 0.927 61 (16) (6) w/ PixLoc [27] feature 0.087 0.920 61 7input image VADepth Monodepth2-50 (md2) FUMET on md2 ours on md2
+> Fig. 3. Qualitative comparison on KITTI Eigen [10], [35] among scale-aware methods. White arrows highlight coarse wrong estimates. Monodepth2 -50 (md2) FUMET on md2 ours on md2 MonoViT ours on MonoViT Input image
+> Fig. 4. Qualitative comparison on Cityscapes [11] among scale-aware methods. White arrows highlight coarse wrong estimates.
+
+the MASt3R [40] feature (15) and the PixLoc feature (16). Experiment (15) outperforms the baseline, demonstrating that pose refinement is effective with a suitable visual feature metric. Still, our method (6) is better, demonstrating the necessity of learning robust visual features jointly during the training stage. In (16) with the PixLoc feature, it only reaches a lower depth accuracy than the baseline (a). This verifies the necessity of the current pose refinement design. 
+
+C. Qualitative Results 
+
+In Fig. 3, 4, and 5, we show depth estimates on KITTI, Cityscapes, and NYUv2, respectively. Considering KITTI (Fig. 3), FUMET [14] delivers similar outputs to the baseline md2-50, as in Table II. Paired with the same baseline, ours produces better depth estimates of thin objects, such as the delivery bicycle at the bottom-right of the lower image and the sun umbrella on the left of the same input. Instead, on Cityscapes (Fig. 4), the gap between the methods increases, as seen in the quantitative results (Table III). Here, with more dynamic scenes, the baselines and FUMET [14] wrongly estimate the depth of many traffic participants, and FUMET even ignores the cyclists in the third image. On the other hand, thanks to aligned pose estimates during training, our method could significantly better understand the distance of traffic participants, albeit with blurrier outputs, which did not occur on KITTI. In Fig. 5, we show a qualitative comparison indoors on NYUv2 [12]. Here, the estimates from the up-to-scale baseline MonoViT [13] are inaccurate for objects (e.g., chair and table) and exhibit high-frequency changes that are not present in the scene. Instead, applying ours on the same method resolves these issues, delivering superior estimates. In Fig. 6, we show the visual odometry qualitative results on the KITTI Odometry [20] sequences 09 and 10. Our trajectory estimates input image  MonoViT  ours on MonoViT   
+
+> Fig. 5. Qualitative comparison on NYUv2 [12], errors marked in white.
+> Fig. 6. Visual odometry results on the KITTI Odometry Seq. 09 (Left) and Seq. 10 (Right), scaled as in Table V. The models are trained up-to-scale.
+
+align remarkably well with the straight segments, demonstrat-ing outstanding pose estimation in the translation component, consistent with Table V. 
+
+Limitations and future work Our work focuses on im-proving the pose estimation, but does not alter the depth net. Thus, it could inherit issues from the baselines whenever a better pose cannot address them. The joint learning frame-work can be influenced by degraded depth estimates, leading to performance degradation, which also affects our method. Therefore, future work could focus on creating more robust frameworks. While we see improvements on dynamic objects (Fig. 4), we do not explicitly modify networks to tackle them, which could lead to sub-optimal outputs in highly dynamic 8
+
+scenes. Future work could explore this to further improve the output reliability. VII. C ONCLUSION 
+
+In this paper, we introduced SA4Depth, a novel approach to improve the pose-depth scale alignment and consistency within self-supervised monocular depth estimation. We achieve this by refining the pose estimate via feature reprojection. Com-patible with any such self-supervised mono depth framework, our method leaves inference unchanged and delivers superior depth and pose estimates across various settings, making it a valid addition to self-supervised monocular depth estimators. REFERENCES [1] C. Zhang, Z. Cui, Y. Zhang, B. Zeng, M. Pollefeys, and S. Liu, “Holistic 3d scene understanding from a single image with implicit representation,” in CVPR , 2021, pp. 8833–8842. [2] H. Xu, S. Peng, F. Wang, H. Blum, D. Barath, A. Geiger, and M. Polle-feys, “DepthSplat: Connecting gaussian splatting and depth,” in CVPR ,2025, pp. 16 453–16 463. [3] J. Xiang, Y. Wang, L. An, H. Liu, Z. Wang, and J. Liu, “Visual attention-based self-supervised absolute depth estimation using geometric priors in autonomous driving,” IEEE RAL , vol. 7, no. 4, pp. 11 998–12 005, 2022. [4] R. Mur-Artal and J. D. Tard´ os, “Orb-slam2: An open-source slam system for monocular, stereo, and rgb-d cameras,” IEEE Trans. Robot. , vol. 33, no. 5, pp. 1255–1262, 2017. [5] S. F. Bhat, I. Alhashim, and P. Wonka, “Adabins: Depth estimation using adaptive bins,” in CVPR , 2021, pp. 4009–4018. [6] L. Yang, B. Kang, Z. Huang, X. Xu, J. Feng, and H. Zhao, “Depth anything: Unleashing the power of large-scale unlabeled data,” in CVPR ,2024, pp. 10 371–10 381. [7] V. Guizilini, R. Ambrus, S. Pillai, A. Raventos, and A. Gaidon, “3D packing for self-supervised monocular depth estimation,” in CVPR ,2020, pp. 2485–2494. [8] C. Godard, O. Mac Aodha, M. Firman, and G. J. Brostow, “Digging into self-supervised monocular depth estimation,” in CVPR , 2019, pp. 3828–3838. [9] T. Zhou, M. Brown, N. Snavely, and D. G. Lowe, “Unsupervised learning of depth and ego-motion from video,” in CVPR , 2017, pp. 1851–1858. [10] A. Geiger, P. Lenz, C. Stiller, and R. Urtasun, “Vision meets robotics: The KITTI dataset,” IJRR , 2013. [11] M. Cordts, M. Omran, S. Ramos, T. Rehfeld, M. Enzweiler, R. Benen-son, U. Franke, S. Roth, and B. Schiele, “The cityscapes dataset for semantic urban scene understanding,” in CVPR , 2016. [12] P. K. Nathan Silberman, Derek Hoiem and R. Fergus, “Indoor segmen-tation and support inference from rgbd images,” in ECCV , 2012. [13] C. Zhao, Y. Zhang, M. Poggi, F. Tosi, X. Guo, Z. Zhu, G. Huang, Y. Tang, and S. Mattoccia, “MonoViT: Self-supervised monocular depth estimation with a vision transformer,” in 3DV . IEEE, 2022, pp. 668– 678. [14] G. Kinoshita and K. Nishino, “Camera height doesn’t change: Unsu-pervised training for metric monocular road-scene depth estimation,” in 
+
+ECCV . Springer, 2024, pp. 57–73. [15] S. Gasperini, P. Koch, V. Dallabetta, N. Navab, B. Busam, and F. Tombari, “R4dyn: Exploring radar for self-supervised monocular depth estimation of dynamic scenes,” in 3DV . IEEE, 2021, pp. 751–760. [16] S. Gasperini, N. Morbitzer, H. Jung, N. Navab, and F. Tombari, “Robust monocular depth estimation under challenging conditions,” in CVPR ,2023, pp. 8177–8186. [17] C. Wang, J. M. Buenaposada, R. Zhu, and S. Lucey, “Learning depth from monocular videos using direct methods,” in CVPR , 2018, pp. 2022– 2030. [18] W. Zhao, S. Liu, Y. Shu, and Y.-J. Liu, “Towards better generalization: Joint depth-pose learning without posenet,” in CVPR , 2020, pp. 9151– 9161. [19] A. Bangunharcana, A. Magd, and K.-S. Kim, “DualRefine: Self-supervised depth and pose estimation through iterative epipolar sampling and refinement toward equilibrium,” in CVPR , 2023, pp. 726–738. [20] A. Geiger, P. Lenz, and R. Urtasun, “Are we ready for autonomous driving? the KITTI vision benchmark suite,” in CVPR , 2012. [21] H. Zhan, R. Garg, C. S. Weerasekera, K. Li, H. Agarwal, and I. Reid, “Unsupervised learning of monocular depth estimation and visual odom-etry with deep feature reconstruction,” in CVPR , 2018, pp. 340–349. [22] J. Liu, L. Kong, B. Li, Z. Wang, H. Gu, and J. Chen, “Mono-vifi: A unified learning framework for self-supervised single and multi-frame monocular depth estimation,” in ECCV . Springer, 2024, pp. 90–107. [23] J. Yan, H. Zhao, P. Bu, and Y. Jin, “Channel-wise attention-based net-work for self-supervised monocular depth estimation,” in 3DV . IEEE, 2021, pp. 464–473. [24] R. Li, P. Ji, Y. Xu, and B. Bhanu, “Monoindoor++: Towards better practice of self-supervised monocular depth estimation for indoor envi-ronments,” IEEE TCSVT , vol. 33, no. 2, pp. 830–846, 2022. [25] P.-E. Sarlin, D. DeTone, T. Malisiewicz, and A. Rabinovich, “Superglue: Learning feature matching with graph neural networks,” in CVPR , 2020, pp. 4938–4947. [26] L. Von Stumberg, P. Wenzel, N. Yang, and D. Cremers, “LM-Reloc: Levenberg-Marquardt based direct visual relocalization,” in 3DV . IEEE, 2020, pp. 968–977. [27] P.-E. Sarlin, A. Unagar, M. Larsson, H. Germain, C. Toft, V. Larsson, M. Pollefeys, V. Lepetit, L. Hammarstrand, F. Kahl et al. , “Back to the feature: Learning robust camera localization from pixels to pose,” in 
+
+CVPR , 2021, pp. 3247–3257. [28] Y. Yu, S. Liu, R. Pautrat, M. Pollefeys, and V. Larsson, “Relative pose estimation through affine corrections of monocular depth priors,” in 
+
+CVPR , 2025, pp. 16 706–16 716. [29] Y. Cabon, N. Murray, and M. Humenberger, “Virtual kitti 2,” arXiv preprint arXiv:2001.10773 , 2020. [30] K. Tateno, F. Tombari, I. Laina, and N. Navab, “Cnn-slam: Real-time dense monocular slam with learned depth prediction,” in CVPR , 2017, pp. 6243–6252. [31] J. Uhrig, N. Schneider, L. Schneider, U. Franke, T. Brox, and A. Geiger, “Sparsity invariant cnns,” in 3DV . IEEE, 2017, pp. 11–20. [32] K. He, X. Zhang, S. Ren, and J. Sun, “Deep residual learning for image recognition,” in CVPR , 2016, pp. 770–778. [33] W. Zhang, H. Liu, B. Li, J. He, Z. Qi, Y. Wang, S. Zhao, X. Yu, W. Zeng, and X. Jin, “Hybrid-grained feature aggregation with coarse-to-fine language guidance for self-supervised monocular depth estimation,” in ICCV , 2025, pp. 6678–6692. [34] D. P. Kingma, “Adam: A method for stochastic optimization,” arXiv preprint arXiv:1412.6980 , 2014. [35] D. Eigen and R. Fergus, “Predicting depth, surface normals and semantic labels with a common multi-scale convolutional architecture,” in ICCV ,2015, pp. 2650–2658. [36] J. Watson, O. Mac Aodha, V. Prisacariu, G. Brostow, and M. Fir-man, “The temporal opportunist: Self-supervised multi-frame monocular depth,” in CVPR , 2021, pp. 1164–1174. [37] J.-W. Bian, H. Zhan, N. Wang, T.-J. Chin, C. Shen, and I. Reid, “Auto-rectify network for unsupervised indoor depth estimation,” IEEE TPAMI ,vol. 44, no. 12, pp. 9802–9813, 2021. [38] H. Zhan, C. S. Weerasekera, J.-W. Bian, and I. Reid, “Visual odometry revisited: What should be learnt?” in ICRA . IEEE, 2020, pp. 4203– 4210. [39] J. Bian, Z. Li, N. Wang, H. Zhan, C. Shen, M.-M. Cheng, and I. Reid, “Unsupervised scale-consistent depth and ego-motion learning from monocular video,” NeurIPS , vol. 32, 2019. [40] V. Leroy, Y. Cabon, and J. Revaud, “Grounding image matching in 3d with mast3r,” in ECCV . Springer, 2024, pp. 71–91. [41] W. Hu, X. Gao, X. Li, S. Zhao, X. Cun, Y. Zhang, L. Quan, and Y. Shan, “Depthcrafter: Generating consistent long depth sequences for open-world videos,” in CVPR , 2025, pp. 2005–2015. [42] S. Chen, H. Guo, S. Zhu, F. Zhang, Z. Huang, J. Feng, and B. Kang, “Video depth anything: Consistent depth estimation for super-long videos,” in CVPR , 2025, pp. 22 831–22 840. 9
+
+APPENDIX 
+
+A. R OBUSTNESS AGAINST DEPTH ESTIMATION NOISE 
+
+We present quantitative results of new experiments in Tab. VII to investigate the robustness of the joint train-ing framework against degraded depth. The experiments are conducted with the baseline Monodepth2 with ResNet-18 (Md2-18) on the KITTI [10] dataset. In the experiments, we inject relative pixel-wise noise into the depth estimates as ϵ ∼ N (0 , σ 2), i.e., following a Gaussian distribution, while keeping the other parts of the joint training framework unchanged. The degraded depth predictions are 
+
+Dt = Dt ⊙ (1 + ϵ), (18) where the ϵ is of the same shape as depth estimates Dt and 
+
+⊙ is an element-wise multiplication.                                     
+
+> TABLE VII ANALYSIS ON THE ROBUSTNESS AGAINST DEGRADED DEPTH ESTIMATION ,BUILDING UPON MD2-18 TRAINED ON KITTI E IGEN SPLIT .NOISE STD σIS THE std OF THE GAUSSIAN NOISE APPLIED ON THE DEPTH ESTIMATES . E VALUATED WITH GT MEDIAN SCALING .BEST .Noise Std σModel Abs Rel δ < 1.25
+> 0 (as in Tab. II) Md2-18 0.090 0.914 0 (as in Tab. II) + ours 0.087 0.918
+> 0.05 Md2-18 0.099 0.904 0.05 + ours 0.096 0.907
+> 0.1 Md2-18 0.114 0.879 0.1 + ours 0.110 0.886
+
+From the results, we observe a performance drop in the baseline model as the noise level increases with larger noise std 
+
+σ. However, when our method is applied on top of the baseline, performance improves across all settings, demonstrating that it consistently outperforms the baseline. Nevertheless, our approach inherits the limitations of SSMDE joint learning, in which degraded depth during training negatively affects final performance. Because our pose refinement uses the learned depth prediction as scene geometry to optimize the pose prediction and same as the baseline joint learning method Monodepth2 [8] (Md2), when the scene geometry degrades, the feature correspondences built via reprojection become invalid, resulting in degraded performance. However, in a normal training process, without reinforced depth noise, the joint learning can learn both depth and pose effectively, even though depth or pose at the intermediate steps can be noisy, as shown in the Tab. VII in the rows with σ = 0 .B: V IDEO DEPTH EVALUATION FOR SCALE CONSISTENCY 
+
+COMPARISON 
+
+We evaluate here the video depth estimation perfor-mance of our model paired with MonoViT [13] using the DepthCrafter [41] evaluation setup on the KITTI dataset validation set (13 scenes, each of length 110 frames), as shown in Tab. VIII. Following DepthCrafter, the depth esti-mates are aligned with the ground truth using a scale and shift for each sequence. According to the evaluation metrics,                                        
+
+> TABLE VIII VIDEO DEPTH ON KITTI SEQUENCES OF 110 FRAMES .
+> SEQ .SCALE STD . = std (scale mean (scale )).GT: USING GT DEPTH FOR SUPERVISION .BEST .Method GT seq. scale std. Abs Rel RMSE δ < 1.25
+> DepthCrafter [41] ✓0.193 0.103 3.963 0.892 VDA [42] ✓0.083 0.082 3.318 0.947
+> MonoViT ×0.093 0.083 3.713 0.932 MonoViT + ours ×0.055 0.078 3.553 0.942
+
+our model is on par with the current SOTA method Video-Depth-Anything [42] (shown as VDA in Tab. VIII), which is trained with ground truth depth supervision, while our method is trained self-supervised. This shows that the current self-supervised methods are comparable to supervised methods on KITTI, with improvements in scale consistency when our method is applied. However, we acknowledge that there may be a generalization gap, as video depth methods are trained on large-scale mixed datasets, and the SSMDE models, including ours, are trained on a single dataset. The sequence scale std is calculated by Seq. Scale Std = std ( [s0, ..., s n]
+
+mean ([ s0, ..., s n]) ), (19) where si is the scaling factor for a single sequence to align with the ground truth, and the lower scale standard deviation shows better depth estimation scale consistency. Due to the up-to-scale depth estimates and the large scaling difference be-tween models, we calculate the standard deviation of the mean-normalized per-sequence scaling factor. As shown in Tab. VIII, when paired with MonoViT [13], our method outperforms SOTA supervised video depth estimation methods in scale consistency and improves upon the baseline, demonstrating good scale stability across different environments. C: I NTERNALIZATION OF SLAM SLAM approaches, such as CNN-SLAM [30], incorporate learnable depth networks to maintain scale consistency during global map alignment. While CNN-SLAM fuses depth pre-dictions from a supervised network into a monocular SLAM pipeline to leverage learned dense depth and absolute scale, our work inherits the fundamental goal of ensuring geometric consistency while advancing the paradigm by internalizing this process. Specifically, within our self-supervised frame-work, we embed SLAM-style optimization for keyframe pose alignment directly into the training stage. By aligning adja-cent frames via feature reprojection based on current depth estimates, our method dynamically enforces scale consistency between depth and pose, thereby fundamentally enhancing the network’s consistent geometric understanding. Since pose refinement is only performed during training, there’s no addi-tional inference cost for our method. D: E XTRA QUALITATIVE RESULTS 
+
+Depth on KITTI We show more qualitative results in Figure 7 using MonoViT [13] as baseline, where the depth estimates are up-to-scale. We include corresponding ground 10 
+
+truth depth and error maps to stress on the improved areas. The error maps show the depth accuracy metric Abs Rel error, calculated as: Abs Rel = DP red − DGT 
+
+DGT 
+
+, (20) where the depth predictions DP red are median scaled by the scale ratio median (DGT )/median (DP red ) and for the ground truth DGT we use the improved ground truth from KITTI dataset. Noticeably, our method remarkably improves the depth estimates on the vehicle surface (in all groups), ground (in the 2nd , 3rd , and 4th groups), and vegetation (in the 
+
+1st group). Thanks to the scale-aligned pose during training through our method, training losses can reflect the delicate depth errors in these areas, and the depth net can effectively learn their geometry. 
+
+Depth on Cityscapes We include more qualitative compar-isons on Cityscapes in Figure 8, where we compare qualitative results among Monodepth2-ResNet50, MonoViT, and ours applied to them. The results are up-to-scale. Remarkably, Mon-odepth2 exhibits wrong estimates on background buildings (rows 2 and 5). Thanks to an aligned, consistent scale, our method improves estimates in such background regions. Both baselines show mistakes on moving vehicles (rows 1, 3, 4) where holes appear on the vehicles’ surface, and our method alleviates these errors. In row 5, MonoViT shows erroneous estimates of the pedestrians, while our method estimates them correctly. 
+
+Depth on NYUv2 We show more qualitative results on NYUv2 in Figure 9, pairing our method with baselines Monodepth2-ResNet50 and MonoViT. Noticeably, the base-lines have difficulties in estimating the depth of the sofa (row 1), tables (row 3), and the thin ladder (row 4). Our method estimates them correctly, reflecting the correct geometry. In row 2, Monodepth2 ignores the backrest of a chair, and both baselines struggle with the ground with reflections. Again, applying our method mitigates the errors. E: F EATURE AND CONFIDENCE MAPS 
+
+We show the feature and confidence maps extracted for our pose refinement trained on the KITTI dataset in Figure 10. The feature maps are processed by Principal Component Analysis (PCA). By comparing the maps for reference frame t and the adjacent query frame t’, we can observe the feature consistency on the same object in the feature map of both frames. The consistent feature is essential for pose refinement. Also, the confidence maps are used to mitigate the influence of textureless regions. The shown confidence maps emphasize (with red) structured areas, such as lane markings, buildings, trees, and parked vehicles, for robust pose refinement, while having a lower value (with blue) in textureless areas, such as road and sky, showing the different weight for the pose refinement cost calculation. 11 input image  MonoViT  ours on MonoViT 
+
+input image  MonoViT  ours on MonoViT 
+
+ground truth depth  error map of MonoViT  error map of ours on MonoViT 
+
+ground truth depth  error map of MonoViT  error map of ours on MonoViT 
+
+ground truth depth  error map of MonoViT  error map of ours on MonoViT 
+
+input image  MonoViT  ours on MonoViT 
+
+input image  MonoViT  ours on MonoViT 
+
+ground truth depth  error map of MonoViT  error map of ours on MonoViT 
+
+(a) Qualitative results on KITTI. White arrows highlight coarse wrong estimates. 0.00 0.02 0.04 0.06 0.08 0.10 
+
+(b) Abs Rel error map colorbar. 
+
+Fig. 7. More qualitative comparison on KITTI Eigen Split. The depth predictions are up-to-scale. Comparison also includes every second row, the improved ground truth, and the error maps showing the magnitude of the error metric Abs Rel. Improved areas are highlighted with arrows in the error maps. 12 input image  Monodepth2 -50 (md2)  ours on md2  MonoViT  ours on MonoViT 
+
+Fig. 8. More qualitative comparison on Cityscapes. The depth estimates are up-to-scale. White arrows highlight coarse wrong estimates. Input image  Monodepth2 -50 (md2)  ours on md2  ours on MonoViT MonoViT 
+
+Fig. 9. More qualitative comparison on NYUv2. The depth estimates are up-to-scale. White marks highlight coarse wrong estimates. 13 rgb feature confidence 
+
+Reference t  Query t’  Reference t Query t’ 
+
+> rgb feature confidence
+
+(a) Feature and confidence maps. 0.0 0.2 0.4 0.6 0.8 1.0 
+
+(b) Confidence colorbar. 
+
+Fig. 10. Feature and confidence maps extracted by the feature net, which is trained on KITTI. The feature maps are processed by PCA. The confidence maps weight corresponding feature residuals in the pose refinement cost function, where high confidence indicates the significance of the corresponding area in refining the camera pose.

@@ -1,0 +1,566 @@
+Title: PRISM: Synergizing Vision Foundation Models via Self-organized Expert Specialization
+
+URL Source: https://arxiv.org/pdf/2606.03444v1
+
+Published Time: Wed, 03 Jun 2026 00:58:42 GMT
+
+Number of Pages: 23
+
+Markdown Content:
+# PRISM: Synergizing Vision Foundation Models via Self-organized Expert Specialization 
+
+Ying Tang 1 Dong Li 1 Youjia Zhang 1 Zikai Song 1 Junqing Yu 1 Wei Yang 1 , †
+
+https://github.com/robotyingtang/PRISM-VFM 
+
+# Abstract 
+
+Unifying the complementary strengths of diverse Vision Foundation Models (VFMs) into a sin-gle efficient model is highly desirable but chal-lenged by the negative transfer inherent in mono-lithic distillation. To address these feature con-flicts, we introduce PRISM , a novel dual-stream Mixture-of-Experts (MoE) framework that syn-ergizes VFMs via modular specialization. We propose a two-stage paradigm: (1) expertise de-construction, where a teacher-conditional router guides experts to specialize in distinct representa-tional subspaces to mitigate interference, followed by (2) dynamic recomposition, where the router learns to assemble these experts into tailored com-putational pathways for downstream tasks. Exper-iments on PASCAL-Context and NYUD-v2 show that PRISM establishes a new state of the art, val-idating that sparse, emergent specialization is a scalable approach for integrating diverse visual knowledge. 
+
+# 1. Introduction 
+
+A practical goal in computer vision is to consolidate multiple Vision Foundation Models (VFMs) into a single deployable student. Modern VFMs provide complementary cues, such as high-level semantics from CLIP (Radford et al., 2021), spatial structures from SAM (Kirillov et al., 2023), and fine-grained texture or correspondence from DINOv2 (Oquab et al., 2023); however, deploying them as a model ensemble is costly in memory, latency, and engineering complexity. The desired student should absorb these complementary visual dimensions into one parameter space while avoiding 
+
+> 1
+
+School of Computer Science and Technology, Huazhong Uni-versity of Science and Technology, Wuhan, China. Correspon-dence to: Wei Yang <weiyangcs@hust.edu.cn >.
+
+Proceedings of the 43 rd International Conference on Machine Learning , Seoul, South Korea. PMLR 306, 2026. Copyright 2026 by the author(s). 
+
+the negative transfer caused by naive dense distillation. However, compressing such heterogeneous knowledge into a unitary network introduces a fundamental optimization paradox. When shared parameters are forced to satisfy contradictory supervision signals, the model suffers from se-vere gradient conflict. For instance, while DINO encourages feature variance to distinguish local textures, CLIP often suppresses such variance to achieve semantic invariance. In standard dense architectures, these opposing gradient vector fields lead to destructive interference, causing the shared weights to collapse into a compromised average that fails to excel in either dimension. To mitigate this interference, pioneering approaches such as SAK (Lu et al., 2025) adopt a divide-and-conquer strat-egy, assigning independent parameter branches to different teachers. While effective, this paradigm relies on the rigid assumption of hard boundaries, that visual knowledge can be explicitly sliced into disjoint domains. We argue that this is an oversimplification. In reality, visual knowledge exhibits soft boundaries with intricate overlaps. For ex-ample, both CLIP and DINO encode representations of a cat, yet they focus on different frequency bands (semantic identity vs. local texture) of the same entity. Static parti-tioning ignores this nuance, creating parameter redundancy and hindering the positive transfer of shared concepts. Con-sequently, a robust student requires a dynamic architecture capable of automatically perceiving the nature of the knowl-edge: sharing parameters for consensus and branching out only when functional conflicts arise. In this work, we propose PRISM (Projecting 
+
+Representations into Independent Specialized Modules), a framework that shifts from “manual partitioning” to self-organized specialization. Rather than explicitly assigning layers or modules to particular teachers or tasks, PRISM adopts a dual-stream gated Mixture-of-Experts (MoE) architecture for conflict-aware partial sharing. A Universal Anchor stream preserves stable shared representations and captures consensus knowledge, while a Conditioned MoE stream provides plasticity by routing tokens to sparse experts conditioned on layer, token, and 1
+
+> arXiv:2606.03444v1 [cs.CV] 2 Jun 2026 PRISM: Synergizing Vision Foundation Models via Self-organized Expert Specialization
+
+teacher/task context. Driven by context-modulated routing and locality-aware decorrelation, PRISM dynamically shares compatible knowledge, separates conflicting signals, and recombines specialized experts when knowledge partially overlaps, enabling emergent expert specialization while maintaining parameter efficiency. Our contributions are summarized as follows: • We conceptually reframe multi-teacher distillation as a dynamic consensus-conflict trade-off, identifying the limitations of static “hard boundary” partitioning in prior arts. • We propose PRISM , a dual-stream MoE architecture that leverages Context-modulated routing to achieve implicit and emergent knowledge decomposition. • To enable effective expert specialization, we introduce a locality-aware decorrelation mechanism that prevents semantic short-circuiting in shallow layers, acting as a critical inductive bias. 
+
+# 2. Related Work 
+
+Knowledge Distillation of VFMs As large-scale general-ists, Vision Foundation Models (VFMs) demonstrate supe-rior performance across diverse domains(e.g., vision (Song et al., 2026; Ye et al., 2025; Song et al., 2025) and multi-modal tasks (Li et al., 2024a; Wang et al., 2026; Zhang et al., 2026)) with minimal tuning. Notable examples include CLIP (Radford et al., 2021) for vision-language understand-ing, DINOv2 (Oquab et al., 2023) for fine-grained represen-tation learning, and SAM (Kirillov et al., 2023) for prompt-able segmentation. Many of them share attention - based designs (Song et al., 2022; 2023; 2024). Despite their effi-cacy, the substantial computational demands of these models have led to the widespread adoption of knowledge distilla-tion (Vandenhende et al., 2021; Ye & Xu, 2023; Zong et al., 2024) for VFM compression and efficiency (Zhang & Yang, 2021; Ishihara et al., 2021; Yu et al., 2024). Multi-teacher distillation has also been studied before the VFM era, and typically by aggregating soft targets or in-termediate features from multiple relatively homogeneous teachers (Fukuda et al., 2017; You et al., 2017; Liu et al., 2020). More recently, research has shifted towards dis-tilling multiple VFMs into a single student to synergize their heterogeneous strengths(Zhou et al., 2025; Ranzinger et al., 2024a; Shi et al., 2024). SAM-CLIP (Wang et al., 2024a) merges CLIP’s semantic knowledge into SAM via continual learning. RADIO (Ranzinger et al., 2024b) dis-tills CLIP, DINOv2, and SAM simultaneously to enhance downstream performance, a direction further refined by RADIOv2.5 (Heinrich et al., 2025), introducing improved training recipes and scaling laws for more robust feature aggregation. Similarly, DUNE (Sarıyıldız et al., 2025) bridges the gap between 2D and 3D perception by dis-tilling a universal encoder from heterogeneous teachers, while Theia (Shang et al., 2024) incorporates Depth Any-thing (Yang et al., 2024a) for robot learning. Furthermore, UNIC (Sariyildiz et al., 2024) utilizes multi-teacher distil-lation to consolidate specialized experts into a universal classification backbone. Most existing multi-teacher distil-lation methods (Ranzinger et al., 2024b; Shang et al., 2024) employ straightforward distillation into a dense backbone. We argue this leads to inherent feature interference, particu-larly between conflicting domains such as semantics and ge-ometry. Unlike these approaches, PRISM adaptively trans-fers knowledge by retaining unique representation biases through a dynamic MoE mechanism to maximize strengths across multiple tasks. 
+
+Multi-Task Learning Architectures Multi-Task Learning (MTL)(Caruana, 1997) aims to train a single model capable of handling multiple tasks simultaneously (Ruder, 2017; Chen et al., 2020; Ishihara et al., 2021; Li et al., 2025; 2026). Research generally diverges into two categories: multi-task optimization (Chen et al., 2018; Guo et al., 2018; Kendall et al., 2018; Liu et al., 2021b;a; Li et al., 2024b) and model architecture design (Br ¨uggemann et al., 2021; Ye & Xu, 2022a;b). In terms of architectures, existing methods are typically categorized into encoder-focused (Liu et al., 2019; Wang et al., 2025) and decoder-focused (Ye & Xu, 2022a) approaches. Recently, knowledge distilla-tion (Zeng et al., 2026) has been integrated into MTL to bridge the gap between multi-task students and single-task teachers (Ranzinger et al., 2024b; Heinrich et al., 2025; Lu et al., 2025). Notably, Xu et al. (Xu et al., 2023) proposed directly distilling a small multi-task student from a large multi-task teacher. Traditional MTL architectures typically rely on static shar-ing designs, which can be broadly categorized into encoder-focused (Liu et al., 2019) and decoder-focused (Ye & Xu, 2022a) approaches. Although such hard or partially shared parameterizations are simple and effective, static sharing can lead to negative transfer when task objectives conflict. To improve flexibility, recent works have explored dynamic 
+
+architectures based on Mixture-of-Experts (MoE). For in-stance, Mod-Squad (Chen et al., 2023) modularizes experts with an information-theoretic objective to balance coopera-tion and specialization, while TaskExpert (Ye & Xu, 2023) dynamically assembles representations through a memory-based MoE mechanism in the decoding stage. While promis-ing, these methods do not explicitly address the semantic conflicts that may arise in multi-teacher distillation. In this regard, PRISM introduces conflict-aware routing for partial sharing, and remains complementary to standard MoE regu-larizers such as load balancing and routing entropy (Shazeer 2PRISM: Synergizing Vision Foundation Models via Self-organized Expert Specialization        
+
+> Figure 1. Overview of the PRISM framework. (Top) Two-Stage Training Pipeline. In Stage 1, the student (Dual-Stream Conditioned MoE) mimics multiple frozen VFM teachers. The Context ID (Teacher ID) conditions the routing, driving emergent knowledge decomposition. The Ldecorr is applied to shallow layers to prevent rank collapse. In Stage 2, the model recombines experts for downstream tasks using the Task ID as context. (Bottom) Dual-Stream Architecture. The PRISM block replaces standard FFNs with two parallel paths: a Universal Anchor for shared consensus, and a Specialized Delta for conflict resolution. A FiLM-based Router modulates features based on context before dispatching tokens to sparse experts. A learnable gate λdynamically fuses the two streams.
+
+et al., 2017; Fedus et al., 2022). It also differs from FiLM-based MoE variants such as MoFME (Zhang et al., 2024): in PRISM, FiLM conditions routing decisions rather than replacing expert computation. In the specific context of distilling Vision Foundation Mod-els (VFMs), recent approaches like RADIO (Ranzinger et al., 2024b) and SAK (Lu et al., 2025) have emerged. SAK represents the state-of-the-art in static architecture, em-ploying a “Teacher-Agnostic Stem” plus “Teacher-Specific Adapters.” While this reduces interference, its reliance on rigid, manual branching assumes hard boundaries between tasks, leading to structural redundancy when knowledge overlaps. 
+
+Positioning PRISM. Bridging these paradigms, PRISM pro-poses a dynamic encoder-focused architecture tailored for multi-teacher distillation. Unlike Mod-Squad which relies on loss constraints, or SAK which relies on static branches, PRISM leverages a context-modulated router to structurally resolve gradient conflicts. By treating experts as a basis for emergent knowledge decomposition , PRISM automat-ically shares parameters for consensus and branches out for conflicts token-by-token. This fine-grained mechanism solves the “Negative Transfer” problem more efficiently than rigid branching, offering a “best-of-both-worlds” solu-tion between stability and plasticity. 
+
+# 3. Methodology 
+
+To resolve the gradient conflict in Multi-Teacher Distillation, we propose PRISM, a framework centered on the principle of “Decompose-then-Recombine”. As illustrated in Fig-ure 1, PRISM transforms a standard Vision Transformer (ViT) into a Dual-Stream Conditioned MoE architecture. PRISM introduces a dynamic trade-off mechanism: a Uni-versal Anchor stream maintains stability for shared consen-sus, while a Specialized Delta stream provides plasticity for conflict resolution via context-modulated routing. The train-ing proceeds in two stages: emergent knowledge decompo-sition from multiple VFM teachers (Stage 1), followed by knowledge recombination for downstream tasks (Stage 2), regularized by a locality-aware decorrelation loss. 
+
+3.1. Problem: Gradient Conflict in MTD 
+
+We formulate the task of Multi-Teacher Distillation (MTD) as a multi-objective optimization problem. Let T =
+
+{T1, T 2, . . . , T K } denote a set of K heterogeneous vision foundation models (VFMs), serving as teachers. The stu-3PRISM: Synergizing Vision Foundation Models via Self-organized Expert Specialization 
+
+dent model S, parameterized by Θ, aims to minimize the joint distillation loss over the training distribution X :
+
+Ltotal (x; Θ) = 
+
+> K
+
+X
+
+> k=1
+
+γkLdistill (S(x), T k(x)) (1) where γk is a scalar coefficient balancing the contribution of each teacher. 
+
+Gradient conflict in dense architectures. Consider a stan-dard dense layer (e.g., the FFN in a ViT block) with pa-rameters θ ∈ Θ. During back-propagation, the parameter update ∆θ is proportional to the aggregate gradient vec-tor gtotal = PKk=1 γkgk, where gk = ∇θ Ldistill (Tk). Afundamental optimization dilemma arises when teachers provide contradictory supervision for the same input fea-tures. Mathematically, this conflict manifests as a negative cosine similarity between task gradients: 
+
+Ci,j = cos( gi, gj ) = ⟨gi, gj ⟩∥gi∥∥ gj ∥ < 0 (2) In a standard dense architecture where parameters are glob-ally shared, severe conflict ( Ci,j ≪ 0) leads to destructive interference, where gi ≈ − gj . Consequently, the magni-tude of the aggregate gradient ∥gtotal ∥ diminishes, and the optimization settles into a “compromised” equilibrium that is suboptimal for all tasks. We refer to this phenomenon as 
+
+gradient averaging .
+
+3.2. Motivation: Decomposition via Gradient Orthogonalization 
+
+To mitigate the gradient averaging dilemma, we argue that the student parameter space should distinguish between 
+
+consensus and conflict components. Consensus knowledge, such as generic low-level structures, can be safely shared, whereas conflicting teacher-specific signals should update separated or weakly coupled parameters. Specifically, for two teacher objectives Ti and Tj with con-flicting gradients, i.e., cos( gi, gj ) < 0, PRISM encourages their routed effective gradients on each sparse expert En to have small interaction: 
+
+⟨˜gi,n , ˜gj,n ⟩ ≈ 0, (3) where ˜gi,n denotes the gradient component that is actually routed to expert En under teacher context Ti. This objective can be achieved either by reducing co-activation of the same expert or by making the residual gradients on co-active experts weakly aligned. It motivates our dual-stream design: the Universal Anchor preserves shared consensus, while the Conditioned MoE reduces effective interference through sparse, context-dependent dispatching. 
+
+3.3. Architecture: Dual-Stream Conditioned MoE 
+
+Guided by the orthogonality principle, we introduce the PRISM block to replace standard FFNs. Unlike SAK (Lu et al., 2025) which decomposes the network into a static “Teacher-Agnostic Stem” and “Teacher-Specific Adapters”, PRISM relaxes this hard constraint into a continuous, dy-namic trade-off between Stability and Plasticity . Formally, for an input x, the block output is: 
+
+y = x + λ · F anc (LN (x)) 
+
+| {z }
+
+> Stability Stream
+
++ (1 − λ) · F moe (x, c )
+
+| {z }
+
+> Plasticity Stream
+
+(4) where λ ∈ [0 , 1] is a learnable gating scalar. This gate allows the model to dynamically trade off between reusing common knowledge and invoking specialized experts. Empirical analysis (see Sec. 4.3) reveals that λ naturally starts high in shallow layers (preferring stability) and decreases in deeper layers (favoring specialization), validating our hierarchical design hypothesis. 
+
+Universal Anchor. The first stream, Fanc , is a standard dense MLP shared across all contexts. It captures task-agnostic, low-frequency patterns. We term this the Stability Stream , as it ensures the model maintains a robust optimiza-tion trajectory regardless of routing fluctuations. 
+
+Specialized Delta. The second stream, Fmoe , is a sparse Mixture-of-Experts. This stream offers a unified pool of experts accessed via Context-Modulated Routing. We term this the Plasticity Stream . By conditioning on context 
+
+c, it provides the necessary plasticity to resolve gradient conflicts, allowing the model to emergently decide whether to invoke specific experts or combine them, handling Soft Boundaries that static methods miss. 
+
+Network Instantiation. We adopt ViT-Base (ViT-B/16) as the backbone. We replace the FFNs with Dual-Stream blocks in the 2nd, 5th, 8th, 11th layers. Each MoE layer con-tains N = 15 sparse experts with a Top-3 routing strategy, plus one internal shared expert for bias compensation. 
+
+3.4. Context-Modulated Routing Mechanism 
+
+To guide the Plasticity Stream, we employ a routing mech-anism that directs token flow based on both image content and task intent. 
+
+Context-Aware Feature Modulation. Standard routers rely solely on input tokens x, which is insufficient for distin-guishing tasks with identical inputs. We inject the Context ID c (Teacher ID in Stage 1, Task ID in Stage 2) via Feature-wise Linear Modulation (FiLM): 
+
+ˆx = (1 + γ(c)) ⊙ LayerNorm (x) + β(c) (5) where γ(c) and β(c) are learned affine transformations. This 4PRISM: Synergizing Vision Foundation Models via Self-organized Expert Specialization 
+
+re-orients the feature space, enabling the router to make distinct decisions for CLIP vs. DINO contexts. 
+
+Sparse Dispatching. The router G(·) maps ˆx to expert weights via Top-K Softmax. The MoE output is: 
+
+Fmoe (x, c ) = Eshared (x) + X
+
+> i∈TopK
+
+G(ˆ x)iEi(x) (6) The internal shared expert Eshared captures common biases specific to the conflict subspace, further stabilizing the sparse routing. 
+
+3.5. Training Objectives and Strategy Locality-Aware Decorrelation Loss. A critical prerequi-site for effective expert specialization is the diversity of input tokens. However, in multi-teacher distillation, we identify a detrimental phenomenon we call “semantic short-circuiting”. Driven by strong high-level supervision (e.g., from CLIP), the student model tends to bypass low-level feature extraction, causing shallow layers to prematurely converge to global semantic representations. Mathematically, this manifests as rank collapse , where fea-ture variance across tokens diminishes rapidly. If input tokens are homogeneous, the router lacks discriminative sig-nals to dispatch them to different experts, leading to routing collapse. To counteract this, we explicitly inject a locality inductive bias by applying a Locality-Aware Decorrelation Loss ( Ldecorr ) to the shallow blocks. We penalize high cosine similarity between spatially distant pixels while preserving local correlations: 
+
+Ldecorr = 1
+
+|P| 
+
+X
+
+> (i,j )∈P
+
+max(0 , cos( zi, zj ) − ϵ) · I(dij > r )
+
+(7) where zi is the feature vector at position i, dij is the spatial Euclidean distance, and r is a locality radius. This constraint forces shallow layers to encode rich, localized structural variations, providing high-quality, high-rank “raw materials” for the deep-layer experts. 
+
+Training Strategy. Our training pipeline consists of two distinct stages, as shown in Figure 1. Stage 1: Emergent Knowledge Decomposition. The student learns from K frozen VFM teachers. For each iteration, we randomly sample a teacher Tk and use its ID as context c.The total loss is: 
+
+Lstage1 = Laux + αLdistill + βLdecorr (8) Stage 2: Knowledge Recombination. In this stage, we fine-tune the model to adapt to downstream tasks while preserving the knowledge acquired in Stage 1. The total objective function is formulated as: 
+
+Lstage2 = μLdistill + X
+
+> t∈T
+
+wtLt (9) where Lt is the task-specific loss for task t. The hyperpa-rameter μ balances the distillation loss and the task losses, with a default value of 1.0, while wt adjusts the importance of each task. We set fixed wt values following the standard practice in MTL(Maninis et al., 2019; Kanakis et al., 2020). 
+
+# 4. Experiments 
+
+4.1. Experimental Setup Datasets and Protocol. Following SAK (Lu et al., 2025), we perform Stage 1 pre-training on ImageNet-1k (Deng et al., 2009), followed by Stage 2 fine-tuning and evalu-ation on two standard multi-task benchmarks. PASCAL-Context (Mottaghi et al., 2014) covers five scene under-standing tasks: Semantic Segmentation (SemSeg), Human Parsing (Parsing), Saliency, Surface Normal (Normal), and Boundary Detection (Boundary). NYUD-v2 (Silberman et al., 2012) focuses on indoor scenes with four tasks: Sem-Seg, Depth Estimation, Normal, and Boundary. 
+
+Evaluation Metrics. We adopt standard metrics for each task: mean Intersection over Union (mIoU) for SemSeg and Parsing; maximal F-measure (maxF) for Saliency; optimal dataset scale F-measure (odsF) for Boundary; mean Error (mErr) for Normal Estimation; and RMSE for Depth Esti-mation. Lower values are better for mErr and RMSE. VFM Teachers. We distill knowledge from three frozen Vision Foundation Models (VFMs) with ViT-L backbones, unless otherwise specified: (1) DINOv2-L (Oquab et al., 2023): Provides robust local features and fine-grained correspon-dence. (2) CLIP-L (Radford et al., 2021): Offers high-level semantic understanding and language-aligned representa-tions. (3) SAM-L (Kirillov et al., 2023): Contributes precise geometric and boundary cues from promptable segmenta-tion. We extract teacher features from layers 5, 11, 17, and 23. 
+
+Baselines. We compare PRISM against three categories of methods: (1) Task-Aware MTL Methods , including encoder-decoder architectures like InvPT++ (Ye & Xu, 2024), TaskPrompter (Ye & Xu, 2022b), BFCI (Zhang et al., 2025), MLoRE (Yang et al., 2024b), and SEM (Huang et al., 2024); (2) Unified Foundation Models , such as RA-DIO/RADIOv2.5 (Ranzinger et al., 2024b; Heinrich et al., 2025), UNIC (Sariyildiz et al., 2024), and Theia (Shang et al., 2024), which distill multiple VFMs into a single backbone; and (3) State-of-the-Art , specifically SAK (Lu et al., 2025), which uses explicit architectural branching for multi-teacher distillation. 
+
+Implementation Details. We use ViT-B/16 as the backbone. 5PRISM: Synergizing Vision Foundation Models via Self-organized Expert Specialization 
+
+Table 1. Comparison with state-of-the-art methods on PASCAL-Context (ViT-B backbone). PRISM achieves the best overall performance ( ∆m = 2 .29% ) and outperforms SAK on all 5 tasks.                                                                                            
+
+> Model Semseg
+> mIoU ↑
+> Parsing
+> mIoU ↑
+> Saliency
+> maxF ↑
+> Normal
+> mErr ↓
+> Boundary
+> odsF ↑
+> ∆m
+> %↑
+> Single-task baseline 80.25 70.54 84.54 13.57 74.22 0.00 Multi-task baseline 76.76 65.26 84.39 13.98 70.37 -4.04 InvPT (Ye & Xu, 2022a) 77.33 66.62 85.14 13.78 73.20 -2.28 InvPT++ (Ye & Xu, 2024) 76.95 66.89 85.12 13.54 73.30 -1.92 TaskPrompter (Ye & Xu, 2022b) 79.00 67.00 85.05 13.47 73.50 -1.24 TaskExpert (Ye & Xu, 2023) 78.45 67.38 84.96 13.55 72.30 -1.73 BFCI (Zhang et al., 2025) 77.98 68.19 85.06 13.48 72.98 -1.31 MLoRE (Yang et al., 2024b) 79.26 67.82 85.31 13.65 74.69 -0.83 RADIO (Ranzinger et al., 2024b) 78.06 68.13 85.18 13.59 72.64 -1.53 RADIOv2.5 (Heinrich et al., 2025) 81.75 71.49 81.26 16.10 ––UNIC (Sariyildiz et al., 2024) 75.90 62.85 81.84 15.78 ––Theia (Shang et al., 2024) 76.51 67.53 84.38 14.56 70.34 -4.33 SAK (Lu et al., 2025) 81.88 74.30 84.79 14.02 74.09 0.83
+> PRISM (Ours) 82.20 75.34 84.81 13.47 75.92 2.29
+
+In stage 1, the model is trained for 30 epochs on ImageNet-1K. In stage 2, the model is trained for 40000 iterations on PASCAL-Context and NYUD-v2 using the AdamW opti-mizer. For Locality-Aware Decorrelation, we apply Ldecorr 
+
+to the first two layers, setting the hyperparameters in Eq. 8 as α = 0 .9 and β = 0 .1.
+
+4.2. Main Results 
+
+Table 1 and Table 2 summarize the quantitative comparisons on PASCAL-Context and NYUD-v2, respectively. 
+
+Performance on PASCAL-Context. PRISM establishes a new state-of-the-art, achieving an average improvement (∆m) of 2.29%, clearly outperforming the previous best SAK (0.83%) and other strong competitors. Regarding su-periority over SAK, PRISM surpasses it across all five tasks. Specifically, on Semantic Segmentation, PRISM achieves 82.20 mIoU (+0.32 vs. SAK), and on Human Parsing, it reaches 75.34 mIoU (+1.04). This suggests that our Context-Modulated Routing effectively preserves high-level seman-tic knowledge without rigid task-specific branching. Cru-cially, for geometric precision, PRISM improves Normal Estimation from 14.02 to 13.47 mErr and Boundary De-tection from 74.09 to 75.92 odsF, indicating that emergent experts capture shared geometric structures more effectively than physically separated adapters. 
+
+Performance on NYUD-v2. On the indoor scene bench-mark, PRISM remains highly competitive with SAK. It 
+
+Table 2. Comparison with state-of-the-art methods on NYUD-v2 (ViT-B backbone). PRISM surpasses SAK in semantic and depth estimation tasks.                                                                                  
+
+> Model Semseg
+> mIoU ↑
+> Depth
+> RMSE ↓
+> Normal
+> mErr ↓
+> Boundary
+> odsF ↑
+> ∆m
+> %↑
+> Single-task baseline 51.15 0.5792 19.77 77.35 0.00 Multi-task baseline 49.27 0.5823 19.92 75.88 -1.72 InvPT (Ye & Xu, 2022a) 50.30 0.5367 19.00 77.60 2.47 InvPT++ (Ye & Xu, 2024) 49.79 0.5318 18.90 77.10 2.40 TaskPrompter (Ye & Xu, 2022b) 50.40 0.5402 18.91 77.60 2.49 ECS (Shoouri et al., 2023) 50.46 0.5332 18.42 77.89 3.53 BFCI (Zhang et al., 2025) 51.14 0.5186 18.92 77.98 3.89 TSP (Wang et al., 2024b) 51.22 0.5301 18.78 76.90 3.26 SEM (Huang et al., 2024) 51.34 0.5222 18.95 77.60 3.67 RADIO (Ranzinger et al., 2024b) 55.03 0.5186 18.49 77.97 6.33 RADIOv2.5 (Heinrich et al., 2025) 57.19 0.4980 20.04 ––UNIC (Sariyildiz et al., 2024) 42.21 0.6172 22.78 ––Theia (Shang et al., 2024) 51.80 0.5367 19.70 76.08 1.83 SAK (Lu et al., 2025) 59.93 0.4942 17.60 78.60 11.11 PRISM (Ours) 60.22 0.4883 17.81 76.59 10.59
+
+Table 3. Scaling Results on PASCAL-Context with ViT-L. 
+
+PRISM obtains the best overall ∆m.
+
+Model Semseg 
+
+mIoU ↑
+
+Parsing 
+
+mIoU ↑
+
+Saliency 
+
+maxF ↑
+
+Normal 
+
+mErr ↓
+
+Boundary 
+
+odsF ↑
+
+∆m
+
+% ↑
+
+Single-task baseline 81.61 72.77 83.80 13.87 75.24 0.00 SAK 84.01 76.99 84.65 13.82 76.27 2.30 
+
+PRISM 84.34 77.83 84.67 13.43 76.23 3.16 
+
+improves Semantic Segmentation (60.22 vs. 59.93 mIoU) and Depth Estimation (0.4883 vs. 0.4942 RMSE), indi-cating effective transfer of semantic and geometry-aware knowledge. Meanwhile, SAK retains an advantage on Sur-face Normal and Boundary Detection, likely because its dedicated adapters provide stronger task-specific locality for indoor geometric and high-frequency cues. This reflects a dataset-dependent balance between flexible cross-teacher recombination and specialized local adaptation. 
+
+Scaling to ViT-L. We further evaluate whether PRISM re-mains effective with a larger student backbone. As shown in Table 3, following the same ImageNet-1K pretraining and PASCAL-Context fine-tuning protocol as SAK, PRISM with ViT-L achieves a ∆m of 3.16% , compared with 2.30% 
+
+for SAK. This suggests that the proposed decomposition-and-recombination mechanism is not limited to ViT-B, but continues to improve conflict-aware partial sharing at a larger model scale. 6PRISM: Synergizing Vision Foundation Models via Self-organized Expert Specialization 
+
+(a) Gradient topology (Layer 11) (b) Cosine similarity distribution 
+
+Figure 2. Visualization of effective VFM conflict reduction. (a) The joint distribution of gradient norms. Magnitudes are independently normalized to [0 , 1] to compare geometric tendencies. Standard FFNs (diamonds) show broad simultaneous updates from multiple VFMs, indicating dense parameter entanglement. In contrast, MoE experts (circles) form an L-shaped topology, suggesting that many sparse experts are predominantly updated by one VFM condition. (b) The density of cosine similarities between VFM gradients. Sparse experts (blue) concentrate around zero, indicating reduced effective interaction, whereas the shared FFN (red) exhibits broader correlations caused by simultaneous multi-teacher updates. 
+
+4.3. Gradient-Based Conflict Analysis 
+
+To validate whether PRISM resolves the optimization con-flict among different Vision Foundation Models (VFMs), we analyzed the gradient dynamics. Let θ denote the parameter vector (either in Sparse Experts or the Shared FFN). We define gv = ∇θ Lv as the gradient derived from the distillation loss Lv corresponding to a specific VFM 
+
+v ∈ { DINOv2 , CLIP , SAM }.
+
+Gradient Topology. We visualized the joint distribution of gradient L2-norms for VFM pairs (Figure 2a). To com-pare geometric tendencies despite scale disparities, we ap-plied independent normalization, scaling gradients of each module to [0 , 1] by their respective maximums. The shared FFN parameters (red diamonds) receive broad simultaneous updates from multiple VFMs. They are of-ten distributed in the interior region rather than concen-trated near a single axis, indicating that dense parameters are jointly affected by heterogeneous teacher signals. Such simultaneous updates create the optimization condition un-der which gradient averaging can occur. In contrast, the MoE experts (blue circles) exhibit an L-shaped topology. Many experts lie close to one axis, meaning that their dom-inant update comes from one VFM condition while the update from another is weak. For pairs involving SAM, some experts deviate from the axes due to partially shared structural cues, but they remain more separated than the dense FFN parameters. This pattern suggests that PRISM decomposes VFM knowledge into sparse expert subspaces and reduces effective cross-teacher interference. 
+
+Cosine Similarity. We further quantified interference by calculating the neuron-level cosine similarity: Cos (θ) = (gvA · gvB )/(∥gvA ∥∥ gvB ∥ + ϵ).Figure 2b further shows that sparse experts and shared FFNs follow different interaction patterns. The shared FFN (red) 
+
+Table 4. Component Analysis on PASCAL-Context (ViT-S Student). We evaluate the impact of the Dual-Stream design, FiLM routing, and Decorrelation Loss. The full PRISM model achieves the best trade-off.                                 
+
+> Configuration Semseg
+> mIoU ↑
+> Parsing
+> mIoU ↑
+> Saliency
+> maxF ↑
+> Normal
+> mErr ↓
+> Boundary
+> odsF ↑
+> (1) w/o MoE 78.04 67.55 84.97 14.31 70.16 (2) w/o Anchor 78.46 67.98 84.41 14.65 69.08 (3) w/o FiLM 78.87 69.26 84.64 14.46 70.63 (4) w/o Ldecorr 79.80 61.80 85.50 14.32 70.86 (5) PRISM (Full) 79.19 69.25 85.01 14.28 70.78
+
+has a broad distribution, reflecting the fact that the same dense parameters are updated by multiple VFMs. In con-trast, the sparse experts (blue) place more mass near zero cosine similarity, indicating that routed teacher-specific up-dates become weakly interacting on many expert parameters. Positive modes correspond to compatible teacher signals that can be safely shared, while negative modes usually oc-cur with highly imbalanced gradient magnitudes, where one teacher provides the dominant update. Overall, the transi-tion from broad dense coupling to sparse, near-axis expert updates supports the intended mechanism of PRISM: re-ducing effective interference while preserving useful shared signals. 
+
+4.4. Ablation Study 
+
+To dissect the contribution of each component in PRISM, we conduct comprehensive ablation studies using a ViT-S student and ViT-B teachers. Stage 1 is trained on 10% of ImageNet-1k, followed by fine-tuning on PASCAL-Context. 
+
+Impact of Dual-Stream Architecture. We first validate the necessity of the hybrid design. As shown in Row 1 in Table 4, the dense baseline (w/o MoE) struggles with capacity, yielding the lowest segmentation performance at 78.04 mIoU. Critically, removing the Universal Anchor (Row 2) results in the worst surface normal estimation error 7PRISM: Synergizing Vision Foundation Models via Self-organized Expert Specialization 
+
+Table 5. Controlled Comparison on PASCAL-Context (ViT-S Student). Wide ViT-S controls for static dense capacity scaling, while vanilla MoE controls for generic sparse routing.                      
+
+> Model Semseg
+> mIoU ↑
+> Parsing
+> mIoU ↑
+> Saliency
+> maxF ↑
+> Normal
+> mErr ↓
+> Boundary
+> odsF ↑
+> vanilla MoE 72.96 61.77 83.34 15.03 66.73 Wide ViT-S 78.15 67.71 84.88 14.24 70.35
+> PRISM 79.19 69.25 85.01 14.28 70.78
+
+(14.65) among all configurations. This specific degradation confirms that while sparse experts handle task divergence, the shared anchor is indispensable for maintaining coherent structural and geometric representations. 
+
+Effectiveness of Context-Modulated Routing. Next, we investigate the routing mechanism. Replacing the FiLM-based router with simple task embedding concatenation (Row 3) leads to sub-optimal routing, dropping Semantic Segmentation by 0.32 mIoU and increasing normal error compared to the full model. This indicates that static task IDs are insufficient; the router requires the input-conditional feature recalibration provided by FiLM to align features with expert subspaces dynamically. 
+
+Necessity of Locality-Aware Decorrelation. The decorre-lation loss is critical for balanced specialization. Removing 
+
+Ldecorr keeps several coarse metrics strong, but causes Hu-man Parsing to drop sharply from 69 .25 to 61 .80 mIoU. Human Parsing is particularly sensitive because it requires fine-grained separation of adjacent body parts with thin and ambiguous boundaries. Additional routing analysis in Appendix C shows that Ldecorr reorganizes Parsing away from geometry-dominated routing and toward more task-appropriate semantic/boundary sharing. 
+
+Beyond Capacity Scaling and Plain MoE. To isolate the source of PRISM’s improvements, we compare it with two controlled baselines that account for potential confound-ing factors in capacity and sparsity. First, we construct an iso-FLOPs Wide ViT-S baseline by increasing the FFN expansion ratio to 5×, matching the active computation of PRISM’s Universal Anchor, shared experts, and Top-3 routed experts. We initialize this widened model with 
+
+Net2Net tiling (Chen et al., 2015) to ensure stable conver-gence, thereby testing whether the gains simply come from static dense capacity scaling. Second, we compare with a vanilla sparse MoE of comparable active capacity, obtained by removing PRISM-specific components, including the Universal Anchor, FiLM-conditioned routing, shared ex-pert, and dual-stream fusion. This control examines whether the gains arise merely from introducing sparse expert rout-ing. As shown in Table 5, PRISM consistently outperforms both baselines, suggesting that its advantage comes from conflict-aware dual-stream routing and dynamic knowledge disentanglement rather than increased dense capacity or 
+
+Table 6. Cost-performance Comparison on ViT-S. PRISM-lite keeps the same PRISM design but reduces the expert MLP ratio from 4.0 to 1.0.
+
+(a) Efficiency.            
+
+> Model Total Params (M) Active Params (M) GFLOPs Latency (ms)
+> SAK ViT-S 26.40 26.40 53.20 20.25
+> PRISM-lite 48.05 38.06 57.51 47.51
+
+(b) Performance on PASCAL-Context.                    
+
+> Model Semseg
+> mIoU ↑
+> Parsing
+> mIoU ↑
+> Saliency
+> maxF ↑
+> Normal
+> mErr ↓
+> Boundary
+> odsF ↑
+> ∆m
+> %↑
+> SAK ViT-S 78.66 68.46 84.66 14.33 70.28 0.43
+> PRISM-lite 78.97 69.60 84.71 14.39 69.73 0.61
+
+generic MoE sparsity alone. 
+
+Cost-Performance Trade-off. PRISM introduces extra of-fline cost because Stage 1 requires forwarding frozen VFM teachers. However, this cost is paid only during distillation, while inference uses a single student without running multi-ple VFMs. To examine whether the design remains useful under a lighter setting, we evaluate PRISM-lite , which keeps the same dual-stream architecture, FiLM routing, and losses, but reduces the expert MLP ratio from 4.0 to 1.0.As shown in Table 6, PRISM-lite achieves higher overall 
+
+∆m than SAK under comparable GFLOPs, although sparse dispatch introduces higher latency. 
+
+4.5. Analysis of Emergent Specialization 
+
+To verify our “Decompose-then-Recombine” hypothesis and validate the existence of soft boundaries, we probe the routing dynamics of the MoE layer (Layer 11) on the validation set by visualizing the expert activation probability 
+
+P (Expert i|Condition ) in Figure 3. 
+
+Phase 1: Emergent Decomposition. We first observe the emergence of teacher specialization and partial consensus in the routing patterns. The experts partition into distinct clusters: E14 acts as a semantic specialist dominated by CLIP ( 20 .7% ), while E2 serves as a geometric specialist dominated by SAM ( 14 .2% ), confirming that PRISM suc-cessfully separates conflicting supervision signals into more specialized parameter subspaces. Crucially, the router also identifies experts representing partial consensus, such as 
+
+E12 , which is co-activated by DINOv2 and CLIP for shared texture semantics but ignored by SAM. This highlights a fundamental advantage over SAK. While SAK’s static archi-tecture forces a rigid dichotomy between global consensus and task specificity, often leading to redundant learning of shared features, PRISM naturally identifies these soft boundaries. By consolidating shared knowledge into spe-cific experts like E12 , our method achieves greater parame-ter efficiency. 8PRISM: Synergizing Vision Foundation Models via Self-organized Expert Specialization            
+
+> (a) VFM Conditional Affinity (Stage 1)
+> (b) Task Conditional Affinity (Stage 2)
+> Figure 3. Visualization of Emergent Knowledge Decomposition and Recombination at Layer 11. (a) When conditioned on Teachers, experts show clear specialization (e.g., E14 for CLIP, E7for DINOv2), supporting effective conflict reduction through expert specialization.
+> (b) When conditioned on Tasks, the router recombines these experts. For example, SemSeg (Semantic) utilizes both DINO-experts and CLIP-experts, whereas Normal (Geometric) ignores CLIP-experts ( E14 ) in favor of DINO-experts ( E7).
+
+Phase 2: Knowledge Recombination. In the second stage, we analyze how these specialized primitives are utilized for downstream tasks. Unlike the sparse activation seen during teacher training, tasks exhibit composite routing patterns that recombine knowledge. Semantic Segmentation recruits a hybrid coalition, activating both the partial consensus ex-pert E12 (9.0% ) for spatial correspondence and the semantic expert E14 (7.2% ) for categorical reasoning. Conversely, Surface Normal Estimation heavily relies on texture-aware experts while significantly reducing reliance on the CLIP-specific E14 to 3.8% . This validates that PRISM moves beyond rigid partitioning to decompose knowledge into granular primitives, which are then dynamically recombined based on task needs. 
+
+Learnable Stability-Plasticity Trade-off. Finally, we track the trajectory of the learnable gate λ across layers to under-stand the adaptive balance between shared and specialized features. In shallow layers such as Layer 2, λ converges to approximately 0.7, retaining high reliance on the Universal Anchor for stability. In deeper layers such as layers 5, 8 and 11, λ shifts to approximately 0.5, indicating a greater dependence on Specialized Experts. This trend aligns with the intuition that conflicting semantic concepts primarily arise in deeper representations, necessitating stronger expert intervention to resolve interference. 
+
+# 5. Conclusion 
+
+In this work, we propose PRISM , a dynamic framework that addresses the optimization paradox in multi-teacher distilla-tion through a “Decompose-then-Recombine” paradigm. By introducing a Dual-Stream Conditioned MoE, our archi-tecture reduces effective cross-teacher interference through sparse expert specialization while preserving shared consen-sus via a Universal Anchor. Extensive experiments demon-strate that this emergent specialization leads to state-of-the-art performance across dense prediction benchmarks, effec-tively harmonizing the distinct strengths of heterogeneous Vision Foundation Models. Diagnostic analyses further show that context-modulated routing captures soft bound-aries between knowledge domains and supports dynamic knowledge recombination. One remaining trade-off lies in balancing semantic abstraction and geometric locality: PRISM learns a shared pool of specialized experts for het-erogeneous VFM knowledge, but the optimal allocation between high-level semantic cues and local geometric cues can vary across datasets and tasks. Future work may explore task-adaptive routing or lightweight local refinements to further tune this balance. 9PRISM: Synergizing Vision Foundation Models via Self-organized Expert Specialization 
+
+# Acknowledgements 
+
+This work was supported by the National Natural Science Foundation of China (Nos. 62272184 and 62402189), the China Postdoctoral Science Foundation (Nos. 2024M751012, 2025T180429, and GZC20230894), the Postdoctor Project of Hubei Province (No. 2024HBB-HCXB014), the Natural Science Foundation of Hubei Province (No. JCZRMS202600758), and the CIPS-SMP-Zhipu Large Model Fund (No. CIPS-SMP20250306). The computational work was performed on the high-performance computing platform at Huazhong University of Science and Technology. 
+
+# Impact Statement 
+
+This paper presents work whose goal is to advance the field of Machine Learning. There are many potential societal consequences of our work, none which we feel must be specifically highlighted here. 
+
+# References 
+
+Br ¨uggemann, D., Kanakis, M., Obukhov, A., Georgoulis, S., and Van Gool, L. Exploring relational context for multi-task dense prediction. In Proceedings of the IEEE/CVF international conference on computer vision , pp. 15869– 15878, 2021. Caruana, R. Multitask learning. Machine learning , 28(1): 41–75, 1997. Chen, T., Goodfellow, I., and Shlens, J. Net2net: Accel-erating learning via knowledge transfer. arXiv preprint arXiv:1511.05641 , 2015. Chen, Z., Badrinarayanan, V., Lee, C.-Y., and Rabinovich, A. Gradnorm: Gradient normalization for adaptive loss balancing in deep multitask networks. In International conference on machine learning , pp. 794–803. PMLR, 2018. Chen, Z., Ngiam, J., Huang, Y., Luong, T., Kretzschmar, H., Chai, Y., and Anguelov, D. Just pick a sign: Opti-mizing deep multitask models with gradient sign dropout. 
+
+Advances in Neural Information Processing Systems , 33: 2039–2050, 2020. Chen, Z., Shen, Y., Ding, M., Chen, Z., Zhao, H., Learned-Miller, E. G., and Gan, C. Mod-squad: Designing mix-tures of experts as modular multi-task learners. In Pro-ceedings of the IEEE/CVF Conference on Computer Vi-sion and Pattern Recognition , pp. 11828–11837, 2023. Deng, J., Dong, W., Socher, R., Li, L.-J., Li, K., and Fei-Fei, L. Imagenet: A large-scale hierarchical image database. In 2009 IEEE conference on computer vision and pattern recognition , pp. 248–255. Ieee, 2009. Fedus, W., Zoph, B., and Shazeer, N. Switch transform-ers: Scaling to trillion parameter models with simple and efficient sparsity. Journal of Machine Learning Re-search , 23(120):1–39, 2022. URL https://jmlr. org/papers/v23/21-0998.html .Fukuda, T., Suzuki, M., Kurata, G., Thomas, S., Cui, J., and Ramabhadran, B. Efficient knowledge distillation from an ensemble of teachers. In Interspeech 2017 , pp. 3697–3701, 2017. doi: 10.21437/Interspeech.2017-614. Guo, M., Haque, A., Huang, D.-A., Yeung, S., and Fei-Fei, L. Dynamic task prioritization for multitask learning. In 
+
+Proceedings of the European conference on computer vision (ECCV) , pp. 270–287, 2018. Heinrich, G., Ranzinger, M., Yin, H., Lu, Y., Kautz, J., Tao, A., Catanzaro, B., and Molchanov, P. Radiov2. 5: Improved baselines for agglomerative vision foundation models. In Proceedings of the Computer Vision and Pattern Recognition Conference , pp. 22487–22497, 2025. Huang, H., Huang, Y., Lin, L., Tong, R., Chen, Y.-W., Zheng, H., Li, Y., and Zheng, Y. Going beyond multi-task dense prediction with synergy embedding models. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 28181–28190, 2024. Ishihara, K., Kanervisto, A., Miura, J., and Hautamaki, V. Multi-task learning with attention for end-to-end au-tonomous driving. In Proceedings of the IEEE/CVF con-ference on computer vision and pattern recognition , pp. 2902–2911, 2021. Kanakis, M., Bruggemann, D., Saha, S., Georgoulis, S., Obukhov, A., and Van Gool, L. Reparameterizing convo-lutions for incremental multi-task learning without task interference. In European Conference on Computer Vi-sion (ECCV) , 2020. Kendall, A., Gal, Y., and Cipolla, R. Multi-task learning using uncertainty to weigh losses for scene geometry and semantics. In Proceedings of the IEEE conference on computer vision and pattern recognition , pp. 7482–7491, 2018. Kirillov, A., Mintun, E., Ravi, N., Mao, H., Rolland, C., Gustafson, L., Xiao, T., Whitehead, S., Berg, A. C., Lo, W.-Y., et al. Segment anything. In Proceedings of the IEEE/CVF international conference on computer vision ,pp. 4015–4026, 2023. Langley, P. Crafting papers on machine learning. In Langley, P. (ed.), Proceedings of the 17th International Conference on Machine Learning (ICML 2000) , pp. 1207–1216, Stan-ford, CA, 2000. Morgan Kaufmann. 10 PRISM: Synergizing Vision Foundation Models via Self-organized Expert Specialization 
+
+Li, W., Zhou, H., Yu, J., Song, Z., and Yang, W. Coupled mamba: Enhanced multimodal fusion with coupled state space model. Advances in Neural Information Processing Systems , 37:59808–59832, 2024a. Li, W., Song, Z., Zhou, H., Zhang, Y., Yu, J., and Yang, W. Lora-mixer: Coordinate modular lora experts through serial attention routing. arXiv preprint arXiv:2507.00029 ,2025. Li, W., Song, Z., Zhang, J., Zhao, T., Lin, J., Wang, Y., and Yang, W. Large language model as token compressor and decompressor, 2026. Li, W.-H., Liu, X., and Bilen, H. Universal representations: A unified look at multiple task and domain learning. Inter-national Journal of Computer Vision , 132(5):1521–1545, 2024b. Liu, B., Liu, X., Jin, X., Stone, P., and Liu, Q. Conflict-averse gradient descent for multi-task learning. Advances in Neural Information Processing Systems , 34:18878– 18890, 2021a. Liu, L., Li, Y., Kuang, Z., Xue, J.-H., Chen, Y., Yang, W., Liao, Q., and Zhang, W. Towards impartial multi-task learning. In International conference on learning representations , 2021b. Liu, S., Johns, E., and Davison, A. J. End-to-end multi-task learning with attention. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition ,pp. 1871–1880, 2019. Liu, Y., Zhang, W., and Wang, J. Adaptive multi-teacher multi-level knowledge distillation. Neurocomputing , 415: 106–113, 2020. doi: 10.1016/j.neucom.2020.07.048. Lu, Y., Cao, S., and Wang, Y.-X. Swiss army knife: Syner-gizing biases in knowledge from vision foundation mod-els for multi-task learning. In The Thirteenth Interna-tional Conference on Learning Representations , 2025. Maninis, K.-K., Radosavovic, I., and Kokkinos, I. Attentive single-tasking of multiple tasks. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2019. Mottaghi, R., Chen, X., Liu, X., Cho, N.-G., Lee, S.-W., Fidler, S., Urtasun, R., and Yuille, A. The role of context for object detection and semantic segmentation in the wild. In Proceedings of the IEEE conference on computer vision and pattern recognition , pp. 891–898, 2014. Oquab, M., Darcet, T., Moutakanni, T., Vo, H., Szafraniec, M., Khalidov, V., Fernandez, P., Haziza, D., Massa, F., El-Nouby, A., et al. Dinov2: Learning robust visual features without supervision. arXiv preprint arXiv:2304.07193 ,2023. Radford, A., Kim, J. W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., et al. Learning transferable visual models from natural language supervision. In International conference on machine learning , pp. 8748–8763. PmLR, 2021. Ranzinger, M., Barker, J., Heinrich, G., Molchanov, P., Catanzaro, B., and Tao, A. Phi-s: Distribution balancing for label-free multi-teacher distillation. arXiv preprint arXiv:2410.01680 , 2024a. Ranzinger, M., Heinrich, G., Kautz, J., and Molchanov, P. Am-radio: Agglomerative vision foundation model reduce all domains into one. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 12490–12500, 2024b. Ruder, S. An overview of multi-task learning in deep neural networks. arXiv preprint arXiv:1706.05098 , 2017. Sariyildiz, M. B., Weinzaepfel, P., Lucas, T., Larlus, D., and Kalantidis, Y. Unic: Universal classification models via multi-teacher distillation. arXiv preprint arXiv:2408.05088 , 2024. Sarıyıldız, M. B., Weinzaepfel, P., Lucas, T., de Jorge, P., Larlus, D., and Kalantidis, Y. Dune: Distilling a universal encoder from heterogeneous 2d and 3d teachers. In Pro-ceedings of the Computer Vision and Pattern Recognition Conference , pp. 30084–30094, 2025. Shang, J., Schmeckpeper, K., May, B. B., Minniti, M. V., Kelestemur, T., Watkins, D., and Herlant, L. Theia: Dis-tilling diverse vision foundation models for robot learning. 
+
+arXiv preprint arXiv:2407.20179 , 2024. Shazeer, N., Mirhoseini, A., Maziarz, K., Davis, A., Le, Q., Hinton, G., and Dean, J. Outrageously large neural networks: The sparsely-gated mixture-of-experts layer. In International Conference on Learning Representations ,2017. URL https://openreview.net/forum? id=B1ckMDqlg .Shi, M., Liu, F., Wang, S., Liao, S., Radhakrishnan, S., Zhao, Y., Huang, D.-A., Yin, H., Sapra, K., Yacoob, Y., et al. Ea-gle: Exploring the design space for multimodal llms with mixture of encoders. arXiv preprint arXiv:2408.15998 ,2024. Shoouri, S., Yang, M., Fan, Z., and Kim, H.-S. Efficient computation sharing for multi-task visual scene under-standing. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 17130–17141, 2023. Silberman, N., Hoiem, D., Kohli, P., and Fergus, R. Indoor segmentation and support inference from rgbd images. In 
+
+European conference on computer vision , pp. 746–760. Springer, 2012. 11 PRISM: Synergizing Vision Foundation Models via Self-organized Expert Specialization 
+
+Song, Z., Yu, J., Chen, Y.-P. P., and Yang, W. Transformer tracking with cyclic shifting window attention. In Pro-ceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 8791–8800, 2022. Song, Z., Luo, R., Yu, J., Chen, Y.-P. P., and Yang, W. Compact transformer tracker with correlative masked modeling. In Proceedings of the AAAI conference on artificial intelligence , volume 37, pp. 2321–2329, 2023. Song, Z., Tang, Y., Luo, R., Ma, L., Yu, J., Chen, Y.-P. P., and Yang, W. Autogenic language embedding for co-herent point tracking. In Proceedings of the 32nd ACM International Conference on Multimedia , pp. 2021–2030, 2024. Song, Z., Luo, R., Ma, L., Tang, Y., Chen, Y.-P. P., Yu, J., and Yang, W. Temporal coherent object flow for multi-object tracking. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 39, pp. 6978–6986, 2025. Song, Z., Yu, J., Chen, Y.-P. P., Yang, W., and Wang, X. Hypergraph-state collaborative reasoning for multi-object tracking, 2026. Vandenhende, S., Georgoulis, S., Van Gansbeke, W., Proes-mans, M., Dai, D., and Van Gool, L. Multi-task learning for dense prediction tasks: A survey. IEEE transactions on pattern analysis and machine intelligence , 44(7):3614– 3633, 2021. Wang, D., Zhang, Y., Yu, J., Chen, Y.-P. P., Xu, C., and Song, Z. Seeing further and wider: Joint spatio-temporal enlargement for micro-video popularity prediction. arXiv preprint arXiv:2604.20311 , 2026. Wang, H., Vasu, P. K. A., Faghri, F., Vemulapalli, R., Fara-jtabar, M., Mehta, S., Rastegari, M., Tuzel, O., and Pouransari, H. Sam-clip: Merging vision foundation models towards semantic and spatial understanding. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 3635–3647, 2024a. Wang, S., Li, J., Zhao, Z., Lian, D., Huang, B., Wang, X., Li, Z., and Gao, S. Tsp-transformer: Task-specific prompts boosted transformer for holistic scene understanding. In 
+
+Proceedings of the IEEE/CVF Winter Conference on Ap-plications of Computer Vision , pp. 925–934, 2024b. Wang, X., Tang, C., Yue, X., and Li, W.-H. 3d-aware multi-task learning with cross-view correlations for dense scene understanding. arXiv preprint arXiv:2511.20646 , 2025. Xu, Y., Yang, Y., and Zhang, L. Multi-task learning with knowledge distillation for dense prediction. In Proceed-ings of the IEEE/CVF International Conference on Com-puter Vision , pp. 21550–21559, 2023. Yang, L., Kang, B., Huang, Z., Xu, X., Feng, J., and Zhao, H. Depth anything: Unleashing the power of large-scale unlabeled data. In Proceedings of the IEEE/CVF con-ference on computer vision and pattern recognition , pp. 10371–10381, 2024a. Yang, Y., Jiang, P.-T., Hou, Q., Zhang, H., Chen, J., and Li, B. Multi-task dense prediction via mixture of low-rank experts. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 27927– 27937, 2024b. Ye, H. and Xu, D. Inverted pyramid multi-task transformer for dense scene understanding. In European Conference on Computer Vision , pp. 514–530. Springer, 2022a. Ye, H. and Xu, D. Taskprompter: Spatial-channel multi-task prompting for dense scene understanding. In The Eleventh International Conference on Learning Repre-sentations , 2022b. Ye, H. and Xu, D. Taskexpert: Dynamically assembling multi-task representations with memorial mixture-of-experts. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 21828–21837, 2023. Ye, H. and Xu, D. Invpt++: Inverted pyramid multi-task transformer for visual scene understanding. IEEE trans-actions on pattern analysis and machine intelligence , 46 (12):7493–7508, 2024. Ye, L., Zhang, Y., Wu, Y., Chen, Y.-P. P., Yu, J., Yang, W., and Song, Z. Mvp: Winning solution to smp chal-lenge 2025 video track. arXiv preprint arXiv:2507.00950 ,2025. You, S., Xu, C., Xu, C., and Tao, D. Learning from multi-ple teacher networks. In Proceedings of the 23rd ACM SIGKDD International Conference on Knowledge Dis-covery and Data Mining , pp. 1285–1294, 2017. doi: 10.1145/3097983.3098135. Yu, J., Dai, Y., Liu, X., Huang, J., Shen, Y., Zhang, K., Zhou, R., Adhikarla, E., Ye, W., Liu, Y., et al. Unleashing the power of multi-task learning: A comprehensive sur-vey spanning traditional, deep, and pretrained foundation model eras. arXiv preprint arXiv:2404.18961 , 2024. Zeng, G., Yu, J., Chen, Y.-P. P., Chen, X., Yang, W., and Song, Z. Curevo: Curriculum-guided self-evolution for video understanding. arXiv preprint arXiv:2604.26707 ,2026. Zhang, J., Fan, J., Ye, P., Zhang, B., Ye, H., Li, B., Cai, Y., and Chen, T. Bridgenet: Comprehensive and effective feature interactions via bridge feature for multi-task dense predictions. IEEE Transactions on Pattern Analysis and Machine Intelligence , 47(5):3657–3672, 2025. 12 PRISM: Synergizing Vision Foundation Models via Self-organized Expert Specialization 
+
+Zhang, R., Luo, Y., Liu, J., Yang, H., Dong, Z., Gudovskiy, D., Okuno, T., Nakata, Y., Keutzer, K., Du, Y., and Zhang, S. Efficient deweather mixture-of-experts with uncertainty-aware feature-wise linear modulation. In 
+
+Proceedings of the AAAI Conference on Artificial In-telligence , volume 38, pp. 16812–16820, 2024. doi: 10.1609/aaai.v38i15.29622. Zhang, Y. and Yang, Q. A survey on multi-task learning. 
+
+IEEE transactions on knowledge and data engineering ,34(12):5586–5609, 2021. Zhang, Y., Zhang, X., Sheng, J., Li, W., Yu, J., Chen, Y.-P. P., Yang, W., and Song, Z. Semantic-aware logical reasoning via a semiotic framework, 2026. Zhou, J., Zhang, H., Yuan, J., Ye, P., Chen, T., Jiang, H., Chen, M., and Zhang, Y. All-in-one: Transferring vision foundation models into stereo matching. In Proceed-ings of the AAAI Conference on Artificial Intelligence ,volume 39, pp. 10797–10805, 2025. Zong, Z., Ma, B., Shen, D., Song, G., Shao, H., Jiang, D., Li, H., and Liu, Y. Mova: Adapting mixture of vision experts to multimodal context. Advances in Neural Information Processing Systems , 37:103305–103333, 2024. 13 PRISM: Synergizing Vision Foundation Models via Self-organized Expert Specialization 
+
+# A. Effective Cross-Teacher Interaction 
+
+In the main paper, we use gradient topology and cosine-similarity distributions to show that PRISM reduces effective cross-teacher interference. Here we provide a more detailed pair-by-layer-by-checkpoint analysis. This analysis directly measures whether two teacher conditions update the same sparse experts, how much their token-level routing overlaps, and whether the remaining co-active experts receive aligned or conflicting gradients. For teacher contexts a and b, we measure the effective sparse-path interaction at layer l as 
+
+I(a,b ) 
+
+> l
+
+= E
+
+1(Eal ∩ Ebl̸ = ∅) · 1
+
+|Eal ∩ Ebl |
+
+X 
+
+> e∈Eal∩Ebl
+
+cos( gal,e , g bl,e )
+
+ . (10) This quantity is zero when no sparse expert is co-activated, and otherwise measures the residual gradient interaction on the actually shared sparse parameters.       
+
+> Figure 4. Co-active sparse experts across checkpoints. Each cell shows the number of experts that are activated under both teacher conditions for a teacher pair at a given MoE layer. Co-activation drops sharply during training: pair/layer cases with zero co-active experts increase from 4/12 at the early checkpoint to 7/12 by mid/late/final. Earlier layers become exactly separated more often, while deeper layers retain limited overlap, most notably DINOv2–SAM at Layer 11.
+
+Figure 4 first shows the number of co-active experts across checkpoints. Co-activation drops sharply during training: the number of pair/layer cases with zero co-active sparse experts increases from 4/12 at the early checkpoint to 7/12 by the mid, late, and final checkpoints. This supports the intended sparse-path separation mechanism. Earlier layers become exactly separated more often, while deeper layers preserve limited overlap, most notably DINOv2–SAM at Layer 11, which is consistent with their partially shared structural cues. 14 PRISM: Synergizing Vision Foundation Models via Self-organized Expert Specialization 
+
+Figure 5 provides a representative DINOv2–CLIP case. The top panel reports the mean cosine similarity on co-active sparse experts, while the bottom panel reports the cosine similarity on the shared branch. In Layer 5, the sparse-expert cosine decreases from 0.235 at the early checkpoint to 0.189 at the middle checkpoint, and then becomes negative at late/final checkpoints ( −0.167 / − 0.166 ). Cross markers indicate checkpoints where no co-active sparse experts exist, i.e., the effective sparse interaction is zero. 
+
+Figure 5. Representative gradient-interaction trend for DINOv2–CLIP across checkpoints from the same training run. Top: mean cosine similarity of gradients received by co-active sparse experts at different checkpoints. Bottom: cosine similarity on the shared branch. Cross markers denote checkpoints where no co-active sparse experts exist, i.e., effective sparse interaction is zero in practice. A representative example is Layer 5, where the sparse-expert cosine changes from 0.235 at early to 0.189 at mid, then becomes negative at late/final ( −0.167 / − 0.166 ), indicating substantially reduced cross-teacher interference. 
+
+15 PRISM: Synergizing Vision Foundation Models via Self-organized Expert Specialization 
+
+Figure 6 gives the complete characterization over all three teacher pairs, four MoE layers, and four checkpoints. PRISM reduces sparse-path interference through two complementary regimes. In many cases, routing overlap and co-activation decrease directly. In cases where overlap persists, such as some deeper DINOv2–SAM settings, the residual sparse-expert gradient cosine remains close to zero. Meanwhile, the shared expert retains small but nonzero compatible gradients, indicating structured decomposition rather than indiscriminate suppression of all shared information.       
+
+> Figure 6. Pair ×layer ×checkpoint characterization of cross-teacher interaction. We show (a) co-active sparse experts, (b) token overlap, (c) gradient cosine on the actually co-active sparse experts, and (d) gradient cosine on the shared expert. PRISM reduces sparse-path interference either by decreasing routing overlap/co-activation or, when overlap persists, by driving the residual sparse-expert gradient cosine near zero. The shared expert retains small but nonzero compatible gradients, indicating structured decomposition rather than global suppression.
+
+# B. Stability Across Random Seeds 
+
+We next examine whether expert specialization is a stable phenomenon or a seed-specific artifact. Since MoE expert indices are permutation-invariant, we align non-reference seeds to the first seed with Hungarian matching before comparison. Figure 7 shows that the same qualitative teacher–expert affinity structure consistently re-emerges across random seeds. In early and middle layers, teacher-preferred partitions are sharp: different teachers activate different expert groups 16 PRISM: Synergizing Vision Foundation Models via Self-organized Expert Specialization 
+
+Figure 7. Teacher–expert affinity across random seeds during the decompose stage. Each heatmap shows the routing-frequency affinity matrix for one MoE layer. Non-reference seeds are aligned to the first seed using Hungarian matching. The top axis shows aligned comparison slots Sk , while the bottom axis shows the original expert IDs Ej in each seed. Cells with zero or negligible affinity are left blank for readability. Earlier and middle layers exhibit sharper teacher-preferred partitioning, whereas the deepest layer is more mixed/shared; importantly, the same qualitative specialization structure consistently re-emerges across seeds up to permutation. 
+
+after alignment. In the deepest layer, routing becomes more mixed and shared, which is expected because high-level representations contain more overlapping semantic and structural information. This seed-level stability supports that the observed specialization is a robust outcome of the PRISM training objective and architecture. 
+
+# C. Effect of Locality-Aware Decorrelation on Human Parsing 
+
+The component ablation in the main paper shows that removing Ldecorr causes a large drop in Human Parsing. This section provides additional evidence explaining why this task benefits strongly from locality-aware decorrelation. Human Parsing requires fine-grained separation among adjacent body parts, where local boundaries are thin and often ambiguous. Therefore, a routing pattern dominated by coarse geometry can hurt part-level discrimination. We conduct this analysis as an additional diagnostic evaluation to localize the effect of Ldecorr ; while its absolute mIoU values may differ from the main ablation table due to the diagnostic protocol, all comparisons within this section use the same protocol. 17 PRISM: Synergizing Vision Foundation Models via Self-organized Expert Specialization 
+
+Figure 8. Qualitative comparison on Human Parsing. We show three representative examples for illustration. Compared with the variant without Ldecorr , adding Ldecorr generally yields more coherent part layouts and reduces fragmented predictions, especially around lower-body regions and articulated limbs. This is consistent with the improvements in boundary-band evaluation and the largest per-class gains on limb categories. 
+
+Figure 8 shows representative qualitative examples. With Ldecorr , predictions become more coherent and less fragmented, especially around lower-body regions and articulated limbs. This qualitative trend matches the quantitative improvements in Tables 7, 8, and 9. 18 PRISM: Synergizing Vision Foundation Models via Self-organized Expert Specialization 
+
+Figure 9. Why Human Parsing benefits more from Ldecorr . (a,b) Parsing-condition routing overlap across MoE layers. Each cell shows the token-level routing Jaccard overlap between Human Parsing and another downstream task under the corresponding task condition. Without Ldecorr , Parsing is almost fully aligned with Normal in early/mid layers, while its overlap with SemSeg and Boundary is nearly zero until Layer 11. With Ldecorr , this pattern changes substantially: Parsing–Normal overlap decreases, while overlap with SemSeg and Boundary increases markedly. (c,d) Layer-2 task affinity, i.e., expert usage distribution. Without Ldecorr , Parsing and Normal concentrate on nearly the same sparse experts; with Ldecorr , Parsing redistributes toward experts that are also used by SemSeg/Boundary. Together, these results suggest that Ldecorr reorganizes Parsing away from an overly geometry-dominated routing pattern toward a more task-appropriate combination of semantic and boundary-sensitive sharing. 
+
+Figure 9 further explains the routing mechanism behind this gain. Without Ldecorr , Human Parsing is almost fully aligned with Normal in early and middle layers, and both tasks concentrate on nearly the same sparse experts. With Ldecorr ,Parsing–Normal overlap decreases substantially, while overlap with SemSeg and Boundary increases. This suggests that 
+
+Ldecorr does not merely enforce stronger global orthogonality; it reorganizes Parsing toward a task-appropriate mixture of semantic and boundary-sensitive sharing. Table 7 reports overall Human Parsing and boundary-band metrics. The gain from Ldecorr is not limited to global mIoU; it 19 PRISM: Synergizing Vision Foundation Models via Self-organized Expert Specialization 
+
+remains clear near part boundaries, where boundary-band mIoU improves by +5 .59 and foreground-only boundary-band mIoU improves by +5 .86 .
+
+Table 7. Overall Human Parsing analysis. Boundary-band metrics are computed near ground-truth part boundaries. 
+
+Metric w/o Ldecorr w/ Ldecorr ∆
+
+Human Parsing mIoU (all) 63.69 71.18 +7.48 
+
+Human Parsing mIoU (fg only) 58.54 67.08 +8.54 
+
+Boundary-band mIoU (all) 42.26 47.85 +5.59 
+
+Boundary-band mIoU (fg only) 40.74 46.60 +5.86 
+
+Boundary-band pixel acc. 62.59 66.99 +4.40 
+
+The class-wise results in Table 8 show that the largest gains occur on fine-grained limb categories, such as upper arm, lower arm/hand, and lower leg/foot. These are precisely the categories where neighboring body parts are semantically similar and separated by thin local boundaries. 
+
+Table 8. Per-class IoU on Human Parsing. Class w/o Ldecorr w/ Ldecorr ∆
+
+Background 94.58 95.72 +1.14 Head 86.31 90.43 +4.12 Torso 71.88 77.92 +6.04 Upper arm 48.97 62.24 +13.28 
+
+Lower arm / hand 53.10 63.53 +10.43 
+
+Upper leg 50.91 57.59 +6.67 Lower leg / foot 40.09 50.80 +10.71 
+
+Table 9 confirms the same trend under boundary-band evaluation. The strongest boundary-region gains again appear on articulated limb parts, supporting that Ldecorr improves local part separation rather than only coarse semantic recognition. 
+
+Table 9. Boundary-band per-class IoU on Human Parsing. 
+
+Class w/o Ldecorr w/ Ldecorr ∆
+
+Background 51.36 55.37 +4.01 Head 55.95 60.46 +4.52 Torso 44.89 49.21 +4.32 Upper arm 34.10 40.83 +6.72 
+
+Lower arm / hand 41.02 45.60 +4.58 Upper leg 34.78 41.14 +6.36 
+
+Lower leg / foot 33.72 42.35 +8.63 
+
+# D. Sensitivity Analysis 
+
+We evaluate the sensitivity of PRISM to routing sparsity, expert capacity, the shared expert, and the application depth of Ldecorr on PASCAL-Context with a ViT-S student. As shown in Table 10, nearby configurations remain competitive, indicating that PRISM is not a brittle single-point design. The default setting provides the best overall balance, especially on Human Parsing and Normal Estimation. The routing sparsity results show that Top-1 underuses expert combinations, while Top-4 increases capacity but hurts Boundary, suggesting that overly dense routing weakens specialization. Varying the number of experts from 12 to 18 
+
+produces stable but slightly lower results than the default N = 15 . Removing the shared expert also degrades performance, confirming that a small shared component inside the sparse path stabilizes routing. Finally, applying Ldecorr across L2,5 gives the best multi-task trade-off, whereas removing it severely hurts Human Parsing. 20 PRISM: Synergizing Vision Foundation Models via Self-organized Expert Specialization 
+
+Table 10. Sensitivity analysis on PASCAL-Context with ViT-S. Configuration Semseg Parsing Saliency Normal Boundary 
+
+mIoU ↑ mIoU ↑ maxF ↑ mErr ↓ odsF ↑
+
+N = 15 , Top-1 77.16 66.77 84.43 14.79 68.47 
+
+N = 15 , Top-2 78.97 68.91 84.68 14.66 69.02 
+
+N = 15 , Top-4 78.81 68.92 84.45 14.62 66.43 
+
+N = 12 , Top-3 78.21 68.56 84.89 14.78 68.84 
+
+N = 18 , Top-3 78.34 68.68 84.37 14.70 69.01 w/o Shared Expert 78.72 67.73 84.20 14.88 68.01 w/o Ldecorr 79.80 61.80 85.50 14.32 70.86 
+
+Ldecorr on L2 79.12 68.96 84.53 14.51 68.27 
+
+Ldecorr on L2,5,8 78.80 68.32 84.37 14.45 68.24 PRISM Default 79.19 69.25 85.01 14.28 70.78 
+
+# E. Reduced-Teacher Distillation 
+
+We further test whether PRISM still helps when fewer teachers are distilled. Table 11 reports a reduced-teacher setting using only DINOv2 and SAM. Under the same student and training setup, PRISM clearly outperforms a dense widened student. This indicates that PRISM’s benefit does not rely on the full CLIP+DINOv2+SAM teacher set; even with fewer heterogeneous teachers, sparse context-dependent routing remains useful for separating and recombining complementary knowledge. 
+
+Table 11. Reduced-teacher setting with DINOv2 + SAM on PASCAL-Context. Model Semseg Parsing Saliency Normal Boundary 
+
+mIoU ↑ mIoU ↑ maxF ↑ mErr ↓ odsF ↑
+
+Wide ViT 66.13 61.21 84.16 14.73 67.08 PRISM 77.80 68.90 84.50 14.43 69.48 
+
+# F. Additional Efficiency Details 
+
+PRISM introduces additional offline training cost because Stage 1 requires forwarding frozen VFM teachers. This cost is paid only during distillation; after training, inference uses a single student model without running multiple VFMs. Table 12 summarizes the end-to-end training cost for the main ViT-B PASCAL setting. 
+
+Table 12. End-to-end training cost of PRISM on PASCAL-Context with ViT-B. GPU-hours include teacher forwarding. 
+
+Stage Schedule Train / Val Batch size Hardware GPU-hours 
+
+Stage 1 30 epochs 20 / 20 RTX 5090 32GB 499.2 Stage 2 40k iters 2 / 8 RTX 5090 32GB 56.1 
+
+Total – – – 555.3 
+
+# G. Additional Analysis of Routing Dynamics 
+
+We present a detailed, layer-by-layer visualization of the routing dynamics. In the following figures, each heatmap spans the full page width to reveal fine-grained activation patterns. 21 PRISM: Synergizing Vision Foundation Models via Self-organized Expert Specialization 
+
+(a) VFM Affinity (Layer 2) 
+
+(b) Task Affinity (Layer 2) 
+
+Figure 10. Routing Dynamics at Shallow Layer (Layer 2). Top: VFM Affinity. Bottom: Task Affinity. At this early stage, the activation blocks are broad and diffuse. The router does not yet distinguish sharply between teachers or tasks, indicating that Layer 2 processes universal, shared visual primitives (Global Consensus). 
+
+(a) VFM Affinity (Layer 5) 
+
+(b) Task Affinity (Layer 5) 
+
+Figure 11. Routing Dynamics at Middle Layer (Layer 5). Transitioning to mid-level features, we observe the onset of separation. While some overlaps persist, the router begins to form distinct clusters for different contexts, preparing for the semantic split in deeper layers. 
+
+22 PRISM: Synergizing Vision Foundation Models via Self-organized Expert Specialization 
+
+(a) VFM Affinity (Layer 8) 
+
+(b) Task Affinity (Layer 8) 
+
+Figure 12. Routing Dynamics at Deep Layer (Layer 8). In the deep layers, the experts exhibit sharp, context-dependent specialization resembling Layer 11. Distinct, non-overlapping clusters form for each teacher (Top), supporting that effective conflict reduction is mainly handled in the network’s later stages. 
+
+23

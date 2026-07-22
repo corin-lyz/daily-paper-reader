@@ -1,0 +1,418 @@
+Title: The Devil Is in the Leakage: A Disentangled Dual-Purification Framework for High-Fidelity Hairstyle Transfer
+
+URL Source: https://arxiv.org/pdf/2607.11281v1
+
+Published Time: Tue, 14 Jul 2026 02:24:00 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# The Devil Is in the Leakage: A Disentangled Dual-Purification Framework for High-Fidelity Hairstyle Transfer 
+
+# Jijie Li 
+
+lijijie2024@ia.ac.cn SAI, UCAS; MAIS, CASIA Beijing, China 
+
+# Jiankuo Zhao 
+
+zhaojiankuo2024@ia.ac.cn MAIS, CASIA; SAI, UCAS Beijing, China 
+
+# Xiangyu Zhu ∗
+
+xiangyu.zhu@ia.ac.cn SAI, UCAS; MAIS, CASIA Beijing, China 
+
+# Zhen Lei 
+
+zhen.lei@ia.ac.cn MAIS, CASIA; SAI, UCAS Beijing, China CAIR, HKSIS, CAS Hong Kong, China SCSE, FIE, M.U.S.T Macau, China Source Reference Result Source Reference Result 
+
+Figure 1: High-fidelity hairstyle transfer by our proposed Dual-Purification Framework (DPF). Our method successfully transfers complex hairstyles across subjects with significant variations in pose, gender, and appearance. DPF preserves the source identity with high fidelity and generates geometrically aligned, photorealistic results. 
+
+## Abstract 
+
+Hairstyle transfer aims to synthesize a photorealistic portrait by transplanting the hairstyle from a reference image onto a source subject, while preserving the source’s identity. While recent large-scale foundation models exhibit remarkable generative capabilities, they struggle with the zero-shot disentanglement required for such precise local editing, inherently entangling the reference hairstyle with its original facial identity and pose. To address these limitations through structural decomposition, a standard pipeline for hairstyle transfer typically decouples the process by first generating a “bald” image from the source and extracting identity-agnostic hairstyle features from a reference, fusing them to produce the final result. However, this methodology is frequently prone to several types of artifacts, including identity inconsistency and mismatched hair ge-ometry. In this paper, we demonstrate that these artifacts stem from a more fundamental issue, which we term the leakage problem. This leakage is twofold: First, Identity Leakage in Hairstyle occurs when hairstyle features remain entangled with the reference’s identity 
+
+> ∗Corresponding author.
+
+and pose. Second, Flaw Leakage in Bald arises when subtle geomet-ric flaws left in the “bald” image are propagated into the synthesized hairstyle. To address these issues, we propose the Dual-Purification Framework (DPF), which integrates two complementary purifica-tion strategies. The Adversarial Hairstyle Purification (AHP) mod-ule explicitly purges identity information from hairstyle features by adversarially minimizing hairstyle–bald mutual information. Concurrently, the Contrastive Geometric Purification (CGP) mod-ule introduces a contrastive objective that penalizes the model’s reliance on these geometric flaws in the “bald” image, thereby sup-pressing the Flaw Leakage in Bald. By explicitly mitigating both components of leakage, DPF achieves state-of-the-art performance in high-fidelity, identity-preserving hairstyle transfer. 
+
+## Keywords 
+
+Hair Transfer, Diffusion Models, Hairstyle Editing, Latent Disen-tanglement 
+
+## 1 Introduction 
+
+In real-world scenarios such as hair salons and wig stores, cus-tomers often wish to preview how they would look with a new     
+
+> 1arXiv:2607.11281v1 [cs.CV] 13 Jul 2026 Jijie Li, Jiankuo Zhao, Xiangyu Zhu, and Zhen Lei Source Reference Failure Case
+> Source Reference Failure Case
+> (a) Identity Leakage in Hairstyle
+> Bald
+> (b) Flaw Leakage in Bald
+> Flaws
+> Identity inconsistency
+> pollute hair representation
+
+Figure 2: Illustration of the two factors of leakage in hairstyle transfer. (a): Identity Leakage in Hairstyle, where reference identity features distort the source person. (b): Flaw Leakage in Bald, where flaws in the “bald” image pollute the hair representation and misleads the generative model to produce a failed hair contour. 
+
+hairstyle by indicating a reference photo of a desired model. This motivates the task of hairstyle transfer, which aims to synthesize a realistic portrait by transplanting the hairstyle from a reference image onto the source person while preserving the source’s iden-tity. However, constrained by the complexity of hair structure and texture—a scenario where the reference image is important for guid-ing the synthesis—achieving high-fidelity and controllable hairstyle transfer remains a significant challenge. While recent large-scale foundation models (e.g., Nano Banana Pro, Flux.2 Pro) have revolu-tionized image generation [ 30 ], they fundamentally struggle with the zero-shot disentanglement required for precise local editing. When prompted to transfer a hairstyle, these models inherently entangle the reference hair with its original facial identity, pose, or lighting, failing to provide explicit control. To address this, the dom-inant paradigm for this task [ 42 , 47 , 48 , 53 , 57 ] follows a two-stream design to force spatial and semantic disentanglement: a geometric stream derived from the source (typically a “bald” image) and a hairstyle stream extracted from the reference. These two streams are fused by a synthesis backbone, often implemented as a diffu-sion model, to generate the final portrait. While this framework is intuitive and effective, this paradigm still suffers from artifacts such as identity inconsistency and mismatched hair geometry. We demonstrate that these artifacts stem from a fundamental leakage problem, which is twofold: The first, termed Identity Leak-age in Hairstyle (Figure 2(a)), arises when hairstyle features remain entangled with the reference’s identity and pose, leading to identity inconsistency in the synthesized face. The second, a more subtle phenomenon that we identify as Flaw Leakage in Bald (Figure 2(b)), occurs when generating the bald image from the source, the hair is typically not fully removed and a subtle flaw seen as shadow is left in the bald image. In this case, the flaw pollutes the hair represen-tation and misleads the generative model to produce a failed hair contour. These two aspects represent complementary failure modes that collectively degrade the quality of the final synthesis. Specifi-cally, the top row vividly demonstrates Identity Leakage in Hairstyle 
+
+where the synthesized face incorrectly inherits facial features from the reference; conversely, the bottom row showcases Flaw Leakage in Bald where the model exploits subtle artifacts in the “bald” input, leading to a spurious correlation that erroneously replicates the source’s original hairstyle. This limitation underscores the need for a framework that explicitly and jointly purifies both streams. To this end, we propose the Dual-Purification Framework (DPF) . It introduces two specialized strategies to realize this goal: 
+
+Adversarial Hairstyle Purification (AHP) explicitly suppresses identity information from hairstyle features by adversarially mini-mizing hairstyle–bald mutual information, where the discriminator serves as an implicit mutual information estimator that guides the generator to suppress identity-related cues between hairstyle and bald representations, while Contrastive Geometric Purification (CGP) suppresses Flaw Leakage in the geometric stream by intro-ducing a contrastive objective that penalizes the model’s reliance on geometric flaws. By explicitly purifying both the hairstyle and geometric information streams, DPF achieves state-of-the-art per-formance in high-fidelity, identity-preserving hairstyle transfer. Our contributions are summarized as follows: 
+
+• We systematically identify and formalize a fundamental leakage problem in hairstyle transfer. We further define its two aspects: Identity Leakage in Hairstyle , which arises from feature entanglement, and Flaw Leakage in Bald , which stems from spurious correlation learning. 
+
+• We introduce the Dual Purification Framework (DPF), a novel architecture based on an explicit purification mecha-nism. DPF integrates two targeted modules (AHP and CGP) to explicitly and jointly purify the hairstyle and geomet-ric information streams, thereby suppressing both Identity Leakage and Flaw Leakage. 
+
+• Extensive experiments demonstrate that our framework sets a new state-of-the-art in high-fidelity and identity-preserving hairstyle transfer, outperforming prior methods both qualitatively and quantitatively. 
+
+## 2 Related Work 
+
+Hairstyle Transfer. The evolution of hairstyle transfer has been largely driven by generative models. A significant line of work operates in the latent space of pretrained StyleGANs [ 22 –24 ], fac-ing a trade-off between slow, high-fidelity optimization-based ap-proaches such as Barbershop [ 56 ] and fast but less accurate encoder-based methods like HairFastGAN [ 36 ] and HairCLIP [ 46 ]. How-ever, these methods remain significantly constrained by the in-herent entanglement in GAN feature spaces and often fail on out-of-distribution poses [ 57 ]. To mitigate geometric inconsistencies, re-cent works have explored 3D-aware representations using NeRFs [ 35 ]or meshes, as in HairNeRF [ 5] and DELTA [ 12 ], though at the cost of increased complexity and data demands [ 12 , 25 ]. Recently, large foundation models have demonstrated unprecedented capabilities in end-to-end image editing. However, applying them directly to personalized hairstyle transfer often fails due to severe feature en-tanglement—altering the hair typically compromises the source’s facial identity or pose in a zero-shot setting. To enforce strict spa-tial and semantic disentanglement, diffusion-based approaches [ 41 ]adopt a “programmatic disentanglement” strategy that synthesizes 
+
+> 2The Devil Is in the Leakage: A Disentangled Dual-Purification Framework for High-Fidelity Hairstyle Transfer
+
+hair onto hair-agnostic representations [ 7 , 29 , 48 ], exemplified by HairFusion [ 7] and Stable-Hair [ 42 , 53 ]. Yet, our systematic diagno-sis reveals a fundamental leakage problem in this paradigm, where the multi-stage condition fusion process propagates both identity features and geometric flaws into the final synthesis. We address this problem with a dual-purification framework that jointly puri-fies the hairstyle representation and the geometric pathway. 
+
+Disentangled Representation Learning. Disentangled repre-sentation learning (DRL) aims to separate independent factors of variation in learned features [ 3 , 18 , 28 , 44 ]. Typical methods train encoders from scratch to be invariant to nuisance factors via ad-versarial or contrastive objectives [ 13 , 26 ], and have been widely applied in facial attribute editing [ 9, 11 , 19 , 33 , 34 , 38 , 40 ]. However, such models learn disentanglement solely from raw data. In con-trast, our work leverages general-purpose foundation models such as DINOv2 [ 37 ] and CLIP [ 8, 39 ] as rich feature sources. Despite their robustness, these representations remain highly entangled for fine-grained tasks [ 31 , 54 , 55 ]. Instead of using them for ex-ternal supervision [ 32 , 43 ], we propose a post-hoc framework that directly purifies these features—disentangling identity information while mitigating the model’s reliance on irrelevant data artifacts to achieve effective disentanglement without costly retraining. 
+
+## 3 Methodology 3.1 Preliminaries 
+
+Our work builds on the Latent Diffusion Model (LDM) [ 41 ] frame-work. We integrate two key conditioning mechanisms: Control-Net [ 51 ] for fine-grained spatial control, and an IP-Adapter-inspired [49 ] module AHP-Adapter for style injection. While the AHP-Adapter 
+
+provides a powerful mechanism for style conditioning, its direct use of raw image features leads to the Identity Leakage in Hairstyle 
+
+problem, as the features remain highly entangled. Concurrently, 
+
+ControlNet , which relies on pre-processed inputs like the 𝐼 𝑏𝑎𝑙𝑑 con-dition, introduces a complementary challenge: these inputs can con-tain subtle artifacts from their generation (e.g., inpainting), which the model can exploit as a “shortcut”, leading to the Flaw Leakage in Bald failure mode we identified in the introduction. Our work directly addresses these shortcomings by proposing a Dual-Purification Framework (DPF) to purify both the style features (via AHP ) and the geometric condition (via CGP ). For a detailed background on these foundational models, including their original formulations, please refer to the Appendix. 
+
+## 3.2 Overall Architecture 
+
+Our DPF, illustrated in Figure 3, is trained via a self-reconstruction task. Given a source image 𝐼 𝑠𝑟𝑐 and its corresponding hair mask 
+
+𝑀 ℎ𝑎𝑖𝑟 , we first generate a “bald” portrait 𝐼 𝑏𝑎𝑙𝑑 using a specialized diffusion-based inpainting model (detailed in the Appendix). The framework then synthesizes a reconstruction ˆ𝐼 𝑠𝑟𝑐 through two par-allel pathways. 
+
+Style Pathway. A frozen style encoder 𝐸 𝑠𝑡 𝑦𝑙𝑒 extracts patch fea-tures from the source image. These are masked to produce a variable-length sequence of entangled hair features 𝐹 𝑠𝑡 𝑦𝑙𝑒 ∈ R𝑁 ×𝐷 𝑖𝑛 .
+
+𝐹 𝑠𝑡 𝑦𝑙𝑒 = 𝐸 𝑠𝑡 𝑦𝑙𝑒 (𝐼 𝑠𝑟𝑐 ) ⊗ 𝑀 ℎ𝑎𝑖𝑟 (1) Our trainable style generator 𝐺 then purifies these features into a fixed-length, disentangled style representation 𝑆 𝑝𝑢𝑟𝑒 ∈ R𝑘 ×𝐷 𝑜𝑢𝑡 :
+
+𝑆 𝑝𝑢𝑟𝑒 = 𝐺 (𝐹 𝑠𝑡 𝑦𝑙𝑒 ) (2) 
+
+Geometric Pathway. Concurrently, a trainable ControlNet 𝐶𝑁 𝑒𝑡 
+
+and a frozen identity encoder 𝐸 𝐼 𝐷 extract spatial and identity con-ditions from the bald portrait: 
+
+𝐶 𝑠𝑝𝑎𝑡𝑖𝑎𝑙 = 𝐶𝑁 𝑒𝑡 (𝐼 𝑏𝑎𝑙𝑑 , 𝑆 𝑝𝑢𝑟𝑒 ) (3) where 𝐶 𝑠𝑝𝑎𝑡𝑖𝑎𝑙 provides multi-level geometric guidance. In our im-plementation, 𝐸 𝐼 𝐷 and 𝐸 𝑠𝑡 𝑦𝑙𝑒 share the same pre-trained encoder, where 𝐸 𝐼 𝐷 extracts the global [CLS] token and 𝐸 𝑠𝑡 𝑦𝑙𝑒 extracts the patch-level features. 
+
+Synthesis. Finally, a pre-trained latent diffusion model (LDM) back-bone, G𝐿𝐷𝑀 , generates the edited image conditioned on both path-ways: 
+
+𝐼 𝑒𝑑𝑖𝑡 = G𝐿𝐷𝑀 (𝐶 𝑠𝑝𝑎𝑡𝑖𝑎𝑙 , 𝑆 𝑝𝑢𝑟𝑒 ) (4) 
+
+Dual-target Self-reconstruction Training. Our DPF is trained via a dual-target self-reconstruction task. While traditional methods rely on low-quality video or synthetic datasets, our framework maintains the advantage of single-image self-supervision, requir-ing only 𝐼 𝑠𝑟𝑐 and its derived 𝐼 𝑏𝑎𝑙𝑑 for training. However, to explic-itly establish the geometric anchor and prevent shortcut learning, we adaptively switch the training target based on the style condi-tion. Specifically, in the conditional pass where 𝑆 𝑝𝑢𝑟𝑒 is active, the model minimizes the reconstruction loss ( L𝑟𝑒𝑐 ) between 𝐼 𝑠𝑟𝑐 and the synthesized image ˆ𝐼 𝑠𝑟𝑐 to learn texture and fidelity (blue flow in Fig 3 (a)). Conversely, in the 10% unconditional pass where 𝑆 𝑝𝑢𝑟𝑒 
+
+is dropped, the training target switches from 𝐼 𝑠𝑟𝑐 to the bald por-trait 𝐼 𝑏𝑎𝑙𝑑 . This dual-target design forces the unconditional branch 
+
+𝜖 𝑢𝑛𝑐𝑜𝑛𝑑 to function as a pure geometric baseline, preventing the model from “leaking” original hair features from 𝐼 𝑏𝑎𝑙𝑑 ’s artifacts. Despite this target switching, the training remains strictly within the self-reconstruction paradigm as all supervision signals are de-rived from the same source subject, naturally conferring robust cross-sample transfer capability during inference. 
+
+## 3.3 Adversarial Purification of Hairstyle Features 
+
+The cornerstone of our framework is the Adversarial Hairstyle Purification (AHP) module, illustrated in Figure 3(b). Its objec-tive is to transform the entangled hairstyle features 𝐹 𝑠𝑡 𝑦𝑙𝑒 into a purified representation 𝑆 𝑝𝑢𝑟𝑒 that is disentangled from identity and pose. To achieve this, we formulate an adversarial game between a lightweight style generator 𝐺 and a content-aware discriminator 
+
+𝐷 .The generator maps the variable-length hairstyle features 𝐹 𝑠𝑡 𝑦𝑙𝑒 ∈
+
+R𝑁 ×𝐷 𝑖𝑛 to a fixed-length purified representation 
+
+𝑆 𝑝𝑢𝑟𝑒 = 𝐺 (𝐹 𝑠𝑡 𝑦𝑙𝑒 ), 𝑆 𝑝𝑢𝑟𝑒 ∈ R𝑘 ×𝐷 𝑜𝑢𝑡 , (5) while the discriminator evaluates the compatibility between 𝑆 𝑝𝑢𝑟𝑒 
+
+and an identity representation. Detailed architectures of 𝐺 and 𝐷 
+
+are provided in the Appendix. During training, the discriminator receives positive pairs (𝑆 𝑝𝑢𝑟𝑒 , 𝐶 𝑏𝑎𝑙𝑑 ), where both features originate from the same identity, and negative pairs (𝑆 𝑝𝑢𝑟𝑒 , 𝐶 𝑟𝑎𝑛𝑑 ), where the identity embedding is randomly sampled from another image.          
+
+> 3Jijie Li, Jiankuo Zhao, Xiangyu Zhu, and Zhen Lei Bald
+> Inpainting
+> Estyle
+> Isrc
+> Ibald
+> Feature Map
+> 𝑴 𝒉𝒂𝒊𝒓
+> Fstyle Spure
+> Generator
+> Discriminator
+> 𝑬 𝑰𝑫 𝑬 𝑰𝑫
+> 𝑺 𝒑𝒖𝒓𝒆 𝑪 𝒃𝒂𝒍𝒅 𝑪 𝒓𝒂𝒏𝒅
+> Match
+> (1.0)
+> Mismatch
+> (0.0)
+> Generator
+> Uncertainty
+> (0.5)
+> Trainable Frozen Hadamard Product Diffusion -UNet Cross -Attention
+> Isrc Ibald Irand
+> ControlNet
+> AHP -Adapter
+> (a ) Dual -Purification Framework (DPF)
+> Generator Step (Eq . 8):
+> Co nfuse Discriminator (to Purify)
+> Discriminator Step (Eq . 7):
+> Classify Match/Mismatch Correctly
+> (b) Adversarial Purification
+> (Only Training)
+> (c) Contrastive Purification
+> (Only Training)
+> Ibald Isrc I𝒓𝒂𝒏𝒅
+> ′
+> Avoid artifact shortcuts (Eq. 12)
+> Feature Divergence
+> Controlnet
+> 𝑪 𝒔𝒑𝒂𝒕𝒊𝒂𝒍
+> 𝒑𝒐𝒔 𝑪 𝒔𝒑𝒂𝒕𝒊𝒂𝒍
+> 𝒏𝒆𝒈
+> 𝑴 𝒉𝒂𝒊𝒓
+> Iref
+> Iedit
+> $𝑰 src
+> Output
+> Input
+> Only Training
+> Only Inference
+
+Figure 3: The Dual-Purification Framework (DPF). (a) Simplified Pipeline Overview. This diagram illustrates the core data flow, which is shared by both the inference process and the training’s self-reconstruction pass. As shown in the top-right corner, the data flow involves a sequence of modules for feature extraction and synthesis. (b) Adversarial Hairstyle Purification (AHP): To resolve Identity Leakage in Hairstyle , the Generator is trained to fool a Discriminator which learns to detect identity information within the style representation 𝑆 𝑝𝑢𝑟𝑒 . (c) Contrastive Geometric Purification (CGP): To resolve Flaw Leakage in Bald , a contrastive loss forces the ControlNet to produce divergent features for different styles, suppressing the reliance on artifacts from 𝐼 𝑏𝑎𝑙𝑑 by penalizing their use. Note that modules (b) and (c) act as explicit regularizers utilized exclusively during the training phase, adding no computational overhead during inference. 
+
+Denoting these two distributions by z ∼ P 𝑝𝑜𝑠 and z′ ∼ P 𝑛𝑒𝑔 , in-spired by mutual information (MI) minimization [ 2], the adversarial objective encourages the generator to reduce identity predictability from the purified hairstyle representation. Ideally, this corresponds to reducing the dependence between 𝑆 𝑝𝑢𝑟𝑒 and 𝐶 𝑏𝑎𝑙𝑑 ,
+
+min  
+
+> 𝐺
+
+MI (𝑆 𝑝𝑢𝑟𝑒 ; 𝐶 𝑏𝑎𝑙𝑑 ). (6) Intuitively, if the discriminator can no longer infer whether a hairstyle feature matches a given identity, the hairstyle representa-tion contains little identity information, resulting in a more disen-tangled representation. We therefore use the discriminator as an adversarial proxy for this MI-inspired purification objective. The discriminator is optimized using the standard binary cross-entropy objective, 
+
+L𝐷 = −Ez∼P 𝑝𝑜𝑠 [log 𝐷 (z)] − Ez′∼P 𝑛𝑒𝑔 [log (1 − 𝐷 (z′))] . (7) Unlike conventional adversarial learning, the generator does not attempt to flip the discriminator’s prediction. Instead, its objective is to make positive pairs indistinguishable from negative ones, driving the discriminator toward maximal uncertainty. Therefore, the generator minimizes 
+
+L𝑎𝑑𝑣 = Ez∼P 𝑝𝑜𝑠 
+
+(𝐷 (z) − 0.5)2  . (8) This objective fundamentally differs from the non-saturating GAN loss [ 15 ]. Rather than maximizing the discriminator’s confidence to imitate a target distribution, our objective drives the discriminator toward maximal uncertainty, thereby removing identity-related information from the hairstyle representation instead of generating more realistic features. 
+
+## 3.4 Contrastive Geometric Purification (CGP) 
+
+While AHP (Sec. 3.3) purifies the style representation, it does not address the second critical failure mode: Flaw Leakage in Bald . Our analysis reveals that this leakage primarily originates within the conditional ControlNet . Tasked with providing geometric guidance from the 𝐼 𝑏𝑎𝑙𝑑 input, the ControlNet tends to overfit subtle algorith-mic artifacts (e.g., remnants of the original hair boundary), leading to shortcut learning [ 14 , 20 ]. Consequently, the conditional features become dominated by these artifacts rather than being properly guided by the hairstyle representation 𝑆 𝑝𝑢𝑟𝑒 .
+
+Style-Sensitive Contrastive Objective. To suppress this shortcut, we employ a style-sensitive contrastive learning scheme during training. For each sample, the same geometric condition 𝐼 𝑏𝑎𝑙𝑑 is paired with two contrasting hairstyle conditions: the target style representation 𝑆 𝑝𝑢𝑟𝑒 and a negative style representation 𝑆 𝑛𝑒𝑔 ex-tracted from another image 𝐼 ′ 
+
+> 𝑟𝑎𝑛𝑑
+
+. The corresponding multi-scale ControlNet features are computed as 
+
+𝐶 𝑝𝑜𝑠 = 𝐶𝑁 𝑒𝑡 (𝐼 𝑏𝑎𝑙𝑑 , 𝑆 𝑝𝑢𝑟𝑒 ), (9) 
+
+𝐶 𝑛𝑒𝑔 = 𝐶𝑁 𝑒𝑡 (𝐼 𝑏𝑎𝑙𝑑 , 𝑆 𝑛𝑒𝑔 ), (10) where 𝑆 𝑛𝑒𝑔 is extracted using the same hairstyle encoder from a randomly sampled image 𝐼 ′ 
+
+> 𝑟𝑎𝑛𝑑
+
+. The complete construction of the contrastive objective is illustrated in Figure 3(c). To discourage this shortcut behavior, CGP enforces the two mid-block activations to be dissimilar within the hair region. We first compute the mean spatial cosine similarity Sim ℎ𝑎𝑖𝑟 between 
+
+𝐶 𝑝𝑜𝑠 𝑠𝑝𝑎𝑡𝑖𝑎𝑙 and 𝐶 𝑛𝑒𝑔 𝑠𝑝𝑎𝑡𝑖𝑎𝑙 , evaluated only inside the ground-truth hair 
+
+> 4The Devil Is in the Leakage: A Disentangled Dual-Purification Framework for High-Fidelity Hairstyle Transfer
+
+Algorithm 1 Incremental CFG for DPF Inference 
+
+Input: Noisy latent z𝑡 , Timestep 𝑡 , Geometric condition 𝐶 𝑠𝑝𝑎𝑡𝑖𝑎𝑙 ,Purified style 𝑆 𝑝𝑢𝑟𝑒 , Guidance scale 𝜔 
+
+Output: Predicted noise ˆ𝝐 
+
+% Step 1: Unconditional pass (Bald geometry anchor)  
+
+> 1:
+
+𝝐 𝑢𝑛𝑐𝑜𝑛𝑑 ← 𝜖 𝜃 (z𝑡 , 𝑡, 𝐶 𝑠𝑝𝑎𝑡𝑖𝑎𝑙 , ∅) 
+
+% Step 2: Conditional pass (Target hairstyle injection)  
+
+> 2:
+
+𝝐 𝑐𝑜𝑛𝑑 ← 𝜖 𝜃 (z𝑡 , 𝑡, 𝐶 𝑝𝑜𝑠 𝑠𝑝𝑎𝑡𝑖𝑎𝑙 , 𝑆 𝑝𝑢𝑟𝑒 )
+
+% Step 3: Incremental extrapolation  
+
+> 3:
+
+ˆ𝝐 ← 𝝐 𝑢𝑛𝑐𝑜𝑛𝑑 + 𝜔 · ( 𝝐 𝑐𝑜𝑛𝑑 − 𝝐 𝑢𝑛𝑐𝑜𝑛𝑑 ) 
+
+> 4:
+
+return ˆ𝝐 
+
+mask 𝑀 ℎ𝑎𝑖𝑟 :Sim ℎ𝑎𝑖𝑟 =
+
+Í𝑖,𝑗 cos 
+
+ ¯𝐶 𝑛𝑒𝑔, (𝑖,𝑗 ) 
+
+> 𝑠𝑝𝑎𝑡𝑖𝑎𝑙
+
+, ¯𝐶 𝑝𝑜𝑠, (𝑖,𝑗 )
+
+> 𝑠𝑝𝑎𝑡𝑖𝑎𝑙
+
+
+
+⊗ 𝑀 𝑖,𝑗 ℎ𝑎𝑖𝑟 
+
+Í𝑖,𝑗 𝑀 𝑖,𝑗 ℎ𝑎𝑖𝑟 
+
+, (11) where ¯𝐶 denotes feature maps that have been explicitly processed by Instance Normalization (IN) followed by L2-normalization, and 
+
+(𝑖, 𝑗 ) indexes the spatial positions. The inclusion of Instance Nor-malization is a crucial design choice: it strips away global style information such as color and illumination distributions from the activations, strictly isolating the pure geometric and structural contours. Because the features now represent pure geometry, the spatial contours of two distinct hairstyles should be nearly orthog-onal. To prevent over-penalization and stabilize training when the geometric features are already sufficiently divergent, we introduce a similarity margin 𝜏 (detailed implementation can be found in Appendix). The final CGP loss L𝐶𝐺𝑃 is defined as: 
+
+L𝐶𝐺𝑃 = max (0, Sim ℎ𝑎𝑖𝑟 − 𝜏 ). (12) As illustrated in Figure 3(c), to ensure that CGP does not interfere with the primary reconstruction pathway, gradients from Sim ℎ𝑎𝑖𝑟 
+
+are propagated only through the negative branch ( 𝐶 𝑛𝑒𝑔 𝑠𝑝𝑎𝑡𝑖𝑎𝑙 ), while the positive branch ( 𝐶 𝑝𝑜𝑠 𝑠𝑝𝑎𝑡𝑖𝑎𝑙 ) is detached. Minimizing L𝐶𝐺𝑃 directly penalizes the geometric similarity between the two activations when it exceeds the margin 𝜏 . This explicitly compels the ControlNet 
+
+to inject accurate structural features from the target style rather than exploiting residual geometric artifacts in 𝐼 𝑏𝑎𝑙𝑑 . CGP is applied exclusively during training. 
+
+## 3.5 DPF Image Synthesis 
+
+Final Training Objective. The full DPF framework is trained by optimizing a joint objective. We reformulate the standard LDM reconstruction loss L𝑟𝑒𝑐 to align with our incremental training logic: 
+
+L𝑟𝑒𝑐 = Ez0,𝝐 ,𝑡 
+
+h
+
+𝝐 − 𝜖 𝜃 (z𝑡 , 𝑡, 𝐶 𝑠𝑝𝑎𝑡𝑖𝑎𝑙 , ˆ𝑆 ) 22
+
+i
+
+, (13) where the training target z0 and style condition ˆ𝑆 are adaptively selected. With probability 0.9, ˆ𝑆 = 𝑆 𝑝𝑢𝑟𝑒 and z0 = 𝐸 𝑣𝑎𝑒 (𝐼 𝑠𝑟𝑐 ); with probability 0.1, ˆ𝑆 = ∅ and z0 = 𝐸 𝑣𝑎𝑒 (𝐼 𝑏𝑎𝑙𝑑 ). This ensures that the unconditional pass 𝜖 𝑢𝑛𝑐𝑜𝑛𝑑 acts as a pure geometric baseline. The final objective combined with AHP and CGP is: 
+
+L𝑡𝑜𝑡𝑎𝑙 = L𝑟𝑒𝑐 + 𝜆 𝑎𝑑𝑣 L𝑎𝑑𝑣 + 𝜆 𝐶𝐺𝑃 L𝐶𝐺𝑃 . (14) 
+
+Table 1: Encoder Alignment with Perceptual Dimensions. Spearman’s correlation ( 𝜌 ) measures the alignment of en-coder feature distances with perceptual Texture and Struc-ture. Higher 𝜌 is better. The results reveal a clear trade-off: no single encoder excels at both, motivating our hybrid design. Encoder Model Paradigm Texture (𝜌 ↑) Structure (𝜌 ↑)BiSeNet [50] Task-Specific -0.265 0.563 Qwen2.5VL-ViT [1] Large VLM -0.277 0.459 DINOv2 [37] Intra-modal -0.370 0.632         
+
+> ResNet-50 [16] Supervised -0.364 0.623 CLIP-L/14 [39] Cross-modal 0.109 0.290 CLIP-B/16 [39] 0.220 0.150
+
+Inference via Incremental CFG. During inference, we intro-duce an incremental Classifier-Free Guidance (CFG) strategy, sum-marized in Algorithm 1. The core of this strategy lies in its syn-ergy with our dual-target training: by training the unconditional branch 𝜖 𝑢𝑛𝑐𝑜𝑛𝑑 to specifically reconstruct the bald portrait 𝐼 𝑏𝑎𝑙𝑑 
+
+(Sec. 3.2), we establish it as a stable geometric baseline anchor . Like recent image-to-image translation frameworks [ 4 ], our uncondi-tional pass explicitly retains the spatial condition 𝐶 𝑠𝑝𝑎𝑡𝑖𝑎𝑙 while dropping only the style ( ˆ𝑆 = ∅). Consequently, the predicted incre-ment Δ𝜖 = (𝜖 𝑐𝑜𝑛𝑑 −𝜖 𝑢𝑛𝑐𝑜𝑛𝑑 ) represents a purified hairstyle increment .Since both branches share the same geometric anchor and 𝜖 𝑢𝑛𝑐𝑜𝑛𝑑 
+
+is a faithful representation of the bald identity, the delta Δ𝜖 ideally remains zero in non-hair regions (e.g., face and skin). This property allows the final synthesis, extrapolated via the guidance scale 𝜔 ,to inject rich hairstyle textures while ensuring precise structural alignment and zero skin-tone drift. 
+
+## 4 Experiments 4.1 Encoder Analysis 
+
+A powerful hairstyle representation must capture both perceptual texture (e.g., color, gloss) and geometric structure (e.g., shape, vol-ume). To identify the best pre-trained encoders for these distinct roles, we conduct a decomposed analysis. We measure the align-ment between an encoder’s feature space and these two perceptual dimensions by computing two separate Spearman’s rank correla-tions ( 𝜌 ). We correlate the feature distances against a perceptual texture metric (e.g., Masked LPIPS) and a geometric structure metric (e.g., Mask IoU), with full methodological details in the Appendix. Our results, summarized in Table 1, reveal a critical trade-off in-herent in modern pre-training paradigms. We find that cross-modal models like CLIP [ 39 ] excel at capturing texture ( 𝜌 = 0.220 ) but are poor at discerning structure. Conversely, self-supervised vi-sion models like DINOv2 [37 ] are superior for geometric alignment (𝜌 = 0.632 ) but exhibit a negative correlation with texture. We observe that none of the tested encoders excels at both, which directly motivates our hybrid approach. Instead of relying on a sin-gle, compromised encoder, our framework is designed to harness the complementary strengths of a “texture champion” (CLIP) and a 
+
+“structure champion” (DINOv2). This analysis provides strong em-pirical support for this design choice in DPF. The following sections will now present a comprehensive evaluation, demonstrating how         
+
+> 5Jijie Li, Jiankuo Zhao, Xiangyu Zhu, and Zhen Lei Source Reference Barbershop HairCLIPv2 HairFastGAN StyleYourHair HairFusion StableHair DPF(Ours)
+> (a) Results on CelebA-HQ benchmark [21]
+
+Source Reference HairFusion StableHair DPF(Ours) 
+
+> (b) Results on Human-Matting benchmark [6]
+
+Figure 4: Qualitative results of DPF on diverse benchmarks. (a) CelebA-HQ [ 21 ]: On standard portraits, DPF generates pho-torealistic results, mitigating both Identity Leakage in Hairstyle and Flaw Leakage in Bald . (b) Human-Matting [ 6]: On these challenging in-the-wild images, DPF demonstrates superior robustness and generation quality compared to prior work. 
+
+this principled approach enables state-of-the-art performance in hairstyle transfer. 
+
+## 4.2 Experimental Setup 
+
+Dataset and Benchmarks. To train a model that is both high-fidelity and robust, we curate a novel training dataset, named 
+
+WildBald-HQ (60k images). It is constructed by balancing 30,000 high-quality, aligned portraits from FFHQ [ 24 ] with 30,000 diverse, in-the-wild half-body portraits from the Human-Matting dataset [ 6]. This balanced composition is specifically designed to endow our model with the ability to handle both ideal and challenging real-world conditions. For evaluation, we conduct a comprehensive analysis on two distinct benchmarks: the CelebA-HQ dataset [ 21 ]for the standard headshot task, and the validation set of Human-Matting for the more challenging in-the-wild setting. The detailed dataset sampling strategy is provided in the Appendix. 
+
+Implementation. Our framework is built upon Stable Diffusion v1.5 and a ControlNet that is initialized from the official inpaint-ing model weights [ 51 ] and subsequently fine-tuned as part of our framework. Guided by our analysis in Sec. 4.1, we adopt a hybrid feature strategy to construct our initial style representation. We leverage the complementary strengths of both the “texture cham-pion”, CLIP-B/16 [ 39 ], and the “structure champion”, DINOv2 [ 37 ]. Both sets of features are processed in parallel by our Generator, and their output tokens are combined to form the final purified style representation. This approach provides our AHP module with a rich but deeply entangled set of features, creating an ideal and challenging testbed to validate our purification paradigm. The spe-cific fusion method for these features is detailed in the Appendix. We compare our method against state-of-the-art baselines includ-ing Barbershop [ 56 ], HairCLIPv2 [ 47 ], HairFastGAN [ 36 ], StyleY-ourHair [ 27 ], HairFusion [ 7], and StableHair [ 53 ]. We evaluate the 
+
+> 6The Devil Is in the Leakage: A Disentangled Dual-Purification Framework for High-Fidelity Hairstyle Transfer
+
+Table 2: Quantitative comparison with state-of-the-art methods on diverse benchmarks. Our DPF demonstrates superior or highly competitive performance across most standard metrics on both high-quality portraits and challenging in-the-wild datasets. Best results are in bold, second best are underlined. 
+
+> (a) Results on the CelebA-HQ benchmark [21]
+
+Method Architecture Identity Reconstruction Fidelity ID-Sim ↑ SSIM nh ↑ PSNR nh ↑ FID ↓ H-LPIPS ↓
+
+Barbershop [56] GAN 0.73 0.87 14.10 26.69 0.306 
+
+StyleYourHair [27] GAN 0.75 0.86 15.27 23.02 0.367 HairCLIPv2 [47] GAN 0.79 0.85 17.06 17.59 0.394 HairFastGAN [36] GAN 0.78 0.82 15.73 17.27 0.381 StableHair [53] Diffusion 0.78 0.84 16.78 29.81 0.394 HairFusion [7] Diffusion 0.75 0.86 15.79 40.24 0.410 
+
+DPF (Ours) Diffusion 0.80 0.87 16.88 16.53 0.356 
+
+> (b) Results on the Human-Matting benchmark [6]
+
+Method Architecture Identity Reconstruction Fidelity ID-Sim ↑ SSIM nh ↑ PSNR nh ↑ FID ↓ H-LPIPS ↓
+
+StableHair [53] Diffusion 0.67 0.84 16.14 16.45 0.468 HairFusion [7] Diffusion 0.70 0.83 15.65 15.81 0.504 
+
+DPF (Ours) Diffusion 0.75 0.87 16.98 7.75 0.417 Table 3: Ablation Study of DPF Components. We progressively build our full DPF model to validate the contribution of each key design choice. ID-Sim measures high-level identity preservation. SSIM nh and PSNR nh measure the pixel-level fidelity of the 
+
+non-hair regions (face/background) against the source. FID measures realism, and LFR (Leakage Failure Rate) measures the 
+
+Flaw Leakage in Bald failure. Method Configuration ID-Sim ↑ SSIM nh ↑ PSNR nh ↑ FID ↓ LFR ↓
+
+(1) Baseline (IP-Adapter + CN) 0.76 0.87 15.62 28.85 37.86% (2) (1) + AHP 0.80 0.86 16.55 17.25 35.19% (3) (2) + CGP 0.79 0.86 16.12 18.53 10.33% (4) Ours ((3) + Hybrid Feat.) 0.80 0.87 16.88 16.53 3.17% 
+
+generated results using standard metrics from four complemen-tary aspects: ID-Similarity [ 10 ] evaluates identity preservation; SSIM nh [ 45 ] and PSNR nh measure reconstruction quality in the non-hair regions; FID [ 17 ] evaluates overall image realism; and H-LPIPS [ 52 ] measures hairstyle fidelity with respect to the reference hairstyle. Complete training details are provided in the Appendix. 
+
+## 4.3 Comparison with State-of-the-Art Methods 
+
+We conduct a comprehensive evaluation of our Dual-Purification Framework (DPF) against a wide range of state-of-the-art hairstyle transfer methods on two challenging benchmarks: the high-quality headshot of CelebA-HQ [ 21 ] and the more diverse, unaligned half-body portraits from the Human-Matting dataset [6]. 
+
+Qualitative Comparison. As shown in Figure 4, our qualitative results illustrate DPF’s strong performance. Across both CelebA-HQ (Fig. 4a) and the more challenging Human-Matting benchmark (Fig. 4b), prior methods frequently suffer from the two core failure modes we identified: Identity Leakage in Hairstyle , which causes identity inconsistency, and Flaw Leakage in Bald , which wrongly re-constructs the source hairstyle. In stark contrast, our DPF robustly generates photorealistic and geometrically precise results that faith-fully preserve the source identity, even for complex hairstyles on subjects with varied poses and scales. This visually illustrates that by purifying both the style (via AHP) and geometric (via CGP) streams, DPF effectively mitigates the challenges of both Identity Leakage in Hairstyle and Flaw Leakage in Bald .
+
+Quantitative Comparison. The quantitative results are summa-rized in Table 2. On the standard CelebA-HQ benchmark (Table 2a), DPF achieves state-of-the-art results in identity preservation (ID-Sim) and fidelity (FID), while maintaining highly competitive per-formance in reconstruction metrics. It is worth noting that since CelebA-HQ consists of perfectly aligned portraits, the performance of most baselines—particularly GAN-based models—has largely sat-urated in this domain. Even in this highly competitive scenario, DPF demonstrates superior identity preservation capability, out-performing representative GAN-based models such as HairCLIPv2 and the encoder-based HairFastGAN. The true strength of our dual-purification mechanism is more evident in the challenging Human-Matting dataset (Table 2b). Unlike the constrained headshot setting, these in-the-wild images feature significant pose variations 
+
+> 7Jijie Li, Jiankuo Zhao, Xiangyu Zhu, and Zhen Lei
+
+Table 4: Comprehensive System and User Evaluation. We evaluate system efficiency and user preference (1-5 scale). Method User Study Score ↑ Mem (GB) ↓ Time (s) ↓                 
+
+> Style ID Real
+> HairFusion 3.22 3.14 3.08 ∼10.9 ∼14 StableHair 3.05 3.46 3.02 ∼16.0 ∼6DPF (Ours) 3.75 3.92 3.82 ∼5.4 ∼6
+
+and complex backgrounds. In this regime, prior methods suffer from severe leakage problems (as analyzed in Table 3), leading to a significant drop across all metrics. In contrast, DPF maintains exceptional robustness, outperforming existing methods by a wide margin—for instance, achieving a more than 50% reduction in FID from 15.81 to 7.75. This sharp contrast validates DPF’s unique ca-pability to handle complex leakage issues in real-world hairstyle transfer, successfully transforming a flawed geometric foundation into a reliable asset for synthesis. 
+
+## 4.4 User Study and System Efficiency 
+
+To further validate DPF’s applicability as an interactive multimedia system, we evaluate its human-centric performance and computa-tional footprint. We conducted a blind user study ( 𝑁 = 22 ) where participants rated the generated results on a scale of 1 to 5 based on three criteria: Style transfer accuracy, Identity (ID) preservation, and Realism. As shown in Table 4, DPF achieves the highest user preference scores across all dimensions. Furthermore, DPF operates with a peak memory footprint of merely ∼5.4GB, making it highly accessible for consumer-grade GPUs and edge deployment, com-pared to the heavy resource demands of StableHair ( ∼16.0GB) and HairFusion ( ∼10.9GB). Crucially, DPF maintains a highly competi-tive synthesis time of approximately 6 seconds per image (using 30-step DPMSolver++), matching the speed of the fastest diffusion baseline while requiring significantly less VRAM. These results con-firm that DPF provides a superior, resource-friendly, and efficient solution for real-world multimedia applications. 
+
+## 4.5 Ablation Studies 
+
+To validate the necessity and synergy of our proposed modules, we conduct a comprehensive ablation study, progressively building our full framework from a strong baseline. The quantitative results are summarized in Table 3, with corresponding qualitative results in Figure 5. Our analysis begins with the baseline (row 1), which struggles with identity preservation (low ID-Sim). Moreover, it suffers from frequent geometric failures. To quantify this, we define the Leakage Failure Rate (LFR) as the percentage of cases where the Intersection over Union (IoU) between the source and generated hair masks exceeds 85%. The baseline’s high LFR indicates Flaw Leakage in Bald is a significant problem. Integrating our AHP module (row 2) effectively addresses the identity problem, as shown by the sharp increase in ID-Sim score. However, AHP has a negligible effect on the leakage issue, with the LFR remaining high, demonstrating Flaw Leakage in Bald is an orthogonal challenge. The subsequent step (row 3) introduces our CGP module. As validated by the results, CGP acts as an explicit regularizer to counter shortcut learning, Reference  Baseline Source   
+
+> + AHP + CGP DPF(Ours)
+
+Figure 5: Qualitative Ablation of DPF Components. Each step demonstrates the contribution of a key component. 
+
+drastically reducing the LFR from 35.19% to 10.33%. This indicates CGP is the key component for mitigating Flaw Leakage. However, as seen in Figure 5, CGP exposes the poor structural quality of the baseline CLIP features (validated in Sec. 4.1). The final step (row 4) forms the full DPF (Ours) by introducing Hybrid Features . This feature quality enhancement step provides the missing structural fidelity, mitigating remaining artifacts, achieving the best FID, and further suppressing the LFR to 3.17%. This step-by-step analysis demonstrates the effectiveness of our DPF. It confirms that both purification modules are beneficial: AHP is crucial for mitigating 
+
+Identity Leakage in Hairstyle , while CGP is the key component for suppressing Flaw Leakage in Bald . This synergy, combined with Hybrid Features for final structural fidelity, enables our high-quality results. 
+
+## 5 Conclusion 
+
+In this work, we identified a fundamental, twofold leakage problem in hairstyle transfer: Identity Leakage in Hairstyle and Flaw Leakage in Bald . To address this, we introduced the Dual-Purification Frame-work (DPF), an approach that integrates AHP to mitigate identity entanglement and CGP to suppress the critical shortcut learning causing flaw leakage. Our experiments demonstrate that this ap-proach achieves state-of-the-art results, enabling robust synthesis despite the presence of geometric artifacts in the bald condition. The principles of DPF, such as explicit purification , may be general-izable and offer a compelling direction for future research in other conditional generation domains. 
+
+## Acknowledgments 
+
+This work was supported in part by Beijing Natural Science Founda-tion L242092, Chinese National Natural Science Foundation Projects U23B2054, 62276254, 62206280, 62376265, the Beijing Science and Technology Plan Project Z231100005923033, the Science and Tech-nology Development Fund of Macau Project 0140/2024/AGJ, and InnoHK program. 
+
+> 8
+
+The Devil Is in the Leakage: A Disentangled Dual-Purification Framework for High-Fidelity Hairstyle Transfer 
+
+## References 
+
+[1] Shuai Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin Ge, Sibo Song, Kai Dang, Peng Wang, Shijie Wang, Jun Tang, et al . 2025. Qwen2. 5-vl technical report. arXiv preprint arXiv:2502.13923 (2025). [2] Mohamed Ishmael Belghazi, Aristide Baratin, Sai Rajeswar, Sherjil Ozair, Yoshua Bengio, R. Devon Hjelm, and Aaron C. Courville. 2018. Mutual Information Neural Estimation. In International Conference on Machine Learning . https: //api.semanticscholar.org/CorpusID:44220142 [3] Yoshua Bengio, Aaron Courville, and Pascal Vincent. 2013. Representation learning: A review and new perspectives. IEEE transactions on pattern analysis and machine intelligence 35, 8 (2013), 1798–1828. [4] Tim Brooks, Aleksander Holynski, and Alexei A Efros. 2023. Instructpix2pix: Learning to follow image editing instructions. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 18392–18402. [5] Seunggyu Chang, Gihoon Kim, and Hayeon Kim. 2023. HairNeRF: Geometry-Aware Image Synthesis for Hairstyle Transfer. In 2023 IEEE/CVF International Conference on Computer Vision (ICCV) . 2448–2458. doi:10.1109/ICCV51070.2023. 00232 [6] Quan Chen, Tiezheng Ge, Yanyu Xu, Zhiqiang Zhang, Xinxin Yang, and Kun Gai. 2018. Semantic human matting. In Proceedings of the 26th ACM international conference on Multimedia . 618–626. [7] Chaeyeon Chung, Sunghyun Park, Jeongho Kim, and Jaegul Choo. 2025. What to Preserve and What to Transfer: Faithful, Identity-Preserving Diffusion-based Hairstyle Transfer. In Proceedings of the AAAI Conference on Artificial Intelligence ,Vol. 39. 2582–2590. [8] Wenliang Dai, Junnan Li, Dongxu Li, Anthony Tiong, Junqi Zhao, Weisheng Wang, Boyang Li, Pascale N Fung, and Steven Hoi. 2023. Instructblip: Towards general-purpose vision-language models with instruction tuning. Advances in neural information processing systems 36 (2023), 49250–49267. [9] Yusuf Dalva, Hamza Pehlivan, Cansu Moran, Öykü Irmak Hatipoğlu, and Ayşegül Dündar. 2023. Face attribute editing with disentangled latent vectors. arXiv preprint arXiv:2301.04628 (2023). [10] Jiankang Deng, Jia Guo, Niannan Xue, and Stefanos Zafeiriou. 2019. Arcface: Additive angular margin loss for deep face recognition. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 4690–4699. [11] Yu Deng, Jiaolong Yang, Dong Chen, Fang Wen, and Xin Tong. 2020. Disentangled and controllable face image generation via 3d imitative-contrastive learning. In 
+
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition .5154–5163. [12] Yao Feng, Weiyang Liu, Timo Bolkart, Jinlong Yang, Marc Pollefeys, and Michael J Black. 2023. Learning disentangled avatars with hybrid 3d representations. arXiv preprint arXiv:2309.06441 (2023). [13] Yaroslav Ganin and Victor Lempitsky. 2015. Unsupervised domain adaptation by backpropagation. In International conference on machine learning . PMLR, 1180–1189. [14] Robert Geirhos, Jörn-Henrik Jacobsen, Claudio Michaelis, Richard Zemel, Wieland Brendel, Matthias Bethge, and Felix A Wichmann. 2020. Shortcut learning in deep neural networks. Nature Machine Intelligence 2, 11 (2020), 665–673. [15] Ian J Goodfellow, Jean Pouget-Abadie, Mehdi Mirza, Bing Xu, David Warde-Farley, Sherjil Ozair, Aaron Courville, and Yoshua Bengio. 2014. Generative adversarial nets. Advances in neural information processing systems 27 (2014). [16] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. 2016. Deep residual learning for image recognition. In Proceedings of the IEEE conference on computer vision and pattern recognition . 770–778. [17] Martin Heusel, Hubert Ramsauer, Thomas Unterthiner, Bernhard Nessler, and Sepp Hochreiter. 2017. Gans trained by a two time-scale update rule converge to a local nash equilibrium. Advances in neural information processing systems 30 (2017). [18] Irina Higgins, Loïc Matthey, Arka Pal, Christopher P. Burgess, Xavier Glo-rot, Matthew M. Botvinick, Shakir Mohamed, and Alexander Lerchner. 2016. beta-VAE: Learning Basic Visual Concepts with a Constrained Variational Framework. In International Conference on Learning Representations . https: //api.semanticscholar.org/CorpusID:46798026 [19] Zhizhong Huang, Siteng Ma, Junping Zhang, and Hongming Shan. 2023. Adaptive nonlinear latent transformation for conditional face editing. In Proceedings of the IEEE/CVF International Conference on Computer Vision . 21022–21031. [20] Andrew Ilyas, Shibani Santurkar, Dimitris Tsipras, Logan Engstrom, Brandon Tran, and Aleksander Madry. 2019. Adversarial examples are not bugs, they are features. Advances in neural information processing systems 32 (2019). [21] Tero Karras, Timo Aila, Samuli Laine, and Jaakko Lehtinen. 2017. Progressive growing of gans for improved quality, stability, and variation. arXiv preprint arXiv:1710.10196 (2017). [22] Tero Karras, Miika Aittala, Samuli Laine, Erik Härkönen, Janne Hellsten, Jaakko Lehtinen, and Timo Aila. 2021. Alias-Free Generative Adversarial Networks. In 
+
+Advances in Neural Information Processing Systems , M. Ranzato, A. Beygelzimer, Y. Dauphin, P.S. Liang, and J. Wortman Vaughan (Eds.), Vol. 34. Curran Asso-ciates, Inc., 852–863. https://proceedings.neurips.cc/paper_files/paper/2021/file/ 076ccd93ad68be51f23707988e934906-Paper.pdf [23] Tero Karras, Samuli Laine, and Timo Aila. 2018. A Style-Based Generator Architecture for Generative Adversarial Networks. 2019 IEEE/CVF Confer-ence on Computer Vision and Pattern Recognition (CVPR) (2018), 4396–4405. https://api.semanticscholar.org/CorpusID:54482423 [24] Tero Karras, Samuli Laine, Miika Aittala, Janne Hellsten, Jaakko Lehtinen, and Timo Aila. 2019. Analyzing and Improving the Image Quality of StyleGAN. 2020 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) (2019), 8107–8116. https://api.semanticscholar.org/CorpusID:209202273 [25] Hyunsu Kim, Gayoung Lee, Yunjey Choi, Jin-Hwa Kim, and Jun-Yan Zhu. 2023. 3D-aware Blending with Generative NeRFs. In 2023 IEEE/CVF International Con-ference on Computer Vision (ICCV) . 22849–22861. doi:10.1109/ICCV51070.2023. 02094 [26] Hyunjik Kim and Andriy Mnih. 2018. Disentangling by factorising. In Interna-tional conference on machine learning . PMLR, 2649–2658. [27] Taewoo Kim, Chaeyeon Chung, Yoonseo Kim, Sunghyun Park, Kangyeol Kim, and Jaegul Choo. 2022. Style your hair: Latent optimization for pose-invariant hairstyle transfer via local-style-aware hair alignment. In European conference on computer vision . Springer, 188–203. [28] Hsin-Ying Lee, Hung-Yu Tseng, Jia-Bin Huang, Maneesh Singh, and Ming-Hsuan Yang. 2018. Diverse image-to-image translation via disentangled representations. In Proceedings of the European conference on computer vision (ECCV) . 35–51. [29] Jijie Li, Xiangyu Zhu, Xiaoyu Zhu, and Zhen Lei. 2025. HairEditor: Diffusion-Guided Supervision for StyleGAN-Based Hair Editing in Real-World Portraits. In Chinese Conference on Biometric Recognition . Springer, 195–203. [30] Zixuan Li, Haokun Lin, Yicheng Xiao, Zhiwei Li, Xinyang Song, Zelong Zheng, Yong He, Heng Yao, Ke Ding, Chao Yu, et al . 2026. IV-CoT: Implicit Visual Chain-of-Thought for Structure-Aware Text-to-Image Generation. arXiv preprint arXiv:2606.24849 (2026). [31] Zixuan Li, Jing Xiong, Fanghua Ye, Chuanyang Zheng, Xun Wu, Jianqiao Lu, Zhongwei Wan, Xiaodan Liang, Chengming Li, Zhenan Sun, et al . 2024. Uncer-taintyrag: Span-level uncertainty enhanced long-context modeling for retrieval-augmented generation. arXiv preprint arXiv:2410.02719 (2024). [32] Xin Liang and Yogesh S Rawat. 2025. DIFFER: Disentangling Identity Features via Semantic Cues for Clothes-Changing Person Re-ID. In Proceedings of the Computer Vision and Pattern Recognition Conference . 13980–13989. [33] Alexander H Liu, Yen-Cheng Liu, Yu-Ying Yeh, and Yu-Chiang Frank Wang. 2018. A unified feature disentangler for multi-domain image translation and manipulation. Advances in neural information processing systems 31 (2018). [34] Longyao Liu, Bo Ma, Yulin Zhang, Xin Yi, and Haozhi Li. 2021. Afd-net: Adaptive fully-dual network for few-shot object detection. In Proceedings of the 29th ACM International Conference on Multimedia . 2549–2557. [35] Ben Mildenhall, Pratul P Srinivasan, Matthew Tancik, Jonathan T Barron, Ravi Ramamoorthi, and Ren Ng. 2021. Nerf: Representing scenes as neural radiance fields for view synthesis. Commun. ACM 65, 1 (2021), 99–106. [36] Maxim Nikolaev, Mikhail Kuznetsov, Dmitry Vetrov, and Aibek Alanov. 2024. Hairfastgan: Realistic and robust hair transfer with a fast encoder-based approach. 
+
+Advances in Neural Information Processing Systems 37 (2024), 45600–45635. [37] Maxime Oquab, Timothée Darcet, Théo Moutakanni, Huy Vo, Marc Szafraniec, Vasil Khalidov, Pierre Fernandez, Daniel Haziza, Francisco Massa, Alaaeldin El-Nouby, et al . 2023. Dinov2: Learning robust visual features without supervision. 
+
+arXiv preprint arXiv:2304.07193 (2023). [38] Meng Pang, Binghui Wang, Mang Ye, Yiu-Ming Cheung, Yintao Zhou, Wei Huang, and Bihan Wen. 2025. Heterogeneous Prototype Learning From Contaminated Faces Across Domains via Disentangling Latent Factors. IEEE Transactions on Neural Networks and Learning Systems 36, 4 (2025), 7169–7183. doi:10.1109/ TNNLS.2024.3393072 [39] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sand-hini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al .2021. Learning transferable visual models from natural language supervision. In 
+
+International conference on machine learning . PmLR, 8748–8763. [40] Xiaohang Ren, Xingyu Chen, Pengfei Yao, Heung-Yeung Shum, and Baoyuan Wang. 2023. Reinforced disentanglement for face swapping without skip connec-tion. In Proceedings of the IEEE/CVF International Conference on Computer Vision .20665–20675. [41] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Björn Ommer. 2022. High-resolution image synthesis with latent diffusion models. In 
+
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition .10684–10695. [42] Kuiyuan Sun, Yuxuan Zhang, Jichao Zhang, Jiaming Liu, Wei Wang, Niculae Sebe, and Yao Zhao. 2025. Stable-Hair v2: Real-World Hair Transfer via Multiple-View Diffusion Model. arXiv preprint arXiv:2507.07591 (2025). [43] Quan Sun, Yuxin Fang, Ledell Wu, Xinlong Wang, and Yue Cao. 2023. Eva-clip: Improved training techniques for clip at scale. arXiv preprint arXiv:2303.15389 
+
+(2023). 9Jijie Li, Jiankuo Zhao, Xiangyu Zhu, and Zhen Lei 
+
+[44] Xin Wang, Hong Chen, Si’ao Tang, Zihao Wu, and Wenwu Zhu. 2024. Disentan-gled representation learning. IEEE Transactions on Pattern Analysis and Machine Intelligence 46, 12 (2024), 9677–9696. [45] Zhou Wang, A.C. Bovik, H.R. Sheikh, and E.P. Simoncelli. 2004. Image quality assessment: from error visibility to structural similarity. IEEE Transactions on Image Processing 13, 4 (2004), 600–612. doi:10.1109/TIP.2003.819861 [46] Tianyi Wei, Dongdong Chen, Wenbo Zhou, Jing Liao, Zhentao Tan, Lu Yuan, Weiming Zhang, and Nenghai Yu. 2022. Hairclip: Design your hair by text and reference image. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . 18072–18081. [47] Tianyi Wei, Dongdong Chen, Wenbo Zhou, Jing Liao, Weiming Zhang, Gang Hua, and Nenghai Yu. 2023. Hairclipv2: Unifying hair editing via proxy feature blending. In Proceedings of the IEEE/CVF international conference on computer vision . 23589–23599. [48] Yiqian Wu, Yong-Liang Yang, and Xiaogang Jin. 2022. HairMapper: Removing Hair From Portraits Using GANs. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . 4227–4236. [49] Hu Ye, Jun Zhang, Sibo Liu, Xiao Han, and Wei Yang. 2023. Ip-adapter: Text compatible image prompt adapter for text-to-image diffusion models. arXiv preprint arXiv:2308.06721 (2023). [50] Changqian Yu, Jingbo Wang, Chao Peng, Changxin Gao, Gang Yu, and Nong Sang. 2018. Bisenet: Bilateral segmentation network for real-time semantic seg-mentation. In Proceedings of the European conference on computer vision (ECCV) .325–341. [51] Lvmin Zhang, Anyi Rao, and Maneesh Agrawala. 2023. Adding conditional control to text-to-image diffusion models. In Proceedings of the IEEE/CVF inter-national conference on computer vision . 3836–3847. [52] Richard Zhang, Phillip Isola, Alexei A Efros, Eli Shechtman, and Oliver Wang. 2018. The unreasonable effectiveness of deep features as a perceptual metric. In Proceedings of the IEEE conference on computer vision and pattern recognition .586–595. [53] Yuxuan Zhang, Qing Zhang, Yiren Song, Jichao Zhang, Hao Tang, and Jiaming Liu. 2025. Stable-hair: Real-world hair transfer via diffusion model. In Proceedings of the AAAI Conference on Artificial Intelligence , Vol. 39. 10348–10356. [54] Chenyue Zhou, Mingxuan Wang, Yanbiao Ma, Chenxu Wu, Wanyi Chen, Zhe Qian, Xinyu Liu, Yiwei Zhang, Junhao Wang, Hengbo Xu, et al . 2025. From Perception to Cognition: A Survey of Vision-Language Interactive Reasoning in Multimodal Large Language Models. arXiv preprint arXiv:2509.25373 (2025). [55] Jiawei Zhou, Xiaoguang Li, Lifeng Shang, Xin Jiang, Qun Liu, and Lei Chen. 2022. Retrieval-based disentangled representation learning with natural language supervision. arXiv preprint arXiv:2212.07699 (2022). [56] Peihao Zhu, Rameen Abdal, John Femiani, and Peter Wonka. 2021. Barber-shop: Gan-based image compositing using segmentation masks. arXiv preprint arXiv:2106.01505 (2021). [57] Peihao Zhu, Rameen Abdal, John Femiani, and Peter Wonka. 2022. HairNet: Hairstyle Transfer with Pose Changes. Springer-Verlag, Berlin, Heidelberg, 651–667. doi:10.1007/978-3-031-19787-1_37 10

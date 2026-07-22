@@ -1,0 +1,528 @@
+Title: HDRAgent: An Agentic Framework for Multi-Exposure HDR Imaging
+
+URL Source: https://arxiv.org/pdf/2606.09110v1
+
+Published Time: Tue, 09 Jun 2026 02:18:56 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+1
+
+# HDRAgent: An Agentic Framework for Multi-Exposure HDR Imaging 
+
+Weiyu Zhou, Tao Hu, Yijian Wang, Xiaogang Xu, Ruixing Wang and Qingsen Yan 
+
+Abstract —Most existing multi-exposure HDR methods follow a fixed feed-forward reconstruction paradigm, making them prone to ghosting artifacts in complex dynamic scenes. To address this issue, we propose HDRAgent, the first agent-driven frame-work for HDR imaging, which adaptively selects reconstruction strategies according to the current scene conditions. Specifically, to provide scene-specific prior knowledge, we introduce a fine-grained contextual knowledge matching (FCM) module. This module leverages multimodal large language model (MLLM)-derived scene perception to retrieve relevant historical cases and tool knowledge, organizing them into structured evidence for MLLM-based adaptive tool scheduling. In addition, we propose a perception–distortion feedback mechanism that trans-forms post-execution quality assessment and artifact diagnosis into structured feedback, which is accumulated in historical memory to help subsequent contextual knowledge refinement and strategy selection. Furthermore, considering that extreme motion can invalidate alignment methods, we design an agent-guided generative alignment strategy that uses MLLM-based dynamic-region parsing to reconstruct unreliable contents in non-reference frames under reference-frame guidance. Experiments demonstrate that HDRAgent effectively reduces ghosting and local artifacts while achieving competitive or superior objective performance and visual quality. 
+
+Index Terms —High dynamic range, multi-exposed imaging, agent-driven reconstruction, multimodal large language model 
+
+I. I NTRODUCTION 
+
+# MULTI-EXPOSURE high dynamic range (HDR) imag-ing reconstructs HDR scenes by fusing complemen-tary information from images captured under different ex-posure settings [1], [2]. Compared with single-image HDR reconstruction, multi-exposure imaging can better preserve shadow details and highlight structures by exploiting exposure diversity [1], [3]. However, robust HDR reconstruction in dynamic scenes remains challenging, as saturated highlights, large object motion, and occlusions introduce unreliable and inconsistent observations across input exposures, often leading to ghosting and local fusion artifacts [4]–[6]. Therefore, how to adaptively exploit cross-exposure information and suppress ghosting under complex dynamic conditions remains a central problem in multi-exposure HDR imaging. 
+
+Weiyu Zhou, Tao Hu, Yijian Wang and Qingsen Yan are with the School of Computer Science, Northwestern Polytechnical University, Xi’an 710129, China. (e-mail: weiyvzhou@gmail.com; taohu@mail.nwpu.edu.cn; wangyi-jian1017@163.com; qingsenyan@nwpu.edu.cn). Qingsen Yan is also with the Shenzhen Research Institute, Northwestern Polytechnical University, Shenzhen, China. Xiaogang Xu is with Zhejiang University, Hangzhou, China. Ruixing Wang is with the Camera Group, DJI, Shenzhen, China. (a) Existing HDR Methods (b) HDR Agent Method    
+
+> Occlusion-induced ghosting
+> Fixed
+> Multi Exposure Input
+> Tonemapped Results ghosting artifacts
+> Fusion artifact
+> Boundary inconsistency
+> Tonemapped Results
+> Perception
+> Planning
+> Execution
+> Reflection
+> AHDR Ca-ViT
+> SAFNet
+> SCTNet
+> MTB
+> ECC
+> …
+> Tool box
+> Perception
+> “Analyze foreground
+> motion, exposure
+> variance, illumination
+> imbalance, dynamic
+> occlusion, saturation
+> regions,
+> correspondence …“
+> Planning
+> strategy:MTB+AHDR
+> Coherent texture
+> Cleaner fusion
+> Consistent boundary
+> Reduced ghosting
+
+Fig. 1. Paradigm comparison between existing multi-exposure HDR methods and HDRAgent. Existing methods typically perform alignment and fusion along a fixed feed-forward reconstruction paradigm, making them difficult to adapt to diverse dynamic scene conditions. HDRAgent reformulates HDR reconstruction as an agent-driven iterative process that integrates perception, planning, execution, and feedback, enabling scene-adaptive deghosting and progressive artifact correction. 
+
+Early multi-exposure HDR methods are usually based on physical imaging models and hand-crafted registration-and-fusion pipelines, such as camera response recovery, motion de-tection, and patch-based alignment [1], [4], [7]. These methods provide certain physical interpretability, but they often rely on brightness consistency, locally matchable textures, and limited-motion assumptions, making them prone to alignment failures and ghosting artifacts in complex dynamic scenes [4], [8], [9]. In recent years, deep learning methods have significantly advanced multi-exposure HDR imaging. CNN-based methods learn cross-exposure correspondence modeling and feature-domain fusion in an end-to-end manner to alleviate motion and exposure discrepancies [2], [5], [6], [10]. Transformer-based architectures further enhance long-range dependency modeling and global feature interaction [11], [12]. Meanwhile, genera-tive models and visual priors from large-scale models provide new possibilities for restoring severely degraded regions [13]– [17]. Despite these advances, most existing methods still embed their alignment, fusion, or generative capability into a fixed feed-forward reconstruction paradigm. Once trained or designed, different inputs are processed by the same predefined inference procedure, as illustrated in Fig. 1(a). As a result, a single fixed inference path can hardly adapt to diverse scene conditions involving different combinations of motion, saturation, occlusion, and exposure imbalance. This limitation is further amplified by the spatial hetero-geneity of dynamic scene degradations. Regions with mild displacement and discriminative textures can often be handled       
+
+> arXiv:2606.09110v1 [cs.CV] 8 Jun 2026 2GT SAFNet LFDiff
+> AFUNet DDPF-PR HDRAgent(Ours)
+> PSNR-u:44.91
+> PSNR-u:44.66
+> PSNR-u:44.93 PSNR-u:45.01
+> PSNR-u:44.76
+> Fig. 2. Visual motivation of HDRAgent. Although recent state-of-the-art methods, such as SAFNet [18], LFDiff [15], AFUNet [19], and DDPF-PR [20], achieve favorable quantitative performance, their zoomed-in re-sults may still exhibit ghosting and local fusion artifacts in challenging dynamic regions. In contrast, HDRAgent produces cleaner local structures by adaptively selecting reconstruction strategies and performing feedback-guided refinement.
+
+by standard alignment-and-fusion strategies, since reliable cross-exposure correspondences remain accessible. Regions with larger spatial displacement or broader contextual am-biguity require stronger global context modeling, such as transformer-based long-range feature interaction, to capture non-local dependencies. Regions affected by severe satura-tion, occlusion, or extreme structural inconsistency may lack reliable cross-exposure content, making reconstruction more dependent on generative structure completion than either local alignment or global correspondence modeling. These heteroge-neous requirements call for scene-adaptive strategy selection rather than a single fixed reconstruction pipeline. Moreover, appropriate strategy selection alone does not guarantee artifact-free reconstruction. As shown in Fig. 2, several recent methods achieve favorable metric scores, yet visible ghosting and local fusion artifacts may still remain in dynamic regions. This indicates that image-level quantitative metrics may obscure small but perceptually significant local defects, motivating a feedback mechanism that inspects reconstruction outcomes and provides corrective cues for subsequent strategy refine-ment. Recent multimodal large language models (MLLMs) have demonstrated strong capabilities in visual understanding and cross-modal reasoning [21]–[24]. Meanwhile, agentic systems show that MLLM can serve as task controllers that integrate perception, planning, tool invocation, and feedback correction into a unified reasoning process [25]–[27]. Recent works have introduced this paradigm into image restoration, where degradation perception, task scheduling, and expert model se-lection are used to handle complex degradation problems [28]– [31]. These advances suggest a promising direction for multi-exposure HDR reconstruction: instead of applying a fixed reconstruction pipeline to all inputs, an MLLM-driven agent can serve as a high-level controller that interprets scene conditions, selects suitable reconstruction tools, and refines decisions according to reconstruction feedback. Motivated by the above analysis, we propose HDRAgent, an agent-driven framework for multi-exposure HDR recon-struction. Specifically, an MLLM first describes the multi-exposure inputs from the perspectives of foreground motion, exposure variation, saturation, and occlusion. Based on this description, we introduce a fine-grained contextual knowl-edge matching (FCM) module to organize scene descrip-tions, candidate reconstruction tools, historical failure cases, and feedback-updated reconstruction experience as structured decision evidence. An MLLM dynamic router then selects suitable alignment and fusion strategies according to the input description and accumulated contextual knowledge. To correct residual ghosting and local artifacts after tool execution, we further introduce a perception–distortion feedback mechanism that transforms artifact diagnosis into contextual knowledge for iterative correction on the original multi-exposure inputs. Moreover, for extreme motion cases where alignment becomes unreliable, we design an agent-guided generative alignment strategy to restore reference-consistent structures in non-reference frames. Specifically, the MLLM identifies dynamic foreground objects, generates segmentation prompts, and in-vokes segmentation and generative tools to obtain correction masks and perform reference-conditioned masked generation. Through this agentic reconstruction process, HDRAgent ef-fectively handles saturated highlights, occlusions, and severe motion, achieving competitive or superior objective and visual quality. The main contributions of our work can be summarized as follows:  
+
+> •
+
+We propose HDRAgent, to the best of our knowl-edge the first agent-driven framework for multi-exposure HDR reconstruction, which reformulates fixed feed-forward alignment and fusion as a perception–planning– execution–feedback dynamic reconstruction process.  
+
+> •
+
+We introduce a fine-grained contextual knowledge match-ing (FCM) module that organizes scene evidence, tool applicability, and historical feedback into structured deci-sion evidence, enabling an MLLM-based dynamic router to adaptively select reconstruction strategies.  
+
+> •
+
+We design a perception–distortion feedback mechanism for structured artifact diagnosis and iterative refinement, together with an agent-guided generative alignment strat-egy that handles extreme-motion regions via reference-conditioned masked generation.  
+
+> •
+
+Extensive experiments on benchmark datasets demon-strate that HDRAgent effectively reduces ghosting and local artifacts, achieving competitive or superior objec-tive performance and visual quality in complex dynamic scenes. II. R ELATED WORK 
+
+A. Multi-exposure HDR Imaging 
+
+Traditional multi-exposure HDR methods typically rely on physical imaging models and hand-crafted preprocessing pipelines, including radiometric recovery, exposure fusion, 3
+
+and registration or patch matching for dynamic scenes [1], [4], [7], [32]–[34]. Although interpretable, these methods heavily depend on preprocessing accuracy and locally match-able textures, making them less effective under large motion, occlusion, and saturation [4], [5]. In recent years, deep learn-ing methods have become the dominant solution for multi-exposure HDR reconstruction. CNN-based methods learn feature-domain alignment and fusion in an end-to-end manner, and attention mechanisms are further introduced to enhance region selection and cross-exposure interaction for dynamic-scene deghosting [2], [5], [6], [10], [35]. Transformer-based methods further exploit global contextual modeling and se-lective region interaction to strengthen long-range correspon-dence reasoning [11], [12], [36]. Meanwhile, optical-flow-guided approaches explicitly estimate inter-frame motion for misalignment compensation [18], [37]. Generative methods, including GANs and diffusion models, have also been explored to recover missing content and improve perceptual quality in severely degraded regions [3], [13], [14], [16], [38]. Never-theless, most existing methods still follow a fixed one-shot alignment-and-fusion paradigm, lacking dynamic planning for different motion, saturation, and occlusion conditions, as well as explicit feedback correction for residual ghosting. 
+
+B. Agentic Image Restoration 
+
+Recent advances in LLM- and VLM-based agentic sys-tems have driven image restoration from fixed feed-forward inference toward a dynamic decision-making paradigm. Unlike conventional single-degradation restoration networks and All-in-One restoration models [39]–[41], agentic methods perceive input degradations, plan restoration strategies, and progres-sively refine results through tool invocation and quality feed-back. Existing automatic and instruction-guided restoration methods provide conditional information through degradation recognition, blind quality assessment, or text prompts [40]– [42]. More recent agentic frameworks further formulate image restoration as a perception–planning–execution–feedback pro-cess, showing strong adaptability in complex image restora-tion, super-resolution, deraining, and mixed-degradation re-moval [25]–[27], [43]–[48]. These advances motivate us to introduce the agentic restora-tion paradigm into multi-exposure HDR imaging. However, existing methods mainly focus on single-image degradation or general mixed-degradation restoration, without considering the radiometric relationships, cross-exposure correspondences, and dynamic ghosting issues in multi-exposure inputs. To this end, HDRAgent formulates multi-exposure HDR reconstruc-tion as an agentic decision-making process for cross-exposure dynamic scenes, achieving dynamic ghost suppression through scene-adaptive context and feedback updating. III. M ETHODOLOGY 
+
+A. Overview of Proposed Framework 
+
+The overall architecture of HDRAgent is shown in Fig. 3. Given multi-exposure LDR images I = {Ii}Ni=1 and exposure information E = {ei}Ni=1 , the goal is to reconstruct a ghost-free HDR image ˆH with faithful radiance and consistent local structures. Compared with fixed feed-forward HDR pipelines, HDRAgent formulates reconstruction as a closed-loop agentic process that integrates scene perception, contextual knowl-edge matching, dynamic routing, toolbox-based execution, and feedback-driven correction. HDRAgent first employs Qwen3-VL-Plus [49] to analyze motion, exposure variation, saturation, occlusion, and cross-exposure mismatch. FCM then organizes the scene state, expert tool knowledge, historical context, and feedback mem-ory into structured decision evidence. Given this evidence, Qwen3.6-Plus [50] dynamically selects suitable alignment and fusion/reconstruction tools. The reconstructed result is further assessed by a perception–distortion feedback evaluator, whose feedback is written back into contextual memory to refine subsequent routing and correction. This closed-loop design enables HDRAgent to reduce ghosting and local fusion artifacts in complex dynamic scenes. 
+
+B. Fine-Grained Contextual Knowledge Matching 
+
+HDRAgent employs FCM to organize scene perception results, expert tool knowledge, and historical feedback into structured contextual evidence, which provides decision sup-port for subsequent dynamic routing. Given the multi-exposure inputs I = {Ii}Ni=1 , exposure information E = {ei}Ni=1 [2], [4], [36], and a scene-analysis instruction Pscene , the scene perception module first produces an input-specific scene-state description: 
+
+S = Φ perc (I, E, Pscene ), (1) where Φperc denotes the MLLM-based scene perception pro-cess instantiated with Qwen3-VL-Plus [49] and guided by the scene-analysis instruction. S denotes the scene-state descrip-tion produced by the MLLM, including global motion dynam-ics, exposure distribution, saturation locations, and occlusion changes. After obtaining the scene state, the FCM module organizes the scene state S, expert tool knowledge base K, and historical feedback Ht−1 into structured contextual evidence for the t-th reconstruction round under the context organization instruction 
+
+Pctx : Ct = Φ fcm (S, Pctx , K, Ht−1)= {Cscene  
+
+> t
+
+, C tool  
+
+> t
+
+, C fb  
+
+> t
+
+}, (2) where Φfcm denotes the contextual knowledge matching pro-cess instantiated with GPT-5.3 [51]. Pctx constrains the structure and focus of the generated contextual evidence. K
+
+denotes the expert tool knowledge base, which records the functions, applicability conditions, and potential failure risks of candidate alignment and fusion tools. In this process, GPT-5.3 first reformulates the scene-state description S into scene-conditioned reconstruction evidence Cscene  
+
+> t
+
+, then matches the expert tool knowledge base K with Cscene  
+
+> t
+
+to obtain tool applicability evidence Ctool  
+
+> t
+
+, and finally uses Cscene  
+
+> t
+
+as a query to match the historical feedback memory Ht−1 and obtain scene-relevant feedback evidence Cfb  
+
+> t
+
+. Thus, Ct represents the fine-grained contextual evidence used in the t-th reconstruction round, providing structured decision evidence for the dynamic router. 4Input 
+
+> Scene 1
+> Scene 2
+> …
+> Scene n
+> Exposure
+
+Perception & Plan 
+
+ML LM-based Scene Perception 
+
+Fine-Grained Contextual Knowledge Matching 
+
+Execution  
+
+> Route to ECC(Alignment)
+> and AHDR(Fusion)
+> Route to MTB(Alignment)
+> and Ca-Vit(Fusion)
+> Route to RAFT(Alignment)
+> and
+> Ca-Vit(Fusion)
+> Route to AGGA (Alignment)
+> and
+> DDPF-PR (Fusion)
+
+Alignment Toolbox   
+
+> ECC DIS RAFT
+
+Fusion Toolbox 
+
+…
+
+Output 
+
+> Before&After
+
+Multiple Scenes 
+
+> Tonemapped HDR
+> High-Fidelity Ghost-free HDR Output
+> Conventional methods
+> MTB
+
+…    
+
+> Agent-Guided
+> Generative Alignment
+> SAM Flux
+> SCTNet
+> AHDR
+> SAFNet AFUNet
+> Ca-ViT
+> DDPF-PR
+> “Analyze aspects: Foreground Motion, Exposure Variance, and
+> Dynamic Occlusion across [Scene_1, Scene_2, ..., Scene_N]”
+
+MLLM Dynamic Router      
+
+> “Motion:Detected significant vertical displacement and non-rigid rotation of
+> the foreground subject……Exposure: Detected extreme dynamic range with
+> severe highlight saturation in background regions (windows), leading to
+> irreversible loss of texture details...” qwen3
+> vl-plus
+
+…   
+
+> Historical Context
+> Scene=[…].Action=[…].
+> Result=[…]; Scene=[…] .
+> Expert Knowledge
+> MTB:Pure translational
+> camera shake . Robust to
+> illumination gaps but cannot
+> handle local motion ……
+> Coarse-Grained Memory GPT-5.3 Fine-Grained Memory
+> Expert Knowledge
+> MTB: Exposure-robust
+> global translation.
+> Historical Context
+> Scene=[…]. Action=[…].
+> Result=[…]. “Refine the
+> experience…”
+
+Perception-Distortion Feedback Evaluator        
+
+> qwen3 vl-plus
+> AHDR: Handles small
+> motions well,achieving
+> high quantitative
+> metrics.
+> AHDR: Handles small
+> motions well… but large
+> occlusions cause severe
+> ghosting .Quantitative Qualitative
+> metric Visualization
+
+Fig. 3. Overall architecture of the proposed HDRAgent framework for multi-exposure HDR reconstruction. HDRAgent first uses MLLM-based scene perception to analyze motion, exposure variation, saturation, and occlusion, and then performs fine-grained contextual knowledge matching to organize scene evidence, tool applicability, and historical feedback. The dynamic router selects suitable reconstruction tools according to the contextual evidence, with agent-guided generative alignment handling local large-motion and high-mismatch regions. The perception–distortion evaluator further detects residual ghosting and local artifacts, providing structured feedback for iterative reconstruction refinement. 
+
+The scene-conditioned reconstruction evidence Cscene 
+
+t de-scribes the reconstruction constraints implied by the cur-rent scene. It mainly includes alignment reliability, texture observability, and fusion risk. Alignment reliability reflects whether reliable cross-exposure correspondences can be es-tablished under the observed motion and occlusion condi-tions. Texture observability indicates whether useful textures and structures are preserved in saturated or under-exposed regions. Fusion risk estimates whether aggressive fusion may introduce ghosting, structural inconsistency, or local artifacts. These scene-side evidence entries provide the dynamic router with reconstruction-aware constraints for selecting a suitable strategy. The tool applicability evidence Ctool 
+
+t provides scene-relevant tool knowledge for the dynamic router. The expert tool knowledge base K contains general descriptions of all candidate tools, including their functions, applicable condi-tions, and potential failure modes. Directly feeding the entire 
+
+K to the router may introduce irrelevant tool information and increase the ambiguity of strategy selection. Therefore, FCM matches K with the current scene-conditioned evidence Cscene 
+
+t
+
+and extracts only the tool knowledge relevant to the current re-construction constraints. Specifically, Ctool 
+
+t summarizes which types of tools are potentially suitable, under what conditions they are reliable, and under what conditions they may fail. In this way, Ctool 
+
+t filters and reformulates the global tool knowledge into compact tool-aware evidence, while leaving the final strategy selection to the dynamic router. The feedback evidence Cfb 
+
+t is obtained by matching the cur-rent scene-conditioned evidence with the historical feedback memory. Specifically, the historical feedback memory before the t-th reconstruction round is denoted as 
+
+Ht−1 = H0 ∪ { Fτ }t−1
+
+τ =1 , (3) where H0 denotes the initial feedback memory constructed from the training dataset without updating model parameters, and Fτ denotes the structured feedback generated by the perception–distortion feedback evaluator at round τ . Given the current scene evidence Cscene 
+
+t , FCM uses GPT-5.3 to retrieve relevant feedback cases from Ht−1. The retrieved feedback cases provide correction-oriented evidence for the dynamic router, indicating which failure patterns or artifact risks should be avoided in the current reconstruction round. Finally, the dynamic router generates the execution strategy for the t-th round according to the contextual evidence and candidate tool set: 
+
+Rt = Φ router (Ct, T ), Rt ∈ T , (4) where Φrouter denotes the dynamic routing process instantiated with Qwen3.6-Plus [50], T denotes the candidate tool set, and Rt denotes the image-level alignment and fusion strategy selected for the current reconstruction round. Through FCM, HDRAgent transforms scene perception results, expert tool knowledge, and historical feedback into structured decision evidence, allowing the dynamic router to adaptively select an overall reconstruction strategy for different dynamic scenes. 5
+
+C. Perception–Distortion Feedback Evaluation 
+
+Global objective metrics can measure overall HDR recon-struction quality, but may overlook local visual defects in dynamic regions, such as residual ghosting, boundary mis-alignment, and fusion artifacts. To provide more informative feedback for iterative correction, HDRAgent introduces aperception–distortion feedback mechanism, which combines metric-based quality scores with MLLM-based perceptual di-agnosis and converts them into structured feedback for context update and dynamic routing. Given the reconstruction result ˆHt at the t-th round, on the training set we map both ˆHt and the ground-truth HDR image 
+
+Hgt into the SDR domain before metric computation: 
+
+Yt = T ( ˆHt), Y gt = T (Hgt ), (5) where T (·) denotes the tone-mapping operation, Yt denotes the tone-mapped result of ˆHt, and Y gt denotes the tone-mapped result of Hgt .The distortion branch computes both full-reference and no-reference metrics on the tone-mapped results: 
+
+Dtrain  
+
+> t
+
+= Φfr (Yt, Y gt ), Φnr (Yt) , (6) where Φfr denotes the full-reference evaluation process, and 
+
+Φnr denotes the no-reference evaluation process. In parallel, the perceptual branch uses an MLLM to diag-nose local visual artifacts from the tone-mapped result: 
+
+Pt = Φ vlm (Yt, Peval ), (7) where Φvlm denotes the perceptual evaluation process instan-tiated with Qwen3-VL-Plus [49], and Peval is the evaluation instruction. Pt records perceptual artifact descriptions, such as residual ghosting, boundary misalignment, fusion artifacts, and structural discontinuity. The metric scores and perceptual diagnosis are then sum-marized into unified feedback: 
+
+Ft = Φ eval (Dtrain  
+
+> t
+
+, P t), (8) where Φeval denotes the feedback summarization process instantiated with Qwen3-VL-Plus [49], and Ft denotes the structured feedback at round t. Ft records not only quality scores, but also the type, severity, and possible cause of local reconstruction failures. On the training set, the gener-ated feedback is accumulated to form the initial historical feedback memory H0, which stores typical failure patterns and correction-oriented experience without updating model parameters. On the test set, ground-truth HDR images are unavailable, so full-reference metrics are excluded from the feedback loop. Since the feedback is used to identify reconstruction failures and guide subsequent strategy selection rather than provide pixel-level supervision, no-reference metrics from Yt together with MLLM-based perceptual diagnosis provide sufficient cues for context matching and dynamic routing. 
+
+D. Agent-Guided Generative Alignment 
+
+To handle extreme motion and large occlusion where existing alignment methods are unreliable, we design an agent-guided generative alignment (AGGA) module, which leverages generative priors to locally reconstruct unreliable dynamic regions in non-reference frames. As shown in Fig. 4, AGGA follows a perception–segmentation–generation– feedback pipeline. Specifically, Qwen3-VL-Plus [49] first parses the moving foreground object and generates a tex-tual prompt for segmentation. Grounded-SAM [52], [53] then localizes the prompted object and produces foreground masks. Based on the generated masks and prompt, FLUX.1 Fill/Kontext [54], [55] performs reference-conditioned masked generation to correct unreliable regions in non-reference frames. Finally, Qwen3-VL-Plus is further used as a feedback checker to verify the structural consistency of the generated result. Let Ir denote the reference frame and Ii denote a non-reference frame. Given the instruction Pagga , Qwen3-VL-Plus [49] analyzes the multi-exposure inputs and produces a dynamic-object prompt: 
+
+q = Φ vlm (Ir , I i, Pagga ), (9) where Φvlm denotes the MLLM-based target parsing process, and q denotes the textual prompt describing the moving fore-ground object, e.g., “person”. This prompt provides semantic guidance for subsequent open-vocabulary segmentation. Based on the prompt q, Grounded-SAM [52], [53] segments the corresponding foreground object in both the reference and non-reference frames: 
+
+Mr = Φ gsam (Ir , q ), Mi = Φ gsam (Ii, q ), (10) where Φgsam denotes the Grounded-SAM segmentation pro-cess, and Mr , M i ∈ { 0, 1}H×W denote the foreground masks of the reference and non-reference frames, respectively. To cover the potentially misaligned dynamic region, we construct a correction mask by merging the two masks: 
+
+M ui = Mr ∪ Mi. (11) The union mask indicates the region in the non-reference frame that may require generative correction. AGGA then performs reference-conditioned masked gener-ation on the non-reference frame. Specifically, FLUX.1 Fill and FLUX.1 Kontext [54], [55] take the non-reference frame 
+
+Ii, the reference condition Ir , the correction mask M ui , and the inpainting prompt q as inputs: 
+
+Gi = Φ flux (Ii, I r , M ui , q ), (12) where Φflux denotes the reference-conditioned masked gen-eration process, and Gi denotes the generated non-reference candidate. The reference frame provides structural guidance, while the mask restricts the editable area to the unreliable foreground region. To preserve reliable image content, only the generated masked region is used for correction: 
+
+˜Ii = M ui ⊙ Gi + (1 − M ui ) ⊙ Ii, (13) 6Qwen3-vl-plus   
+
+> Dynamic object parsing
+> Locate moving targets
+> and generate prompts
+> for segmentation.
+> Identified object:
+> person
+> Prompt:
+> ”person ”
+> Grounded-SAM
+> Object masks
+> Foreground masks
+> Flux.1-dev/ Flux.1-Kontext
+> Input+Mask+Prompt Candidate Correction
+> Feedback Check
+> Satisfactory?
+> Yes:select best result
+> No:regenerate
+> Corrected Multi-exposure
+> Inputs
+> Input
+> Fig. 4. Illustration of the proposed agent-guided generative alignment module. Qwen3-VL-Plus first parses the dynamic foreground target and generates a text prompt. Grounded-SAM then produces foreground masks for the reference and non-reference frames. The reference frame is kept unchanged and used only as a condition, while FLUX.1 Fill/Kontext performs mask-guided generation for non-reference frames. A feedback checker further verifies whether the generated result satisfies the reference-consistency requirement.
+
+where ˜Ii denotes the corrected non-reference frame and ⊙
+
+denotes element-wise multiplication. Finally, HDRAgent uses Qwen3-VL-Plus as a feedback checker to verify whether the corrected non-reference frame satisfies the reference-consistency requirement: 
+
+vi = Φ check ( ˜Ii, I r , M ui , Pcheck ), (14) where Φcheck denotes the MLLM-based consistency checking process, Pcheck denotes the checking instruction, and vi ∈{0, 1} indicates whether the correction is accepted. If the result is unsatisfactory, the feedback is used to refine the prompt and re-invoke the generative correction process. Repeating AGGA for all non-reference frames yields the corrected multi-exposure sequence: 
+
+˜I = {Ir } ∪ { ˜Ii}i̸=r , (15) which is subsequently fed into the HDR fusion module. In this way, AGGA converts difficult geometric alignment in large-motion regions into reference-conditioned masked generation, reducing ghosting and local fusion artifacts while preserving reliable background content. IV. E XPERIMENTS 
+
+A. Experimental Settings 
+
+Implementation Details. HDRAgent uses Qwen3-VL-Plus [49] for visual scene perception, dynamic foreground parsing, artifact assessment, and feedback checking, Qwen3.6-Plus [50] as the dynamic router, and GPT-5.3 [51] for fine-grained contextual knowledge matching. In AGGA, Grounded-SAM [52], [53] generates foreground masks from MLLM-produced prompts, while FLUX.1 Fill/Kontext [54], [55] per-forms reference-conditioned masked generation. The feedback accumulated on the training set is stored as the initial histor-ical feedback memory H0 without model-parameter updates. Experiments are conducted on a single NVIDIA RTX 4090 GPU, and part of the FLUX.1 model states are offloaded to CPU memory during generative alignment. 
+
+Datasets. We evaluate HDRAgent on three representative multi-exposure HDR benchmarks: Kalantari’s dataset [2], Tel’s dataset [36], and Hu’s dataset [4]. These datasets cover a wide range of exposure differences, motion patterns, and scene dynamics. Kalantari’s dataset provides real dynamic HDR se-quences captured under natural lighting, including 74 training samples and 15 testing samples. Tel’s dataset further increases the diversity of motion and illumination conditions, with 108 training examples and 36 testing examples. In addition, Hu’s dataset is a synthetic benchmark generated with a physics-based game engine, where each scene is rendered under three exposure settings to simulate realistic sensor responses. 
+
+Evaluation Metrics. We evaluate the reconstruction quality from both fidelity-oriented and perceptual perspectives. Fol-lowing common multi-exposure HDR evaluation protocols, we report five full-reference metrics: PSNR-μ, PSNR-L, SSIM-μ,SSIM-L, and HDR-VDP-2 [2], [57], [58]. PSNR-L and SSIM-
+
+L are computed in the linear HDR domain, while PSNR-μ and SSIM-μ are measured after μ-law tone mapping. HDR-VDP-2 further evaluates perceptual visibility differences in HDR images. These metrics jointly assess the numerical fidelity, structural consistency, and perceptual quality of reconstructed HDR results under full-reference evaluation. To further assess visual quality without relying on ground-truth HDR images, we adopt six no-reference image quality metrics, including MUSIQ [59], MANIQA [60], LIQE [61], HyperIQA [62], DBCNN [63], and NIMA [64]. Unless otherwise specified, all no-reference metrics are computed on tone-mapped images. For PSNR-μ, PSNR-L, SSIM-μ,SSIM-L, HDR-VDP-2, MUSIQ, MANIQA, LIQE, HyperIQA, DBCNN, and NIMA, higher values indicate better reconstruc-tion quality. 
+
+Compared Methods. To evaluate the effectiveness of HDRA-gent, we compare it with representative and recent multi-exposure HDR reconstruction methods, covering CNN-based methods, Transformer-based methods, and generative or diffusion-based methods. Specifically, we include classical baselines such as DHDR [5], AHDR [6], NHDRR [56], HDR-GAN [13], APNT [35], CA-ViT [11], HyHDR [65], SCTNet [36], and DiffHDR [14], as well as recent methods from the past two years, including LFDiff [15], SAFNet [18], AFUNet [19] and DDPF-PR [20]. For a fair comparison, 7            
+
+> (a) APNet [35] (b) AHDR [6] (c) NHDRR [56] (d) DHDR [5] (e) SCTNet [36] (f) HDR-GAN [13] (g) HDRTrans [11]
+> (h) SAFNet [18] (i) DiffHDR [14] (j) LFDiff [15] (k) AFUNet [19] (l) DDPF-PR [20] (m) HDRAgent (n) GT
+
+Fig. 5. Visual comparison of different methods on dynamic scenes from the Kalantari’s dataset [2]. Our HDRAgent yields cleaner local structures and fewer ghosting artifacts, with results closer to the reference HDR images. 
+
+we follow the official implementations or reported settings whenever available, and evaluate all methods using the same dataset splits and metric protocols. 
+
+B. Quantitative Assessment 
+
+Tables I, II, and III report full-reference quantitative com-parisons on Kalantari’s dataset, Tel’s dataset, and Hu’s dataset, respectively. Across the three benchmarks, HDRAgent con-sistently achieves the best or second-best results on most fidelity-oriented metrics, including PSNR-μ, PSNR-L, SSIM-
+
+μ, SSIM-L, and HDR-VDP-2. These results demonstrate that the proposed agent-driven reconstruction framework can ef-fectively improve numerical fidelity and structural consistency under diverse dynamic HDR imaging conditions. In addition to full-reference evaluation, Table IV reports no-reference quality comparisons on Kalantari’s dataset. HDRA-gent achieves the best performance on DBCNN and NIMA, and ranks among the top three on MUSIQ, MANIQA, LIQE, and HyperIQA. This indicates that HDRAgent not only im-proves distortion-oriented reconstruction accuracy, but also maintains competitive perceptual quality. Overall, the full-reference and no-reference evaluations jointly verify the ro-bustness of HDRAgent in reducing ghosting artifacts, pre-serving local structures, and producing visually reliable HDR results. On Kalantari’s dataset, as shown in Table I, HDRAgent achieves the best PSNR-μ, SSIM-L, and HDR-VDP-2 scores, reaching 45.01, 0.9911, and 66.81, respectively. It also obtains the second-best PSNR-L and SSIM-μ results, only slightly lower than SAFNet and AFUNet, respectively. These results show that HDRAgent provides a strong balance between tone-mapped fidelity, linear-domain reconstruction accuracy, structural consistency, and perceptual quality. 
+
+TABLE I QUANTITATIVE COMPARISONS ON KALANTARI ’S DATASET [2]. T HE BEST AND SECOND -BEST RESULTS ARE HIGHLIGHTED IN RED AND BLUE ,
+
+> RESPECTIVELY
+
+.Methods Venue PSNR-μ PSNR-L SSIM-μ SSIM-L HDR-VDP-2 DHDR [5] ECCV’18 41.64 40.91 0.9869 0.9858 60.50 AHDR [6] CVPR’19 43.62 41.03 0.9900 0.9862 62.30 NHDRR [56] TIP’20 42.41 41.08 0.9887 0.9861 61.21 HDR-GAN [13] TIP’21 43.92 41.57 0.9905 0.9865 65.45 APNT [35] TIP’22 43.94 41.61 0.9898 0.9879 64.05 CA-ViT [11] ECCV’22 44.32 42.18 0.9916 0.9884 66.03 HyHDR [65] CVPR’23 44.64 42.47 0.9915 0.9894 66.05 SCTNet [36] ICCV’23 44.43 42.21 0.9918 0.9891 66.64 DiffHDR [14] TCSVT’23 44.11 41.73 0.9911 0.9885 65.52 SAFNet [18] ECCV’24 44.66 43.18 0.9919 0.9901 66.11 LFDiff [15] CVPR’24 44.76 42.59 0.9919 0.9906 66.54 AFUNet [19] ICCV’25 44.91 42.59 0.9923 0.9906 66.75 Ours - 45.01 42.68 0.9922 0.9911 66.81 
+
+Table II presents the results on Tel’s dataset, which con-tains more challenging motion and illumination variations. HDRAgent achieves the best results across all five full-reference metrics, with PSNR-μ, PSNR-L, SSIM-μ, SSIM-
+
+L, and HDR-VDP-2 scores of 43.61, 47.99, 0.9877, 0.9962, and 71.11, respectively. Compared with AFUNet, the second-best method on this dataset, HDRAgent consistently improves 8
+
+all metrics, indicating stronger tone-mapped fidelity, linear-domain reconstruction accuracy, structural consistency, and perceptual quality under complex dynamic conditions. 
+
+TABLE II QUANTITATIVE COMPARISONS ON TEL ’S DATASET [36]. T HE BEST AND SECOND -BEST RESULTS ARE HIGHLIGHTED IN RED AND BLUE ,
+
+> RESPECTIVELY
+
+.Methods Venue PSNR-μ PSNR-L SSIM-μ SSIM-L HDR-VDP-2 DHDR [5] ECCV’18 40.05 43.37 0.9794 0.9924 67.09 AHDR [6] CVPR’19 42.08 45.30 0.9837 0.9943 68.80 NHDRR [56] TIP’20 36.68 39.61 0.9590 0.9853 65.41 HDR-GAN [13] TIP’21 41.71 44.87 0.9832 0.9949 69.57 CA-ViT [11] ECCV’22 42.39 46.35 0.9844 0.9948 69.23 SCTNet [36] ICCV’23 42.55 47.51 0.9850 0.9952 70.66 DiffHDR [14] TCSVT’23 42.18 45.63 0.9841 0.9946 69.88 SAFNet [18] ECCV’24 42.68 47.46 0.9792 0.9955 68.16 AFUNet [19] ICCV’25 43.31 47.83 0.9876 0.9959 71.08 HDRAgent - 43.61 47.99 0.9877 0.9962 71.11 
+
+On Hu’s synthetic dataset, Table III shows that HDRAgent achieves the best results on four out of five metrics, including PSNR-μ, PSNR-L, SSIM-μ, and HDR-VDP-2. Specifically, HDRAgent reaches 49.01 in PSNR-μ, 52.45 in PSNR-L,0.9970 in SSIM-μ, and 77.49 in HDR-VDP-2, outperforming recent competing methods on tone-mapped fidelity, linear-domain reconstruction accuracy, structural consistency, and perceptual quality. For SSIM-L, LFDiff obtains the best value of 0.9993, while HDRAgent achieves the second-best result of 0.9992. These results indicate that HDRAgent remains robust on synthetic scenes with strong illumination variations, saturated regions, and fine local textures. 
+
+TABLE III QUANTITATIVE COMPARISONS ON HU’S DATASET [66]. T HE BEST AND SECOND -BEST RESULTS ARE HIGHLIGHTED IN RED AND BLUE ,
+
+> RESPECTIVELY
+
+.Methods Venue PSNR-μ PSNR-L SSIM-μ SSIM-L HDR-VDP-2 DHDR [5] ECCV’18 41.13 41.20 0.9870 0.9941 70.82 AHDR [6] CVPR’19 45.76 49.22 0.9956 0.9980 75.04 NHDRR [56] TIP’20 45.15 48.75 0.9956 0.9981 74.86 HDR-GAN [13] TIP’21 45.86 49.14 0.9945 0.9989 75.19 APNT [35] TIP’22 46.41 47.97 0.9953 0.9986 73.06 CA-ViT [11] ECCV’22 48.10 51.17 0.9947 0.9989 77.12 HyHDR [65] CVPR’23 48.46 51.91 0.9959 0.9991 77.24 DiffHDR [14] TCSVT’23 48.03 50.23 0.9954 0.9989 76.22 SCTNet [36] ICCV’23 48.10 51.03 0.9963 0.9991 77.14 SAFNet [18] ECCV’24 47.18 49.35 0.9951 0.9990 76.83 LFDiff [15] CVPR’24 48.74 52.10 0.9968 0.9993 77.35 AFUNet [19] ICCV’25 48.83 52.13 0.9968 0.9991 77.44 Ours - 49.01 52.45 0.9970 0.9992 77.49 
+
+These quantitative results show that HDRAgent consistently performs competitively across real and synthetic HDR bench-marks. The improvements are particularly evident in PSNR-
+
+μ and HDR-VDP-2, suggesting that HDRAgent can better reconstruct visually faithful tone-mapped HDR results and suppress perceptually noticeable artifacts. Together with the qualitative comparisons, these results validate the effectiveness of the proposed agent-driven dynamic deghosting framework. 
+
+C. Qualitative Evaluation 
+
+We conduct qualitative comparisons on three representative multi-exposure HDR benchmarks, as shown in Figs. 5, 6, and 7. These examples cover challenging dynamic scenarios 
+
+TABLE IV NO-REFERENCE QUALITY COMPARISONS ON KALANTARI ’S DATASET . T HE BEST , SECOND -BEST , AND THIRD -BEST RESULTS ARE HIGHLIGHTED IN RED , BLUE , AND GREEN , RESPECTIVELY .Methods Venue MUSIQ ↑ MANIQA ↑ LIQE ↑ HyperIQA ↑ DBCNN ↑ NIMA ↑                                                 
+
+> AHDR [6] CVPR’19 63.7260 0.3345 3.1729 0.5385 0.5457 4.3294 HDRTrans [11] ECCV’22 64.9563 0.3447 3.2742 0.5505 0.5624 4.3488 DiffHDR [14] TCSVT’23 64.9680 0.3452 3.2859 0.5507 0.5642 4.3518 SAFNet [18] ECCV’24 64.7381 0.3442 3.2687 0.5472 0.5617 4.3449 LFDiff [15] CVPR’24 65.0523 0.3458 3.2992 0.5526 0.5641 4.3405 AFUNet [19] ICCV’25 64.8090 0.3425 3.2744 0.5497 0.5591 4.3405 Ours -65.0218 0.3447 3.2894 0.5513 0.5648 4.3537
+
+TABLE V ABLATION STUDY OF DECISION -LEVEL VARIANTS ON KALANTARI ’SDATASET [2]. FCM, AGGA, AND FB DENOTE FINE -GRAINED CONTEXTUAL KNOWLEDGE MATCHING , AGENT -GUIDED GENERATIVE ALIGNMENT , AND PERCEPTION –DISTORTION FEEDBACK , RESPECTIVELY .THE BEST RESULTS ARE HIGHLIGHTED IN RED .Variant FCM AGGA FB PSNR-μ PSNR-L SSIM-μ SSIM-L
+
+w/ RS ✗ ✗ ✗ 44.14 42.31 0.9917 0.9883 w/o CTX ✗ ✓ ✓ 44.51 42.62 0.9918 0.9893 w/o GA ✓ ✗ ✓ 44.88 42.57 0.9921 0.9903 Full ✓ ✓ ✓ 45.01 42.68 0.9922 0.9911 
+
+with large foreground motion, saturated highlights, occlusions, and severe cross-exposure appearance changes. The cropped regions provide a closer inspection of local ghosting artifacts and structural inconsistencies. Fig. 5 presents visual comparisons on Kalantari’s dataset [2]. In these real dynamic scenes, the moving fore-ground objects introduce severe cross-exposure misalign-ment, especially around the body boundaries and background structures. Early CNN-based methods such as DHDR [5], AHDR [6], and NHDRR [56] can recover the overall HDR appearance, but they still leave noticeable duplicated edges and semi-transparent ghosting in the enlarged regions. HDR-GAN [13] and HDRTrans [11] improve local contrast and global appearance, yet their results still contain residual mis-alignment around motion boundaries. Recent methods such as SCTNet [36], SAFNet [18], DiffHDR [14], LFDiff [15], and AFUNet [19] further reduce obvious ghosting, but local artifacts remain visible in high-mismatch regions, such as blurred contours, color bleeding, or inconsistent background structures. DDPF-PR [20] produces competitive local details, but slight residual artifacts can still be observed around challenging motion regions. In contrast, HDRAgent generates cleaner motion boundaries and more coherent local structures, with fewer ghosting traces and results closer to the reference HDR images. Fig. 6 shows the results on Tel’s dataset [36], where strong foreground motion, occlusion, and saturated background re-gions jointly degrade the reliability of cross-exposure cor-respondences. DHDR [5] and NHDRR [56] exhibit obvious ghosting around the moving subject, indicating that con-ventional feature-domain alignment is insufficient when the correspondence cues are weak. AHDR [6] and HDRTrans [11] suppress part of the ghosting but still produce halo-like artifacts and unstable colors near high-contrast boundaries. SCTNet [36] and SMHDR [67] improve the overall visual consistency, yet semi-transparent residual structures remain 9         
+
+> (a) DHDR [5] (b) AHDR [6] (c) NHDRR [56] (d) HDRTrans [11] (e) SCTNet [36]
+> (f) SMHDR [67] (g) AFUNet [19] (h) DDPF-PR [20] (i) HDRAgent (j) GT
+> Fig. 6. Visual comparison of different methods on dynamic scenes from Tel’s dataset [36]. Our HDRAgent yields cleaner local structures and fewer ghosting artifacts, with results closer to the reference HDR images.
+
+around the foreground silhouette. AFUNet [19] and DDPF-PR [20] achieve stronger deghosting performance, but some local regions still show slight boundary ambiguity or texture inconsistency. By comparison, HDRAgent better removes the ghosting around the moving foreground and preserves a more stable local appearance. This demonstrates that the proposed scene-adaptive routing and feedback-guided correction are ef-fective for selecting more suitable deghosting strategies under complex motion and occlusion conditions. Fig. 7 reports qualitative results on Hu’s synthetic dataset [66]. Although the scenes are rendered synthetically, they contain strong illumination variations, saturated regions, and fine local textures, which make HDR fusion challenging. AHDR [6] and HDRTrans [11] tend to preserve the global brightness but introduce visible color shifts and local fusion ar-tifacts in the cropped regions. SCTNet [36] and DiffHDR [14] alleviate some structural distortions, but residual texture in-consistency and color bleeding can still be observed around saturated and high-contrast regions. SAFNet [18] shows strong detail recovery in some areas, yet it may produce over-enhanced colors or unstable local textures. LFDiff [15] and AFUNet [19] obtain visually plausible results, but the local structures in the enlarged regions are still less consistent with the reference. DDPF-PR [20] further improves local fidelity, while slight fusion artifacts remain around saturated object boundaries. HDRAgent achieves cleaner local reconstruction with more faithful color transitions and fewer ghosting arti-facts, indicating its robustness to both synthetic illumination changes and local correspondence failures. Overall, these qualitative comparisons show that different HDR reconstruction methods exhibit distinct failure patterns under different dynamic conditions. Methods with fixed infer-ence paths may perform well in some regions but still struggle when motion, saturation, and occlusion jointly cause unreli-able cross-exposure correspondences. HDRAgent consistently produces more coherent local structures and fewer residual 10          
+
+> (a) AHDR [6] (b) HDRTrans [11] (c) SCTNet [36] (d) DiffHDR [14] (e) SAFNet [18]
+> (f) LFDiff [15] (g) AFUNet [19] (h) DDPF-PR [20] (i) HDRAgent (j) GT
+> Fig. 7. Visual comparison of different methods on dynamic scenes from Hu’s dataset [66]. Our HDRAgent yields cleaner local structures and fewer ghosting artifacts, with results closer to the reference HDR images.
+
+artifacts across the three datasets. These visual results are consistent with the quantitative comparisons, demonstrating that the proposed agent-driven dynamic deghosting process improves both numerical fidelity and perceptual visual quality in challenging multi-exposure HDR reconstruction. 
+
+D. Ablation Study 
+
+To analyze the contribution of each key design in HDRA-gent, we conduct ablation studies on dynamic strategy se-lection, fine-grained contextual knowledge matching, agent-guided generative alignment, and perception–distortion feed-back. The evaluated variants are summarized as follows:  
+
+> •
+
+w/ RS : A reconstruction tool is randomly selected from the HDR tool library for each input, without scene-adaptive strategy selection.  
+
+> •
+
+w/o CTX : Fine-grained contextual knowledge matching is removed. The router only receives the current scene description and the basic HDR tool inventory, without scene-relevant tool applicability evidence or feedback evidence retrieved from the historical feedback memory.  
+
+> •
+
+w/o GA : Agent-guided generative alignment is removed, and high-mismatch regions are reconstructed using the selected HDR reconstruction strategy.  
+
+> •
+
+Full : The complete HDRAgent framework with fine-grained contextual knowledge matching, dynamic strat-egy selection, perception–distortion feedback, and agent-guided generative alignment. Table V reports the quantitative results of different decision-level variants, while Figs. 8 and 9 provide visual comparisons. The complete HDRAgent achieves the best performance, demonstrating the effectiveness of scene-adaptive strategy selection, fine-grained contextual knowledge matching, agent-guided generative alignment, and perception–distortion feed-back. 
+
+1) Effect of Scene-Adaptive Tool Selection. To verify the necessity of scene-adaptive tool selection, we compare the full HDRAgent with w/ RS , which randomly selects a reconstruc-tion tool from the HDR tool library for each input. As shown in Table V, w/ RS obtains the lowest performance among all variants, with 44.14 PSNR-μ, 42.31 PSNR-L, 0.9917 SSIM-μ,11 w/o CTX 
+
+Full 
+
+> Similar cases show
+> standard alignment
+> may fail.
+> Generative alignment is
+> suitable for local high-
+> mismatch regions.
+> Feedback summaries
+> indicate residual
+> ghosting risk.
+
+Retrieved Evidence 
+
+> No retrieved failure cases.
+> No suitability memory.
+> No feedback summaries.
+> Context
+> Removed
+
+Routing Rationale      
+
+> Rationale:
+> Current cues indicate high
+> motion,but the boundary is
+> still visible. ECC +AHDR may
+> be sufficient.
+> Lacks experience-
+> guided correction for
+> strategy selection.
+> Rationale:
+> Similar failures indicate
+> unreliable correspondence.
+> Invoke local generative
+> alignment(AGGA) and DDPF-
+> PR .
+> Corrects routing bias
+> using historical failure
+> cases.
+
+Perception 
+
+> Large motion
+> Saturated highlight
+> Occlusion
+> High mismatch risk
+> Large motion
+> Saturated highlight
+> Occlusion
+> High mismatch risk
+
+Residual ghosting 
+
+Reduced ghosting 
+
+Output Input 
+
+Fig. 8. Ablation study on fine-grained contextual knowledge matching. The full model retrieves scene-relevant tool applicability evidence and historical feedback evidence, thereby avoiding biased strategy selection and reducing residual ghosting caused by insufficient contextual evidence. 
+
+and 0.9883 SSIM-L. In contrast, the full HDRAgent improves these results to 45.01, 42.68, 0.9922, and 0.9911, respectively. The performance gap indicates that arbitrary tool invoca-tion cannot reliably handle different combinations of motion, saturation, and occlusion. By selecting reconstruction tools according to the perceived scene state and context knowledge, HDRAgent achieves more robust HDR deghosting and better reconstruction fidelity. 
+
+2) Effect of Fine-Grained Contextual Knowledge Match-ing. The variant w/o CTX removes fine-grained contextual knowledge matching. The router still receives the current scene description and the basic HDR tool inventory, but lacks scene-relevant tool applicability evidence and historical feedback evidence. As shown in Fig. 8, both w/o CTX and Full perceive the same challenging scene state, including large motion, satu-rated highlights, occlusion, and high mismatch risk. However, without contextual evidence from similar failure cases and tool applicability analysis, w/o CTX makes an over-optimistic routing decision and selects a conventional reconstruction path, resulting in residual ghosting around the dynamic region. In contrast, the full HDRAgent matches the current scene evidence with the expert tool knowledge base and histori-cal feedback memory. The retrieved evidence suggests that standard alignment is unreliable in similar large-motion and saturated regions, while AGGA is more suitable for local high-mismatch areas. Therefore, HDRAgent selects AGGA together with DDPF-PR for more reliable reconstruction, leading to clearly reduced ghosting. These results demonstrate that fine-grained contextual knowledge matching provides critical de-cision evidence for scene-adaptive HDR deghosting. 
+
+3) Effect of Agent-Guided Generative Alignment. To evaluate the contribution of agent-guided generative align-ment, we compare the full HDRAgent with w/o GA , where the original non-reference frames are directly processed by the selected conventional HDR reconstruction tool without reference-constrained generative alignment. As shown in Ta-ble V, removing GA degrades the reconstruction performance, indicating that conventional alignment and fusion are still Non-reference 𝐀 𝐀 （under-exposed ） Non-reference 𝐀 𝐀 （over -exposed ）    
+
+> (a)Original input
+> Aligned 𝐀 𝐀 （under-exposed ）Aligned 𝐀 𝐀 （over -exposed ）
+> (b)w/ AGGA
+> (c)Output
+> w/o GA(direct fusion) Full (w/GA)
+
+Fig. 9. Ablation study on the agent-guided generative alignment module of HDRAgent. Given two non-reference frames with under-exposure and over-exposure, AGGA updates large-motion regions before HDR fusion. Without AGGA, direct fusion of the misaligned inputs produces duplicated contours and residual ghosting. With AGGA, the updated non-reference frames become more structurally consistent, leading to cleaner local structures and fewer ghosting artifacts in the final HDR reconstruction. 
+
+insufficient for regions with severe motion and unreliable cross-exposure correspondences. Fig. 9 further visualizes this effect. Given the original three-frame multi-exposure input, the under-exposed non-reference frame I1 and the over-exposed non-reference frame I3 contain large motion around the foreground target, making them inconsistent with the reference frame Ir . With AGGA, HDRA-gent performs reference-constrained local alignment on these non-reference frames before HDR fusion, producing aligned frames with structures more consistent with Ir . Without this process, w/o GA directly fuses the misaligned inputs and leaves duplicated contours and semi-transparent ghosting in the final HDR result. In contrast, the full model reduces local ghosting and produces cleaner structures closer to the reference HDR image. This verifies that AGGA effectively improves HDR reconstruction by correcting high-mismatch non-reference regions before fusion. 12 
+
+V. C ONCLUSION 
+
+In this paper, we present HDRAgent, an agent-driven frame-work designed for robust multi-exposure HDR reconstruc-tion in complex dynamic scenes. The cornerstone of our approach is a scene-adaptive decision-making framework that enables precise HDR tool invocation by integrating multimodal perception, fine-grained contextual knowledge matching, and perception–distortion feedback. Moreover, we propose agent-guided generative alignment to handle extreme motion and occlusion, which leverages generative priors to locally re-construct unreliable dynamic regions. Extensive experiments demonstrate that HDRAgent effectively reduces ghosting and local fusion artifacts, achieving competitive quantitative per-formance and improved visual quality in challenging dynamic scenes. REFERENCES [1] P. E. Debevec and J. Malik, “Recovering high dynamic range radiance maps from photographs,” in Seminal Graphics Papers: Pushing the Boundaries, Volume 2 , 2023, pp. 643–652. [2] N. K. Kalantari, R. Ramamoorthi et al. , “Deep high dynamic range imaging of dynamic scenes.” ACM Trans. Graph. , vol. 36, no. 4, pp. 144–1, 2017. [3] Z. Chen, Y. Wang, X. Cai, Z. You, Z. Lu, F. Zhang, S. Guo, and T. Xue, “Ultrafusion: Ultra high dynamic imaging using exposure fusion,” in 
+
+Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR) , 2025, pp. 16 111–16 121. [4] J. Hu, O. Gallo, K. Pulli, and X. Sun, “HDR deghosting: How to deal with saturation?” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. (CVPR) , 2013, pp. 1163–1170. [5] S. Wu, J. Xu, Y.-W. Tai, and C.-K. Tang, “Deep high dynamic range imaging with large foreground motions,” in Proc. Eur. Conf. Comput. Vis. (ECCV) , 2018, pp. 117–132. [6] Q. Yan, D. Gong, Q. Shi, A. v. d. Hengel, C. Shen, I. Reid, and Y. Zhang, “Attention-guided network for ghost-free high dynamic range imaging,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR) , 2019, pp. 1751–1760. [7] P. Sen, N. K. Kalantari, M. Yaesoubi, S. Darabi, D. B. Goldman, and E. Shechtman, “Robust patch-based hdr reconstruction of dynamic scenes.” ACM Trans. Graph. , vol. 31, no. 6, pp. 203–1, 2012. [8] T. Grosch et al. , “Fast and robust high dynamic range image generation with camera and object movement,” Proc. Vis., Model., Vis. (VMV) , vol. 277284, no. 3, p. 2, 2006. [9] C. Lee, Y. Li, and V. Monga, “Ghost-free high dynamic range imaging via rank minimization,” IEEE Signal Process. Lett. , vol. 21, no. 9, pp. 1045–1049, 2014. [10] K. R. Prabhakar, S. Agrawal, D. K. Singh, B. Ashwath, and R. V. Babu, “Towards practical and efficient high-resolution HDR deghosting with cnn,” in Proc. Eur. Conf. Comput. Vis. (ECCV) , 2020, pp. 497–513. [11] Z. Liu, Y. Wang, B. Zeng, and S. Liu, “Ghost-free high dynamic range imaging with context-aware transformer,” in Proc. Eur. Conf. Comput. Vis. (ECCV) , 2022, pp. 344–360. [12] J. W. Song, Y.-I. Park, K. Kong, J. Kwak, and S.-J. Kang, “Selective transhdr: Transformer-based selective HDR imaging using ghost region mask,” in Proc. Eur. Conf. Comput. Vis. (ECCV) , 2022, pp. 288–304. [13] Y. Niu, J. Wu, W. Liu, W. Guo, and R. W. Lau, “Hdr-gan: Hdr image reconstruction from multi-exposed ldr images with large motions,” IEEE Trans. Image Process. , vol. 30, pp. 3885–3896, 2021. [14] Q. Yan, T. Hu, Y. Sun, H. Tang, Y. Zhu, W. Dong, L. Van Gool, and Y. Zhang, “Toward high-quality HDR deghosting with conditional diffusion models,” IEEE Trans. Circuits Syst. Video Technol. , vol. 34, no. 5, pp. 4011–4026, 2023. [15] T. Hu, Q. Yan, Y. Qi, and Y. Zhang, “Generating content for hdr deghosting from frequency view,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR) , 2024, pp. 25 732–25 741. [16] C. Wang, Z. Xia, T. Leimkuhler, K. Myszkowski, and X. Zhang, “LEDiff: Latent exposure diffusion for HDR generation,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR) , 2025, pp. 453– 464. [17] X. Lin, J. He, Z. Chen, Z. Lyu, B. Dai, F. Yu, W. Ouyang, Y. Qiao, and C. Dong, “DiffBIR: Toward blind image restoration with generative diffusion prior,” in Proc. Eur. Conf. Comput. Vis. (ECCV) , 2024, pp. 430–448. [18] L. Kong, B. Li, Y. Xiong, H. Zhang, H. Gu, and J. Chen, “Safnet: Selective alignment fusion network for efficient hdr imaging,” in Proc. Eur. Conf. Comput. Vis. (ECCV) , 2024, pp. 256–273. [19] X. Li, Z. Ni, and W. Yang, “AFUNet: Cross-iterative alignment-fusion synergy for HDR reconstruction via deep unfolding paradigm,” arXiv preprint arXiv:2506.23537 , 2025. [20] W. Zhou, Y. Yang, T. Hu, P. Hui, J. Jin, Y. Cao, Q. Yan, and Y. Zhang, “High dynamic range imaging via spatial-frequency interaction,” IEEE Trans. Circuits Syst. Video Technol. , 2026. [21] OpenAI, “Gpt-4v(ision) system card,” https://cdn.openai.com/papers/ GPTV System Card.pdf, 2023. [22] Gemini Team, “Gemini: A family of highly capable multimodal models,” 2023. [23] H. Liu, C. Li, Q. Wu, and Y. J. Lee, “Visual instruction tuning,” in Adv. Neural Inf. Process. Syst. , vol. 36, 2023. [24] J. Bai, S. Bai, S. Yang, S. Wang, S. Tan, P. Wang, J. Lin, C. Zhou, and J. Zhou, “Qwen-VL: A versatile vision-language model for un-derstanding, localization, text reading, and beyond,” arXiv preprint arXiv:2308.12966 , 2023. [25] S. Yao, J. Zhao, D. Yu, N. Du, I. Shafran, K. Narasimhan, and Y. Cao, “React: Synergizing reasoning and acting in language models,” in Proc. Int. Conf. Learn. Represent. (ICLR) , 2023. [26] Y. Shen, K. Song, X. Tan, D. Li, W. Lu, and Y. Zhuang, “Hugginggpt: Solving ai tasks with chatgpt and its friends in hugging face,” in Adv. Neural Inf. Process. Syst. , vol. 36, 2023. [27] C. Wu, S. Yin, W. Qi, X. Wang, Z. Tang, and N. Duan, “Visual chatgpt: Talking, drawing and editing with visual foundation models,” arXiv preprint arXiv:2303.04671 , 2023. [28] H. Chen, W. Li, J. Gu, J. Ren, S. Chen, T. Ye, R. Pei, K. Zhou, F. Song, and L. Zhu, “RestoreAgent: Autonomous image restoration agent via multimodal large language models,” in Adv. Neural Inf. Process. Syst. ,vol. 37, 2024. [29] K. Zhu, J. Gu, Z. You, Y. Qiao, and C. Dong, “An intelligent agentic system for complex image restoration problems,” in Proc. Int. Conf. Learn. Represent. (ICLR) , 2025. [30] Y. Lin, Z. Lin, H. Chen, P. Pan, C. Li, S. Chen, Y. Jin, W. Li, and X. Ding, “JarvisIR: Elevating autonomous driving perception with intelligent image restoration,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR) , 2025. [31] Y. Wang, Q. Yan, J. Zhou, D. Dai, and W. Dong, “PaAgent: Portrait-aware image restoration agent via subjective-objective reinforcement learning,” arXiv preprint arXiv:2603.17055 , 2026. [32] T. Mertens, J. Kautz, and F. Van Reeth, “Exposure fusion,” in Proc. Pacific Conf. Comput. Graph. Appl. , 2007, pp. 382–390. [33] O. Gallo, N. Gelfandz, W.-C. Chen, M. Tico, and K. Pulli, “Artifact-free high dynamic range imaging,” in Proc. IEEE Int. Conf. Comput. Photography (ICCP) , 2009, pp. 1–7. [34] G. Ward, “Fast, robust image registration for compositing high dynamic range photographs from hand-held exposures,” J. Graph. Tools , vol. 8, no. 2, pp. 17–30, 2003. [35] J. Chen, Z. Yang, T. N. Chan, H. Li, J. Hou, and L.-P. Chau, “Attention-guided progressive neural texture fusion for high dynamic range image restoration,” IEEE Trans. Image Process. , vol. 31, pp. 2661–2672, 2022. [36] S. Tel, Z. Wu, Y. Zhang, B. Heyrman, C. Demonceaux, R. Timofte, and D. Ginhac, “Alignment-free hdr deghosting with semantics consistent transformer,” arXiv preprint arXiv:2305.18135 , 2023. [37] G. Xu, Y. Wang, J. Gu, T. Xue, and X. Yang, “Hdrflow: Real-time hdr video reconstruction with large motions,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR) , 2024, pp. 24 851–24 860. [38] Q. Yan, K. Yang, T. Hu, G. Chen, K. Dai, P. Wu, W. Ren, and Y. Zhang, “From dynamic to static: Stepwisely generate HDR image for ghost removal,” IEEE Trans. Circuits Syst. Video Technol. , 2024. [39] S. W. Zamir, A. Arora, S. Khan, M. Hayat, F. S. Khan, and M.-H. Yang, “Restormer: Efficient transformer for high-resolution image restoration,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR) , 2022, pp. 5728–5739. [40] V. Potlapalli, S. W. Zamir, S. Khan, and F. S. Khan, “PromptIR: Prompting for all-in-one blind image restoration,” 2023. [41] M. V. Conde, G. Geigle, and R. Timofte, “Instructir: High-quality image restoration following human instructions,” in Proc. Eur. Conf. Comput. Vis. (ECCV) , 2024. 13 
+
+[42] Y. Jiang, Z. Zhang, T. Xue, and J. Gu, “AutoDIR: Automatic all-in-one image restoration with latent diffusion,” arXiv preprint arXiv:2310.10123 , 2024. [43] H. Chen, W. Li, J. Gu, J. Ren, S. Chen, T. Ye, R. Pei, K. Zhou, F. Song, and L. Zhu, “RestoreAgent: Autonomous image restoration agent via multimodal large language models,” in Adv. Neural Inf. Process. Syst. ,vol. 37, 2024. [44] K. Zhu, J. Gu, Z. You, Y. Qiao, and C. Dong, “An intelligent agentic system for complex image restoration problems,” in Proc. Int. Conf. Learn. Represent. (ICLR) , 2025. [Online]. Available: https://openreview.net/forum?id=3RLxccFPHz [45] X. Jiang, G. Li, B. Chen, and J. Zhang, “Multi-agent image restoration,” 
+
+arXiv preprint arXiv:2503.09403 , 2025. [46] B. Li, X. Li, Y. Lu, and Z. Chen, “Hybrid agents for image restoration,” 
+
+arXiv preprint arXiv:2503.10120 , 2025. [47] Y. Zuo, Q. Zheng, M. Wu, X. Jiang, R. Li, J. Wang, Y. Zhang, G. Mai, L. V. Wang, J. Zou, X. Wang, M.-H. Yang, and Z. Tu, “4kagent: Agentic any image to 4k super-resolution,” in Adv. Neural Inf. Process. Syst. , 2025. [Online]. Available: https://openreview.net/forum?id=IKxKs3rF9V [48] Y. Lin, Z. Lin, H. Chen, P. Pan, C. Li, S. Chen, K. Wen, Y. Jin, W. Li, and X. Ding, “JarvisIR: Elevating autonomous driving perception with intelligent image restoration,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR) , 2025, pp. 22 369–22 380. [49] S. Bai, Y. Cai, R. Chen et al. , “Qwen3-VL technical report,” arXiv preprint arXiv:2511.21631 , 2025. [50] Qwen Team, “Qwen3.6-plus: Towards real world agents,” https://qwen. ai/blog?id=qwen3.6, 2026, accessed: 2026-05-25. [51] OpenAI, “Gpt-5.3 instant: Smoother, more useful everyday conversa-tions,” https://openai.com/index/gpt-5-3-instant/, Mar. 2026. [52] S. Liu, Z. Zeng, T. Ren, F. Li, H. Zhang, J. Yang, Q. Jiang, C. Li, J. Yang, H. Su, J. Zhu, and L. Zhang, “Grounding DINO: Marrying DINO with grounded pre-training for open-set object detection,” in Proc. Eur. Conf. Comput. Vis. (ECCV) , 2024. [53] A. Kirillov, E. Mintun, N. Ravi, H. Mao, C. Rolland, L. Gustafson, T. Xiao, S. Whitehead, A. C. Berg, W.-Y. Lo, P. Doll´ ar, and R. Girshick, “Segment anything,” in Proc. IEEE/CVF Int. Conf. Comput. Vis. (ICCV) ,2023, pp. 4015–4026. [54] Black Forest Labs, “FLUX.1 fill,” https://huggingface.co/ black-forest-labs/FLUX.1-Fill-dev, 2024, accessed: 2026-04-29. [55] Black Forest Labs, “FLUX.1 kontext: Flow matching for in-context image generation and editing in latent space,” arXiv preprint arXiv:2506.15742 , 2025. [56] Q. Yan, L. Zhang, Y. Liu, Y. Zhu, J. Sun, Q. Shi, and Y. Zhang, “Deep HDR imaging via a non-local network,” IEEE Trans. Image Process. ,vol. 29, pp. 4308–4322, 2020. [57] Z. Wang, A. C. Bovik, H. R. Sheikh, and E. P. Simoncelli, “Image quality assessment: From error visibility to structural similarity,” IEEE Trans. Image Process. , vol. 13, no. 4, pp. 600–612, 2004. [58] Z. Luo, F. K. Gustafsson, Z. Zhao, J. Sj¨ olund, and T. B. Sch¨ on, “Refusion: Enabling large-size realistic image restoration with latent-space diffusion models,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR) , 2023, pp. 1680–1691. [59] J. Ke, Q. Wang, Y. Wang, P. Milanfar, and F. Yang, “MUSIQ: Multi-scale image quality transformer,” in Proc. IEEE/CVF Int. Conf. Comput. Vis. (ICCV) , 2021, pp. 5148–5157. [60] S. Yang, T. Wu, S. Shi, S. Lao, Y. Gong, M. Cao, J. Wang, and Y. Yang, “MANIQA: Multi-dimension attention network for no-reference image quality assessment,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. Workshops (CVPRW) , 2022, pp. 1191–1200. [61] W. Zhang, K. Ma, G. Zhai, and X. Yang, “Blind image quality assessment via vision-language correspondence: A multitask learning perspective,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR) , 2023, pp. 14 071–14 081. [62] S. Su, Q. Yan, Y. Zhu, C. Zhang, X. Ge, J. Sun, and Y. Zhang, “Blindly assess image quality in the wild guided by a self-adaptive hyper network,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR) , 2020, pp. 3667–3676. [63] W. Zhang, K. Ma, J. Yan, D. Deng, and Z. Wang, “Blind image quality assessment using a deep bilinear convolutional neural network,” IEEE Trans. Circuits Syst. Video Technol. , vol. 30, no. 1, pp. 36–47, 2020. [64] H. Talebi and P. Milanfar, “NIMA: Neural image assessment,” IEEE Trans. Image Process. , vol. 27, no. 8, pp. 3998–4011, 2018. [65] Q. Yan, W. Chen, S. Zhang, Y. Zhu, J. Sun, and Y. Zhang, “A unified hdr imaging method with pixel and patch level,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR) , 2023, pp. 22 211–22 220. [66] J. Hu, G. Choe, Z. Nadir, O. Nabil, S.-J. Lee, H. Sheikh, Y. Yoo, and M. Polley, “Sensor-realistic synthetic data engine for multi-frame high dynamic range photography,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. Workshops (CVPRW) , 2020, pp. 516–517. [67] Z. Ni, Y. Zhang, K. Ren, W. Yang, H. Wang, and S. Kwong, “Semantic masking with curriculum learning for robust HDR image reconstruction: Z. ni et al.” Int. J. Comput. Vis. , vol. 133, no. 10, pp. 6896–6911, 2025.

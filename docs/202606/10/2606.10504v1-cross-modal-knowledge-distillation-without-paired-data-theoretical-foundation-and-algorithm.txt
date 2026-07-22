@@ -1,0 +1,1335 @@
+Title: Cross-Modal Knowledge Distillation without Paired Data: Theoretical Foundation and Algorithm
+
+URL Source: https://arxiv.org/pdf/2606.10504v1
+
+Published Time: Wed, 10 Jun 2026 00:40:03 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# Cross-Modal Knowledge Distillation without Paired Data: Theoretical Foundation and Algorithm 
+
+Trong Khiem Tran * 1 2 Anh Duc Chu * 2 Quang Hung Pham 2 Phi Le Nguyen 2 Trong Nghia Hoang 1
+
+## Abstract 
+
+Cross-modal knowledge distillation (CMKD) studies how a (large) teacher model trained on one type of data (e.g., images) can guide a (smaller) student model building on another type of data (e.g., text/audio). Existing CMKD methods often require paired multi-modal data with aligned se-mantics, but obtaining such paired data are often costly and impractical. To mitigate this limita-tion, we develop a new CMKD framework for the more challenging setting where paired data are unavailable. In particular, we establish a cross-modal distributional relationship between teacher and student models which reveals two fundamen-tal quantities governing effective distillation: fea-ture alignment and label alignment. These quan-tities characterize semantic discrepancy between modalities at the levels of representation and pre-diction distributions, respectively. Motivated by this insight, we propose a principled framework, with theoretical guarantees, that enables effective cross-modal knowledge distillation by aligning distributions rather than individual samples. Ex-tensive experiments across a wide range of mul-timodal benchmarks show that our framework is highly effective in both unpaired and paired data settings, improving significantly over prior work. 
+
+## 1. Introduction 
+
+Knowledge distillation (KD) was first introduced by (Bu-cilua et al., 2006) and (Hinton et al., 2015) as a mecha-nism for transferring predictive knowledge from a complex 
+
+> 1
+
+School of Electrical Engineering and Computer Science, Wash-ington State University, Pullman, US 2School of Information and Communications Technology, Hanoi University of Science and Technology, Hanoi, Vietnam. Correspondence to: Trong Nghia Hoang <trongnghia.hoang@wsu.edu >, Trong Khiem Tran 
+
+<khiem.tran@wsu.edu >.
+
+Proceedings of the 43 rd International Conference on Machine Learning , Seoul, South Korea. PMLR 306, 2026. Copyright 2026 by the author(s). 
+
+teacher model to a simpler student model. The key motiva-tion is that highly over-parameterized models are often ben-eficial during training, as the additional capacity provides flexibility for making mistakes and correcting them. The learned knowledge however can often be compressed into a significantly smaller model with minimal loss in predictive performance, making deployment much more efficient. This can be achieved by making the student model mimic the behavior of the teacher model via matching soft predictions. In classical in-modal settings, both the teacher and stu-dent models operate on the same input representation and data modalities. An existing rich literature has advanced in-modal knowledge distillation by improving how knowl-edge is transferred from teacher to student models. These include contrastive losses for representation alignment (Tian et al., 2020), variance reduction via Bayes-optimal teach-ers (Menon et al., 2021), gradient-aware adaptive distilla-tion (Zhu & Wang, 2021), decoupled treatment of target and non-target classes (Zhao et al., 2022), multi-level feature review mechanisms (Chen et al., 2021), and relation-based losses capturing inter- and intra-class structure (Huang et al., 2022; Yang et al., 2023). A more comprehensive review of classical in-modal KD methods is provided in Section 5.1. In contrast, cross-modal knowledge distillation (CMKD) considers more challenging and practical settings where teacher and student models operate on different data modal-ities, such as transferring knowledge from image-based models to text- or audio-based models. In its distillation process, the teacher and student inputs correspond to dif-ferent modalities of the same underlying instance, which typically requires paired multimodal data during training. Recent advances have demonstrated the broad applicabil-ity of CMKD across diverse domains, including selec-tive bidirectional distillation for bridging modality gaps (C2KD) (Huo et al., 2024), self-supervised representation learning from unlabeled videos (Sarkar & Etemad, 2022), vision–language self-distillation via cross-attention mech-anisms (COSMOS) (Kim et al., 2024), and weakly paired transfer between microscopy images and transcriptomics data (XKD) (Bendidi et al., 2025). Despite this progress, ex-isting CMKD methods remain largely dependent on paired or weakly paired multimodal data with sample-level cor-1
+
+> arXiv:2606.10504v1 [cs.AI] 9 Jun 2026 Cross-Modal Knowledge Distillation without Paired Data
+
+respondence, which is often costly, difficult to obtain, or impractical in real-world settings where modalities are col-lected independently or asynchronously. This raises the fol-lowing fundamental challenge: 
+
+How can we distill knowledge from the teacher model to the student without using sample-level pairing ? 
+
+A natural extension to the unpaired setting is to adapt feature-based knowledge distillation methods by replacing sample-level feature matching with distribution-level feature align-ment. However, prior work (Huo et al., 2024) has shown that direct adoption of conventional feature-based distilla-tion methods, such as FitNet (Romero et al., 2014) and Re-viewKD (Chen et al., 2021), to cross-modal settings remains ineffective even when paired data are available. This limita-tion arises because effective cross-modal transfer requires aligning not only representation structures but also predic-tive semantics across modalities. In the unpaired setting, where semantic sample-level correspondence is entirely ab-sent, this challenge becomes even more severe, as further confirmed by our experimental results (Section 4.2). To address this challenge, we introduce a principled frame-work that establishes a provable bound on the generalized student error via two fundamental quantities: (i) feature alignment and (ii) label alignment . These quantities char-acterize semantic discrepancy across modalities at the levels of representation and prediction distributions via measur-ing the cross-modal gap between the teacher model and the student, given a shared representation space. Larger cross-modal discrepancies make effective knowledge trans-fer substantially more difficult and can lead to suboptimal distillation. This characterization provides actionable guid-ance for minimizing cross-modal discrepancy, leading to a theoretically grounded framework for algorithm design. Our key contributions are summarized as follows: 
+
+1. Theoretical Analysis . We develop a theoretical bound that decomposes the distilled student model’s generalized error into three components: (i) the teacher’s generalized error, which acts as a fixed overhead; (ii) the representation distributional discrepancy between the teacher and student models – feature alignment ; and (iii) the prediction distri-butional discrepancy between the teacher and student mod-els – label alignment . To the best of our knowledge, this is the first generalization bound for CMKD that reveals a syn-ergistic influence of teacher quality, feature alignment, and label alignment on the student’s generalization (Section 2). 
+
+2. Algorithm Design . Motivated by our theoretical analysis, we develop a practical framework for cross-modal knowl-edge distillation that focuses on distribution-level alignment which does not require training examples of sample-level pairing. In particular, the developed method enables effec-tive knowledge transfer via minimizing both feature and la-bel alignment. To achieve this, we construct an optimizable surrogate that serves as a medium for selectively distilling teacher knowledge relevant to the student’s knowledge. This surrogate is optimized in a bi-level optimization manner by optimizing the student’s objective with calibration to feature alignment and label alignment (Section 3). 
+
+3. Empirical Evaluation . We evaluate our approach on four multimodal benchmarks: AVE (Tian et al., 2018) for event localization; CREMA-D (Cao et al., 2014) and RAVDESS (Livingstone & Russo, 2018) for emotion recognition; and VGGSound (Chen et al., 2020), a large-scale benchmark containing over 200,000 videos spanning more than 300 classes. Across all datasets, our method consistently out-performs recent state-of-the-art (SOTA) baselines in both unpaired and paired CMKD settings, demonstrating its ef-fectiveness and robustness (Section 4). For interested readers, we also provide a comprehensive literature review of existing KD methods in both in-modal and cross-modal settings in Section 5. 
+
+## 2. Theoretical Analysis 
+
+We begin by formalizing the problem setting and introducing key notations (Section 2.1). We then establish generaliza-tion bounds for the student model under both infinite-data (Section 2.2) and finite-data (Section 2.3) settings. 
+
+2.1. Problem Setting and Notations 
+
+Let MT ≜ (θ, p T (y | z = θ(xT ))) denote the teacher model which comprises a feature extractor θ(xT ) and a prediction head pT (y | z = θ(xT )) . The teacher model is pre-trained on a dataset DT = ( xTi , y i)nT 
+
+> i=1
+
+∼ (X T × Y ).Our goal is to distill relevant knowledge from MT into a student model MS ≜ (ϕ, p S (y | ϕ(xS ))) with feature extractor ϕ(xS ) and solution head pS , so that it can gener-alize better from a student dataset (xSi , y i)nS 
+
+> i=1
+
+∼ DS with 
+
+(xSi , y i) ∈ X S × Y to unseen data sampled from (X S , Y).We assume the training input to the student model is sam-pled from new data modalities X S̸ = X T which were not previously seen by the teacher model during its pre-training. To facilitate representation alignment during distil-lation, we configure the teacher and student feature extrac-tors, θ : X T → Z and ϕ : X S → Z , to map their respective inputs into a shared embedding space Z.
+
+Definition 2.1 (Generalized Error) . We have the generalized error for the teacher model and the student model under the feature maps ϕ and θ as: err T (θ) ≜ EDT (xT ,y )
+
+h
+
+− log pT
+
+
+
+y | θ  xT  i 
+
+, (1) err S (ϕ) ≜ EDS (xS ,y )
+
+h
+
+− log pS
+
+
+
+y | ϕ  xS  i 
+
+, (2) which are the expected (generalized) teacher and student prediction losses over the corresponding data distributions. 2Cross-Modal Knowledge Distillation without Paired Data 
+
+Definition 2.2 (Feature Distribution) . The feature distri-butions DS (z) and DT (z) denote the push-forward distri-butions induced by the student and teacher feature maps, 
+
+z = ϕ(xS ) and z = θ(xT ), on the marginal input distribu-tions DS (xS ) and DT (xT ), respectively. Let DS (y | z) and DT (y | z) denote the student and teacher feature-label conditional distributions induced by the feature maps z = ϕ(xS ) and z = θ(xT ), respectively. 
+
+2.2. Asymptotic Performance Bound 
+
+We will now provide the generalized performance bound for cross-modal distillation in the asymptotic regime where key quantities (see below) in the bound are computed with respect to the true data distributions. This is equivalent to assuming an infinite amount of data, such that empirical estimates coincide with their population counterparts. Our main result characterizes the generalized student loss 
+
+err S (ϕ) in terms of the following key quantities: 
+
+Overhead. The generalized teacher loss err T (θ).
+
+Feature Alignment (FA). A function of the distributional distance between the student and teacher representation distributions, DS (z) and DT (z), induced by ϕ and θ.
+
+Label Alignment (LA). A function of the distributional distance between the student and teacher predictions, which captures the semantic gap between the student predictor 
+
+pS (y | z) and the teacher predictor pT (y | z).An informal statement of our result is stated below. 
+
+Theorem 2.3 (Informal Statement) . Given teacher and stu-dent feature maps θ and ϕ, we have: 
+
+err S (ϕ) ≤ err T (θ)+ Feature Alignment + Label Alignment . (3) This result reveals how the generalization quality of the teacher model and the interplay between feature alignment 
+
+and label alignment during distillation will influence the generalized student performance. The teacher generalized performance essentially acts as a fixed overhead. The re-maining terms show that feature alignment alone is insuf-ficient for effective cross-modal distillation, as aggressive representation alignment may inadvertently enlarge the se-mantic discrepancy between the teacher and student pre-diction distributions. In particular, when alignment induces representations that enlarge this predictive gap, the student model may overfit to misaligned semantic structures, ulti-mately degrading generalization performance. This insight is made precise via the below formal definitions and theorem statement (Theorem 2.6). 
+
+Definition 2.4 (Feature Alignment) . Let ∆ denote the set of cost metrics δ on the pre-trained representation space such that the cross-entropy of the teacher prediction, 
+
+ℓτ (z) ≜ −EDT (y|z)
+
+h
+
+log pT (y | z)
+
+i
+
+, (4) is τδ -Lipschitz with respect to δ:
+
+ℓτ (z1) − ℓτ (z2) ≤ τδ · δ z1, z2
+
+ . (5) The feature alignment under the student feature map ϕ is 
+
+FA (ϕ, θ ) ≜ min 
+
+> δ∈∆
+
+n
+
+τδ · Wδ
+
+
+
+DT (z), D S (z)
+
+o 
+
+. (6) where Wδ is Wasserstein-1 distance with cost metric δ.
+
+Definition 2.5 (Label Alignment) . Let κ(y, z) denote the label transport kernel between the teacher and student pre-dictors, defined as κ(y, z) ≜ DT (y | z)/D S (y | z).The label alignment between the teacher predictor pT and the student predictor pS is then defined as 
+
+LA (pS , p T ) ≜ −EDS (z,y )
+
+
+
+log 
+
+ pS (y | z)
+
+pT (y | z)κ(y, z)
+
+ 
+
+. (7) The formal statement of our result can now be stated below. 
+
+Theorem 2.6 (Formal Statement) . Plugging the above defi-nition into the informal statement in Theorem 2.3, 
+
+err S (ϕ) ≤ err T (θ) + FA (ϕ, θ ) + LA (pS , p T ) . (8) 
+
+A detailed proof is provided in Appendix A. 
+
+Theorem 2.6 formalizes the earlier intuition by providing a principled characterization of the semantic gap in cross-modal knowledge distillation (CMKD) through both feature alignment ( FA ) and label alignment ( LA ). 
+
+2.3. Finite-Data Performance Bound 
+
+In this section, we analyze the finite-sample regime, where only nS student samples and nT teacher samples are avail-able. In particular, we revisit the earlier asymptotic bound by replacing its population-level quantities with their em-pirical counterparts, leading to the following key quantities characterizing the generalized student loss err S (ϕ):
+
+Empirical Label Alignment (LA e). We define the empiri-cal label alignment ( LA e) as a Monte Carlo estimate of the exact label alignment ( LA ) computed from nS samples: 
+
+LA e(pS , p T ) ≜ − 1
+
+nSnSX
+
+> i=1
+
+log 
+
+ pS (yi | zi)
+
+pT (yi | zi)κ(yi,zi)
+
+
+
+. (9) 
+
+Empirical Feature Alignment (FA e). We define the empir-ical feature alignment ( FA e) as an empirical estimate of the 3Cross-Modal Knowledge Distillation without Paired Data 
+
+population-level feature alignment ( FA ) computed from nS
+
+student samples and nT teacher samples: 
+
+FA e(ϕ, θ ) ≜ min 
+
+> δ∈∆
+
+n
+
+τδ Wδ
+
+
+
+DTnT (z), D SnS (z)
+
+o 
+
+. (10) The formal statement of our finite-data result is stated below. 
+
+Theorem 2.7 (Formal Statement) . Given the teacher and student feature maps θ and ϕ, the following holds with the probability at least 1 − 3δ where δ ∈ (0 , 1/3) :
+
+err S (ϕ) ≤ err T (θ) + FA e
+
+ ϕ, θ  + LA e
+
+ pS , p T
+
+
+
++ τδ
+
+r log(2 /δ )2
+
+ 1
+
+√nS
+
++ 1
+
+√nT
+
+
+
++ O
+
+
+
+n−1/s 1
+
+> S
+
+
+
++ O
+
+
+
+n−1/s 2
+
+> T
+
+
+
++ O
+
+2
+
+s
+
+2d log( nS /d )
+
+nS
+
++
+
+s
+
+log(1 /δ )2nS
+
+ , (11) 
+
+where s1 and s2 are any constants larger than the upper Wasserstein dimensions (Weed & Bach, 2019) of the student and teacher representation distributions, respectively; and 
+
+d denotes the VC dimension (Mohri et al., 2012) charac-terizing the complexity of the student hypothesis class. A detailed proof is provided in Appendix B. 
+
+Intuitively, Theorem 2.7 extends the earlier analysis to the practical finite-sample regime, where only a limited num-ber of teacher and student samples are available. Notably, the appearance of the VC dimension reveals a fundamental trade-off between alignment and model complexity: while a more expressive student model may better align with the teacher, increasing its complexity d also enlarges the gener-alization gap. Consequently, for a fixed number of student samples nS , increasing model capacity does not necessarily improve performance, as the risk of overfitting becomes increasingly dominant, as reflected by the term O(pd/n S ).
+
+## 3. Algorithm Design 
+
+We now present our proposed Cross-Modal Knowledge Distillation framework, UCMKD (Universal Cross Modal 
+
+Knowledge Distillation), designed to address the unpaired-data challenge based on the theoretical insights developed in Section 2. Our framework adopts the bi-level optimization approach in (Finn et al., 2017) that minimizes the gener-alized student loss (outer optimization) while calibrating the cross-modal semantic gap between teacher and student models (inner optimization). As suggested by our theoret-ical analysis, this semantic gap is characterized via two complementary quantities: feature alignment ( FA ) and label alignment ( LA ). Accordingly, UCMKD operates through the two-stage workflow illustrated in Figure 1(b). In stage 1,we learn the student encoder ϕ by minimizing the representa-tion distributional discrepancy between teacher and student 
+
+Algorithm 1 Universal Cross-Modal KD ( UCMKD ) 
+
+> 1:
+
+input: teacher model MT ≜ (θ, p T (y | z = θ(xT ))) ,student and teacher datasets: DS and DT ,numbers of outer update epochs n0,inner adaptation epochs ( n1 and n2), learning rate η,and hyper-parameters λ1, λ 2. 
+
+> 2:
+
+output: student model MS ≜ (ϕ, p S (y | z = ϕ(xS )))  
+
+> 3:
+
+initialize the student encoder and predictor ϕ0, p 0 
+
+> S
+
+. 
+
+> 4:
+
+for t = 1 to n0 do  
+
+> 5:
+
+ϕtmp ← ϕt−1 and ptmp ← pt−1 
+
+> S
+> 6:
+
+for r = 1 to n1 do  
+
+> 7:
+
+ϕtmp ← ϕtmp − ηλ 1∇ϕℓFA 
+
+ ϕtmp 
+
+ # Eq. (14)  
+
+> 8:
+
+end for  
+
+> 9:
+
+for r = 1 to n2 do  
+
+> 10:
+
+# see Eq. (15)  
+
+> 11:
+
+ϕtmp ← ϕtmp − λ2η∇ϕℓLA 
+
+ ϕtmp , p tmp 
+
+ 
+
+> 12:
+
+ptmp ← ptmp − λ2η∇pℓLA 
+
+ ϕtmp , p tmp 
+
+ 
+
+> 13:
+
+end for  
+
+> 14:
+
+ϕt = ϕt−1 − η∇ϕerr S
+
+ ϕtmp , p tmp 
+
+ # Eq. (2)  
+
+> 15:
+
+ptS = pt−1 
+
+> S
+
+− η∇perr S
+
+ ϕtmp , p tmp 
+
+ # Eq. (2)  
+
+> 16:
+
+end for  
+
+> 17:
+
+return distilled student model MS = ( ϕn0 , p n0 
+
+> S
+
+)
+
+models in the latent space (Section 3.1). In stage 2, we opti-mize both the encoder ϕ and prediction head pS (y | z) to minimize the prediction distributional discrepancy between teacher and student models (Section 3.2). To elaborate on this design, we note that directly optimiz-ing the student objective together with the semantic cross-modal gap from Theorem 2.6, as in conventional CMKD approaches, is often unstable due to the highly coupled inter-action between the prediction map pS (y | z) and the feature map z = ϕ(xS ) (see Table 6). In particular, update to the feature extractor ϕ simultaneously modifies the alignment between teacher and student distributions while reshaping the student representation landscape DS (z) on which the predictor pS (y | z) is learned. This moving-target effect substantially complicates the optimization landscape and can lead to unstable convergence. To address this challenge, we adopt a hybrid bi-level optimization approach with a structured two-stage inner-update procedure that calibrates the student loss with respect to the cross-modal semantic gap. In particular, the inner optimization is decomposed into minimizing feature alignment loss (stage 1) and minimizing label alignment loss (stage 2). Figure 1 provides an overview of the proposed framework, which optimizes the student loss via inner adaptation steps used to compute the outer opti-mization loss in a meta-learning fashion. The pseudo-code of the full algorithm is provided in Algorithm 1. 4Cross-Modal Knowledge Distillation without Paired Data 
+
+Figure 1. Overview of our UCMKD framework : The teacher and student encoders map inputs from different modalities into a shared latent space Z. The cross-modal generalization bound decomposes into two distributional quantities: Feature Alignment , a Wasserstein distance between the latent distributions DT (z) and DS (z) – Section 3.1; and Label Alignment , a distance measure between the induced predictive distributions pT (y | z) and pS (y | z) – Section 3.2. Theorems 2.6 and 2.7 bound the student’s generalized error by the sum of teacher error, feature alignment, and label alignment, motivating distribution-level alignment without sample-level pairing. 
+
+3.1. Feature Alignment Loss 
+
+To compute the feature alignment ( FA ), a direct approach is to minimize the optimal transport distance between the empirical student and teacher representation distributions in the shared latent space Z:
+
+Wδ
+
+
+
+DSnS (z), D TnT (z)
+
+
+
+= min 
+
+> π∈Π
+> nS
+
+X
+
+> i=1
+> nT
+
+X
+
+> j=1
+
+πij δ
+
+
+
+zSi , zTj
+
+
+
+(12) where Π denote the set of coupling π between DSnS (z)
+
+and DTnT (z)1 and πij ≜ π(zSi , zTj ). This can be naively achieved via solving a linear program with a computational complexity O(max( nS , n T )3) (Peyr´ e & Cuturi, 2020). To reduce this complexity, we instead adopt the following entropic-regularized formulation: 
+
+π∗ = arg min 
+
+> π∈Π
+
+
+
+> nS
+
+X
+
+> i=1
+> nT
+
+X
+
+> j=1
+
+πij δ
+
+
+
+zSi , zTj
+
+
+
++ ϵH (π)
+
+ . (13) This regularized problem can be solved efficiently using the Sinkhorn algorithm with quadratic complexity (Peyr ´e & Cuturi, 2020). In practice, we use the Euclidean transport cost δ ≜ ℓ2 and the default regularization parameter ϵ = 0 .1.The resulting feature alignment loss is defined as 
+
+ℓFA (θ, ϕ ) ≜ Wℓ2
+
+
+
+DSNS (z), D TNT (z)
+
+
+
+, (14) where the contribution of feature alignment is controlled by the hyperparameter λ1 (Algorithm 1). Here, DSnS (z) and 
+
+> 1
+
+The corresponding marginals of π(zSi , zTj ) over zTj and zSi
+
+correspond to DSnS (zSi ) and DTnT (zTj ).
+
+DTnT (z) denote the push-forward of the empirical student and teacher input distributions under the corresponding fea-ture maps ϕ and θ, respectively. 
+
+3.2. Label Alignment Loss 
+
+The label alignment loss is set to be the empirical LA e term previously defined in Eq. (9): 
+
+ℓLA 
+
+ pS , p T
+
+ ≜ − 1
+
+nSnSX
+
+> i=1
+
+log 
+
+ pS (yi | zi)
+
+pT (yi | zi)κ(yi,zi)
+
+
+
+(15) where κ(y, z) ≜ DT (y | z)/D S (y | z).Intuitively, κ(y, z) quantifies the agreement between teacher and student prediction distributions, thereby acting as a gating mechanism for selective knowledge distillation . A practical estimation procedure for the transport kernel is provided in Appendix D. When the teacher’s prediction con-flicts with the student’s target semantics, particularly when the teacher assigns negligible probability to the target label, the kernel approaches zero, κ(y, z) ≃ 0. In this regime, the alignment loss naturally reduces to the standard supervised loss of the student model: 
+
+lim  
+
+> κ→0
+
+ℓLA = EDS (z,y ) [− log pS (y | z)] = err S (ϕ). (16) This mechanism ensures that, under semantic disagree-ment, the student model prioritizes its own supervised signal rather than inheriting potentially unreliable teacher guidance. Furthermore, the formulation naturally enables a pseudo-labeling strategy (Nguyen et al., 2020) for mini-mizing the semantic prediction discrepancy between teacher and student models without requiring paired data, thus im-proving robustness in unpaired settings. 5Cross-Modal Knowledge Distillation without Paired Data 
+
+## 4. Empirical Evaluation 
+
+In this section, we present comprehensive experimental re-sults validating the effectiveness of our method under both unpaired-data (Section 4.2) and paired-data (Section 4.3) set-tings. We further provide ablation studies analyzing parame-ter sensitivity and performance under data-scarcity scenarios (Section 4.4). Due to limited space, additional experimental results and ablation studies are deferred to Appendix G. 
+
+4.1. Implementation Details 
+
+We evaluate our proposed cross-modal distillation method 
+
+UCMKD on 4 multi-modal datasets which include: (1) 
+
+AVE (Tian et al., 2018) is an audio-visual dataset for audio-visual event localization, which has 28 classes; (2) 
+
+CREMA-D (Cao et al., 2014) is an audio-visual dataset for speech emotion recognition, with 6 categorizations; (3) 
+
+RAVDESS (Livingstone & Russo, 2018) is an audio-visual dataset containing 1,440 emotional utterances with 8 differ-ent emotion classes; (4) VGGsound (Chen et al., 2020) is a large-scale video dataset containing about 200 000 videos and more than 300 classes covering daily life activities. 
+
+Unpaired Data Simulation. To simulate the unpaired set-ting, we apply a stochastic permutation to the original mul-timodal dataset {X 1, X2, Y} . Specifically, we break the instance-level correspondence between modalities by ran-domly shuffling the indices of one modality relative to the other, resulting in two independent subsets, {X 1, Y} and 
+
+{X 2, Y} . This procedure removes sample-level alignment while preserving the marginal distributions of each modality. 
+
+Hyperparameters. We use the same hyperparameter con-figuration across all baselines and train each network for 100 epochs with an initial learning rate of 1e −2. Follow-ing (Peng et al., 2022), we adopt ResNet-18 (He et al., 2015) as the backbone architecture for both visual and audio modalities. Additional implementation and hyperparameter details are provided in Appendix F. 
+
+4.2. Experiment Results on Unpaired Setting 
+
+Given the limited literature on knowledge distillation un-der unpaired settings, we compare our method ( UCMKD )against: (1) Cross-Entropy , which serves as a non-distillation baseline; and (2) Feature Distillation , which performs distillation through latent-space representation alignment. Table 1 reports the prediction accuracy of all methods across the evaluated tasks. UCMKD consistently achieves the best performance, with an average improve-ment of approximately 14 .3% over Cross-Entropy and 
+
+7.5% over Feature Distillation . Notably, UCMKD out-performs Vanilla KD (Hinton et al., 2015) on 6 out of 8 tasks, despite Vanilla KD benefiting from paired multi-modal data, an advantage unavailable to UCMKD in our 0.2 0.4 0.6 0.8 1.0                                             
+
+> FA weight
+> 0.2  0.4  0.6  0.8  1.0
+> LA weight
+> 76.82 72.33 73.83 71.23 75.52
+> 76.82 70.43 76.02 71.83 74.33
+> 75.82 75.03 79.42 71.53 75.52
+> 74.83 76.82 75.92 72.53 75.33
+> 79.92 74.03 71.33 76.42 71.53
+> (a) RAVDESS(A-V)
+> 0.2 0.4 0.6 0.8 1.0
+> FA weight
+> 0.2  0.4  0.6  0.8  1.0
+> LA weight
+> 75.42 78.02 74.53 73.03 76.12
+> 77.02 73.03 75.12 75.42 76.02
+> 74.62 77.82 74.23 77.12 77.02
+> 75.82 77.42 70.63 73.83 79.42
+> 74.83 73.13 75.33 77.52 74.53
+> (b) RAVDESS(V-A)
+> 72
+> 74
+> 76
+> 78
+> Accuracy (%)
+> 71
+> 72
+> 73
+> 74
+> 75
+> 76
+> 77
+> 78
+> 79
+> Accuracy (%)
+
+Figure 2. Heatmap of the performance of our method ( UCMKD )on RAVDESS (Livingstone & Russo, 2018) across different values of the hyper-parameters λ1 and λ2 (Algorithm 1) under (a) audio-to-visual ( A → V ) and (b) visual-to-audio ( V → A) settings. 
+
+unpaired setting. These results demonstrate the effective-ness of our method in transferring cross-modal knowledge without requiring explicit sample-level correspondence. 
+
+4.3. Experiment Results on Paired Setting 
+
+In this section, we evaluate UCMKD under the paired-data knowledge distillation (KD) setting and compare it against 
+
+Vanilla KD (Hinton et al., 2015) and several state-of-the-art baselines, including C2KD (Huo et al., 2024), DKD (Zhao et al., 2022), RKD (Park et al., 2019), RLD (Sun et al., 2024), FitNet (Romero et al., 2014), and Review (Chen et al., 2021). As shown in Table 2, our method consistently outperforms competing baselines on the AVE , RAVDESS ,and CREMA-D datasets. In particular, our framework achieves the highest accuracy on 5 out of 8 experimental tasks. This is consistent with the unpaired-setting results in Section 4.2 and further demonstrate the universally ro-bustness of the proposed framework across both paired- and unpaired-data cross-modal distillation settings. 
+
+4.4. Ablation Studies Data Scarcity Scenario. To evaluate the robustness of our method under data-scarcity conditions, we conduct experiments using reduced training sets. Specifically, we subsample the original training data at ratios of 0.3, 0.4,and 0.5, while retaining the full test set to ensure a con-sistent evaluation benchmark. Tables 3, 4, and 5 report the performance on the RAVDESS dataset of our method and two unpaired-setting baselines: Cross-Entropy and 
+
+Feature Distillation . We also include Vanilla KD (Hin-ton et al., 2015) under the paired setting using the same ResNet-18 backbone. The results show that our method consistently achieves the strongest performance across all data-constrained scenarios. 
+
+Parameter Sensitivity. We conduct a sensitivity analysis to evaluate the effect of the hyperparameters λ1 and λ2, which control the relative contributions of the Feature Alignment (FA ) and Label Alignment ( LA ) losses, respectively. Across 6Cross-Modal Knowledge Distillation without Paired Data 
+
+Table 1. Prediction accuracy on the AVE , RAVDESS , CREMA-D , and VGGSound datasets under the unpaired setting, comparing 
+
+Cross-Entropy , Feature-Based Knowledge Distillation , and our proposed UCMKD framework. For reference, we also report Vanilla KD (Hinton et al., 2015) trained under paired supervision. A → V and V → A denote distillation from audio to visual and visual to audio modalities, respectively. Despite operating without paired supervision, UCMKD consistently outperforms unpaired baselines and surpasses the paired Vanilla KD baseline on 6 out of 8 experimental tasks. 
+
+Method AVE RAVDESS CREMA-D VGGsound 
+
+A → V V → A A → V V → A A → V V → A A → V V → A
+
+Teacher 52.74 30.35 79.92 77.72 65.46 70.97 56.78 44.43 Cross Entropy 27.70 ± 2.35 50.08 ± 2.88 65.47 ± 3.69 70.66 ± 1.16 71.51 ± 0.88 61.96 ± 0.83 41.68 ± 2.32 54.40 ± 2.34 Feature KD 31.01 ± 1.04 48.51 ± 1.49 65.37 ± 3.20 69.80 ± 2.96 69.22 ± 1.38 61.69 ± 0.69 41.07 ± 1.84 52.08 ± 0.83 Vanilla KD 29.85 ± 1.85 49.01 ± 2.47 67.17 ± 3.86 73.10 ± 1.63 72.18 ± 1.15 62.45 ± 0.56 43.35 ± 0.29 51.71 ± 0.69 
+
+UCMKD 34.16 ± 1.12 52.24 ± 1.08 73.83 ± 1.25 74.43 ± 2.15 71.64 ± 0.86 66.67 ± 1.24 43.10 ± 0.38 56.84 ± 0.47 
+
+Table 2. Prediction accuracy on the AVE , RAVDESS , CREMA-D , and VGGSound datasets under the paired setting, comparing 
+
+Vanilla KD (Hinton et al., 2015), C2KD (Huo et al., 2024), DKD (Zhao et al., 2022), RKD (Park et al., 2019), RLD (Sun et al., 2024), 
+
+FitNet (Romero et al., 2014), Review (Chen et al., 2021), and our UCMKD framework. A → V and V → A denote distillation from audio to visual and visual to audio modalities, respectively. UCMKD achieves the best performance on 5 out of 8 experimental tasks.                                                                                                                                                                                                                            
+
+> Method AVE RAVDESS CREMA-D VGGsound
+> A→VV→AA→VV→AA→VV→AA→VV→A
+> Vanilla KD 29.85 ±1.85 49.01 ±2.47 67.17 ±3.86 73.10 ±1.63 72.18 ±1.15 62.45 ±0.56 43.35 ±0.29 51.71 ±0.69 RLD 22.80 ±1.22 42.87 ±0.82 56.64 ±1.98 63.94 ±0.85 43.54 ±4.59 53.04 ±0.67 32.73 ±0.66 44.66 ±0.70 RKD 27.86 ±0.70 42.54 ±0.54 41.60 ±6.33 39.50 ±1.53 44.44 ±2.79 62.50 ±0.87 37.30 ±0.49 50.71 ±0.40 DKD 22.80 ±0.65 34.08 ±1.66 62.67 ±4.27 62.27 ±2.57 30.02 ±6.11 57.40 ±0.38 35.70 ±0.28 43.85 ±0.29 C2KD 33.33 ±0.73 47.15 ±1.61 56.41 ±2.42 82.78 ±0.41 71.50 ±0.11 64.43 ±0.42 40.90 ±0.30 61.90 ±0.27
+> FitNet 25.87 ±1.95 49.25 ±1.61 68.08 ±0.75 69.96 ±3.43 70.11 ±1.32 65.01 ±0.01 37.90 ±0.39 57.10 ±0.79 Review 22.30 ±0.62 48.92 ±0.65 54.91 ±3.20 71.50 ±2.00 63.89 ±1.68 61.02 ±0.54 38.20 ±0.47 57.90 ±0.79
+> UCMKD 33.50 ±1.82 53.07 ±0.51 76.06 ±2.28 75.13 ±0.65 70.43 ±0.66 66.75 ±1.36 43.70 ±0.182 55.98 ±0.38
+
+Table 3. Prediction accuracy on the RAVDESS dataset using the ResNet-18 backbone with a training subset ratio of 0.5, comparing our method UCMKD against the Cross-Entropy , Feature-Based Knowledge Distillation , and Vanilla KD baselines. 
+
+Method A → V V → A
+
+CE 59 .87 ± 0.76 71 .86 ± 2.30 
+
+Feature KD 55 .48 ± 2.85 69 .16 ± 5.35 
+
+Vanilla KD 57 .91 ± 4.93 69 .03 ± 4.68 
+
+UCMKD 72 .76 ± 5.14 74 .35 ± 1.27 
+
+Table 4. Prediction accuracy on the RAVDESS dataset using the ResNet-18 backbone with a training subset ratio of 0.4, comparing our method UCMKD against the Cross-Entropy , Feature-Based Knowledge Distillation , and Vanilla KD baselines. 
+
+Method A → V V → A
+
+CE 57 .14 ± 3.64 69 .93 ± 3.75 
+
+Feature KD 50 .88 ± 3.49 71 .96 ± 0.84 
+
+Vanilla KD 57 .68 ± 1.50 71 .63 ± 0.91 
+
+UCMKD 69 .56 ± 2.17 78 .72 ± 0.80 
+
+these experiments, the inner-loop optimization steps are fixed to n1 = n2 = 1 (see Algorithm 1). Figure 2 presents the resulting performance heatmaps (audio-to-visual and visual-to-audio) on the RAVDESS dataset (Liu et al., 2022) according to the hyper-parameter grid with different choices for λ1 and λ2 within 0.2, 0.4, 0.6, 0.8, 1.0. The best perfor-mance for audio-to-visual ( A → V ) distillation is achieved at (λ1, λ 2) = (0 .2, 1.0) , while visual-to-audio ( V → A)
+
+Table 5. Prediction accuracy on the RAVDESS dataset using the ResNet-18 backbone with a training subset ratio of 0.3, comparing our method against the Cross-Entropy , Feature-Based Knowl-edge Distillation , and Vanilla KD baselines. 
+
+Method A → V V → A
+
+CE 54 .51 ± 4.10 68 .96 ± 2.20 
+
+Feature KD 50 .71 ± 6.76 63 .97 ± 2.20 
+
+Vanilla KD 50 .98 ± 4.40 68 .46 ± 0.60 
+
+UCMKD 69 .03 ± 2.50 77 .32 ± 1.34 
+
+distillation performs best at (λ1, λ 2) = (1 .0, 0.8) . No-tably, even under less favorable hyperparameter configura-tions, our method consistently outperforms the baselines on 
+
+A → V and remains competitive on V → A. These results demonstrate the robustness and stability of our UCMKD 
+
+across a broad range of loss-weight configurations. 
+
+Informativeness of Theoretical Bounds. To empirically validate the informativeness (i.e., tightness) of the theoret-ical results developed in Section 2, we evaluate the gap between the theoretical bounds and the observed empirical performance across multiple datasets. Figure 3 summarizes the resulting tightness analysis for both the infinite-data setting (Theorem 2.6) and the finite-data regime (Theo-rem 2.7). Overall, the bounds remain reasonably tight across all datasets, with an average gap of 24 .5% . Notably, on the large-scale VGGSound dataset containing over 300K+ samples, the gap decreases to 11% , suggesting that the bounds become increasingly informative as data coverage 7Cross-Modal Knowledge Distillation without Paired Data AVE RAVDESS CREMAD VGG 
+
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> Loss
+> RHS=1.66
+> LHS=1.41
+> RHS=1.74
+> LHS=1.22
+> RHS=1.35
+> LHS=1.01
+> RHS=2.58
+> LHS=2.32
+> Comparison between Student Loss and Theoretical Upper Bound
+> Feature Alignment Loss
+> Label Alignment Loss
+> Teacher Loss
+> Student Loss (LHS)
+
+Figure 3. Informativeness of the theoretical bound across the AVE ,
+
+RAVDESS , CREMA-D , and VGGSound datasets. The proposed bound remains reasonably tight with an average gap of 24 .5% .
+
+Table 6. Component-wise ablation results on the AVE and 
+
+RAVDESS datasets comparing FA-only (bi-level), LA-only (bi-level), both (w/o bi-level), and our UCMKD framework. 
+
+Method AVE RAVDESS 
+
+A→V V→A A→V V→AFA-only (bilevel) 31.01 48.51 65.37 69.80 LA-only (bilevel) 30.02 48.92 67.90 69.33 Both (w/o bilevel) 28.11 48.26 66.47 69.53 
+
+UCMKD 34.16 52.24 73.83 74.43 
+
+grows. This observation is consistent with the theoretical behavior characterized in Theorems 2.6 and 2.7. 
+
+Component-wise Contribution. Table 6 presents an abla-tion study on the contributions of feature alignment (FA), label alignment (LA), and the bi-level optimization frame-work. We observe that FA-only and LA-only variants each achieve competitive performance individually. However, directly combining both alignment losses without the bi-level formulation leads to noticeable performance degra-dation, highlighting the instability of naive simultaneous optimization (see Section 3). In contrast, UCMKD , which integrates both alignment objectives within the proposed bi-level framework, consistently achieves the strongest per-formance across all settings. These findings align with the theoretical insights of Theorem 2.6 and demonstrate the importance of both alignment components and the bi-level optimization approach. 
+
+Alternative Distribution Distances. We note that us-ing the ℓ2 cost for OT is standard practice in prior works (Damodaran et al., 2018; Tran et al., 2026). Moreover, our theoretical bound is agnostic to the specific choice of cost metric. To further assess this design choice, Table 7 compares the performance of several alternative cost met-rics. Overall, all metrics achieve comparable results. Among them, ℓ2 achieves marginally better results on 3 out of 4 tasks, making it a reasonable default choice in practice. 
+
+Scalability with Larger Backbones. To further evaluate 
+
+Table 7. Comparison of different transport cost metrics, including 
+
+ℓ1, ℓ2, and angular distance, on RAVDESS and CREMA-D .
+
+Dataset ℓ1 ℓ2 Angular RAVDESS (A →V) 74.23 73.83 71.03 RAVDESS (V →A) 73.65 74.44 73.03 CREMA-D (A →V) 70.67 71.68 71.07 CREMA-D (V →A) 63.52 66.59 62.41 
+
+Table 8. Scalability evaluation using a ViT-based architecture with ViT-B (patch16-224, 86M parameters) as the teacher and ViT-S (patch16-224, 22M parameters) as the student. 
+
+Method AVE RAVDESS 
+
+A→V V→A A→V V→ATeacher 75.87 70.15 90.41 89.11 CE 51.19 53.73 65.63 66.13 Feature KD 50.96 56.22 69.83 67.73 
+
+UCMKD 56.97 58.21 80.32 72.43 
+
+scalability under more realistic settings, we conduct addi-tional experiments using ViT-based architectures, with ViT-B as the teacher and ViT-S as the student following the proto-col in (Addepalli et al., 2024). These models are representa-tive of modern large-scale vision architectures. As shown in Table 8, UCMKD consistently achieves the best student per-formance across all datasets and transfer directions. These results demonstrate that the proposed framework remains effective when transitioning from ResNet-based backbones to substantially larger ViT-based architectures. Combined with the complexity analysis in Appendix E, these findings provide further evidence of the scalability of our approach in practical large-scale settings. 
+
+## 5. Related Works 
+
+In this section, we provide the literature review of the most relevant works on unimodal KD (Section 5.1) and cross-modal KD (Section 5.2). The detailed formulations of both mentioned settings are provided in Appendix C. 
+
+5.1. In-Modal Knowledge Distillation 
+
+In-Modal Knowledge Distillation (KD) transfers the knowl-edge of a pretrained teacher model to a student model by minimizing discrepancies between their output predic-tions or intermediate representations. The seminal work of (Hinton et al., 2015) formulates this as minimizing the Kullback–Leibler (KL) divergence between teacher and student soft predictions, enabling the compression of large models while largely preserving predictive per-formance. Follow-up work has explored a broad range of alternative mechanisms for effective knowledge trans-fer. For example, CRD (Tian et al., 2020) introduces con-trastive objectives for representation-level distillation, while 8Cross-Modal Knowledge Distillation without Paired Data 
+
+SCKD (Zhu & Wang, 2021) adaptively adjusts the distilla-tion process according to gradient similarity between teacher and student models. DKD (Zhao et al., 2022) decomposes KD into target-class and non-target-class distillation to im-prove flexibility, and Review (Chen et al., 2021) leverages multi-level teacher representations through a feature-review mechanism. DIST (Huang et al., 2022) further develops correlation-based objectives to capture inter-class and intra-class structural relations, while L2D (Yang et al., 2023) extends such relation-based distillation to multi-label clas-sification. SHAKE (Li & JIN, 2022) bridges offline and online KD through auxiliary shadow heads, (Lv et al., 2024) replaces the KL divergence with Wasserstein-distance-based objectives, and RLD (Sun et al., 2024) dynamically refines teacher logits using label information to suppress misleading supervision from incorrect teacher predictions. Despite their strong empirical performance, these methods predominantly assume that teacher and student models oper-ate on identical training data, thereby overlooking the chal-lenges of Cross-Modal Knowledge Distillation (CMKD), particularly under unpaired settings where explicit sample-level correspondence is unavailable. 
+
+5.2. Cross-Modal Knowledge Distillation 
+
+Cross-Modal Knowledge Distillation (CMKD) extends tra-ditional KD to settings where teacher and student models operate on different data modalities. Early work by Gupta et al. (2015) transfers supervision from a labeled modality to an unlabeled paired modality, while Roheda et al. (2018) employs GANs to transfer knowledge across missing and available modalities. Xue et al. (2021) adapts multimodal networks to unlabeled modalities through pseudo-label sam-pling from unimodal teachers, and Lee et al. (2023) develops decomposed cross-modal distillation for RGB-based detec-tion using optical-flow supervision. Other work explores cross-modal transfer for dense indoor prediction (Yun et al., 2023) and theoretical understanding of modality interactions through modality Venn diagrams and modality-focusing hypotheses (Xue et al., 2022). More recent approaches aim to improve cross-modal transfer under increasingly complex settings. C2KD (Huo et al., 2024) introduces selective bidirectional distillation to bridge modality gaps, while (Sarkar & Etemad, 2022) develops a self-supervised framework for cross-modal distillation from unlabeled videos. COSMOS (Kim et al., 2024) further incor-porates text-cropping and cross-attention mechanisms for vision-language models, and XKD (Bendidi et al., 2025) ex-plores weakly paired microscopy and transcriptomics data. Despite these advances, existing CMKD methods still rely heavily on paired or weakly paired multi-modal data, which are often costly or unavailable in realistic settings. Address-ing this has been the focus of this paper. 
+
+## 6. Limitations and Future Works 
+
+While our framework provides a principled formulation and effective algorithm for unpaired CMKD, several directions remain open. First, although our theoretical analysis permits arbitrary transport costs δ(·, ·), we instantiate the frame-work using the Euclidean metric for simplicity. Learning the transport geometry via adaptive metric learning may fur-ther tighten the alignment objective. Second, the proposed bi-level optimization introduces additional computational overhead due to second-order updates or their approxima-tions. Improving optimization efficiency through implicit differentiation or reduced unrolling would further enhance scalability. Third, our results on the large-scale VGGSound 
+
+benchmark suggest that the framework remains effective be-yond small curated datasets, motivating future exploration in settings with foundation models where cross-modal transfer must operate without explicit sample-level pairing. Finally, since the proposed framework relies on distribution-level alignment rather than paired supervision, extending it to cross-modal generative modeling under unpaired settings is another promising direction for future follow-up. 
+
+## 7. Conclusion 
+
+This paper studies cross-modal knowledge distillation under the challenging unpaired setting and proposes UCMKD , a principled framework built upon two key components: Fea-ture Alignment and Label Alignment . We establish both infinite-sample and finite-sample generalization bounds for the student model and develop a practical meta-learning-style optimization framework to realize these objectives. Extensive experiments on AVE , RAVDESS , CREMA-D ,and VGGSound demonstrate consistent improvements in unpaired settings while remaining competitive with SOTA methods when paired data are available. The proposed for-mulation also naturally extends beyond prediction task to general distribution-matching losses, opening promising directions for large-scale multi-modal transfer and unsuper-vised cross-modal generative modeling. 
+
+## Acknowledgement 
+
+This work utilized GPU compute resources at SDSC and ACES through allocation CIS230391 from the Ad-vanced Cyberinfrastructure Coordination Ecosystem: Ser-vices and Support (ACCESS) program (Boerner et al., 2023), which is supported by U.S. National Science Foundation grants #2138259, #2138286, #2138307, #2137603, and 
+
+#2138296. Trong Nghia Hoang is supported by National Science Foundation CAREER Award IIS-2544071. The au-thors also acknowledge the compute support from Modal. 9Cross-Modal Knowledge Distillation without Paired Data 
+
+## Impact Statement 
+
+Our work provides a framework for cross-modal knowledge distillation without requiring paired data, enabling multi-modal transfer in settings where synchronized datasets are unavailable. However, distribution-level alignment might propagate biases or spurious correlations inherited from the teacher model. Careful inspection of the teacher model is important when such systems are deployed in practice. 
+
+## References 
+
+Addepalli, S., Asokan, A. R., Sharma, L., and Babu, R. V. Leveraging vision-language models for improving do-main generalization in image classification. In Proceed-ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , June 2024. Bendidi, I., Mesbahi, Y. E., Denton, A. K., Suri, K., Kenyon-Dean, K., Genovesio, A., and Noutahi, E. A cross modal knowledge distillation & data augmentation recipe for improving transcriptomics representations through morphological features. In Forty-second International Conference on Machine Learning , 2025. URL https: //openreview.net/forum?id=w7lm8AjzH6 .Boerner, T. J., Deems, S., Furlani, T. R., Knuth, S. L., and Towns, J. Access: Advancing innovation: Nsf’s advanced cyberinfrastructure coordination ecosystem: Services & support. In Practice and Experience in Advanced Research Computing 2023: Computing for the Common Good , PEARC ’23, pp. 173–176, New York, NY, USA, 2023. Association for Computing Machinery. ISBN 9781450399852. doi: 10.1145/ 3569951.3597559. URL https://doi.org/10. 1145/3569951.3597559 .Bucilua, C., Caruana, R., and Niculescu-Mizil, A. Model compression. In Proceedings of the 12th ACM SIGKDD International Conference on Knowledge Dis-covery and Data Mining , KDD ’06, pp. 535–541, New York, NY, USA, 2006. Association for Comput-ing Machinery. ISBN 1595933395. doi: 10.1145/ 1150402.1150464. URL https://doi.org/10. 1145/1150402.1150464 .Cao, H., Cooper, D., Keutmann, M., Gur, R., Nenkova, A., and Verma, R. Crema-d: Crowd-sourced emotional multimodal actors dataset. IEEE transactions on affective computing , 5:377–390, 10 2014. doi: 10.1109/TAFFC. 2014.2336244. Chen, H., Xie, W., Vedaldi, A., and Zisserman, A. Vg-gsound: A large-scale audio-visual dataset. ICASSP 2020 - 2020 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , pp. 721–725, 2020. URL https://api.semanticscholar. org/CorpusID:216522760 .Chen, P., Liu, S., Zhao, H., and Jia, J. Distilling knowledge via knowledge review. In 2021 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) ,pp. 5006–5015, 2021. doi: 10.1109/CVPR46437.2021. 00497. Damodaran, B., Kellenberger, B., Flamary, R., Tuia, D., and Courty, N. Deepjdot: Deep joint distribution opti-mal transport for unsupervised domain adaptation. In 
+
+Computer Vision – ECCV 2018 - 15th European Con-ference, 2018, Proceedings , pp. 467–483. Springer, Oc-tober 2018. ISBN 9783030012243. doi: 10.1007/ 978-3-030-01225-0 \ 28. 15th European Conference on Computer Vision, ECCV 2018 ; Conference date: 08-09-2018 Through 14-09-2018. Finn, C., Abbeel, P., and Levine, S. Model-agnostic meta-learning for fast adaptation of deep networks. In International Conference on Machine Learning ,2017. URL https://api.semanticscholar. org/CorpusID:6719686 .Gupta, S., Hoffman, J., and Malik, J. Cross modal distillation for supervision transfer. 2016 IEEE Con-ference on Computer Vision and Pattern Recognition (CVPR) , pp. 2827–2836, 2015. URL https://api. semanticscholar.org/CorpusID:6832420 .He, K., Zhang, X., Ren, S., and Sun, J. Deep resid-ual learning for image recognition. 2016 IEEE Conference on Computer Vision and Pattern Recog-nition (CVPR) , pp. 770–778, 2015. URL https: //api.semanticscholar.org/CorpusID: 206594692 .Hinton, G., Vinyals, O., and Dean, J. Distilling the knowledge in a neural network, 2015. URL https: //arxiv.org/abs/1503.02531 .Huang, T., You, S., Wang, F., Qian, C., and Xu, C. Knowledge distillation from a stronger teacher. 
+
+ArXiv , abs/2205.10536, 2022. URL https: //api.semanticscholar.org/CorpusID: 248986690 .Huo, F., Xu, W., Guo, J., Wang, H., and Guo, S. C2kd: Bridging the modality gap for cross-modal knowledge distillation. In 2024 IEEE/CVF Conference on Com-puter Vision and Pattern Recognition (CVPR) , pp. 16006– 16015, 2024. doi: 10.1109/CVPR52733.2024.01515. Kim, S., Xiao, R., Georgescu, M.-I., Alaniz, S., and Akata, Z. Cosmos: Cross-modality self-distillation for vision language pre-training. 2025 IEEE/CVF 
+
+10 Cross-Modal Knowledge Distillation without Paired Data 
+
+Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 14690–14700, 2024. URL https: //api.semanticscholar.org/CorpusID: 274436198 .Koltchinskii, V. and Panchenko, D. Rademacher processes and bounding the risk of function learning. In Gin ´e, E., Mason, D. M., and Wellner, J. A. (eds.), High Dimen-sional Probability II , pp. 443–457, Boston, MA, 2000. Birkh¨ auser Boston. ISBN 978-1-4612-1358-1. Lee, P., Kim, T., Shim, M., Wee, D., and Byun, H. Decom-posed cross-modal distillation for rgb-based temporal action detection. In 2023 IEEE/CVF Conference on Com-puter Vision and Pattern Recognition (CVPR) , pp. 2373– 2383, 2023. doi: 10.1109/CVPR52729.2023.00235. Li, L. and JIN, Z. Shadow knowledge distillation: Bridg-ing offline and online knowledge transfer. In Oh, A. H., Agarwal, A., Belgrave, D., and Cho, K. (eds.), 
+
+Advances in Neural Information Processing Systems ,2022. URL https://openreview.net/forum? id=prQT0gN81oG .Liu, T., Lam, K.-M., Zhao, R., and Qiu, G. Deep cross-modal representation learning and distillation for illumination-invariant pedestrian detection. IEEE Trans-actions on Circuits and Systems for Video Technology , 32 (1):315–329, 2022. doi: 10.1109/TCSVT.2021.3060162. Liu, X., LI, L., Li, C., and Yao, A. NORM: Knowledge distillation via n-to-one representation matching. In The Eleventh International Conference on Learning Represen-tations , 2023. URL https://openreview.net/ forum?id=CRNwGauQpb6 .Livingstone, S. R. and Russo, F. A. The ryerson audio-visual database of emotional speech and song (ravdess): A dynamic, multimodal set of facial and vocal expressions in north american english. PLoS ONE , 13(5):e0196391, 2018. doi: 10.1371/journal.pone.0196391. Lv, J., Yang, H., and Li, P. Wasserstein distance rivals kullback-leibler divergence for knowledge distillation. In The Thirty-eighth Annual Conference on Neural In-formation Processing Systems , 2024. URL https: //openreview.net/forum?id=1qfdCAXn6K .Menon, A. K., Rawat, A. S., Reddi, S., Kim, S., and Kumar, S. A statistical perspective on distilla-tion. In Meila, M. and Zhang, T. (eds.), Proceed-ings of the 38th International Conference on Machine Learning , volume 139 of Proceedings of Machine Learning Research , pp. 7632–7642. PMLR, 18–24 Jul 2021. URL https://proceedings.mlr.press/ v139/menon21a.html .Mohri, M., Rostamizadeh, A., and Talwalkar, A. Foun-dations of Machine Learning . Adaptive Computation and Machine Learning series. MIT Press, 2012. ISBN 9780262018258. URL https://books.google. com.vn/books?id=maz6AQAAQBAJ .Nguyen, C. V., Hassner, T., Archambeau, C., and Seeger, M. W. Leep: A new measure to evaluate transferability of learned representations. In International Conference on Machine Learning ,2020. URL https://api.semanticscholar. org/CorpusID:211572839 .Park, W., Kim, D., Lu, Y., and Cho, M. Relational knowledge distillation. 2019 IEEE/CVF Confer-ence on Computer Vision and Pattern Recognition (CVPR) , pp. 3962–3971, 2019. URL https: //api.semanticscholar.org/CorpusID: 131765296 .Peng, X., Wei, Y., Deng, A., Wang, D., and Hu, D. Bal-anced multimodal learning via on-the-fly gradient mod-ulation. 2022 IEEE/CVF Conference on Computer Vi-sion and Pattern Recognition (CVPR) , pp. 8228–8237, 2022. URL https://api.semanticscholar. org/CorpusID:247779156 .Peyr ´e, G. and Cuturi, M. Computational optimal trans-port, 2020. URL https://arxiv.org/abs/1803. 00567 .Roheda, S., Riggan, B. S., Krim, H., and Dai, L. Cross-modality distillation: A case for conditional generative adversarial networks. In 2018 IEEE International Con-ference on Acoustics, Speech and Signal Processing (ICASSP) , pp. 2926–2930, 2018. doi: 10.1109/ICASSP. 2018.8462082. Romero, A., Ballas, N., Kahou, S. E., Chassang, A., Gatta, C., and Bengio, Y. Fitnets: Hints for thin deep nets. 
+
+CoRR , abs/1412.6550, 2014. URL https://api. semanticscholar.org/CorpusID:2723173 .Sarkar, P. and Etemad, A. Xkd: Cross-modal knowl-edge distillation with domain alignment for video representation learning. ArXiv , abs/2211.13929, 2022. URL https://api.semanticscholar. org/CorpusID:254017839 .Sun, W., Chen, D., Lyu, S., Chen, G., Chen, C., and Wang, C. Knowledge distillation with re-fined logits. 2025 IEEE/CVF International Confer-ence on Computer Vision (ICCV) , pp. 1110–1119, 2024. URL https://api.semanticscholar. org/CorpusID:271865571 .11 Cross-Modal Knowledge Distillation without Paired Data 
+
+Tian, Y., Shi, J., Li, B., Duan, Z., and Xu, C. Audio-visual event localization in unconstrained videos. In The Euro-pean Conference on Computer Vision (ECCV) , September 2018. Tian, Y., Krishnan, D., and Isola, P. Contrastive representa-tion distillation. In International Conference on Learning Representations , 2020. URL https://openreview. net/forum?id=SkgpBJrtvS .Tran, T. K., Dao, M. C., Nguyen, P. L., Truong, T. N., and Hoang, T. N. Rethinking cross-modal fine-tuning: Optimizing the interaction between feature alignment and target fitting. In The 29th International Conference on Artificial Intelligence and Statistics , 2026. URL https: //openreview.net/forum?id=YXPoM9GI12 .Weed, J. and Bach, F. Sharp asymptotic and finite-sample rates of convergence of empirical measures in wasserstein distance. Bernoulli , 25(4A):2620–2648, 2019. Xue, Z., Ren, S., Gao, Z., and Zhao, H. Multimodal knowl-edge expansion. In 2021 IEEE/CVF International Con-ference on Computer Vision (ICCV) , pp. 834–843, 2021. doi: 10.1109/ICCV48922.2021.00089. Xue, Z., Gao, Z., Ren, S., and Zhao, H. The modality focusing hypothesis: Towards understand-ing crossmodal knowledge distillation. In Inter-national Conference on Learning Representations ,2022. URL https://api.semanticscholar. org/CorpusID:252668904 .Yang, P., Xie, M.-K., Zong, C.-C., Feng, L., Niu, G., Sugiyama, M., and Huang, S.-J. Multi-label knowledge distillation. In 2023 IEEE/CVF International Conference on Computer Vision (ICCV) , pp. 17225–17234, 2023. doi: 10.1109/ICCV51070.2023.01584. Yun, H., Na, J., and Kim, G. Dense 2d-3d indoor prediction with sound via aligned cross-modal distillation. In Pro-ceedings of the IEEE/CVF International Conference on Computer Vision , pp. 7863–7872, 2023. Zhao, B., Cui, Q., Song, R., Qiu, Y., and Liang, J. De-coupled knowledge distillation. In 2022 IEEE/CVF Conference on Computer Vision and Pattern Recogni-tion (CVPR) , pp. 11943–11952, 2022. doi: 10.1109/ CVPR52688.2022.01165. Zhu, Y. and Wang, Y. Student customized knowledge dis-tillation: Bridging the gap between student and teacher. In 2021 IEEE/CVF International Conference on Com-puter Vision (ICCV) , pp. 5037–5046, 2021. doi: 10.1109/ ICCV48922.2021.00501. 12 Cross-Modal Knowledge Distillation without Paired Data 
+
+## A. Proof for the infinity data points case. 
+
+We have the generalized error for the teacher model and the student model as: err T = EDT (xT ,y )
+
+h
+
+− log pT (y | z = θ(xT )) 
+
+i
+
+(17) err S = EDS (xS ,y )
+
+h
+
+− log pS (y | z = ϕ(xS )) 
+
+i
+
+(18) We denote the joint distributions: 
+
+DT (θ(xT ), y ) := DT (z, y ) = DT (z)DT (y | z) (19) 
+
+DS (ϕ(xS ), y ) := DS (z, y ) = DS (z)DS (y | z) (20) Then, we can rewrite the generalized error of the teacher and the student model as: err T = EDT (z,y )
+
+h
+
+− log( pT (y | z)) 
+
+i
+
+= EDT (z)EDT (y|z)
+
+h
+
+− log( pT (y | z)) 
+
+i
+
+(21) err S = EDS (z,y )
+
+h
+
+− log( pS (y | z)) 
+
+i
+
+= EDS (z)EDS (y|z)
+
+h
+
+− log( pS (y | z)) 
+
+i
+
+(22) We have: err S − err T = A + B (23) where: 
+
+A : = err S − EDS (z)EDT (y|z)
+
+h
+
+− log( pT (y | z)) 
+
+i
+
+(24) 
+
+B : = EDS (z)EDT (y|z)
+
+h
+
+− log( pT (y | z)) 
+
+i
+
+− err T (25) 
+
+1. Bounding A. We have: 
+
+A = EDS (z)EDS (y|z)
+
+h
+
+− log( pS (y | z)) 
+
+i
+
+− EDS (z)EDT (y|z)
+
+h
+
+− log( pT (y | z)) 
+
+i
+
+(26) 
+
+= EDS (z)
+
+h
+
+EDS (y|z)
+
+h
+
+− log( pS (y | z)) 
+
+i
+
+− EDT (y|z)
+
+h
+
+− log( pT (y | z)) 
+
+ii 
+
+(27) 
+
+= EDS (z)
+
+h
+
+− X
+
+> y∈Y
+
+
+
+DS (y | z) log( pS (y | z)) − DT (y | z) log( pT (y | z)) 
+
+i 
+
+(28) 
+
+= EDS (z)EDS (y|z)
+
+h
+
+− log( pS (y | z)) + DT (y | z)
+
+DS (y | z) log( pT (y | z)) 
+
+i
+
+(29) With a mild assumption DS (y | z) > 0, we denote the label transport kernel κ(y, z) ≜ DT (y|z)  
+
+> DS(y|z)
+
+. Thus, term A then can be expressed as: 
+
+A = EDS (z,y )
+
+h
+
+− log 
+
+ pS (y | z)
+
+pT (y | z)κ(y, z)
+
+i 
+
+(30) 
+
+2. Bounding B. We have: 
+
+B = EDS (z)EDT (y|z)
+
+h
+
+− log( pT (y | z)) 
+
+i
+
+− EDT (z)EDT (y|z)
+
+h
+
+− log( pT (y | z)) 
+
+i
+
+(31) 
+
+= EDS (z)
+
+h
+
+ℓτ (z)
+
+i
+
+− EDT (z)
+
+h
+
+ℓτ (z)
+
+i
+
+(32) where ℓτ (z) ≜ EDT (y|z)
+
+h
+
+− log( pT (y | z)) 
+
+i
+
+is the cross-entropy of the teacher prediction as Definition 2.4. For any cost metric δ ∈ ∆ such that |ℓτ (z1) − ℓτ (z2)| ≤ τδ · δ(z1, z2), the Kantorovich-Rubinstein duality ascertains that: 
+
+B ≤ τδ Wδ
+
+
+
+DS (z), D T (z)
+
+
+
+(33) 13 Cross-Modal Knowledge Distillation without Paired Data 
+
+where Wδ denotes the Wasserstein −1 distance with the cost metric δ. Combine Eq. (29) and Eq. (33) we have: err S ≤ err T + τδ Wδ
+
+
+
+DS (z), D T (z)
+
+
+
++ EDS (z,y )
+
+h
+
+− log 
+
+ pS (y | z)
+
+pT (y | z)κ(y, z)
+
+i 
+
+(34) Using Definition 2.4 and Definition 2.5, finally, we complete our proof: err S ≤ err T + FA (θ, ϕ ) + LA (pS , p T ) (35) 
+
+## B. Proof for the finite data points case. 
+
+1. Rademacher Bounds. 
+
+We start with the Rademacher bound (Koltchinskii & Panchenko, 2000), which is stated as follows. 
+
+Rademacher Bounds . Let F is the family of functions mapping from Z to [0 , 1] . Then for any 0 < δ < 1, with probability at least 1 − δ over sample S = {z1, · · · , z n}, the following holds for all f ∈ F :
+
+E[f ] ≤ 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+f (zi) + 2 Rn(F) + 
+
+r log(1 /δ )2n (36) 
+
+E[f ] ≤ 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+f (zi) + 2 ˆRS (F) + 3 
+
+r log(2 /δ )2n (37) Where Rn(F) and ˆRS (F) are the Rademacher complexity and the empirical Rademacher complexity. 
+
+2. Bounding Wasserstein distance. 
+
+Feature Alignment ( FA ) is formulated as Wasserstein Distance with the momentum p = 1 , cost metric δ, and high dimension 
+
+d > 1. For clear notation, we introduce two true probability distributions ν and μ with their empirical distributions ˆνn and 
+
+ˆμm which provided by n and m data points, respectively. Using the triangle inequality, the Wasserstein distance term can be expressed as: 
+
+W(ν, μ ) ≤ W(ˆ νn, ˆμm) + W(ν, ˆνn) + W(μ, ˆμm) (38) Where W(ˆ νn, ˆμm) can be seen as the empirical estimation of W(ν, μ ), which can be directly computed using standard numerical methods. Next, we will explore W(ν, ˆνn) term as well as W(μ, ˆμm) term in context Wasserstein −1 Distance .For all n > 0 and finite momentum 1 ≤ p < ∞, (Weed & Bach, 2019) stated that: 
+
+P
+
+
+
+W(ν, ˆνn) − EW(ν, ˆνn) ≥ t
+
+
+
+≤ exp (−2nt 2) (39) Thus, with the probability at least 1 − exp (−2nt 2), we have: 
+
+W(ν, ˆνn) ≤ EW(ν, ˆνn) + t (40) We then define d∗
+
+> p
+
+(ν) as the upper Wasserstein dimensions (Weed & Bach, 2019). Using Theorem 1 in (Weed & Bach, 2019), given the finite momentum 1 ≤ p < ∞ and s1 > d ∗
+
+> p
+
+(ν) is the upper Wasserstein dimension, exist a constant C1 > 0,such that: 
+
+EW(ν, ˆνn) ≤ C1n−1/s 1 (41) Thus, denote δ ≜ exp (−2nt 2) and 0 < δ < 1, with the probability at least 1 − δ, we have: 
+
+W(ν, ˆνn) ≤ C1n−1/s 1 +
+
+r log(2 /δ )2n (42) Deriving the same steps, with the probability at least 1 − δ, we have: 
+
+W(μ, ˆμm) ≤ C2m−1/s 2 +
+
+r log(2 /δ )2m (43) 14 Cross-Modal Knowledge Distillation without Paired Data 
+
+Finally, with the probability at least 1 − 2δ, the Wasserstein distance can be bounded by: 
+
+W(ν, μ ) ≤ W(ˆ νn, ˆμm) + C1n−1/s 1 + C2m−1/s 2 +
+
+r log(2 /δ )2n +
+
+r log(2 /δ )2m (44) where C1, C 2, s 1, s 2 are positive constants, s1, s 2 are larger than the upper Wasserstein dimensions of ν and μ, respectively. 
+
+3. Bounding Label Alignment. 
+
+Denoting f (z, y ) ≜ − log 
+
+ pS (y|z) 
+
+> pT(y|z)κ(y, z)
+
+
+
+, we then express Label Alignment ( LA ) as: 
+
+LA ≜ EDS (z,y )
+
+h
+
+− log 
+
+ pS (y | z)
+
+pT (y | z)κ(y, z)
+
+i 
+
+= EDS (z,y )
+
+h
+
+f (z, y )
+
+i
+
+(45) With the mild assumption that the class function f ∈ F is upper-bounded by a constraint C3 > 0, we can scale the function 
+
+f to [0 , 1] by dividing by C3 and denote the new class function as F/C 3. Using Rademacher bound (Koltchinskii & Panchenko, 2000), given 0 < δ < 1, with the the probability at least 1 − δ over m provided sample, we have: 
+
+E[f ]
+
+C3
+
+≤ ˆE[f ]
+
+C3
+
++ 2 Rm(F/C 3) + 
+
+r log(1 /δ )2m (46) where ˆE[f ] ≜ 1
+
+> m
+
+Pmi=1 f (zi, y i) and Rm(F/C 3) is Rademacher complexity. By using the property α · R (G) = R(α · G ),we have: 
+
+E[f ] ≤ ˆE[f ] + 2 Rm(F) + C3
+
+r log(1 /δ )2m (47) Let ΠF : N −→ N be the growth function. Applying Massart’s lemma to Rm(F) (Mohri et al., 2012), we have: 
+
+Rm(F) ≤ C3
+
+r 2 log Π F (m)
+
+m (48) Let d ≜ VCdim (F) be the VC dimension of the hypothesis class function F. For all m ∈ N, using Sauer’s lemma (Mohri et al., 2012) we have: 
+
+ΠF (m) ≤
+
+> d
+
+X
+
+> i=0
+
+mi
+
+
+
+(49) Then, for all d ≤ n, we have: 
+
+ΠF (m) ≤
+
+ em d
+
+d
+
+(50) Finally, given 0 < δ < 1, the function class f is upper-bounded by a constraint C3 > 0, the V-C dimension d, with the probability at least 1 − δ, we have: 
+
+E[f ] ≤ ˆE[f ] + 2 C3
+
+r 2d log( m/d )
+
+m + C3
+
+r log(1 /δ )2m (51) 
+
+4. Bounding the generalized student error on Offline CMKD. 
+
+In the Offline CMKD setting, the teacher error is fixed due to the fixed teacher backbone during the distillation process. We can treat the teacher’s error as the fixed overhead, then combining E.q (44) , and E.q (46) , given 0 ≤ δ ≤ 1/3, the teacher and the student empirical distribution DTnT (z) and DSnS (z) provided by nT and nS data points respectively. Let the Monte Carlo estimation of the Label Alignment (LA) be LA e(pS , p T ), s1 and s2 are larger than the upper-bound Wasserstein dimensions (Weed & Bach, 2019) of the student and teacher representation distribution, respectively, with probability at 15 Cross-Modal Knowledge Distillation without Paired Data 
+
+least 1 − 3δ, we have: err S ≤ err T + LA e(pS , p T ) + 2 C3
+
+s
+
+2d log( nS /d )
+
+nS
+
++ C3
+
+s
+
+log(1 /δ )2nS
+
+(52) 
+
++ τδ
+
+
+
+W DTnT (z), D SnS (z) + C1n−1/s 1 
+
+> S
+
++ C2n−1/s 2 
+
+> T
+
++
+
+s
+
+log(2 /δ )2nS
+
++
+
+s
+
+log(2 /δ )2nT
+
+
+
+We completed our proof. 
+
+## C. Knowledge Distillation additional formulation 
+
+In this section, we provide additional detailed formulation about Knowledge Distillation in both common settings: unimodal KD (Section C.1) and cross-modal KD (Section C.2). 
+
+C.1. In-Modal Knowledge Distillation 
+
+Formally, we consider the K -classes classification problem where both the teacher model and the student model receive the same input modality X and produce the logit prediction over K classes. Let hθ (X) and hϕ(X) be the pre-softmax logit of the teacher model and the student model, respectively. Given a temperature T , we have the softened predictions as 
+
+fθ (X; T ) = softmax (hθ (X)/T ) (53) 
+
+fϕ(X; T ) = softmax (hϕ(X)/T )
+
+The student model is trained to minimize the weighted combination of cross entropy loss with respect to the ground-truth labels Y and the distillation loss: 
+
+L = λCE (fϕ(X), Y ) + (1 − λ)T 2 · KL  fθ (X; T ) || fϕ(X; T ) (54) where KL is the Kullback–Leibler divergence and λ ∈ [0 , 1] . The objective of the combined loss function is to encourage the small, simple student model to mimic the behavior of large, complex teacher model, thus enabling the compression of the large models while preserving performance (Hinton et al., 2015). 
+
+C.2. Cross-Modal Knowledge Distillation 
+
+Cross-modal Knowledge Distillation generalizes the unimodal framework to heterogeneous modalities, allowing a teacher with access to a stronger modality to guide a student with a weaker one. We consider two modalities, denoted by X1 and X2
+
+processed by the teacher and student models, respectively, and a single label Y for both. In this setting, X1 and X2 come from the same instance and have the same label, thus called paired data setting. The combined objective function extends from Eq. (54) as (Liu et al., 2022): 
+
+L = λCE (fϕ(X2), Y ) + (1 − λ)T 2 · KL  fθ (X1; T ) || fϕ(X2; T ) (55) 
+
+## D. Practical Estimation of the Label Transport Kernel 
+
+The theoretical analysis introduces a label-transport kernel κ(y, z) ≜ DT (y | z)/D S (y | z) to modulate label alignment in the absence of paired samples. In practical implementation, κ is only required under the student conditional y ∼ DS (· | z).For supervised classification, the empirical conditional induced by the labeled student dataset is a Dirac distribution 
+
+ˆDS (y | zi) = δ(y = yi) when given data point (xi, y i) under the feature map zi = ϕ(xi). Consequently, the kernel is evaluated only at the realized label yi, such that 
+
+ˆκi = κ(yi, zi) = ˆDT (yi | zi)ˆDS (yi | zi) = ˆDT (yi | zi) (56) Given a good pre-trained teacher model, we further adopt a plug-in estimator ˆDT (yi | zi) = pT (yi | zi) (pseudo label sampling (Nguyen et al., 2020)). Therefore, ˆκi = pT (yi | zi) acts as a teacher–student label-compatibility score: when the teacher assigns low probability to the student’s ground-truth label, distillation is downweighted to mitigate negative transfer. 16 Cross-Modal Knowledge Distillation without Paired Data  
+
+> Table 9. Per-epoch training time comparison between UCMKD and Feature-based Knowledge Distillation. The relative overhead is computed as the ratio between the training time of UCMKD and Feature Distill.
+
+Method AVE CREMA-D RAVDESS VGGSound A→V V→A A→V V→A A→V V→A A→V V→AUCMKD 31.8s 44.13s 34.8s 63.6s 103.3s 83.8s 748.2s 692.3s Feature KD 14.7s 16.3s 22.5s 31.9s 59.4s 53.0s 624.8s 237.9s Relative overhead 2.16 × 2.76 × 1.54 × 1.99 × 1.73 × 1.58 × 1.20 × 2.91 × 
+
+> Table 10. Scalability evaluation using a ViT-based architecture with ViT-L (ViT-L/16, 300M+ parameters) as the teacher and ViT-S (patch16-224, 22M parameters) as the student.
+
+Method AVE RAVDESS A→V V→A A→V V→ATeacher 72.64 76.87 95.50 90.57 CE 51.19 53.73 65.63 66.13 Feature KD 56.47 54.48 74.53 62.24 
+
+UCMKD 59.45 61.19 88.42 77.42 
+
+## E. Complexity Analysis 
+
+As discussed in Section 6, the bilevel optimization in UCMKD introduces additional training cost. However, this overhead mainly comes from a constant-factor increase in the number of student forward/backward passes. It does not introduce a new dependence on the number of training samples beyond the cost already required for computing the alignment objective. Therefore, the scaling behavior with respect to dataset size remains comparable to feature-based knowledge distillation baselines. 
+
+Empirical training cost. We first report the per-epoch training time of UCMKD and Feature-based KD in Table 9. Across datasets and transfer directions, UCMKD increases the per-epoch training time by a moderate constant factor, ranging from 
+
+1.20 × to 2.91 ×. This overhead is acceptable given the performance gains over existing baselines reported in Tables 2 and 1. 
+
+Theoretical complexity. We now analyze the training complexity of UCMKD compared with feature-based KD. Let N
+
+denote the number of training samples. We assume the same student and teacher backbones across methods. Let Fs and Ft
+
+denote the forward costs of the student and teacher models, respectively, and let Bs denote the backward cost of the student model. Let W (N ) denote the cost of computing the Wasserstein distance, e.g., using Sinkhorn iterations with entropic regularization (Peyr´ e & Cuturi, 2020). For feature-based KD, the per-epoch cost can be written as 
+
+CFKD = N (Fs + Ft + Bs) + W (N ). (57) For UCMKD, we perform one feature-alignment(FA) step and one label-alignment(LA) step per iteration, as used in our experiments. This requires additional student forward/backward passes, while the teacher only needs to be evaluated once. The resulting cost is 
+
+CUCMKD = 3 N (Fs + Bs) + N F t + W (N ). (58) Therefore, 
+
+CUCMKD < 3CFKD , (59) This shows that UCMKD introduces at most a constant-factor overhead compared with feature-based KD, rather than changing the asymptotic dependence on N . Importantly, the optimal transport term W (N ) is preserved rather than multiplied by the bilevel procedure. Thus, the main dataset-size-dependent alignment cost remains unchanged. Consequently, UCMKD preserves the scalability of KD-style training while providing substantially improved performance. 17 Cross-Modal Knowledge Distillation without Paired Data  
+
+> Table 11. Comparison with recent feature-based KD baselines in the unpaired cross-modal setting.
+
+Method AVE RAVDESS CREMA-D A→V V→A A→V V→A A→V V→ANORM 27.68 50.49 64.97 70.12 70.16 60.48 REVIEW 27.12 46.27 62.61 68.42 69.76 60.62 
+
+UCMKD 34.16 52.24 73.83 74.43 71.64 66.67                                                  
+
+> Table 12. Hyperparameter configurations for multimodal datasets AVE ,CREMA-D ,RAVDESS ,VGGsound . FA epoch and LA epoch denote the number of epochs minimizing Feature Alignment( FA ) and Label Alignment( LA ) in a single distillation epoch. λ1and λ2are the weights of Feature Alignment loss and Label Alignment loss in Algorithm 1. Hyperparameter AVE CREMA-D RAVDESS VGGsound
+> Backbone ResNet-18 ResNet-18 ResNet-18 ResNet-18 Batch size 64 64 64 64 Epoch 100 100 100 100 Optimizer SGD SGD SGD SGD Learning rate 1e-2 1e-2 1e-2 1e-2
+> λ11111
+> λ21111FA epoch 1111LA epoch 1111
+
+## F. Implementation detail and Hyperparameters 
+
+In this section, we provide more implementation details and hyperparameters to reproduce our empirical results. To ensure fair comparisons, we adopt the same hyperparameters for all compared baselines. The specific hyperparameters are provided in Table 12. All experiments are run on an NVIDIA RTX A6000 GPU, and results are averaged over 5 independent runs. Our official implementation can be found at https://github.com/Duckduck-05/UCMKD .
+
+## G. Additional Experimental Results and Ablation Studies 
+
+In this section, we present detailed experimental results, including standard deviations, and additional ablation studies of the proposed method that support the empirical analysis in Section 4. 
+
+Scalability with larger backbones. Table 13 reports the prediction accuracy on RAVDESS and CREMA-D using ResNet-50 as the backbone, further demonstrating that our method is not tied to a specific architecture and remains effective under a stronger convolutional network. Across the four transfer directions, our method achieves the best performance in three cases, showing consistent robustness across datasets and modality-transfer settings. To further evaluate scalability in more realistic settings, we conduct additional experiments using a ViT-based architecture (ViT-L as the teacher and ViT-S as the student), which is representative of modern large-scale vision models. As shown in Table 10, UCMKD consistently achieves the best student performance across all datasets and transfer directions. These results show that UCMKD remains effective when moving from ResNet-based backbones to substantially larger ViT-based architectures. Together with the complexity analysis (See Appendix E), this provides further evidence that our approach is scalable in realistic settings. 
+
+Compare with modern feature-based KD methods. We further evaluate UCMKD against two recent feature-based knowledge distillation methods, REVIEW (Chen et al., 2021) and NORM (Liu et al., 2023). Although these methods were originally designed for paired data knowledge distillation, they can be adapted to the unpaired cross-modal setting and serve as strong feature-based baselines, as discussed in Section 1. As shown in Table 11, UCMKD consistently outperforms both REVIEW and NORM across all datasets and transfer directions. These results further demonstrate that simply applying modern feature-based KD objectives is insufficient for the unpaired cross-modal distillation problem. 
+
+Robustness under distributional mismatch. We further evaluate UCMKD under increasingly challenging unpaired settings with distributional mismatch between the teacher and student modalities. Specifically, we consider three levels of 18 Cross-Modal Knowledge Distillation without Paired Data  
+
+> Table 13. Prediction accuracy with standard deviation on RAVDESS and CREMA-D with backbone ResNet-50 across different unpaired setting baselines: Cross Entropy, Feature KD, our method, and paired setting Vanilla KD (Hinton et al., 2015). Our method achieves the best performance on 3 out of 4 tasks.
+
+Method RAVDESS CREMA-D 
+
+A → V V → A A → V V → A
+
+Teacher 63.64 70.13 65.46 74.06 CE 52.25 ± 0.8 57.58 ± 2.9 71.33 ± 1.4 61.16 ± 0.4 Feature KD 50.25 ± 0.9 72.03 ± 2.9 69.71 ± 0.2 62.37 ± 0.2 Vanilla KD 66.67 ± 2.86 72.60 ± 1.56 73.20 ± 1.65 62.54 ± 0.17 
+
+Ours 70.83 ± 4.2 74.13 ± 3.5 72.36 ± 1.2 66.94 ± 0.9  
+
+> Table 14. Performance under increasingly challenging unpaired settings with marginal mismatch, domain shift, and label imbalance on RAVDESS.
+
+Method RAVDESS A →V RAVDESS V →AEasy Medium Hard Easy Medium Hard Feature KD 65.37 56.34 54.55 69.80 42.86 39.06 CE 65.47 61.04 51.45 70.66 63.24 44.96 
+
+UCMKD 73.83 67.64 64.23 74.43 67.93 51.56 
+
+difficulty: Easy , which follows the random permutation setting used in the main text; Medium , which introduces marginal mismatch by sampling teacher and student modalities from disjoint sample pools; and Hard , which further incorporates modality-specific noise and label imbalance between the teacher and student datasets. As shown in Table 14, both CE and Feature KD suffer substantial performance degradation as the mismatch becomes stronger. In contrast, UCMKD shows a more gradual decline and consistently achieves the best performance across all settings and transfer directions. These results demonstrate that UCMKD is more robust to marginal mismatch, domain shift, and label imbalance in realistic unpaired cross-modal distillation scenarios. 19

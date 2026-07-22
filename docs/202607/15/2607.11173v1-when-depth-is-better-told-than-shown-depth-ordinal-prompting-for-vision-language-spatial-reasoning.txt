@@ -1,0 +1,377 @@
+Title: When Depth Is Better Told Than Shown: Depth-Ordinal Prompting for Vision-Language Spatial Reasoning
+
+URL Source: https://arxiv.org/pdf/2607.11173v1
+
+Published Time: Tue, 14 Jul 2026 02:05:47 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# When Depth Is Better Told Than Shown: Depth-Ordinal Prompting for Vision-Language Spatial Reasoning 
+
+## Quynh Vo Phuc Dao Cong-Duy Nguyen Thong Nguyen *
+
+## National University of Singapore Center of AI Research, VinUniversity thong.nguyen@u.nus.edu 
+
+## Abstract 
+
+Vision-language models (VLMs) are expected to reason about physical space—which object is closer, what lies be-hind what, and how objects are arranged in 3D—yet they still struggle with such spatial judgments. A natural rem-edy is to show the model a depth map, but we find that this can make performance worse. We show that depth is not ab-sent: it reaches the language model, but becomes difficult to access for downstream reasoning, while rendered pseudo-depth maps act as noisy auxiliary images that frozen VLMs cannot easily regulate. We propose Depth-Ordinal Prompt-ing (DOP), a training-free method that converts monocular depth into a single question-targeted ordinal text cue at the queried objects, without adding a depth image, training a module, injecting features, or using labels. Our key finding is form dependence: the same depth signal can hurt when shown as an image but help when told as text.Across bench-marks, models, and depth estimators, DOP improves spatial reasoning when pseudo-depth provides reliable object-level ordering and remains largely neutral in strong original-image regimes. It is also competitive with the strongest training-free depth-prompting alternative while being sim-pler and more targeted. 
+
+## 1. Introduction 
+
+Vision-language models (VLMs) are increasingly expected to reason about physical space: which object is closer, what lies behind what, and how objects are arranged in 3D. Such capabilities are central to robotics, embodied AI, and assis-tive perception [2, 3, 5]. Yet spatial reasoning remains a per-sistent weakness. Recent benchmarks show that even strong VLMs struggle with relative depth, direction, and object-level spatial relations [6, 8, 19, 22, 30]. A natural remedy is to provide geometry explicitly, for example by appending a monocular depth map to the original color image or by training models with depth- and 3D-aware supervision [2– 
+
+> *Corresponding author
+
+Figure 1. Tell, don’t show. The same monocular depth signal can hurt when shown as an additional image but help when converted into a targeted ordinal text cue. DOP keeps the original color im-age and communicates only the queried-object depth relation, al-lowing the frozen VLM to weigh the cue against its original-image evidence. 
+
+5, 20, 37]. Surprisingly, we find that the simplest version of this remedy often makes performance worse : when pseudo-depth is rendered as an additional image, frozen VLMs can degrade substantially on point- and object-level spatial rea-soning. Fig. 1 previews this form contrast : rendering depth as another image can mislead the frozen VLM, whereas ex-pressing the queried-object relation as a short text cue can make the same geometric information easier to use. This raises a basic question: if depth is useful, why does show-ing depth hurt? This contrast suggests that the issue is not simply the absence of depth, but the interface through which depth is made usable by a frozen VLM. We therefore ask whether the model fails because it never encodes depth, or because depth becomes difficult to use later in the computation. To answer this, we conduct layer-wise probing of the model’s hidden states, as summarized in Fig. 2. We find that early visual features contain a clear depth signal, and that this sig-nal reaches the first language-model layers with little loss. However, as computation proceeds, the same signal be-comes hard to read with a simple linear probe, even though a non-linear probe can still recover it. In other words, depth is not erased; it becomes entangled in a form that arXiv:2607.11173v1 [cs.CV] 13 Jul 2026 is less accessible to the model’s downstream reasoning. A causal intervention further supports this view: when depth is re-supplied in a linearly readable form, accuracy on in-door depth ordering improves substantially and approaches a sensor-depth reference. Thus, the bottleneck is not a com-plete lack of geometry, but a mismatch between how depth is encoded and how the frozen model can use it. We then diagnose why depth maps are a poor inter-face. Depth helps only when reliable at the task’s gran-ularity: GT sensor depth helps region-level reasoning, while monocular pseudo-depth hurts fine-grained object-level comparisons—and not because of raw accuracy alone, since region cues tolerate large noise (averaging cancels er-rors) while object-level answers flip under small ordering mistakes. A rendered map also becomes an extra visual in-put the frozen VLM must align, de-colormap, and selec-tively ignore; a marker control rules out reference-marker loss. The useful signal is thus not the full map or raw met-ric depth, but the decision-relevant ordinal relation at the queried objects. Guided by this diagnosis, we propose Depth-Ordinal Prompting (DOP), a simple training-free interface for com-municating depth to frozen VLMs. Given an original color image, a spatial question, and the queried object regions, DOP reads monocular pseudo-depth at the object boxes us-ing an off-the-shelf depth estimator [24, 34], converts the re-sult into the question-relevant ordinal relation, and appends it to the original prompt as a single text cue, e.g., “the chair 
+
+appears closer than the table .” DOP does not add a depth image, inject features, train an auxiliary module, or require labels; it keeps the original image and communicates only the depth relation needed for the decision. This yields our central finding of form dependence : the same depth signal can hurt when shown as an image, but remain useful when told as text. Wrong-cue tests and attention-knockout inter-ventions show the cue is empirically self-regulating: the model relies on it under visual uncertainty and discounts it when the original-image answer is already confident—so an always-on cue helps where visual reasoning is weak yet stays neutral when it is strong, making an explicit gate un-necessary in our setting. Our contributions are threefold: • We diagnose depth use in frozen VLMs, showing that depth is not absent but becomes difficult to access in later language-model layers. We further identify why pseudo-depth images can hurt: they introduce fine-grained order-ing errors, cross-image alignment, colormap interpreta-tion, and visual-token burden. • We introduce Depth-Ordinal Prompting (DOP) , atraining-free method that communicates depth as a single question-targeted ordinal text cue at the queried objects, without adding a depth image, training a module, inject-ing features, or using labels. • Across benchmarks, models, depth estimators, and abla-tions, we show that DOP improves spatial reasoning when pseudo-depth provides reliable object-level ordering and remains largely neutral when original-image reasoning is already strong. 
+
+## 2. Related Works 
+
+2.1. Spatial and Geometric Reasoning in VLMs 
+
+Recent benchmarks show that VLMs remain weak at spatial reasoning, including relative depth, direction, metric dis-tance, and object-level spatial relations [6, 8, 13, 19, 22, 30]. These failures have motivated depth- and 3D-augmented VLMs. SpatialVLM [3] uses synthetic 3D QA data; Spa-tialBot [2] trains on paired RGB-depth supervision; Spa-tialRGPT [5] and RoboRefer [37] inject depth or 3D fea-tures through trained modules; SD-VLM [4] adds depth po-sitional encoding; and SSR [20] distills depth-guided ratio-nales into a trained model. These methods demonstrate that geometry is useful, but they require model-specific train-ing, data curation, or feature-level integration. In contrast, DOP targets the harder plug-and-play setting: the VLM is frozen, no module is trained, and depth is communicated only through the standard text prompt. Closer to our setting are training-free spatial and depth prompting methods. ByDeWay [26] converts monocular depth into global layered scene captions for a frozen VLM; SpatialPIN [21] prompts with reconstructed 3D priors; Spa-tialPrompt [17] uses reference objects to elicit quantita-tive spatial reasoning; and visual-prompting methods such as Set-of-Mark [33], SCAFFOLD [14], and Coarse Corre-spondences [18] modify the input image with marks or cor-respondences. DOP differs by using only a single question-targeted ordinal relation at the queried objects. It adds no pixels, performs no 3D reconstruction, and avoids global scene captions, making it a minimal interface for testing how frozen VLMs use auxiliary depth. While prior work establishes that geometry can benefit VLMs, we show that its interface is equally critical. The same monocular depth signal can become harmful when rendered as an additional image, yet become useful when distilled into a question-targeted ordinal text cue. 
+
+2.2. Interpreting and Regulating Auxiliary Evi-dence 
+
+Our analysis connects to mechanistic interpretability work that probes or intervenes on model representations. Prior studies decompose vision-language representations [9], probe attention heads for hallucination [35], and edit ac-tivations at inference time [15]. We use layer-wise probing and causal feature injection in a similar diagnostic spirit, but focus specifically on depth. These analyses show that depth is not absent from the model; rather, it becomes difficult to 0 1 2 3 4 5 6 7 8 9 10 11 12          
+
+> CLIP ViT-B/16 layer
+> 0.0725
+> 0.0750
+> 0.0775
+> 0.0800
+> 0.0825
+> 0.0850
+> 0.0875
+> 0.0900
+> Linear MAE (depth prediction)
+> L9
+> MAE=0.073
+> CLIP encoder: depth signal per layer
+> 0510 15 20 25 30 35
+> Qwen3-VL LLM layer
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Linear MAE (depth prediction)
+> L1: MAE=0.074
+> L35: MAE=0.907
+> (linear; 12.3× worse)
+> LLM: depth becomes linearly inaccessible
+> Depth signal: strong in CLIP encoder enters LLM intact linearly inaccessible by L35
+
+Figure 2. Layer-wise depth decodability. A linear probe’s depth-prediction error grows 12 .3× across Qwen3-VL’s LM layers (L1 MAE 0.074 → L35 0.907 ), even though a standalone CLIP ViT-B/16 encoder carries a strong causal depth signal (L9 MAE 0.073 )also present at the first LM layer ( 0.074 ). A non-linear probe re-covers depth at L35 (MAE 0.074 ), so depth is not destroyed but becomes linearly inaccessible. 
+
+access in later language-model layers. This motivates DOP as the deployed method, while the feature injection serves only as evidence for where the bottleneck lies. DOP also relates to reliability-gated fusion and selective prediction. Prior work uses confidence to gate multimodal fusion [12], detect uncertainty or hallucination [28, 36], or decide when to retrieve external evidence [23]. Calibration and knowledge-conflict studies further examine whether models can report confidence or follow conflicting con-text [29, 32]. These works motivate explicit control over when auxiliary evidence should be used. Our finding is different: when depth is communicated as a targeted text cue, an explicit gate is not necessary in our setting. The frozen VLM empirically tends to rely on the cue when original-image reasoning is uncertain and discount it when the original-image answer is already confident. Rather than proposing another confidence gate or decoding rule, we identify the interface of auxiliary evidence as a key factor in whether a frozen VLM can regulate it. In our setting, depth is difficult to discount when shown as an additional image, but becomes more controllable when expressed as a targeted text cue. 
+
+## 3. Diagnosing the Depth Interface Failure 
+
+3.1. Depth persists but becomes linearly inaccessible 
+
+Do spatial failures arise because the model never encodes depth, or because depth becomes hard to use downstream? We fit a per-patch linear regressor from hidden states to ground-truth depth (MAE on held-out patches). A vision encoder carries a strong depth signal: a standalone CLIP ViT-B/16 (the ESDI feature source) peaks at L9 (MAE 
+
+0.073 ), and it is causal—ablating the depth direction raises MAE 83% vs. <1% for a random one. The signal enters Qwen3-VL’s language model nearly in-tact (first-layer MAE 0.074 ), but linear decodability then degrades sharply, reaching MAE 0.907 at the final layer—a 
+
+12 .3× increase (Fig. 2). This is not destruction: a non-
+
+Table 1. ESDI causal probe (NYU, GT depth; full 654-image test set, n=5669 pairs).              
+
+> Condition Acc. (%) ∆/ note Original image only 75 .5—GT depth (image) 89 .8+14 .2
+> ESDI injection 88 .6+13 .1
+> ESDI (MLP proj.) 89 .6+14 .1
+> ESDI conflict pairs 86 .3matches sensor-depth ceiling (conflict subset)
+
+linear MLP probe still recovers depth to near encoder-level accuracy at the final layer (MAE 0.074 ). Depth thus persists in the residual stream but becomes nonlinearly entangled— inaccessible to a simple linear readout. To test whether this linear inaccessibility is causally 
+
+tied to spatial failure, we perform an embedding-space depth injection (ESDI): we write clean, linearly-structured depth features from a vision encoder directly onto the lan-guage model’s first-layer visual-token positions, bypassing the rendered-image interface. Were the failure a percep-tion gap, re-supplying depth this way should not help; in-stead, on the NYU test set ESDI improves indoor depth ordering by +13 .1pp over the original-image baseline (Ta-ble 1). The gain is sharpest on conflict pairs—items where a vertical-position prior (objects lower in the image are assumed closer) contradicts the true depth order—where ESDI matches the sensor-depth condition within 0.2pp. The language model can therefore use depth when it is reintro-duced in an accessible form. ESDI is a diagnostic, not adeployable baseline competing with DOP: the injected fea-tures are CLIP-encoded from the ground-truth depth map and mapped into the LM’s token space by a fitted linear pro-jection, so ESDI presupposes GT-quality depth and feature-level access. It only tests whether the LM can use depth when it is supplied in a linearly accessible form, and thereby motivates DOP: communicate only the decision-relevant depth relation, in a form the frozen model can read. 
+
+3.2. Why rendered depth maps hurt 
+
+If the model can use depth, why does showing it a depth map often hurt? Table 2 reports a quality gradient compar-ing the original image against the rendered depth map alone across seven spatial benchmarks; the complementary case of combining the original image with depth is analyzed as an interference diagnostic in Fig. 3. The results reveal a sharp quality and granularity gradient. Ground-truth sen-sor depth helps on region-level tasks such as NYU Depth V2 and KITTI, while monocular pseudo-depth substantially hurts on fine-grained point- and object-level benchmarks such as BLINK, CV-Bench, VSR, and EmbSpatial. Two diagnostics clarify the source of this harm. First, interference is conflict-specific. When a vertical-position prior agrees with sensor depth, adding the original im-age to a depth map is mostly harmless. When the two Table 2. Depth-map encoding: quality gradient ( ∆ vs. original-image only); the “Depth img.” column is the depth map shown 
+
+alone (replacing RGB), distinct from the RGB+heatmap condition in the baseline tables. GT sensor depth helps region-level tasks, while monocular pseudo-depth hurts point/object-level tasks. 
+
+Benchmark n Depth src. Orig. image Depth img. ∆
+
+NYU Depth V2 5669 GT Kinect 75 .5 89 .8 +14 .2
+
+KITTI dense 9900 GT LiDAR 82 .6 86 .9 +4.3
+
+BLINK Rel-Depth 124 pseudo 80 .7 53 .2 −27 .4
+
+CV-Bench D+D 1200 pseudo 92 .8 70 .1 −22 .7
+
+VSR (depth) 878 pseudo 83 .1 59 .6 −23 .6
+
+EmbSpatial 1206 pseudo 69 .3 52 .9 −16 .4
+
+3DSR-Bench 5072 pseudo 60 .7 54 .2 −6.4RGB only  
+
+> Depth only
+> RGB + Depth
+> 30
+> 40
+> 50
+> 60
+> 70
+> 80
+> 90
+> 100
+> Accuracy (%)
+> 76%
+> 92%
+> 78%
+> All
+> (n=1724)
+> RGB only
+> Depth only
+> RGB + Depth
+> 46%
+> 86%
+> 53%
+> Conflict
+> (n=708)
+> RGB only
+> Depth only
+> RGB + Depth
+> 99%
+> 94%
+> 99%
+> Non-conflict
+> (n=658)
+> RGB interference is conflict-specific: on conflict pairs, RGB suppresses depth signal by 33.5pp
+
+Figure 3. Interference is conflict-specific. When a vertical-position prior agrees with sensor depth, adding the original image to a depth map is mostly harmless. When they conflict, perfor-mance drops by 33 .5pp, suggesting that the model shifts toward the visual prior. 
+
+conflict, performance drops by 33 .5pp, suggesting that the model shifts away from the depth map toward the visual prior (Fig. 3). Second—and key to resolving an apparent paradox—the harm comes from the error’s structure and the task’s granularity , not from global depth accuracy. The injected Gaussian corruption is zero-mean and read at the 
+
+region level (NYU/KITTI), so region-mean pooling cancels it; the +15 .5pp benefit therefore persists even at 0.8 m MAE (Fig. 4). Monocular pseudo-depth is different on both axes: it makes structured, non-zero-mean errors that pooling can-not average away, and the failing benchmarks are object -level, hinging on the fine-grained ordering of small adja-cent boxes where a single such error flips the answer. So robustness to zero-mean region-level noise and fragility to systematic object-level error are consistent, not contradic-tory. Together, rendered depth maps fail for two reasons: pseudo-depth introduces fine-grained ordering errors at the queried objects, and the render itself is an extra visual in-put the frozen model cannot easily down-weight. We rule out reference-marker loss—drawing the queried boxes onto the depth map does not recover accuracy (App. G). The fix is a different interface: communicate the decision-relevant ordinal relation at the queried objects as text .0.0 0.2 0.4 0.6 0.8 1.0 1.2 1.4 1.6     
+
+> Injected depth error —eff ective MAE (m)
+> 75
+> 80
+> 85
+> 90
+> 95
+> Accuracy (%)
+> typical pseudo-depth
+> MAE range
+> +18
+> +17
+> +15 +15 +16
+> +10
+> Depth bene fi t is robust to raw MAE (NYU region task, n=1724)
+> even at MAE 0.8m the depth heatmap still gives +15.5pp
+> depth_visual (noisy GT)
+> RGB only (74%)
+
+Figure 4. Depth-noise robustness. Region-level depth benefits are robust to substantial zero-mean noise: even at an effective MAE of 0.8 m, corrupted GT depth still improves accuracy by 
+
+15 .5pp. This indicates that the pseudo-depth failures on object-level benchmarks are not explained by global MAE alone. 
+
+## 4. Depth-Ordinal Prompting 
+
+The analysis in Sec. 3 suggests that rendering depth as an auxiliary image forces the VLM into complex visual alignment and colormap interpretation. As illustrated in Fig. 5, Depth-Ordinal Prompting (DOP) bypasses this by compressing dense pseudo-depth into a single question-targeted ordinal text cue. DOP is training-free, label-free, and model-agnostic, requiring no visual feature injection or auxiliary module training. 
+
+4.1. Formalization and Interface Bottleneck 
+
+Let I be the color image, q a spatial question, and O =
+
+{oi}ki=1 the queried objects with bounding regions B =
+
+{Bi}ki=1 . A standard frozen VLM predicts an answer via 
+
+ˆyRGB = arg max y pθ (y | I, q ). DOP augments this text prompt while keeping the VLM unchanged. Instead of feeding a dense depth map D = g(I) from an off-the-shelf estimator g directly into the visual stream, DOP applies a question-conditioned information bottle-neck: 
+
+D B, q 
+
+−−−−−−→ { di}ki=1 
+
+πq
+
+−−−−−→ rqτ
+
+−−−−→ cq .
+
+First, dense pixel depth is aggregated into an object-level readout to mitigate local noise: 
+
+di = Pool {D(u) : u ∈ Bi},
+
+where Pool computes the mean depth within region Bi.We standardize all estimators so that larger values indicate closer distance (the a-priori DepthAnything-v2 convention). Next, a question-dependent operator πq maps the object depths into a targeted ordinal relation rq = πq (d1, . . . , d k).Figure 5. Overview of Depth-Ordinal Prompting (DOP). DOP treats depth as an internal signal rather than an additional visual input. Given the original image, the spatial question, and the queried object regions, DOP estimates monocular pseudo-depth, reads depth only at the queried objects, converts the readout into a question-targeted ordinal relation, and verbalizes it as a short text cue. The frozen VLM receives the original image, the question, and the ordinal cue; the depth map itself is never shown to the model. 
+
+For a binary comparison between objects oi and oj , the re-lation resolves to: 
+
+rij =
+
+(
+
+oi is closer than oj , di > d j ,oi is farther than oj , di < d j .
+
+Finally, a verbalizer τ maps rq to a short natural-language cue cq = τ (rq ) (e.g., “the chair appears farther than the 
+
+table ”). The final DOP prediction is obtained via: 
+
+ˆyDOP = arg max  
+
+> y
+
+pθ (y | I, q ⊕ cq ),
+
+where ⊕ denotes prompt concatenation. Crucially, the VLM only processes (I, q ⊕cq ). By filtering out scene-wide irrelevant geometry and raw metrics, this linguistic bottle-neck exposes only the exact core ordinal constraint needed for the decision. 
+
+4.2. Design Rationale 
+
+DOP is constructed upon three core architectural principles: • Ordinal over Metric Guidance: Spatial VQA typically requires relative decisions (closer/farther) rather than ab-solute metrics. Ordinalization strips away unnecessary precision, enhancing robustness against pseudo-depth es-timation noise. • Textual over Visual Communication: Unlike a depth image—which enters the visual stream and is difficult for a frozen VLM to discount once encoded—a text cue shares the input channel of the question, allowing the model to naturally weigh it against the visual evidence of I.
+
+Algorithm 1 Depth-Ordinal Prompting (DOP) 
+
+Require: Original image I; spatial question q; queried ob-jects O = {oi}ki=1 with regions B = {Bi}ki=1 ; frozen VLM fθ ; monocular depth estimator g. 
+
+> 1:
+
+D ← g(I) ▷ Pseudo-depth used internally only  
+
+> 2:
+
+Convert D to a common convention where larger values mean closer.  
+
+> 3:
+
+for each queried object oi do  
+
+> 4:
+
+di ← Pool {D(u) : u ∈ Bi} ▷ Object-level depth readout  
+
+> 5:
+
+end for  
+
+> 6:
+
+rq ← πq (d1, . . . , d k) ▷ Question-targeted ordinal relation  
+
+> 7:
+
+cq ← τ (rq ) ▷ Verbalize as a short text cue  
+
+> 8:
+
+return fθ (I, q ⊕ cq ) ▷ One VLM inference with cued prompt • Question-Targeted Filtering: Instead of describing the entire scene geometry, DOP isolates depth evaluation strictly to the queried objects O and verbalizes only the specific relation required by q, preventing the VLM from being distracted by irrelevant background context. 
+
+4.3. Operating Regime and Always-on Use 
+
+DOP targets object-level spatial questions where target cat-egories can be localized and pseudo-depth provides reliable relative orderings. Within this regime, DOP operates in an 
+
+always-on manner—appending the ordinal cue to every el-igible question without deploying any auxiliary confidence or routing models. This setup leverages the VLM’s inherent self-regulation behavior (Sec. 5.3): the frozen model naturally relies on the text cue when original-image reasoning is ambiguous, yet overrides or discounts it when its internal RGB reason-ing is highly confident. This always-on paradigm provides seamless assistance under visual uncertainty while remain-ing largely neutral when the original image already supports the answer. Explicit confidence-based gating mechanisms are evaluated in Sec. 5.3 but yield no performance gains over this always-on configuration. 
+
+## 5. Experiments 
+
+5.1. Experimental Setup 
+
+Models. Our primary backbone is Qwen3-VL-8B-Instruct . To test whether DOP generalizes beyond a single model, we additionally evaluate five frozen VLMs spanning two model families and two language decoders: Qwen2-VL-7B-Instruct , Qwen2.5-VL-7B-Instruct , LLaVA-1.5-7B , LLaVA-1.6-Mistral-7B , and LLaVA-1.6-Vicuna-7B .The LLaVA-1.6 Mistral-Vicuna pair uses the same vi-sion stack but different LLM decoders, allowing us to test whether the effect depends on the decoder. Qwen models are run in bfloat16 and LLaVA models in float16 .All models are used frozen and off-the-shelf; no fine-tuning, adapter, or auxiliary module is trained. 
+
+Depth estimators. For the main results, pseudo-depth is produced by DepthAnything-v2-Large [34]. To test es-timator dependence, we repeat the evaluation with DPT-Large [24] and ZoeDepth [1]. DPT provides relative depth, while ZoeDepth provides metric depth with the opposite near/far convention; the convention is fixed a priori for each estimator. Ground-truth sensor depth from NYU Depth V2 [27] and KITTI [10] is used only in the diagnostic quality-gradient analysis of Sec. 3.2, not by DOP. 
+
+Benchmarks. We evaluate on spatial-QA bench-marks that provide the queried-object localization DOP needs: EmbSpatial-Bench [6] (n=1206 ; four-choice closest/farthest), CV-Bench D+D [30] ( n=1200 ; binary depth/distance with boxes), and a NYU Depth V2 region-pair task [27] ( n=5669 pairs, full 654-image test set; Kinect depth used only as the answer key). Object regions come from each benchmark’s own annotations—EmbSpatial and CV-Bench provide the queried-object boxes, and NYU uses annotated region pairs (a markerless region task). The main results read depth at these provided boxes/regions and run no detector ; detector-supplied boxes are evalu-ated separately, only as an end-to-end deployment stress test (App. C). The diagnostic analyses additionally use BLINK [8], VSR [19], 3DSR-Bench [22], and KITTI [10]. We report top-1 accuracy. 
+
+Baselines. We compare against seven training-free base-lines: RGB-only ; depth-as-image (a rendered heatmap as a second image); depth-as-text-values (raw per-object depths in the prompt); chain-of-thought ; bbox-in-prompt 
+
+(object coordinates as text); reference-object prompt-ing [17]; and ByDeWay-LDP [26], an always-on layered-depth captioning baseline—the closest training-free com-petitor. DOP is the always-on question-targeted ordinal. We also evaluate gated variants (random, zero-shot, calibrated, oracle; Sec. 5.3). All methods use identical samples and decoding; prompts are in App. H. 
+
+Configuration and Cost. All models use greedy decoding (do sample=False ) and run on a single NVIDIA H200 GPU (141 GB). DOP needs a single VLM inference (no pre-ceding RGB-only pass); depth maps are precomputed once per image, and likelihood reads are used only for gate abla-tions. The method is training-free and updates no weights, so a 7–8B backbone and the off-the-shelf depth estimator fit together in memory with ample headroom. 
+
+5.2. Main Results 
+
+DOP improves when depth is informative and remains neutral when the original image is already strong. Ta-ble 3 reports DOP across all six backbones and three bench-marks (DepthAnything-v2). On our primary Qwen3-VL-8B , DOP adds +4 .6pp on EmbSpatial ( 69 .3 → 73 .9) and 
+
++21 .7pp on the NYU region task ( 75 .5 → 97 .2), while staying neutral on CV-Bench ( 92 .8 → 93 .7, +0 .9pp) where the original image already suffices. The gains are largest exactly where original-image reasoning is weak— +24 .3pp (Qwen2-VL) and +22 .0pp (LLaVA-1.6-Mistral) on Emb-Spatial, and over +45 pp on NYU for several weaker back-bones (Table 3)—and the same trend holds under a differ-ent estimator (DPT: +3 .9pp on EmbSpatial, −0.3pp on CV-Bench; last row of Table 3). 
+
+DOP is competitive with the strongest training-free depth-prompting baseline. On EmbSpatial (Table 4), DOP reaches 73 .9% —+4 .6pp over RGB-only ( 69 .3% )— and significantly beats five of six training-free baselines un-der paired McNemar with Holm correction (all p < 0.001 ). It ties ByDeWay-LDP ( 73 .0% ; +0 .9pp, p=0 .15 , n.s.), the closest competitor, with a far simpler cue: one queried-object ordinal instead of ByDeWay’s verbose global cap-tions. On CV-Bench (Table 5), a strong-RGB regime (92 .8% ), DOP is slightly positive ( +0 .9pp) while raw depth values ( −8.8pp) and the depth image ( −0.7pp) hurt—the small positive margins should be read cautiously, but the large drops confirm our interface diagnosis. Across the full 15-cell cross-model sweep (App. I), the two best conditions are always the depth-text cues (DOP, ByDeWay), never an image or raw numbers. 
+
+Boundary conditions. DOP’s operating regime is object-level questions with localizable targets. The one clear fail-ure is BLINK Relative Depth, whose abstract point mark-Table 3. DOP across benchmarks and models (generation-based; ∆ vs. RGB-only). With the main DepthAnything-v2 estimator, DOP improves across all six backbones and three spatial benchmarks. The final row is a DPT-estimator ablation on Qwen3-VL. 
+
+Model EmbSpatial (RGB →DOP) CV-Bench (RGB →DOP) NYU regions (RGB →DOP) 
+
+Qwen3-VL-8B 69 .3 → 73 .9 (+4 .6) 92 .8 → 93 .7 (+0 .9) 75 .5 → 97 .2 (+21 .7)Qwen2-VL-7B 44 .0 → 68 .3 (+24 .3) 74 .1 → 75 .5 (+1 .4) 56 .6 → 96 .5 (+39 .9)Qwen2.5-VL-7B 49 .0 → 70 .2 (+21 .2) 78 .1 → 82 .3 (+4 .2) 41 .1 → 96 .6 (+55 .5)LLaVA-1.6-Mistral-7B 46 .9 → 68 .9 (+22 .0) 64 .0 → 79 .2 (+15 .2) 51 .8 → 97 .3 (+45 .5)LLaVA-1.6-Vicuna-7B 41 .9 → 66 .5 (+24 .6) 62 .0 → 80 .3 (+18 .3) 49 .1 → 95 .2 (+46 .1)LLaVA-1.5-7B 37 .5 → 64 .2 (+26 .7) 48 .1 → 54 .0 (+5 .9) 44 .4 → 97 .3 (+52 .9)Qwen3 / DPT estimator 69 .3 → 73 .2 (+3 .9) 92 .8 → 92 .5 (−0.3) 75 .5 → 90 .2 (+14 .7)
+
+Table 4. Baselines and gate ablations (EmbSpatial, Qwen3, 
+
+n = 1206 ). 95% CIs are bootstrap intervals; significance is paired McNemar vs. DOP with Holm correction ( *** : p < 0.001 ; n.s.: not significant).                                                                  
+
+> Condition Acc. [95% CI] ∆RGB DOP vs. it rgb only 69 .3,[66 .7,71 .8] —+4 .6,p=5 .9×10 −4*** depth-as-image (RGB+heatmap) 69 .4,[66 .8,72 .0] +0 .1+4 .5,p=7 .0×10 −4*** depth-as-text-values 53 .8,[51 .2,56 .7] −15 .5+20 .1,p< 10 −37 *** CoT (fair, 512 tok) 66 .3−3.0—bbox-in-prompt 66 .5,[63 .8,69 .1] −2.8+7 .4,p< 10 −6*** reference-object 67 .5,[64 .8,70 .1] −1.8+6 .4,p< 10 −5*** ByDeWay-LDP 73 .0,[70 .4,75 .5] +3 .6+0 .9,p=0 .15 n.s.
+> DOP (ours) 73 .9,[71 .1,76 .0]+4.6—
+> Gate ablations (Sec. 5.3); none beats always-on DOP.
+> two-sided gate (depth vs. model margin) 72 .6+3 .5<DOP random 50% gate 72 .1+3 .0<DOP oracle gate (upper bound) 83 .7+14 .6upper bound
+
+ers push pseudo-depth toward chance so the forced or-dinal misleads ( −22 .6pp; ordering accuracy 58% , near chance, App. R). On two box-free depth benchmarks (VSR, 3DSR-Bench), where DOP can only emit a degraded scene-level cue rather than its targeted per-object ordinal, it stays largely neutral with the strong backbone (VSR +0 .6,3DSR-Bench +0 .4; App. Q)—the missing boxes explain the small gains, and it does not materially hurt. 
+
+Comparison to trained depth-specialist VLMs. Trained depth-aware VLMs use model-specific data and formats, so they are complementary rather than plug-and-play base-lines: SpatialBot-3B [2] expects its own RGB+depth format and, under forced-choice questions, emits free-form text, so its accuracy reflects format mismatch, not depth ability (App. M). DOP instead asks how far a frozen general VLM goes with a one-line cue and no training. 
+
+5.3. Self-Regulation and Gate Ablations 
+
+DOP is intentionally always-on: should the cue instead be gated by confidence? No (Table 4, bottom). Always-on DOP ( 73 .9% ) beats every gate we tried—a two-sided depth-vs-answer-margin gate ( 72 .6% ), a random 50% gate (72 .1% ), and single-signal depth-only ( 71 .9% ) or model-only ( 71 .0% ) gates—while an oracle gate reaches 83 .7% ,so real headroom exists but no zero-shot reliability signal 
+
+Table 5. Baselines on CV-Bench (Qwen3, n = 1200 ). This is a strong original-image regime: RGB-only already reaches 92 .8% .DOP remains largely neutral and slightly positive, while raw depth values hurt. 
+
+Condition Acc. (%) ∆ vs. RGB rgb only 92 .8 —depth-as-image (RGB+heatmap) 92 .1 −0.7
+
+depth-as-text-values 83 .9 −8.8
+
+CoT prompting 92 .1 −0.7
+
+bbox-in-prompt 91 .6 −1.2
+
+reference-object 92 .2 −0.6
+
+ByDeWay-LDP 93 .5 +0 .8
+
+DOP (ours) 93 .7 +0.9
+
+we tried captures it. The reason is that the frozen VLM already self-regulates the text cue rather than copying it. The clearest evidence is a wrong-cue test: on the 17 .6% of CV-Bench items where the pseudo-depth ordinal is actually wrong , DOP still scores 84 .4% —a model that blindly followed the cue would score 0% there—losing only 5.7pp versus RGB-only on those items. Consistently, cue adoption is higher when the model is uncertain and falls as its RGB-answer con-fidence rises ( 46% → 27% , r = −0.12 , p < 10 −4); harm concentrates on low-confidence items, and DOP res-cues RGB errors 1.5× as often as it harms correct ones. A causal attention-knockout (App. A) leaves high-confidence answers nearly unchanged ( −0.6pp) while strongly perturb-ing unsure ones—the model leans on the cue precisely when its own reading is weak, not blindly. 
+
+5.4. Robustness 
+
+DOP needs neither perfect localization nor a hand-tuned phrase (Table 6): it stays net-positive under bounding-box jitter up to ±20% and across four cue phrasings (plain, camera-centric, ranking, estimator-centric). It turns neg-ative ( −1.8pp) only under severe ±30% jitter, where the pooling window leaks into background or adjacent objects (a) Rescue: RGB “cabinet” → DOP          
+
+> “butterknife” (correct).
+> (b) Rescue: RGB “curtain” →DOP
+> “window” (correct).
+> (c) Neutral: RGB “plant” stays cor-rect under DOP.
+> (d) Harm case: RGB “toiletpaper”
+> →DOP “candle” (wrong).
+
+Figure 6. Qualitative behavior of DOP (EmbSpatial, Qwen3-VL). DOP can rescue original-image errors on queried objects (a,b), preserve already-correct answers (c), and occasionally harm when the depth cue is misleading (d). Overall, DOP rescues RGB errors 1.5× as often as it harms correct answers (Sec. 5.3). Table 6. Robustness (EmbSpatial, Qwen3, n = 600 ). DOP is robust to moderate bounding-box jitter and to cue wording. 
+
+bbox jitter (frac) 0.0 0.1 0.2 0.3
+
+DOP ∆ vs. RGB +4 .5 +4 .2 +2 .2 −1.8
+
+cue wording plain camera ranking estimator DOP ∆ vs. RGB +4 .5 +4 .0 +5 .8 +3 .2
+
+Table 7. Irrelevant-depth stress test (Qwen3-VL; 
+
+∆ vs. RGB-only). On four benign benchmarks (POPE/AMBER/MME/CHAIR) the irrelevant text cue is largely harmless while the same depth as an image disrupts every one; HallusionBench is the adversarial exception where every cue hurts. Form, not content, drives the harm.                                   
+
+> Benchmark Metric RGB DOP ( ∆)depth-img ( ∆)POPE acc 89 .189 .7(+0 .6)88 .5(−0.7)AMBER acc 89 .488 .9(−0.6)85 .1(−4.3)MME score 2392 .72422 .4(+29 .7)2365 .2(−27 .5)CHAIR CHAIR s ↓11 .26.6(−4.6)40 .0(+28 .8)HallusionBench aAcc 81 .775 .2(−6.6)76 .3(−5.4)
+
+and corrupts the depth readout—so DOP is robust to moder-ate localization noise and is not tied to a single cue wording. End-to-end detector quality is a separate deployment bottle-neck (appendix). 
+
+5.5. Irrelevant-Cue Stress Test Beyond Spatial Rea-soning 
+
+An always-on cue should not corrupt core abilities when depth is irrelevant. We add the same depth—as a DOP text cue or as a second image—to four general benchmarks: POPE [16], AMBER [31], MME [7], and CHAIR [25] (Ta-ble 7). The text cue stays benign and even helps (MME 
+
++29 .7, CHAIR s −4.6), whereas the depth image disrupts every task (AMBER −4.3, CHAIR s +28 .8). The same con-tent, opposite sign by form—direct evidence that the bottle-neck is the interface channel, not depth content. 
+
+Adversarial Exception. HallusionBench [11] marks the boundary: built from visual illusions and false-premise traps, it degrades every cue, DOP most ( −6.6pp; Table 7). Self-regulation in benign settings does not imply safety against adversarial premises—a confident linguistic cue can worsen fragile predictions when the question itself is engi-neered to mislead. 
+
+## 6. Conclusion 
+
+We show that depth is not merely missing from frozen VLMs; rather, its usefulness depends on the interface through which it is provided. Showing monocular depth as an additional image can burden the model with visual alignment, depth-map interpretation, and noisy fine-grained ordering. We therefore propose Depth-Ordinal Prompt-ing (DOP), a training-free method that converts depth into a single question-targeted ordinal text cue at the queried objects. Across models, benchmarks, and depth estima-tors, DOP improves spatial reasoning when pseudo-depth provides reliable object-level ordering and remains largely neutral when the original image is already sufficient. We provide further details in the appendix, including self-regulation analyses, detector-based localization stress tests, BLINK and HallusionBench boundary cases, full cross-model sweeps, prompt templates, and qualitative examples, to make the scope and limitations of DOP explicit. References 
+
+[1] Shariq Farooq Bhat, Reiner Birkl, Diana Wofk, Peter Wonka, and Matthias Muller. Zoedepth: Zero-shot transfer by com-bining relative and metric depth. ArXiv , abs/2302.12288, 2023. 6 [2] Wenxiao Cai, Iaroslav Ponomarenko, Jianhao Yuan, Xiaoqi Li, Wankou Yang, Hao Dong, and Bo Zhao. Spatialbot: Precise spatial understanding with vision language models, 2025. 1, 2, 7 [3] Boyuan Chen, Zhuo Xu, Sean Kirmani, Brian Ichter, Danny Driess, Pete Florence, Dorsa Sadigh, Leonidas J. Guibas, and Fei Xia. Spatialvlm: Endowing vision-language models with spatial reasoning capabilities. 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 14455–14465, 2024. 1, 2 [4] Pingyi Chen, Yujing Lou, Shen Cao, Jinhui Guo, Lubin Fan, Yue Wu, Ling Yang, Lizhuang Ma, and Jieping Ye. Sd-vlm: Spatial measuring and understanding with depth-encoded vision-language models. ArXiv , abs/2509.17664, 2025. 2 [5] An-Chieh Cheng, Hongxu Yin, Yang Fu, Qiushan Guo, Rui-han Yang, Jan Kautz, Xiaolong Wang, and Sifei Liu. Spatial-RGPT: Grounded spatial reasoning in vision-language mod-els. In The Thirty-eighth Annual Conference on Neural In-formation Processing Systems , 2024. 1, 2 [6] Mengfei Du, Binhao Wu, Zejun Li, Xuanjing Huang, and Zhongyu Wei. EmbSpatial-bench: Benchmarking spatial un-derstanding for embodied tasks with large vision-language models. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 2: Short Papers) , pages 346–355, Bangkok, Thailand, 2024. Associ-ation for Computational Linguistics. 1, 2, 6 [7] Chaoyou Fu, Peixian Chen, Yunhang Shen, Yulei Qin, Mengdan Zhang, Xu Lin, Jinrui Yang, Xiawu Zheng, Ke Li, Xing Sun, Yunsheng Wu, Rongrong Ji, Caifeng Shan, and Ran He. MME: A comprehensive evaluation benchmark for multimodal large language models. In The Thirty-ninth An-nual Conference on Neural Information Processing Systems Datasets and Benchmarks Track , 2026. 8 [8] Xingyu Fu, Yushi Hu, Bangzheng Li, Yu Feng, Haoyu Wang, Xudong Lin, Dan Roth, Noah A. Smith, Wei-Chiu Ma, and Ranjay Krishna. Blink: Multimodal large language mod-els can see but not perceive. In Computer Vision – ECCV 2024: 18th European Conference, Milan, Italy, Septem-ber 29–October 4, 2024, Proceedings, Part XXIII , page 148–166, Berlin, Heidelberg, 2024. Springer-Verlag. 1, 2, 6[9] Yossi Gandelsman, Alexei A Efros, and Jacob Steinhardt. Interpreting CLIP’s image representation via text-based de-composition. In The Twelfth International Conference on Learning Representations , 2024. 2 [10] Andreas Geiger, Philip Lenz, and Raquel Urtasun. Are we ready for autonomous driving? the kitti vision benchmark suite. In Computer Vision and Pattern Recognition (CVPR), 2012 IEEE Conference on , pages 3354–3361. IEEE, 2012. 6 [11] Tianrui Guan, Fuxiao Liu, Xiyang Wu, Ruiqi Xian, Zongxia Li, Xiaoyu Liu, Xijun Wang, Lichang Chen, Furong Huang, Yaser Yacoob, Dinesh Manocha, and Tianyi Zhou. Hal-lusionbench: An advanced diagnostic suite for entangled language hallucination and visual illusion in large vision-language models. 2024 IEEE/CVF Conference on Com-puter Vision and Pattern Recognition (CVPR) , pages 14375– 14385, 2023. 8 [12] Zongbo Han, Fan Yang, Junzhou Huang, Changqing Zhang, and Jianhua Yao. Multimodal dynamics: Dynamical fusion for trustworthy multimodal classification. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 20707–20717, 2022. 3 [13] Muhammad Imran and Yugyung Lee. Predicting when to trust vision-language models for spatial reasoning. ArXiv ,abs/2601.11644, 2026. 2 [14] Xuanyu Lei, Zonghan Yang, Xinrui Chen, Peng Li, and Yang Liu. Scaffolding coordinates to promote vision-language coordination in large multi-modal models. In Proceedings of the 31st International Conference on Computational Lin-guistics , pages 2886–2903, Abu Dhabi, UAE, 2025. Associ-ation for Computational Linguistics. 2 [15] Kenneth Li, Oam Patel, Fernanda Vi´ egas, Hanspeter Pfister, and Martin Wattenberg. Inference-time intervention: Elic-iting truthful answers from a language model. In Thirty-seventh Conference on Neural Information Processing Sys-tems , 2023. 2 [16] Yifan Li, Yifan Du, Kun Zhou, Jinpeng Wang, Xin Zhao, and Ji-Rong Wen. Evaluating object hallucination in large vision-language models. In Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing , pages 292–305, Singapore, 2023. Association for Computational Linguistics. 8 [17] Yuan-Hong Liao, Rafid Mahmood, Sanja Fidler, and David Acuna. Reasoning paths with reference objects elicit quan-titative spatial reasoning in large vision-language models. In Proceedings of the 2024 Conference on Empirical Meth-ods in Natural Language Processing , pages 17028–17047, Miami, Florida, USA, 2024. Association for Computational Linguistics. 2, 6 [18] Benlin Liu, Yuhao Dong, Yiqin Wang, Yongming Rao, Yan-song Tang, Luming Tang, Wei-Chiu Ma, and Ranjay Kr-ishna. Coarse correspondences boost spatial-temporal rea-soning in multimodal language model. 2025 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 3783–3792, 2024. 2 [19] Fangyu Liu, Guy Emerson, and Nigel Collier. Visual spa-tial reasoning. Transactions of the Association for Computa-tional Linguistics , 11:635–651, 2023. 1, 2, 6 [20] Yang Liu, Ming Ma, Xiaomin Yu, Pengxiang Ding, Han Zhao, Mingyang Sun, Siteng Huang, and Donglin Wang. Ssr: Enhancing depth perception in vision-language models via rationale-guided spatial reasoning, 2025. 1, 2 [21] Chenyang Ma, Kai Lu, Ta-Ying Cheng, Niki Trigoni, and Andrew Markham. SpatialPIN: Enhancing spatial reasoning capabilities of vision-language models through prompting and interacting 3d priors. In The Thirty-eighth Annual Con-ference on Neural Information Processing Systems , 2024. 2 [22] Wufei Ma, Haoyu Chen, Guofeng Zhang, Yu-Cheng Chou, Jieneng Chen, Celso de Melo, and Alan Yuille. 3dsrbench: A comprehensive 3d spatial reasoning benchmark. In Proceed-ings of the IEEE/CVF International Conference on Com-puter Vision (ICCV) , pages 6924–6934, 2025. 1, 2, 6 [23] Viktor Moskvoretskii, Maria Marina, Mikhail Salnikov, Nikolay Ivanov, Sergey Pletenev, Daria Galimzianova, Nikita Krayko, Vasily Konovalov, Irina Nikishina, and Alexander Panchenko. Adaptive retrieval without self-knowledge? bringing uncertainty back home. In Proceedings of the 63rd Annual Meeting of the Association for Compu-tational Linguistics (Volume 1: Long Papers) , pages 6355– 6384, Vienna, Austria, 2025. Association for Computational Linguistics. 3 [24] Ren´ e Ranftl, Alexey Bochkovskiy, and Vladlen Koltun. Vi-sion transformers for dense prediction. 2021 IEEE/CVF In-ternational Conference on Computer Vision (ICCV) , pages 12159–12168, 2021. 2, 6 [25] Anna Rohrbach, Lisa Anne Hendricks, Kaylee Burns, Trevor Darrell, and Kate Saenko. Object hallucination in image cap-tioning. In Proceedings of the 2018 Conference on Empiri-cal Methods in Natural Language Processing , pages 4035– 4045, Brussels, Belgium, 2018. Association for Computa-tional Linguistics. 8 [26] Rajarshi Roy, Devleena Das, Ankesh Banerjee, Arjya Bhat-tacharjee, Kousik Dasgupta, and Subarna Tripathi. Byde-way: Boost your multimodal llm with depth prompting in a training-free way. In Proceedings of the IEEE/CVF Interna-tional Conference on Computer Vision (ICCV) Workshops ,pages 6117–6123, 2025. 2, 6 [27] Nathan Silberman, Derek Hoiem, Pushmeet Kohli, and Rob Fergus. Indoor segmentation and support inference from rgbd images. In Computer Vision – ECCV 2012 , pages 746– 760, Berlin, Heidelberg, 2012. Springer Berlin Heidelberg. 6[28] Tejas Srinivasan, Jack Hessel, Tanmay Gupta, Bill Yuchen Lin, Yejin Choi, Jesse Thomason, and Khyathi Chandu. Se-lective “selective prediction”: Reducing unnecessary absten-tion in vision-language reasoning. In Findings of the As-sociation for Computational Linguistics: ACL 2024 , pages 12935–12948, Bangkok, Thailand, 2024. Association for Computational Linguistics. 3 [29] Katherine Tian, Eric Mitchell, Allan Zhou, Archit Sharma, Rafael Rafailov, Huaxiu Yao, Chelsea Finn, and Christopher Manning. Just ask for calibration: Strategies for eliciting cal-ibrated confidence scores from language models fine-tuned with human feedback. In Proceedings of the 2023 Confer-ence on Empirical Methods in Natural Language Processing ,pages 5433–5442, Singapore, 2023. Association for Compu-tational Linguistics. 3 [30] Shengbang Tong, Ellis L Brown II, Penghao Wu, Sanghyun Woo, ADITHYA JAIRAM IYER, Sai Charitha Akula, Shusheng Yang, Jihan Yang, Manoj Middepogu, Ziteng Wang, Xichen Pan, Rob Fergus, Yann LeCun, and Saining Xie. Cambrian-1: A fully open, vision-centric exploration of multimodal LLMs. In The Thirty-eighth Annual Conference on Neural Information Processing Systems , 2024. 1, 2, 6 [31] Junyang Wang, Yuhang Wang, Guohai Xu, Jing Zhang, Yukai Gu, Haitao Jia, Jiaqi Wang, Haiyang Xu, Ming Yan, Ji Zhang, and Jitao Sang. Amber: An llm-free multi-dimensional benchmark for mllms hallucination evaluation, 2024. 8 [32] Jian Xie, Kai Zhang, Jiangjie Chen, Renze Lou, and Yu Su. Adaptive chameleon or stubborn sloth: Revealing the behav-ior of large language models in knowledge conflicts. In The Twelfth International Conference on Learning Representa-tions , 2024. 3 [33] Jianwei Yang, Hao Zhang, Feng Li, Xueyan Zou, Chunyuan Li, and Jianfeng Gao. Set-of-mark prompting unleashes ex-traordinary visual grounding in gpt-4v, 2023. 2 [34] Lihe Yang, Bingyi Kang, Zilong Huang, Zhen Zhao, Xiao-gang Xu, Jiashi Feng, and Hengshuang Zhao. Depth any-thing v2, 2024. 2, 6 [35] Feiran Zhang, Yixin Wu, Zhenghua Wang, Xiaohua Wang, Changze Lv, Xuanjing Huang, and Xiaoqing Zheng. Vib-probe: Detecting and mitigating hallucinations in vision-language models via variational information bottleneck, 2026. 2 [36] Ruiyang Zhang, Hu Zhang, and Zhedong Zheng. Vl-uncertainty: Detecting hallucination in large vision-language model via uncertainty estimation, 2024. 3 [37] Enshen Zhou, Jingkun An, Cheng Chi, Yi Han, Shanyu Rong, Chi Zhang, Pengwei Wang, Zhongyuan Wang, Tiejun Huang, Lu Sheng, and Shanghang Zhang. Roborefer: To-wards spatial referring with reasoning in vision-language models for robotics. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2026. 1, 2

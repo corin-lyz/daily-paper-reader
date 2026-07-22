@@ -1,0 +1,572 @@
+Title: Monocular 3D Occupancy Perception for Robots on Sidewalks via Hybrid 2D-3D Learning
+
+URL Source: https://arxiv.org/pdf/2606.19122v1
+
+Published Time: Thu, 18 Jun 2026 01:11:33 GMT
+
+Number of Pages: 26
+
+Markdown Content:
+# Monocular 3D Occupancy Perception for Robots on Sidewalks via Hybrid 2D–3D Learning 
+
+Yukai Ma 1,2 Joe Lin 3 Liu Liu 1,4 Honglin He 1 Lulu Ricketts 3
+
+Brad Squicciarini 3 Yong Liu 2 Bolei Zhou 1,31 University of California, Los Angeles 2 Zhejiang University  
+
+> 3
+
+Coco Robotics 4 Massachusetts Institute of Technology 
+
+https://vail-ucla.github.io/walkocc/ 
+
+Abstract: Sidewalks in the real world are crowded, cluttered, and less structured than roads, making 3D occupancy prediction a key ingredient for the safe navi-gation of mobile robots such as delivery bots and electric wheelchairs. Existing occupancy learning pipelines are largely designed for on-road autonomous driving and often train on large-scale paired LiDAR-RGB datasets with dense 3D supervi-sion and multiple camera inputs, which are costly to collect and do not adequately capture sidewalk-specific characteristics. We propose WalkOCC, a hybrid Ray-marching monocular 3D occupancy perception framework for robots operating on sidewalks. WalkOCC explicitly couples geometric grounding from LiDAR-RGB paired data with scalable learning from large-scale unpaired monocular images. It bootstraps pseudo occupancy supervision from paired sequences and jointly learns image-level representations on additional 2D-only data. It yields stable op-timization and improved generalization without requiring costly 3D occupancy annotations. Extensive experiments demonstrate consistent gains in prediction accuracy, fine-grained segmentation of subtle urban structures such as curbs and gutters, and robustness to environmental and cross-embodiment shifts compared with self-supervised image-based baselines. To facilitate evaluation and bench-marking, we also introduce Sidewalk3D, a large-scale sidewalk perception dataset with LiDAR-camera paired sequences collected across multiple locations and time periods, along with 3D semantic occupancy annotations for evaluation. Code and data will be made available. 
+
+Keywords: Robot Perception, Sidewalks Occupancy Prediction, Weak Supervi-sion 
+
+## 1 Introduction 
+
+Mobile robots are increasingly being deployed on urban sidewalks for applications such as food delivery and personal mobility assistance. Unlike on-road autonomous driving, sidewalk environ-ments are less structured and more cluttered, with dense pedestrian traffic and diverse obstacles. In this setting, robust situational awareness is essential for safe navigation. In autonomous driving, 3D semantic occupancy prediction [1, 2, 3, 4, 5], which estimates whether surrounding 3D voxels are occupied and assigns semantic labels (e.g., car, road, people), has proven effective for scene un-derstanding and downstream planning. However, sidewalk occupancy perception for mobile robots remains much less explored, as shown in Figure 1. Most existing 3D occupancy pipelines are built for autonomous driving and rely on synchronized image-LiDAR pairs. Supervised methods such as SurroundOcc [3], OCC3D [2], and OpenOccu-pancy [6] require dense 3D supervision derived from semantically labeled point clouds, which is expensive to obtain. More label-efficient alternatives, e.g. , RenderOcc [7] and SceneDINO [8], reduce manual labeling but still depend on high-fidelity 3D reconstruction. For sidewalk data cap-tured from a single moving viewpoint with limited multi-view consistency, such reconstruction is   
+
+> arXiv:2606.19122v1 [cs.RO] 17 Jun 2026 Road
+> Sidewalk
+> Curb
+> Pedestrian
+> Vehicle
+> Obstacle
+> Tree
+> Grass
+> Gutter
+> (a) Humanoid robot at the intersection (b) Legged robot on the sidewalk
+> (c) Wheeled robot on the sidewalk (d) Wheeled robot with dense pedestrians
+
+Figure 1: 3D occupancy prediction of challenging real-world sidewalk scenes for various mo-bile robots. We plot four prediction results achieved by our WalkOCC for four different robot em-bodiments, including a humanoid robot, a quadruped robot, an electric wheelchair, and a wheeled delivery robot. Each example shows the third-person-view image, the predicted occupancy output, and the model input image in the corner for reference. The color legend for semantic categories is plotted on the right. The coordinate axes in the occupancy prediction visualization indicate the robot’s current camera pose in a right-handed coordinate system, with red, green, and blue corre-sponding to the x, y, and z axes, respectively. often unreliable, which makes rendering-based supervision unstable. Existing human-centric urban robotics datasets [9, 10, 11] employ sensors and viewpoints similar to sidewalk robots, but they are often collected on campuses or in controlled areas and exhibit a notable domain gap relative to real-world sidewalk deployment. Scaling RGB-LiDAR paired data remains a bottleneck because it requires multi-sensor hardware and accurate per-robot extrinsic calibration, limiting collection scale and diversity. Generalization is further challenged by intrinsic discrepancies across robot platforms, including different sensor lay-outs and body morphologies, in addition to external shifts such as region and illumination changes. In contrast, monocular images are abundant and easy to acquire, offering broader scene coverage while naturally accommodating diverse robot embodiments. Motivated by this, we study monocular 3D occupancy learning that leverages unpaired 2D images to improve generalization across both environmental and cross-robot shifts without requiring manual 3D occupancy annotations. To this end, we propose a new Hybrid Ray-marching Occupancy Learning Framework called WalkOCC, and establish Sidewalk3D, a sidewalk perception dataset with LiDAR-camera paired sequences collected across multiple locations and time periods. WalkOCC predicts both geome-try and semantics of sidewalk environments, as shown in Figure 1. Using a finetuned SAM3 [12], we generate high-quality 3D pseudo-occupancy labels from limited paired camera-LiDAR data to train an initial monocular predictor. We then incorporate large-scale unpaired monocular images through mixed training to increase scene diversity and improve generalization. This combination of pseudo-3D supervision and image-level representation learning provides both geometric ground-ing and broad visual coverage. Extensive experiments demonstrate that our approach improves occupancy prediction accuracy and cross-domain generalization. Compared with methods that rely solely on self-supervised image-level signals, our method yields more stable training and greater robustness to both environmental and embodiment shifts. We summarize the main contributions as follows: 
+
+1) We propose WalkOCC , a hybrid voxel-ray occupancy perception framework that enables data-efficient learning. By integrating depth-guided ray features with rendering-based self-supervision, WalkOCC eliminates the need for costly manual 3D annotation and learns to generalize across dif-ferent camera intrinsics. 
+
+2) We introduce Sidewalk3D , a large-scale, cross-domain RGB-LiDAR dataset specifically for side-walk robots. Sidewalk3D covers diverse urban environments and time-of-day variations, providing 2a benchmark for training and evaluating mobile robot perception on real-world, human-centric side-walks. 
+
+3) We establish a benchmark on Sidewalk3D to evaluate sidewalk 3D occupancy prediction per-formance and model generalization across environmental variations and robot cross-embodiment discrepancies. Extensive experiments demonstrate that WalkOCC achieves state-of-the-art results on this benchmark, with a 15.6% gain in mIoU. Compared with competitive baselines, our method boosts OOD mIoU by 55% on the Night split (Set 1), 14% on the Diverse split (Set 2) , and 3.1% on cross-embodiment split (Set 3). 
+
+## 2 Related Work 
+
+We review existing perception datasets for occupancy and sidewalk, as well as advances in seman-tic scene completion (SSC). Large-scale LiDAR and multi-view datasets serve as standard bench-marks for occupancy learning and SSC. SemanticKITTI [13] provides densely labeled outdoor point clouds, while nuScenes [14] integrates 360° multi-camera and LiDAR data to support multi-view learning. For sidewalk and ground-robot perception, existing datasets have evident limitations: JRDB [15] focuses on pedestrian detection, RUGD [16] and Rellis-3D [17] target off-road seman-tic segmentation, and long-term SLAM datasets including NCLT [11] and FusionPortable [18] lack dense semantic labels. SCAND [9] is designed for social navigation without dense perception anno-tations. In contrast, UT Campus Object Dataset (CODa) [19] provides comprehensive multimodal sidewalk data with 3D bounding boxes and terrain segmentation, well-suited for sidewalk perception tasks. Additionally, recent works including MIMIC [20] and AURA [21] for sidewalk navigation only provide 2D-only datasets. Early SSC methods depend on labor-intensive dense 3D annotations and computationally costly 3D convolutions. Recent works optimize efficiency via lightweight designs: FlashOcc [1], FastOcc [22], and SparseOcc [23] adopt BEV transformation, cross-feature fusion, and sparse voxel mod-eling, respectively, to reduce computational overhead. To mitigate annotation costs, label-efficient approaches exploit weak supervision, knowledge distillation, and self-supervision. RenderOcc [7] and UniOcc [24] leverage differentiable rendering for 2D-to-3D supervision; RadOcc [25] applies cross-modal distillation, while OccNeRF [26] and SelfOcc [27] realize LiDAR-free self-supervision using multi-view photometric constraints and pre-trained 2D models. Further moving toward fully unsupervised learning, SceneDINO [8] lifts self-supervised 2D features to 3D and achieves strong unsupervised SSC performance via multi-view consistency and 3D feature distillation, yet it is not applicable to robots equipped with only monocular cameras. 
+
+## 3 Framework 
+
+We present WalkOCC, a hybrid Ray-marching-based occupancy-learning framework for sidewalk occupancy prediction using a monocular RGB camera. As illustrated in Figure 2, our approach consists of two key components: (i) a depth-aware lifting architecture (Section 3.1) that transforms front-view images into 3D semantic occupancy grids, and (ii) a hybrid training strategy (Section 3.2) that leverages both 2D and 3D supervision via a ray-marching-based 2D-3D consistency loss. En-forcing this consistency enables effective learning from large-scale 2D-only data while preserving geometric accuracy, which in turn improves prediction quality and cross-domain generalization. Af-ter introducing the model, we describe the pseudo-label generation used for training in Appendix D. 
+
+3.1 Monocular 3D Occupancy via Depth-aware Lifting 
+
+Given a monocular RGB image It with known camera intrinsics and extrinsics, WalkOCC predicts a semantic occupancy volume ˆV ∈ RD×Hbev ×Wbev ×K within a fixed region of interest around the robot. As illustrated in Figure 2, the model follows an Encoder–Lift–BEV–Decoder paradigm, which first extracts image-plane features, lifts them into 3D with depth awareness, aggregates them in BEV, and finally decodes dense semantic occupancy. 3Single Image 
+
+> BEV
+> Encoder
+> 3D OCC
+> Head
+> Ray -based
+> Rendering
+> 2D
+> Prediction
+
+## ℒ!"#$% ℒ&' ()"* ℒ+,-)  
+
+> View Transform
+> Image
+> Encoder
+
+## ℒ,++ 
+
+> Pseudo Label
+> Generation
+> WalkOCC
+
+Figure 2: Learning Framework of WalkOCC . WalkOCC is a lightweight BEV-based occupancy prediction model that takes a single fisheye image as input. The architecture follows an Encoder →
+
+Lift → BEV → Decoder paradigm. To facilitate training, we introduce multi-task supervision with auxiliary depth estimation and 2D semantic segmentation. In addition, WalkOCC adopts a depth-aware lifting module and learns from both 2D and 3D supervision via a ray-marching-based 2D-3D consistency loss. The image encoder uses a ResNet-50 backbone [28] with an FPN-style neck to produce a feature map F ∈ RC×H′×W ′
+
+. A lightweight 2D semantic head predicts image-plane logits ˆS ∈ RK×H×W ,supervised by ground-truth semantic masks. This auxiliary supervision encourages category-aware image features and also provides the 2D reference for our 2D–3D consistency loss. To bridge image features and 3D occupancy, we adopt a depth-aware view transformer [1, 29, 30]. A depth branch predicts a per-pixel depth distribution ˆD(d) over discretized depth bins, supervised by LiDAR-projected depth. The 2D features are then lifted along camera rays into a frustum-aligned 3D feature volume: 
+
+F(x, y, z ) = X
+
+> d
+
+ˆD(d) ϕ F (ud, v d), (1) where (ud, v d) is the projected image coordinate at depth bin d, and ϕ(·) denotes a learnable projection. The frustum features are subsequently transformed into a BEV feature map B ∈
+
+RCbev ×Hbev ×Wbev and refined by a lightweight BEV encoder. Finally, a 3D occupancy head decodes the refined BEV representation into semantic voxel predic-tions. To address the severe imbalance between free space and occupied regions, we use a focal-style voxel-wise occupancy loss: 
+
+Locc = 1
+
+|Ω|
+
+X
+
+> v∈Ω
+
+FocalCE   ˆVv , V⋆v
+
+, (2) where Ω denotes the valid voxel set and V⋆v is the ground-truth semantic occupancy label. The full model is jointly supervised by image-plane semantic segmentation, depth estimation, and 3D semantic occupancy losses. 
+
+3.2 2D-3D Consistency Loss and Hybrid Training Strategy 
+
+Existing 2D-3D multi-task methods fail to enforce strict visual alignment for 3D predictions and lack sufficient paired training data, though unpaired 2D semantic data is abundant in robotic en-vironments. To address this gap, we introduce a ray marching-based alignment strategy to align 2D semantic features and 3D occupancy representations along camera rays. This cross-modality 4constraint regularizes 3D predictions to align with image-based visual cues and enables effective 2D-to-3D knowledge distillation from unpaired 2D data via ray-based semantic propagation. Frustum of 3D          
+
+> Points {"!}!"#
+> $
+> 3D Semantic Logits
+> Depth -weighted
+> Aggregation
+> Camera Center
+> Input Image
+> Semantic Labels ℒ!" #$
+> q"!" =$%#p'#
+> #:"!∈&"#$%&
+
+Figure 3: Ray-based Rendering. Ray-based 2D-3D semantic alignment via ray marching. As illustrated in Figure 3, ray marching is performed for each image pixel 
+
+(u, v ): starting from the camera center, a view-ing ray is cast through the pixel to intersect the 3D occupancy grid. We sample a series of 3D points {pd}Dd=1 along the ray, where each point 
+
+pd corresponds to a discrete depth bin d. These points are transformed from camera coordi-nates to ego coordinates via calibrated camera intrinsics and extrinsics, and further mapped to voxel indices {vd} within the occupancy grid. For each ray-associated voxel vd, we extract the corresponding semantic logits ˆpd ∈ RK from the predicted 3D occupancy feature ˆV. To aggre-gate these 3D logits into pixel-level 2D semantic predictions, we adopt depth weighting based on the depth distribution ˆD(d) predicted by the view transformer, while eliminating interference from background voxels. Let Vvalid denote the set of non-background valid voxels on the ray. The depth-weighted semantic aggregation is formulated as: 
+
+˜quv = X
+
+> d:vd∈V valid
+
+wd ˆpd, (3) where the normalized depth weight wd masks out background voxels and is defined as: 
+
+wd = ˆD(d) · 1[vd ∈ V valid ]
+
+P 
+
+> d′:vd′∈V valid
+
+ˆD(d′) + ϵ . (4) The aggregated feature ˜quv represents the 3D occupancy-rendered 2D semantic distribution of pixel 
+
+(u, v ), weighted by predicted depth probabilities. We further enforce semantic consistency between this rendered feature and the direct 2D semantic prediction ˆquv from the semantic head via a con-sistency loss: 
+
+Lcons = 1
+
+|Π|
+
+X
+
+> (u,v )∈Π
+
+CE  ˜quv , q⋆uv 
+
+, (5) where Π indicates the set of valid non-background pixels, and q⋆uv denotes the pixel-level ground-truth semantic label. This bidirectional consistency constraint tightly couples 2D semantic percep-tion and 3D occupancy estimation, ensuring the model’s 3D spatial understanding is strictly aligned with input visual observations. 
+
+Hybrid supervision with 2D and 3D labels Our training objective combines four complementary terms: 
+
+L = λ2D L2D-seg + λ3D Locc + λcons Lcons + λdepth Ldepth . (6) In this hybrid training setup, L2D-seg represents a standard cross-entropy or focal loss applied to the 2D semantic masks, while Locc supervises the final 3D voxel grid. The depth distributions are regularized by Ldepth , and Lcons constitutes our proposed 2D–3D consistency loss. As a result, each mini-batch conveys a rich mixture of complementary signals: dense 2D supervision at the image level, sparse but highly informative 3D occupancy labels, ray-wise consistency constraints that bind them together, and geometric depth supervision that stabilizes the lifting process. 
+
+## 4 Experiments 
+
+We construct a benchmark for sidewalk occupancy prediction in Section 4.1 and evaluate the out-of-domain (OOD) generalization performance in Section 4.2. Additionally, we analyze the impact 5Table 1: Comparison of 3D occupancy prediction methods. Bold entries indicate the best perfor-mance. 
+
+Method Input occ IoU mIoU 
+
+> ■ road
+> ■ sidewalk
+> ■ crosswalk
+> ■ grass
+> ■ wall
+> ■ trees
+> ■ vehicle
+> ■ cyclist
+> ■ animal
+> ■ obstacle
+> ■ pedestrian
+> ■ curb
+> ■ gutter
+
+Pseudo Label C+L 88.98 56.71 69.42 80.73 61.39 72.98 79.59 65.83 79.78 13.68 43.38 26.07 64.37 42.74 37.3 GaussianOcc [31] C 16.29 5.60 8.72 21.86 9.16 9.52 5.65 3.99 3.13 0.06 0.0 0.87 0.53 4.21 5.04 MonoScene [32] C 23.08 8.42 10.30 39.80 19.64 9.04 6.32 4.06 1.96 0.16 0.0 1.40 0.74 3.46 4.12 TPVFormer [33] C 22.89 9.39 14.10 30.14 17.64 15.30 7.25 6.10 6.60 0.44 0.10 2.89 3.00 7.20 11.34 RenderOCC [7] C 25.58 13.03 19.35 34.05 22.71 19.84 15.43 9.72 11.25 2.65 0.12 6.00 7.27 9.61 11.40 FlashOCC [1] C 27.17 14.23 21.12 35.46 24.37 21.58 16.38 10.24 14.12 3.27 0.14 6.76 8.82 10.64 12.04 WalkOCC C 30.0 2 16.46 23.55 38.11 27.61 25.40 17.41 9.84 18.74 4.15 0.21 7.53 14.59 12.87 13.96 Input Ground Truth Pseudo Label WalkOCC FlashOCC 
+
+> Gutter Curb Pedestrian Obstacle Animal Cyclist Vehicle Tree Wall Grass Crosswalk Sidewalk Road
+
+Figure 4: Qualitative results on the Sidewalk3D dataset . We present three inference results for our method and FlashOCC on the Sidewalk3D test set, along with the ground truth and pseudo labels for reference. Our predictions are more accurate and exhibit clearer boundaries. of occupancy supervision on trajectory prediction in Appendix A. Please refer to Appendix B for additional ablation studies. 
+
+4.1 Sidewalk Occupancy Prediction Benchmark Implementation details We conduct all experiments over 24 epochs using 8 NVIDIA A5000 GPUs. 3D semantic occupancy prediction is evaluated via mIoU on 14 classes. We compute mIoU based on foreground classes only and additionally report binary occ IoU for occupied versus free space. The ego-frame occupancy grid has a 0.1 m voxel size and forms a 100 × 100 × 50 grid over 
+
+X ∈ [0 , 10] m, Y ∈ [−5, 5] m and Z ∈ [−2, 3] m. Depth is discretized within [0 .2, 12] m with a step size of 0.05 m. Front-facing camera inputs are resized from 1080 × 1920 to 544 × 960 .
+
+Baselines We compare with five representative monocular occupancy baselines that cover comple-mentary design goals for sidewalk robots: MonoScene [32] as a strong and widely used monocular semantic scene completion method, RenderOcc [7] as a label-efficient approach that unifies 2D/3D supervision via rendering-based training, FlashOcc [1] as a lightweight design optimized for fast, low-memory onboard inference, GaussianOCC [31] leveraging Gaussian representation for high-fidelity occupancy prediction, and TPVFormer [33] adopting tri-plane vision transformer for robust spatial feature modeling. 6Input WalkOCC (w/ 2D) WalkOCC                       
+
+> Case 1 Case 2
+> Input WalkOCC (w/ 2D) WalkOCC
+> Case 1 Case 2
+> Input WalkOCC (w/ 2D) WalkOCC
+> Case 1 Case 2
+> Input WalkOCC (w/ 2D) WalkOCC
+> Case 1 Case 2
+> Input WalkOCC (w/ 2D) WalkOCC
+> Case 1 Case 2
+> Input WalkOCC (w/ 2D) WalkOCC
+> Case 1 Case 2
+> Input WalkOCC WalkOCC (w/o 2D) (a) Environmental shift Input WalkOCC WalkOCC (w/o 2D) (b) Embodiment shift
+
+Figure 5: OOD qualitative comparison. Hybrid training with 2D extended data produces more distinct road structures and more accurate object recognition under both environmental and embod-iment shifts. 
+
+Quantitative Results Before comparing methods, we first evaluate the quality of the pseudo-labels used to build our benchmark (first row of Table 1). The pseudo-labels closely match a man-ually verified subset, suggesting that they are sufficiently accurate to provide reliable supervision in this sidewalk-robotics setting. This supports using our pseudo-label-driven pipeline as a reason-able baseline for this benchmark. Table 1 presents the main results on our sidewalk occupancy benchmark across five monocular baselines. Our WalkOCC achieves the best overall performance, improving occ IoU from 27.17 to 30.02 and mIoU from 14.23 to 16.46 compared with the strongest baseline FlashOcc [1]. The gains are consistent across most semantic categories, with particularly notable improvements on dynamic and safety-critical classes such as vehicle (14.12, →,18.74), cy-clist (3.27, →,4.15), and pedestrian (8.82, →,14.59). Our method also improves performance on com-mon traversable regions, including road (21.12, →,23.55), sidewalk (35.46, →,38.11), and crosswalk (24.37, →,27.61), as well as on grass, wall, obstacle, curb, and gutter. The only exception is trees, where FlashOcc remains slightly better (10.24 vs. 9.84), suggesting that thin vegetation structures remain challenging under monocular supervision. 
+
+Qualitative Results As shown in Figure 4, we present qualitative comparisons among the ground truth, pseudo labels, our WalkOCC, and FlashOcc (from left to right). We visualize four test sam-ples: two touristy scenes during daytime (first row), the same location at night (second row), and a commercial district scene (third row). Overall, our WalkOCC yields predictions that better match the ground truth, while substantially reducing the noise and artifacts observed in the pseudo labels and the baseline results. 
+
+4.2 Cross-Domain Generalization Evaluation 
+
+Sidewalk scenes exhibit substantial appearance and structural variations across locations, capture conditions (e.g., daytime vs. nighttime), and robot embodiments with different camera configura-tions. To evaluate OOD generalization, we train all models on a single source domain (touristy, day-time; 2.4K samples) and directly test them on target domains without using any target data or adap-tation. We define three distinct OOD evaluation settings. The first two correspond to environmental distribution shifts: OOD Set 1 comprises touristy scenes captured under nighttime conditions, while OOD Set 2 includes all remaining test samples apart from the touristy-daytime partition. The third setting targets cross-embodiment distribution shifts, in which OOD Set 3 is collected from diverse platforms, including humanoid, quadruped, and wheeled robots with varying camera intrinsics and mounting angles. Since this dataset lacks paired 3D LiDAR annotations, we convert predicted 3D occupancy volumes into 2D representations via spatial projection and adopt pixel accuracy and 2D mIoU as the evaluation metrics for quantitative assessment. Table 3 summarizes the results using mIoU and occupancy IoU (Occ IoU); we additionally report relative mIoU (Rel-mIoU), i.e., the percentage of source-domain mIoU retained on the target do-main. Our WalkOCC incorporates extra 2D-only supervision (2.2K samples) from MIMIC [20] for hybrid training, which noticeably improves robustness under domain shift. Concretely, WalkOCC improves OOD mIoU from 5.55 to 8.61 on set 1 and from 9.03 to 10.29 on set 2 compared to 7Table 3: Cross-domain evaluation of SSC under different test conditions. Models are trained on the source domain and evaluated on three target conditions. Rel-mIoU denotes the relative mIoU compared to source-domain performance. Occ IoU measures occupancy completion by collapsing semantic labels into occupied and free space. Method In Domain Out of Domain set 1 Out of Domain set 2 mIoU ↑ Occ IoU ↑ mIoU ↑ Rel-mIoU ↑ Occ IoU ↑ mIoU ↑ Rel-mIoU ↑ Occ IoU ↑                        
+
+> FlashOCC 17.13 29.18 5.55 32.39 13.77 9.03 52.71% 18.8 WalkOCC w/o 2D 18.78 31.08 5.70 30.35% 11.97 9.25 49.25% 17.77 WalkOCC 18.88 30.79 8.61 45.6% 18.03 10.29 54.50% 20.11
+
+FlashOCC, while also achieving higher Occ IoU (13.77 →18.03 on set 1 and 18.8 →20.11 on set 2). Notably, adding the 2D-only data yields a large gain over WalkOCC w/o 2D on the more challeng-ing nighttime split (mIoU 5.70 →8.61), indicating that the proposed hybrid training helps preserve semantic discrimination when visual conditions change. Overall, WalkOCC retains 45.6%/54.5% of its in-domain mIoU on OOD set 1/set 2, outperforming the baselines and suggesting better general-ization to unseen domains. Furthermore, we provide qualitative visualizations to compare models trained with and without hy-brid training, as shown in Fig. 5(a). We report OOD examples, comparing our model trained with and without the 2D extension data. The model without hybrid training fails in night scenes: it can no longer delineate the road surface or recognize distant obstacles. In contrast, the hybrid-trained model preserves clearer road structure and can still identify far-away trees. This setting is particu-larly challenging for urban perception because it contains no night-time training data. Table 2: 3D occupancy projected to 2D seman-tic evaluation on robot test set. Metrics are com-puted only on pixels whose GT depth ray end-point lies inside the OCC grid (same mask as 
+
+Lcons ). Method Pixel Acc (%) ↑ mIoU (%) ↑    
+
+> WalkOCC w/o 2D 71.90 24.73 WalkOCC 73.8 25.5
+
+As shown in Tab. 2, we evaluate the model gener-alization to cross-embodiment shifts with distinct camera intrinsic parameters (OOD Set 3). As this evaluation set lacks 3D LiDAR annotations, we project all predicted occupancy volumes onto the 2D image plane and report pixel accuracy and 2D mIoU instead of 3D mIoU. WalkOCC trained with cross-embodiment 2D images con-sistently surpasses the baseline variant trained without such data across both metrics, demonstrating that our 2D-3D hybrid training paradigm effec-tively addresses intrinsic camera variations without any extra 3D supervision, as shown in Fig. 5(b). For more details and visualizations, please refer to the Appendix C. 
+
+## 5 Conclusion 
+
+We present WalkOCC, a hybrid ray-marching framework for monocular sidewalk occupancy that bootstraps pseudo 3D supervision from limited RGB–LiDAR pairs and scales with unpaired 2D images via depth-aware lifting and 2D–3D consistency. Together with the Sidewalk3D benchmark, experiments show improved in-domain accuracy, stronger robustness to environmental and cross-embodiment shift, and finer structure recovery than competitive monocular baselines. 
+
+## 6 Limitations 
+
+WalkOCC assumes accurate camera calibration, a fixed occupancy volume, and reliable pseudo 3D labels from limited paired RGB–LiDAR data; errors or strong domain shift (e.g., nighttime or unseen embodiments) can blur boundaries and hurt rare or distant objects. Future work will expand data and onboard computing efficiency. 8References 
+
+[1] Z. Yu, C. Shu, J. Deng, K. Lu, Z. Liu, J. Yu, D. Yang, H. Li, and Y. Chen. Flashocc: Fast and memory-efficient occupancy prediction via channel-to-height plugin. arXiv preprint arXiv:2311.12058 , 2023. [2] X. Tian, T. Jiang, L. Yun, Y. Mao, H. Yang, Y. Wang, Y. Wang, and H. Zhao. Occ3d: A large-scale 3d occupancy prediction benchmark for autonomous driving. Advances in Neural Information Processing Systems , 36:64318–64330, 2023. [3] Y. Wei, L. Zhao, W. Zheng, Z. Zhu, J. Zhou, and J. Lu. Surroundocc: Multi-camera 3d occupancy prediction for autonomous driving. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 21729–21740, 2023. [4] Y. Ma, J. Mei, X. Yang, L. Wen, W. Xu, J. Zhang, X. Zuo, B. Shi, and Y. Liu. Licrocc: Teach radar for accurate semantic occupancy prediction using lidar and camera. IEEE Robotics and Automation Letters , 10(1):852–859, 2024. [5] R. Wang, Y. Ma, Y. Yao, S. Tao, H. Li, Z. Zhu, Y. Liu, and X. Zuo. L2cocc: Lightweight camera-centric semantic scene completion via distillation of lidar model. In 2025 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) , pages 716–723. IEEE, 2025. [6] X. Wang, Z. Zhu, W. Xu, Y. Zhang, Y. Wei, X. Chi, Y. Ye, D. Du, J. Lu, and X. Wang. Openoccupancy: A large scale benchmark for surrounding semantic occupancy perception. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 17850– 17859, 2023. [7] M. Pan, J. Liu, R. Zhang, P. Huang, X. Li, H. Xie, B. Wang, L. Liu, and S. Zhang. Renderocc: Vision-centric 3d occupancy prediction with 2d rendering supervision. In 2024 IEEE Interna-tional Conference on Robotics and Automation (ICRA) , pages 12404–12411. IEEE, 2024. [8] A. Jevti´ c, C. Reich, F. Wimbauer, O. Hahn, C. Rupprecht, S. Roth, and D. Cremers. Feed-forward scenedino for unsupervised semantic scene completion. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 6784–6796, 2025. [9] H. Karnan, A. Nair, X. Xiao, G. Warnell, S. Pirk, A. Toshev, J. Hart, J. Biswas, and P. Stone. Socially compliant navigation dataset (scand): A large-scale dataset of demonstrations for social navigation. IEEE Robotics and Automation Letters , 7(4):11807–11814, 2022. [10] R. Mart´ ın-Mart´ ın, H. Rezatofighi, A. Shenoi, M. Patel, J. Gwak, N. Dass, A. Federman, P. Goebel, and S. Savarese. Jrdb: A dataset and benchmark for visual perception for navi-gation in human environments. arXiv preprint arXiv:1910.11792 , 2019. [11] N. Carlevaris-Bianco, A. K. Ushani, and R. M. Eustice. University of michigan north campus long-term vision and lidar dataset. The International Journal of Robotics Research , 35(9): 1023–1035, 2016. [12] N. Carion, L. Gustafson, Y.-T. Hu, S. Debnath, R. Hu, D. Suris, C. Ryali, K. V. Alwala, H. Khedr, A. Huang, et al. Sam 3: Segment anything with concepts. arXiv preprint arXiv:2511.16719 , 2025. [13] J. Behley, M. Garbade, A. Milioto, J. Quenzel, S. Behnke, C. Stachniss, and J. Gall. Se-mantickitti: A dataset for semantic scene understanding of lidar sequences. In Proceedings of the IEEE/CVF international conference on computer vision , pages 9297–9307, 2019. [14] H. Caesar, V. Bankiti, A. H. Lang, S. Vora, V. E. Liong, Q. Xu, A. Krishnan, Y. Pan, G. Baldan, and O. Beijbom. nuscenes: A multimodal dataset for autonomous driving. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 11621–11631, 2020. 9[15] R. Martin-Martin, M. Patel, H. Rezatofighi, A. Shenoi, J. Gwak, E. Frankel, A. Sadeghian, and S. Savarese. Jrdb: A dataset and benchmark of egocentric robot visual perception of humans in built environments. IEEE transactions on pattern analysis and machine intelligence , 45(6): 6748–6765, 2021. [16] M. Wigness, S. Eum, J. G. Rogers, D. Han, and H. Kwon. A rugd dataset for autonomous navigation and visual perception in unstructured outdoor environments. In 2019 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) , pages 5000–5007. IEEE, 2019. [17] P. Jiang, P. Osteen, M. Wigness, and S. Saripalli. Rellis-3d dataset: Data, benchmarks and analysis. In 2021 IEEE international conference on robotics and automation (ICRA) , pages 1110–1116. IEEE, 2021. [18] J. Jiao, H. Wei, T. Hu, X. Hu, Y. Zhu, Z. He, J. Wu, J. Yu, X. Xie, H. Huang, et al. Fu-sionportable: A multi-sensor campus-scene dataset for evaluation of localization and mapping accuracy on diverse platforms. In 2022 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) , pages 3851–3856. IEEE, 2022. [19] A. Zhang, C. Eranki, C. Zhang, J.-H. Park, R. Hong, P. Kalyani, L. Kalyanaraman, A. Gamare, A. Bagad, M. Esteva, et al. Toward robust robot 3-d perception in urban environments: The ut campus object dataset. IEEE Transactions on Robotics , 40:3322–3340, 2024. [20] H. He, Y. Ma, B. Squicciarini, W. Wu, and B. Zhou. Learning sidewalk autopilot from multi-scale imitation with corrective behavior expansion. In Proceedings of the International Con-ference on Robotics and Automation (ICRA) , 2026. [21] Y. Ma, H. He, S. Song, W. Wu, and B. Zhou. Aura: Multimodal shared autonomy for real-world urban navigation. arXiv preprint arXiv:2604.01659 , 2026. [22] J. Hou, X. Li, W. Guan, G. Zhang, D. Feng, Y. Du, X. Xue, and J. Pu. Fastocc: Accelerating 3d occupancy prediction by fusing the 2d bird’s-eye view and perspective view. In 2024 IEEE International Conference on Robotics and Automation (ICRA) , pages 16425–16431. IEEE, 2024. [23] P. Tang, Z. Wang, G. Wang, J. Zheng, X. Ren, B. Feng, and C. Ma. Sparseocc: Rethinking sparse latent representation for vision-based semantic occupancy prediction. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 15035–15044, 2024. [24] M. Pan, L. Liu, J. Liu, P. Huang, L. Wang, S. Zhang, S. Xu, Z. Lai, and K. Yang. Uniocc: Unifying vision-centric 3d occupancy prediction with geometric and semantic rendering. arXiv preprint arXiv:2306.09117 , 2023. [25] H. Zhang, X. Yan, D. Bai, J. Gao, P. Wang, B. Liu, S. Cui, and Z. Li. Radocc: Learning cross-modality occupancy knowledge through rendering assisted distillation. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 38, pages 7060–7068, 2024. [26] C. Zhang, J. Yan, Y. Wei, J. Li, L. Liu, Y. Tang, Y. Duan, and J. Lu. Occnerf: Advancing 3d occupancy prediction in lidar-free environments. IEEE Transactions on Image Processing ,2025. [27] Y. Huang, W. Zheng, B. Zhang, J. Zhou, and J. Lu. Selfocc: Self-supervised vision-based 3d occupancy prediction. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 19946–19956, 2024. [28] K. He, X. Zhang, S. Ren, and J. Sun. Deep residual learning for image recognition. In Pro-ceedings of the IEEE conference on computer vision and pattern recognition , pages 770–778, 2016. 10 [29] J. Huang, G. Huang, Z. Zhu, Y. Ye, and D. Du. Bevdet: High-performance multi-camera 3d object detection in bird-eye-view. arXiv preprint arXiv:2112.11790 , 2021. [30] Y. Li, Z. Ge, G. Yu, J. Yang, Z. Wang, Y. Shi, J. Sun, and Z. Li. Bevdepth: Acquisition of reliable depth for multi-view 3d object detection. In Proceedings of the AAAI conference on artificial intelligence , volume 37, pages 1477–1485, 2023. [31] W. Gan, F. Liu, H. Xu, N. Mo, and N. Yokoya. Gaussianocc: Fully self-supervised and ef-ficient 3d occupancy estimation with gaussian splatting. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 28980–28990, 2025. [32] A.-Q. Cao and R. De Charette. Monoscene: Monocular 3d semantic scene completion. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 3991–4001, 2022. [33] Y. Huang, W. Zheng, Y. Zhang, J. Zhou, and J. Lu. Tri-perspective view for vision-based 3d semantic occupancy prediction. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 9223–9232, 2023. 11 Appendix 
+
+Abstract: This supplementary material presents additional evidence and compre-hensive implementation details. It covers the effect of occupancy supervision on trajectory planning (Section A), further ablation studies (Section B), qualitative and cross-embodiment visualizations (Section C), a complete description of the pseudo-label generation pipeline (Section D), fine-tuning details for the sidewalk-specialized SAM3 (Section E), and dataset collection and preprocessing proce-dures (Section F). 
+
+Contents A Occupancy-aware Trajectory Planning 13 
+
+A.1 Trajectory Planning Head . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 13 A.2 Metrics and Results . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 13 A.3 Visualization . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 15 
+
+B Additional Ablation Studies 15 
+
+B.1 Ablation of Model Components. . . . . . . . . . . . . . . . . . . . . . . . . . . . 15 B.2 Ablation on Occupancy Grid Resolution . . . . . . . . . . . . . . . . . . . . . . . 15 B.3 Ablation on Target Data . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 15 
+
+C Additional Visualizations 16 
+
+C.1 Additional Inference Visualizations with WalkOCC . . . . . . . . . . . . . . . . . 16 C.2 Cross-Embodiment Inference . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 16 
+
+D Pseudo-Label Pipeline Details 18 
+
+D.1 Overcomplete Prompts and Label Merging . . . . . . . . . . . . . . . . . . . . . . 19 D.2 3D Lift and Point Cloud Colorization . . . . . . . . . . . . . . . . . . . . . . . . 20 D.3 Voting to Suppress Semantic Flicker . . . . . . . . . . . . . . . . . . . . . . . . . 20 D.4 SurroundOcc Format and Occupancy GT . . . . . . . . . . . . . . . . . . . . . . 21 
+
+E Sidewalk-Specialized SAM3 Fine-tuning 21 
+
+E.1 2D Segmentation Dataset . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21 E.2 Implementation Details . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21 E.3 Qualitative Visualization . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 22 
+
+F Dataset Collection and Preprocessing Details 24 
+
+F.1 Sidewalk3D for Urban Perception . . . . . . . . . . . . . . . . . . . . . . . . . . 24 F.2 Data Collection . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 24 F.3 Data Preprocessing Pipeline . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 24 12 Table 4: Trajectory metrics against dense occupancy supervision in the ego BEV (GT OCC, r=0 .4 mfootprint, zceil =1 .0 m). 
+
+Method Collision rate (%) ↓ Grass rate (%) ↓ Lane-keeping rate (%) ↑
+
+Ours w/o OCC supervision 2.79 0.47 95.03 Ours w/ OCC supervision 2.37 0.31 95.43 
+
+## A Occupancy-aware Trajectory Planning 
+
+As discussed in the introduction, dense occupancy provides a geometric prior well suited to legged navigation: predicted future motion can be checked against walkable surfaces, obstacles, and terrain classes rather than sparse 2D cues alone. We attach a lightweight trajectory decoder to the same BEV feature that feeds the occupancy head, supervise it with future ego poses, and evaluate paths with occupancy-grounded metrics on the COCOa test split. 
+
+A.1 Trajectory Planning Head 
+
+We supervise ten future ego-frame waypoints (x, y ) at 2 Hz (5 s horizon), with x forward and y left; frames without a full future window are excluded. During training, these waypoints undergo the same BEV rotation, scaling, and flipping as the occupancy grid. The trajectory head reads the shared BEV feature F ∈ RB×C×Dy ×Dx (C=128 ) used by the occu-pancy decoder: two 3×3 convolutions (stride 2 on the second), 4×4 adaptive average pooling, and a three-layer MLP output ˆP ∈ RB×T ×2. Training uses Smooth-L1 on valid 3D samples. By default, occupancy, depth, semantic, and trajectory losses all update the encoder. For Ours w/o OCC su-pervision in Table 4, only the trajectory loss back-propagates; Ours w/ OCC supervision restores joint training for the navigation metrics below. 
+
+A.2 Metrics and Results 
+
+We evaluate predicted future trajectories with three navigation-aware rates derived from dense GT occupancy in the ego BEV. The 3D voxel labels are collapsed to a 2D semantic map: for each 
+
+(x, y ) column we take a majority vote over all non-background voxels whose vertical center satisfies 
+
+z ≤ zceil (we use zceil =1 .0 m). Each waypoint (xt, y t) is tested with a circular ego footprint of radius r=0 .4 m in the BEV plane. Let C denote obstacle classes ( wall , trees , vehicle , cyclist ,
+
+animal , obstacle , pedestrian ). A timestep counts as a collision if any cell under the footprint belongs to C; if the disk is entirely background, we use the nearest non-background BEV cell as the ruling label. A timestep counts as grass contact if any footprint cell is grass . Lane keeping 
+
+is defined for sidewalk-centric locomotion: a timestep is lane-ok iff there is no collision and the ruling label is not road (motor-vehicle surface); sidewalk, crosswalk, curb, and similar non-road classes do not incur a violation. Per trajectory we report the fraction of timesteps in each category; dataset-level collision rate , grass rate , and lane-keeping rate are the mean of these fractions over all test samples with a valid prediction. Table 4 reports the three rates on our test set. Without occupancy supervision ( w/o OCC), we obtain 2.79% collision, 0.47% grass contact, and 95.03% lane keeping. With dense OCC supervision ( w/ 
+
+OCC), all metrics improve: collision 2.37% (↓0.42 pp), grass 0.31% (↓0.16 pp), and lane keeping 
+
+95.43% (↑0.40 pp). Because scoring uses GT semantics as a fixed oracle, these numbers measure whether predicted paths respect walkable structure (obstacle avoidance, staying off grass, and avoid-ing motor-road surfaces) independently of voxel prediction accuracy reported in other tables. 13 Observation Traj . w/o OCC supervision Traj . w/ OCC supervision Figure 6: Comparison of trajectory prediction results with and without occupancy supervision. From left to right, we present the current observation, trajectory prediction without OCC supervision, and trajectory prediction with OCC supervision. Predicted trajectories are visualized as green waypoints connected by white lines. Red waypoints indicate collisions between the occupancy area of the ego vehicle (marked as a blue circle) and surrounding obstacles. 14 A.3 Visualization 
+
+As visualized in Figure 6, we overlay predicted trajectories onto the occupancy ground truth from a top-down perspective. The results reveal that occupancy supervision provides reliable prior in-formation for trajectory forecasting, effectively reducing occurrences of driving onto grassland and collisions with pedestrians and obstacles. Such advantages are particularly prominent in densely crowded scenarios, as illustrated in the third and fourth rows. Meanwhile, occupancy cues also improve trajectory prediction performance for distant regions, shown in the first and fifth rows. 
+
+## B Additional Ablation Studies 
+
+B.1 Ablation of Model Components. 
+
+Table 5 reports an ablation of the training objectives and the proposed hybrid mixed supervision (MS). All variants are trained on the Sidewalk3D train split and evaluated on the Sidewalk3D test 
+
+split. Table 5: Ablation study of the proposed loss terms and mixed supervision (MS). Checkmarks indicate the corresponding component is en-abled.                     
+
+> Ldepth L2D-seg Lcons MS IoU mIoU 14.09 24.54
+> ✓14.23 27.17
+> ✓✓15.71 29.09
+> ✓✓✓16.32 29.87
+> ✓✓✓✓16.46 30.02
+
+Starting from the baseline model without auxil-iary objectives, adding depth supervision ( Ldepth )yields a clear improvement in both Occ IoU and mIoU, indicating better geometric completion. Introducing 2D semantic supervision ( L2D-seg ; se-mantic loss, SL) further boosts the scores by en-hancing semantic discrimination. We then enable the 2D-3D consistency loss ( Lcons ; consistency loss, CL), which provides an additional gain, sug-gesting that aligning predictions across modali-ties helps reduce ambiguous label assignments. Finally, we activate hybrid training with extra 2D-only data (MS). The improvement is marginal on the in-domain setting, which is expected: the full-size Sidewalk3D training set already largely covers the test-domain distribution, so mixing in more diverse 2D data brings limited additional benefit here. 
+
+B.2 Ablation on Occupancy Grid Resolution 
+
+We train and evaluate the model on the touristy daytime subset. We evaluate the impact of voxel resolution and spatial range using multiple complementary metrics. We report the standard mIoU to measure overall semantic scene completion performance. To decouple geometric completion from semantic prediction, we additionally report occupancy IoU (Occ IoU), where all semantic classes are merged into occupied and free space. The results in Table 6 show a clear resolution–range trade-off. Under a fixed spatial range of 10 ×10 ×5 m, increasing the voxel size from 0.05 m to 0.20 m consistently improves both semantic completion (mIoU: 10.44 → 20.52) and geometry completion (Occ IoU: 20.24 → 41.18). We attribute this to the fact that coarser grids reduce the difficulty of predicting fine-grained structure and are less sensitive to sensor noise and label ambiguity, thus yielding higher overlap scores under our evaluation protocol. In contrast, enlarging the spatial range from 10 ×10 ×5 m to 20 ×20 ×5 m at the same 0.10 m resolution leads to a noticeable drop (mIoU: 16.25 → 11.35; Occ IoU: 29.09 → 21.84), likely because distant regions are sparser and more occluded, which increases the fraction of hard-to-complete voxels and dilutes supervision. 
+
+B.3 Ablation on Target Data 
+
+We train the model on the touristy daytime subset but test it on the touristy nighttime out-of-domain subset. We keep the 2D extension data fixed to 5K samples, and vary the proportion of night-time target data to 30%, 60%, and 90% to study how the target-data composition affects training. As shown in Table 7, increasing the nighttime ratio from 30% to 60% improves the results, while 15 Table 6: Impact of voxel resolution and spatial range on SSC performance. Range (m) Res. (m) mIoU ↑ OCC IoU ↑
+
+10 ×10 ×5 0.05 10..44 20.24 10 ×10 ×5 0.10 16.25 29.09 10 ×10 ×5 0.20 20.52 41.18 20 ×20 ×5 0.10 11.35 21.84 Table 7: Impact of OOD data construction. Nighttime (%) mIoU ↑ OCC IoU ↑
+
+w/o 2D 6.13 15.82 30 8.74 19.72 60 9.93 20.48 90 8.66 18.33 further increasing it to 90% leads to a consistent drop. We attribute this degradation mainly to a 
+
+bias–diversity trade-off : with 90% nighttime scenes, the model is exposed to much less appearance diversity (e.g., fewer well-lit daytime examples), making the learned features overfit to the specific nighttime photometric statistics and thus less robust at test time. In addition, nighttime data typ-ically contains noisier visual cues (low illumination, motion blur, headlight flare) and sparser/less reliable pseudo labels, which can amplify label noise during training when it dominates the batches. Finally, the fixed 2D extension set may have a different class/context distribution compared with heavily night-biased target data, creating supervision conflicts that hinder stable optimization and hurt overall semantic completion performance. 
+
+## C Additional Visualizations 
+
+In this section, we provide two additional visualizations. First, in Section C.1, we present more qualitative inference results of WalkOCC on Sidewalk3D to highlight the model’s performance in challenging scenarios and the diversity of our dataset. Second, in Section C.2, we evaluate the model in a zero-shot manner across different embodiments to demonstrate its generalizability and the practical value of deploying micro-mobility systems on sidewalks. 
+
+C.1 Additional Inference Visualizations with WalkOCC 
+
+As shown in Figure 7, we present four examples from each subset of our dataset: touristy, resi-dential, and commercial. Touristy scenes are typically crowded with pedestrians, highlighting the model’s ability to predict pedestrian motion under dense interactions. Commercial scenes often fea-ture heavier traffic and wider sidewalks/roads, demonstrating that the model can also capture the structural layout of the environment. Residential scenes lie between these two extremes, suggesting that the model generalizes well across different appearances and spatial layouts. 
+
+C.2 Cross-Embodiment Inference 
+
+Different from autonomous driving, sidewalks involve diverse micro-mobility devices. Here, we perform zero-shot inference with our perception model to evaluate its cross-embodiment general-izability. As shown in Figure 8, we present three representative platforms: a wheeled robot, a quadruped robot, and a humanoid robot. These examples include typical scenarios such as stopping and waiting for pedestrians to pass, traversing a bus-stop area, and turning at an intersection. The results demonstrate strong cross-embodiment generalization in open-world settings, highlighting the practical value of our approach for real-world deployment. 16 Figure 7: Qualitative inference results of WalkOCC across scene types. For each subset of Sidewalk3D (touristy, residential, and commercial), we show four examples with the input image and the predicted occupancy. WalkOCC consistently recovers the static scene layout and localizes dynamic agents, even in crowded touristy streets and wide commercial roads. 17 The wheeled COCO robots are waiting for pedestrians to pass by. 
+
+> Time
+> The quadruped robot is crossing the bus stop area.
+> The Booster humanoid robot encounters several pedestrians while turning at the intersection.
+
+Figure 8: Qualitative cross-embodiment results. We zero-shot deploy our perception model on three representative platforms (wheeled, quadruped, and humanoid) with different camera heights and intrinsics. Across typical sidewalk scenarios (yielding to pedestrians, traversing a bus-stop area, and turning at an intersection), the model exhibits strong open-world cross-embodiment generaliza-tion, indicating its promise for real-world sidewalk deployment. 
+
+## D Pseudo-Label Pipeline Details 
+
+This section provides implementation details for Section 3 of the main paper. Figure 9 summarizes the pipeline, and Algorithm 1 formalizes the procedure. Given a synchronized LiDAR–camera se-quence, we: (i) run SAM3 with an overcomplete prompt set to obtain dense 2D masks (Section D.1); (ii) merge base and fine-tuned passes into a single per-pixel label map (Section D.1); (iii) lift labels to 3D by projecting LiDAR points into the front-view image (Section D.2); (iv) optionally enforce temporal/spatial consistency via 3D voting (Section D.3); and (v) convert the labeled point clouds to the SurroundOcc format to generate semantic occupancy ground truth (Section D.4). Our semantic taxonomy is tailored to sidewalk-centric urban scenes. We define 15 semantic groups and 39 member text prompts for 2D pseudo-labeling (Table 8). Among them, 14 groups are lifted to 3D for semantic occupancy supervision; occlusion is a 2D-only label used to mark image regions 18 Pointcloud  
+
+> Video
+> Finetuned
+> SAM3
+> Projection
+> Dynamic Points
+> Static Points
+> 2D Semantic Dense Semantic Occupancy
+> Label Smoothing
+
+Figure 9: Pseudo-Label Generation . With pre-calibrated and time-synchronized sensors, we project 3D LiDAR points onto 2D images to inherit per-point semantic labels. We then generate dense occupancy pseudo-labels using the SurroundOcc [3] pipeline, taking as input the static-scene point cloud and dynamic objects. To improve label quality in sidewalk-centric scenes, we finetune SAM3 [12] and apply label smoothing to mitigate noisy predictions. Table 8: Semantic taxonomy: 15 groups and 39 member prompts for 2D labeling. Occlusion is 2D-only and is not included in the 14-class 3D occupancy taxonomy.                                                      
+
+> ID Group Member prompts 0background background
+> 1road road
+> 2sidewalk sidewalk
+> 3crosswalk crosswalk
+> 4grass natural ,lawn
+> 5wall wall ,building ,fence
+> 6trees trees ,potted plant ,planter ,flower pot
+> 7vehicle vehicle
+> 8cyclist cyclist ,scooter ,wheelchair
+> 9animal animal
+> 10 generic obstacle pillar ,signboard ,chair ,desk ,table ,stool ,
+> bench ,sofa ,bed ,cabinet ,shelf ,drawer ,
+> fire hydrant ,stroller ,bike rack
+> 11 pedestrian person ,rider
+> 12 curb curb
+> 13 gutter gutter
+> 14 occlusion (2D only) occlusion
+
+without valid scene semantics (e.g., fisheye borders) and is excluded during 3D projection. The 14 occupancy classes are ■ background, ■ road, ■ sidewalk, ■ crosswalk, ■ grass, ■ wall (building and fence), ■ trees, ■ vehicle, ■ cyclist (including scooter and wheelchair), ■ animal, ■ generic obstacle (for example, pillar, bench, fire hydrant, stroller), ■ pedestrian, ■ curb, and ■ gutter; the full 2D prompt list, including occlusion, appears in Table 8. 
+
+D.1 Overcomplete Prompts and Label Merging 
+
+SAM3 accepts only one text prompt per inference. To obtain dense per-pixel labels over our taxon-omy, we use an overcomplete prompt set : 39 fine-grained prompts covering all 2D member classes (Table 8). Since prompts are processed independently, we run SAM3 multiple times with different prompt subsets and then merge the resulting masks. When masks overlap, we apply a deterministic overwrite rule. For the finetuned pass, we use a low-to-high priority order sidewalk → road → driveway → crosswalk → gutter → natural →
+
+curb → vehicle → rider → person → animal → occlusion , so later classes overwrite earlier ones in overlapping pixels. For the base pass, we use no explicit priority and simply overwrite in prompt order. Example splits: 19 Algorithm 1: Pseudo-label pipeline. 
+
+Input: Front-view images {It}, LiDAR points {Pt}, calibration {Tlidar →cam , K}, SAM3 checkpoints θbase , θ ft , prompt set Π, (optional) ego poses {Tt}
+
+Output: Semantic occupancy ground truth O
+
+Stage 1: 2D pseudo-labels (overcomplete prompts) 
+
+// per frame (front view) 
+
+for each frame t do 
+
+Lbase  
+
+> t
+
+← MergePrompts (SAM3 (It, θ base , Π)) 
+
+Lft  
+
+> t
+
+← MergePrompts (SAM3 (It, θ ft , Π)) 
+
+// priority overwrites 
+
+L2D  
+
+> t
+
+← ClassAwareMerge (Lbase  
+
+> t
+
+, L ft  
+
+> t
+
+)
+
+Stage 2: 3D lift / point cloud colorization 
+
+// project LiDAR points to the front-view image plane 
+
+for each frame t do for each point p ∈ Pt do 
+
+Find a valid projection (u, v ) using Tlidar →cam and K
+
+if valid and (u, v ) in image then 
+
+assign ℓ(p) ← L2D  
+
+> t
+
+(u, v )
+
+Stage 3 (optional): Voting to suppress semantic flicker 
+
+// voxel/KNN majority vote 
+
+Pall ← AccumulateInWorld ({Pt}, {Tt})
+
+Pall ← MajorityVote (Pall )
+
+{Pt} ← SplitBack (Pall , {Tt})
+
+Stage 4: Occupancy GT generation 
+
+// SurroundOcc preprocessing 
+
+O ← SurroundOccPreprocess ({Pt}, calib , poses , boxes )
+
+• Priority layer (finetuned pass): sidewalk , road , crosswalk , curb , gutter , driveway ,
+
+natural , vehicle , rider , person , animal , occlusion 
+
+• Complement (base pass): lawn , wall , building , fence , trees , cyclist , scooter ,
+
+wheelchair , and generic obstacles ( chair , desk , bench , fire hydrant , signboard ,etc.) For each frame, we run both a pretrained base checkpoint and a checkpoint finetuned on our data, producing Lbase and Lft . We start from L = Lbase and overwrite with finetuned predictions where available, except for the cyclist group where the base model is more reliable: L[M] = Lft [M] with 
+
+M = ( Lft ̸ = 0) ∧ (Lbase /∈ C cyclist ). The merged mask L is used as our 2D pseudo-label for lifting to 3D. 
+
+D.2 3D Lift and Point Cloud Colorization 
+
+We lift 2D pseudo-labels to 3D by transforming each LiDAR point to the camera frame with 
+
+Tlidar →cam and projecting it onto the image plane using the calibrated camera model (pinhole or fisheye) and intrinsics K. If the projected pixel (u, v ) lies inside the image, the projection is valid, and the 2D label is not occlusion, we assign the point the semantic label at (u, v ) from the merged 2D mask; otherwise the point is left unlabeled. This produces a per-frame colored point cloud with 14 semantic classes. 
+
+D.3 Voting to Suppress Semantic Flicker 
+
+Because each 3D point is labeled from only one camera view in a single frame, projection noise, occlusions, and temporal inconsistencies in the 2D masks may assign different semantic labels to the 20 same physical region across frames or nearby points (semantic flicker). To mitigate this, we insert an optional voting step before SurroundOcc conversion. We merge all frames in a sequence into a single global point cloud in world coordinates using per-frame poses Tlidar →world , voxelize it with a fixed voxel size (e.g., 0.5 m ), and perform majority voting over the semantic labels inside each voxel (ignoring background). All points in a voxel are reassigned to the winning class. We then split the voted global cloud by frame index, transform each frame back to its LiDAR coordinate system, and overwrite the per-frame colored point clouds with the voted labels. As an alternative, we implement a KNN-based variant that, for each point, queries its k nearest neighbors with a KDTree and replaces the label with the majority class if it exceeds a threshold ratio (default 0.6). The voted point clouds are then fed into the SurroundOcc conversion pipeline. 
+
+D.4 SurroundOcc Format and Occupancy GT 
+
+Starting from the (optionally voted) per-frame semantic point clouds, we convert each sequence to the data layout expected by SurroundOcc and follow its official preprocessing protocol [3]. Dynamic points are associated across time using box identities/tokens, whereas static structure is accumulated in the world frame. For each region, multi-frame points are fused, a surface mesh is reconstructed via Poisson reconstruction, and the mesh is voxelized into a 14-class semantic occupancy grid at a user-defined resolution and 3D range. The resulting labels are provided over a fixed temporal window, and preprocessing can be parallelized across scenes for scalability. 
+
+## E Sidewalk-Specialized SAM3 Fine-tuning 
+
+We fine-tuned SAM3 [12] on our robot-collected sidewalk dataset. The fine-tuned model is used to generate 2D segmentation masks for the 3D reasoning pipeline in this paper. Fine-tuning is necessary for two reasons. First, our visual domain differs from the data used in SAM3 pretraining. Images are captured from a ground-level mobile robot with a fisheye camera, which introduces viewpoint bias, geometric distortion, and a circular lens boundary. The scenes are sidewalk-centered rather than object-centric. These factors lead to degraded performance when the pretrained model is applied directly. Second, our labels differ from those used in general segmentation benchmarks. In addition to stan-dard classes such as pedestrian and vehicle, our task uses a sidewalk-specific taxonomy that includes curb, crosswalk, and gutter, each of which is defined within our task specification. These categories are not consistently defined or separated in existing datasets. Fine-tuning allows the model to align with our task-specific taxonomy. 
+
+E.1 2D Segmentation Dataset 
+
+We sample 6,000 images from a larger corpus collected by a ground-level mobile robot equipped with a fisheye camera. Due to the lens geometry, each image contains a circular black border, which is annotated as an “occlusion” class. In addition, the dataset includes nine semantic classes: pedestrian, vehicle, animal, curb, crosswalk, grass, sidewalk, road, and gutter. Annotations are produced on Segments.ai by around 20 annotators over approximately one month. After filtering low-quality images (e.g., strong blur or severe obstruction), 5,626 images remain. The dataset is split into 4,830 training images and 796 validation images. The split is performed at the robot-unit level, so data collected by the same unit appears in only one split, reducing leakage from repeated routes and visually similar scenes. 
+
+E.2 Implementation Details 
+
+We follow the official roboflow v100 training configuration and adapt it to our COCO-format dataset. Segmentation training is enabled, while the original augmentation and preprocessing 21 Road Sidewalk Crosswalk Gutter Natural Curb Vehicle Person Animal Occlusion   
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> mIoU
+> 0.22
+> 0.42
+> 0.22
+> 0.00
+> 0.53
+> 0.35
+> 0.86 0.84
+> 0.45
+> 0.00
+> 0.70
+> 0.86
+> 0.77
+> 0.63
+> 0.74
+> 0.50
+> 0.90
+> 0.86 0.84
+> 0.87
+> Sam3
+> Our Fine-tuned Model
+
+Figure 10: Per-class macro-averaged mIoU on the validation set for pretrained SAM3 and our fine-tuned model. Scores are computed on merged semantic maps after mask composition. pipeline is retained, including random box perturbation, resizing and padding to 1008, and nor-malization with mean/std = 0.5. COCO masks are decoded in both training and validation. The model is initialized from the released SAM3 pretrained weights. We freeze the language back-bone (learning rate = 0) and train the vision backbone with a constant learning rate of 1.6 × 10 −6.The remaining modules are optimized using AdamW with an inverse-square-root schedule, with a base learning rate of 8 × 10 −5. Training runs for 100 epochs using bfloat16 mixed precision and gradient clipping (max norm = 0.1). Experiments are conducted on 8 GPUs with a batch size of 2 for training and 4 for validation, with validation performed every 5 epochs. Checkpoint selection is based on validation performance. We monitor cgF1 segm and macro mIoU during training. While cgF1 remains stable from epochs 45–80, macro mIoU peaks at epoch 50. The epoch-50 checkpoint is used in subsequent experiments. 
+
+E.3 Qualitative Visualization 
+
+Segmentation is generated independently for each class using class-specific prompts, and the result-ing masks are merged into a single semantic map. Overlapping regions are resolved using a fixed priority order: road and sidewalk at low priority; crosswalk, gutter, grass, and curb at intermediate priority; and vehicle, pedestrian, and animal at higher priority. The occlusion mask is assigned the highest priority. All quantitative results are computed on the merged semantic maps. Figure 10 reports per-class macro mIoU on the validation set for the pretrained SAM3 baseline and our fine-tuned model. For common object prompts such as vehicle and pedestrian, pretrained SAM3 already achieves relatively high mIoU. In contrast, clear improvements are observed after fine-tuning for ground-related classes, including road, sidewalk, crosswalk, and curb. For the gutter, which lies at the boundary between the road and the curb, the pretrained model fails to produce meaningful predictions. Figure 11 presents qualitative results on the validation set. Columns correspond to ground truth, the official pretrained SAM3 model, and our fine-tuned model. The fine-tuned model reduces confusion between adjacent ground classes (sidewalk, road, crosswalk) and improves boundary delineation for curb and gutter. Improvements are also visible near the fisheye boundary and the occlusion region. 22 Figure 11: Qualitative comparison on the validation set. From left to right: ground truth, pretrained SAM3, and our fine-tuned model. 23 Touristy:      
+
+> 576 seqs
+> 53.0%
+> Residential:
+> 357 seqs
+> 32.7%
+> Commercial:
+> 156 seqs
+> 14.3%
+> Daytime:
+> 534 seqs
+> 49%
+> Night:
+> 555 seqs
+> 51%
+> (a) Area Distribution (b) Time Distribution (c) Class Distribution
+
+Figure 12: Data distribution and sample scenes from Sidewalk3D . Our dataset spans diverse domains, regions, and illumination conditions (day/night). For grass surfaces, Figure 11 also illustrates a limitation of the pretrained baseline. It is very likely that in our task, the definition of grass regions includes non-paved ground beyond simply greenery (e.g., exposed soil or sparse vegetation). As a result, the baseline may miss grass areas that are not visually grass-like. 
+
+## F Dataset Collection and Preprocessing Details 
+
+F.1 Sidewalk3D for Urban Perception 
+
+To better train and evaluate our method, we construct a large-scale perception dataset, Sidewalk3D, tailored to micro-mobility in real-world urban environments. As shown in Figure 12(a), the data are collected from three area types: touristy (576 sequences, 53%), residential (357 sequences, 32.7%), and commercial (156 sequences, 14.3%) districts. Each sequence contains 60 synchronized LiDAR–camera frames captured at 2 Hz, together with metric poses. The dataset spans diverse illumination conditions, with 555 sequences (51%) recorded at night and the remainder during the day (Figure 12(b)). The class distribution is summarized in Figure 12(c); most classes are relatively balanced, while cyclists and animals are under-represented. Representative scenes include scenic viewpoints with dense vegetation and many shops (touristy), neighborhoods with abundant grass and houses (residential), and downtown regions with structured roads and dense buildings (commercial). Nighttime sequences are particularly challenging due to low-light conditions and motion-induced trailing (ghosting). Overall, this cross-domain, multi-condition dataset provides a valuable testbed for robust micro-mobility perception. We split the dataset into 928 sequences for training and 103 sequences for validation. For evaluation, we manually refine pseudo-labels in the test scenarios to obtain high-quality occupancy ground truth. Specifically, we refine 18 touristy-nighttime sequences, 16 sequences from commercial districts, and 23 additional touristy-daytime sequences. We first refine the point-cloud semantic segmentation results and then generate occupancy labels accordingly. Figure 13 shows refined examples, including zoomed-in views with the corresponding RGB images, LiDAR semantic points, and the resulting occupancy ground truth. 
+
+F.2 Data Collection 
+
+We collected 10 hours of data from 3 robots driving across different regions. Each robot is equipped with a front camera capturing visual frames at 20 fps, a lidar which captures 3D scene geometry at 
+
+10 fps, and an imu that records linear acceleration and angular velocity at 40 fps. To ensure data diversity, we picked visually distinct regions, namely tourist, residential, and business areas. 
+
+F.3 Data Preprocessing Pipeline 
+
+From the raw data collected, we performed some basic filtering of clips where the robot was static or in an invalid state (e.g., flipped over), in order to remove low-quality scenarios. 24 Figure 13: Refined occupancy ground truth examples. We visualize the manually annotated global point clouds for three representative scenarios: touristy–day, touristy–night, and commercial. For each scenario, the right panel shows a nearby sample with its LiDAR semantic point cloud, the corresponding RGB image, and the refined occupancy ground truth. This figure highlights the unstructured nature and diversity of real-world urban-robot scenes, as well as the large discrepancies across locations and illumination conditions, underscoring the importance of our framework and dataset. Functions Sensors 
+
+> Odometry IMU+Wheel
+> Pseudo -label Generation LiDAR+Camera
+> Occupancy Prediction Camera
+> IMU
+> Wheel
+> LiDAR
+> Camera
+
+Figure 14: Data collection platform. Our mo-bile robot is equipped with a forward-facing RGB camera, a 3D LiDAR, an IMU, and wheel odom-etry for pose estimation. All post-filtered data is split into 30 second scenes at 1 fps. Each scene is fed into an EKF-based algorithm that uses IMU measurements and on-board wheel odometry to recover the robot’s pose. With the robot odometry, we can then create an aggregated scene pointcloud, which can be re-projected onto each camera frame. Using our pseudo-label generation process as detailed in Section 3.3, we obtain initial per-frame seg-mentation masks. 
+
+Sensor Calibration We calibrated the front camera and lidar with standard calibration methods to obtain the camera extrinsics and in-trinsics. A Charuco board with a reflective tape ring was used for this process. 
+
+Time Synchronization Because the camera and imu sensors are not time synchronized, we perform a least squares solve of the time offset by comparing SfM camera poses with IMU-derived poses. We assume the time offset between imu measurements and lidar reads is negligible. 25 Manual Refinement of Pseudo Labels We used an annotation platform to refine the 3D semantic pointcloud pseudolabels, which primarily involved referring to the scene geometry for more smooth and precise labels. Dynamic objects were also carefully tuned in per-frame 3D views. 26

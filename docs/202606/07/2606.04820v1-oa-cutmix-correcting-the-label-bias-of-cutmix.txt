@@ -1,0 +1,346 @@
+Title: OA-CutMix: Correcting the Label Bias of CutMix
+
+URL Source: https://arxiv.org/pdf/2606.04820v1
+
+Published Time: Thu, 04 Jun 2026 01:33:09 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# OA-CutMix: Correcting the Label Bias of CutMix 
+
+Tobias Christian Nauen 1,2, Stanislav Frolov 2, Federico Raue 2,Brian B. Moser 2, Andreas Dengel 1,2 
+
+> 1
+
+RPTU University Kaiserslautern-Landau, Kaiserslautern, Germany  
+
+> 2
+
+German Research Center for Artificial Intelligence (DFKI), Kaiserslautern, Germany 
+
+first_second.last@dfki.de / first.last@dfki.de 
+
+Abstract. CutMix has become the de facto standard mixing augmen-tation, yet its label assignment rests on a flawed assumption: The area of the pasted patch faithfully reflects its semantic contribution to the mixed image. In practice, however, patches frequently land on background regions, assigning label credit to classes whose objects are not visible. The mean discrepancy of the CutMix label and the semantic object area is 
+
+21 .5% . In 17% of samples an image contributes zero visible object pixels yet receives nonzero label weight. We propose Object-Aware CutMix (OA-CutMix), which corrects this bias by replacing the area-based CutMix weight with one derived from precomputed segmentation masks, assigning labels in proportion to the visible object area each image contributes to the mix. The image mixing procedure is left entirely unchanged. We evaluate OA-CutMix against 10+ static and dynamic mixing methods across 4 architectures and 6 datasets. OA-CutMix consistently achieves the highest accuracy over all tasks, outperforming even dynamic mixing methods, but at a fraction of the training-time cost. Improvements are largest for small objects, where the label bias from CutMix is greatest. Thus, correcting the label is sufficient to match or exceed the performance of methods modifying the image mixing algorithm. 
+
+Keywords: Data Augmentation · CutMix · Label bias. 
+
+## 1 Introduction 
+
+Data augmentation is a fundamental technique for training vision models, im-proving generalization by increasing the diversity of the training data without requiring additional images [ 22 , 30 ]. Among augmentation strategies, mix-based methods, which construct new training samples by combining pairs of images, have proven particularly effective [ 31 ,32 ]. CutMix [ 31 ], which pastes a rectangu-lar patch from one image onto another and mixes labels proportionally to the patch area, has become the de facto standard, serving as a core component in state-of-the-art training recipes across a wide range of tasks [10,14,23,24]. Despite this widespread adoption, CutMix rests on a flawed assumption: The area of the pasted patch faithfully reflects its semantic contribution to the mixed image. In practice, however, patches frequently land on background regions, assigning label credit to a class whose object is not actually visible. As we find 
+
+> arXiv:2606.04820v1 [cs.CV] 3 Jun 2026
+
+2 Nauen et al. Dog CutMix : 49 %51 %       
+
+> 26 %74 %32 %68 %52 %
+> 100 %
+> 48 %
+> 60 %40 %100 %
+> 44 %56 %64 %36 %
+> 96 %4%32 %68 %OA-CutMix:
+> CutMix :
+> OA -CutMix :
+> CutMix :
+> OA -CutMix :
+> CutMix :
+> OA -CutMix :
+> CutMix :
+> OA -CutMix :
+> CutMix :
+> OA -CutMix :
+> Tennis Racket Nautilus Bird Mixed Examples Input BClass not Present in Image :
+> Input A
+> 100 %
+
+Fig. 1: CutMix labels are proportional to crop area, not semantic content, causing regression toward 0.5, and ghost labels ( ) where absent classes receive weight. Our object-aware labels track visible object area instead. in Section 3, this bias is both systematic and large: The mean deviation between the CutMix label and the semantically correct object area is 21 .5% , and in 17% 
+
+of CutMix samples an image contributes zero visible object pixels yet receives nonzero label weight, a phenomenon we term ghost labels (see Figure 1). For the smallest 20% of objects, ghost labels even occur in 33% of samples. A parallel line of work addresses noise in CutMix through dynamic mixing .These methods modify the image by selecting more salient regions to paste, so that the mixed image contains more object information and is thus more informative during training [ 9, 12 , 26 , 29 ]. We hypothesize that a primary mechanism behind these improvements is not the change to the image itself, but rather the resulting improvement in label alignment. By selecting object-rich patches, these methods incidentally reduce the label error. To test this, we invert the approach: Rather than modifying the image to fit the label, we modify the label to fit the image. We propose Object-Aware CutMix (OA-CutMix), an object-aware label reweighting strategy for CutMix. Using SAM3 [ 1], we precompute segmentation masks for each training image. At mixing time, we count the visible object -pixels from each image in the mixed result and assign labels proportionally, replac-ing CutMix’s patch-area based label. Since masks are precomputed offline and the image mixing is identical to CutMix. OA-CutMix, in contrast to dynamic methods, introduces no overhead during training. OA-CutMix consistently outperforms 10+ static and dynamic mixing base-lines across architectures and datasets. For DeiT, OA-CutMix outperforms all competing methods across settings. For ResNet, it achieves the best performance over all setting when training from scratch and ranks first in all finetuning settings. This supports our hypothesis: Correcting the label is sufficient to match or exceed the gains of methods modifying the image mixing. In summary, our contributions are: OA-CutMix: Correcting the Label Bias of CutMix 3
+
+– A systematic empirical analysis of CutMix label bias, quantifying its depen-dence on object size and the ghost label phenomenon (Section 3). 
+
+– OA-CutMix, a foreground-aware label reweighting strategy based on SAM3 segmentation masks, requiring no changes to the image mixing procedure and no training-time overhead (Section 4). 
+
+– A comprehensive evaluation against 10+ mixing methods across multiple architectures and datasets, supporting for the hypothesis that label correction alone recovers the gains of dynamic mixing methods (Section 5). 
+
+## 2 Related Work 
+
+Data Augmentation. Data augmentation is a crucial technique for improving model performance and generalization. Traditional augmentation strategies rely on geometric or color-space transforms to increase data diversity without changing the semantic meaning. These simple transformations are usually bundled in more complex policies, like AutoAugment [ 3 ] or RandAugment [ 2 ]. Recently, novel augmentations also incorporate additional knowledge from pretrained models [ 19 , 25 ,21 ]. We refer to [ 22 ,30 ] for a general overview of data augmentation. 
+
+Static Mixing. Static mixing methods mix the information of multiple images, without considering their content. Thus, they are fast and create highly diverse input data, but are likely to output mislabeled samples (see Section 3). The first of these methods was MixUp [ 32 ] which linearly interpolates two images. CutMix [ 31 ] cuts out a rectangular region and pastes it onto another image, with the label as the relative area of both image regions. FMix [ 6] creates dynamic shapes based on Fourier frequencies, and ResizeMix [ 20 ] takes a whole image, sizes it down, and pastes it onto another image. AlignMix [ 27 ] uses the Sinkhorn algorithm to mix aligned regions in feature space. Recently, Decoupled CutMix [ 16 ]identified that the combined label (Equation (1)) introduces competition between mix classes in the cross-entropy loss and added a regularizer for stronger gradients. 
+
+Dynamic Mixing. Most dynamic mixing policies utilize additional infor-mation during training to adjust the mixed images, to feature more salient information from the mixed images. SaliencyMix [ 26 ] and PuzzleMix [ 9] extract saliency information from the trained model to adjust the cutout region to feature more salient information, while Attentive CutMix [ 29 ] uses a pretrained model. SAMix [ 12 ] and its predecessor AutoMix [ 17 ] learn the cutout area based on a co-trained attention mechanism on top of a moving average model. TokenMix [ 15 ]uses patch-based and SnapMix [ 8] CAM weights [ 33 ] of the current image view to reweight the label. All of these methods have in common that they trade additional computations in the form of forward passes to convey more high-quality information to the trained model. Despite these advances, CutMix is still used routinely [ 10 ,23 , 24 ] and often outperforms more complex policies in practice [ 14 ]. Our approach, OA-CutMix, combines the advantages of both static and dynamic mixing methods. By using precomputed segmentation masks, we retain the training-speed of static mixing, while being able to align the labels to the mixed images, like dynamic mixing methods. These masks, compared to saliency, 4 Nauen et al. 0.0 0.2 0.4 0.6 0.8 1.0               
+
+> 1CutMix
+> mean=0.681
+> median=0.694
+> 0.0 0.2 0.4 0.6 0.8 1.0
+> 1oa
+> mean=0.610
+> median=0.681
+> 0.0 0.2 0.4 0.6 0.8 1.0
+> |CutMix oa |
+> mean=0.219
+> median=0.176
+
+Fig. 2: Distribution of CutMix labels (left), our object-aligned labels (center), and distribution of their difference (right). Samples are often dominated by one class (see the object-aligned labels; center), which is not reflected in λCutMix .CAM, or attention weights, have the advantage of being traceable through single-image data augmentation policies, since they do not depend on the specific view of an image. They are also object-specific, covering the object without leaking into the background, preventing the creation of ghost labels (see Section 3), and do not suffer from typical biases, like the exploitation of background-object correlation. 
+
+## 3 Rethinking CutMix Labels 
+
+CutMix [ 31 ] is a data augmentation method that constructs a mixed training sample by cutting a rectangular patch from one image and pasting it onto another. Formally, given two images xA and xB with one-hot labels yA and yB , a box 
+
+B = ( x1, x 2, y 1, y 2) is sampled within the image boundaries. The mixed image is defined as ˜x = (1 − 1B) ⊙ xA + 1B ⊙ xB with mixed label 
+
+˜y = λCutMix · yA + (1 − λCutMix ) · yB , (1) where λCutMix = 1 − (x2−x1)( y2−y1) 
+
+> HW
+
+is the fraction of pixels retained from xA. This patch-area based ratio is the label assignment strategy across CutMix variants. The core premise of λCutMix is that the fraction of image area occupied by a patch is a faithful proxy for its semantic contribution to the mixed image. This assumption breaks down whenever the pasted patch contains background pixels rather than object pixels, which is a common case rather than the exception. Using SAM3 [ 1] to extract foreground object masks, we define λoa as the fraction of total visible object pixels belonging to xA in the mixed image (Equation (6)). Figure 2 shows the distributions of λCutMix , λoa , and their absolute difference 
+
+|λCutMix − λoa |. While λCutMix clusters around its expected value, λoa follows a different distribution, with substantially more mass near 1.0 and 0.0, reflecting the fact that the pasted patch frequently contributes little to no foreground content or, conversely, may cover the target image’s object. The mean absolute difference between the two is 21 .5% , with a tail extending beyond 0.5. Additionally, λCutMix 
+
+and λoa correlate only moderately ( r = 0 .587 ), and the median λoa lies consistently below the diagonal for λCutMix ≤ 0.7 (Figure 3), indicating a systematic bias where CutMix overestimates the label contribution of the pasted image. OA-CutMix: Correcting the Label Bias of CutMix 50.0 0.5 1.0     
+
+> CutMix
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> oa
+> oa =CutMix
+> median( oa |CutMix )
+> 1000
+> 2000
+> 3000
+> Samples
+
+Fig. 3: 2D-histogram (color) of λCutMix 
+
+and λoa . λCutMix over-estimates objects inside small and outside large crops. 0.00 0.25 0.50 0.75 1.00 
+
+> Relative object size
+> 0.0
+> 0.4
+> 0.8
+> | CutMix  oa | mean
+> 200
+> 400
+> 600
+> Samples
+
+Fig. 4: Distribution of label misalign-ment given object size. Misalignment is larger for images with small objects. The bias becomes most pronounced in cases where the pasted patch contains no foreground pixels at all, yet CutMix still assigns nonzero label weight to the corresponding class. We term these ghost labels (see Figure 1), as the model is asked to predict a class for which there is no visual evidence in the image. For ImageNet, this occurs in 13 .3% of all CutMix samples for image B (the pasted image), with a mean label weight of 15 .3% . The symmetric case, where image A’s object is entirely covered by B’s patch, occurs in 3.7% of samples, with a mean weight of 45 .4% still assigned to the now-absent class. For the smallest 20% of objects, ghost labels even occur 33% of the time, while for the smallest 10% it’s already 40% . Together, these cases represent a substantial fraction of training samples where the soft label is not merely imprecise but categorically incorrect. Figure 4 shows the label misalignment |λCutMix − λoa | as a function of object size across both images. Images with small objects exhibit a mean label misalign-ment of ≈ 28% , while large objects that fill most of the frame approach zero misalignment, since when an object is small relative to the image, a randomly placed patch is likely to land mostly on background, making the area-based label a poor approximation of the semantic content actually present. Conversely, when an object dominates the image, area and foreground coverage are approximately equivalent and the two labels converge. This suggests that the label bias intro-duced by CutMix is not uniformly distributed across classes or datasets, but is concentrated precisely in the settings where accurate label assignment matters most: small, fine-grained objects where inter-class distinctions are subtle. The foregoing analysis points to a straightforward remedy: Replace λCutMix 
+
+with λoa at label assignment time, while leaving the image mixing procedure unchanged. This requires no change to the mixed image and no additional hyperparameters, only a semantics-aware reweighting of the soft label. 
+
+## 4 Object-Aware CutMix 
+
+Object-Aware CutMix (OA-CutMix) is a novel label assignment strategy for CutMix that assigns labels based on the visible object area in the combined image, rather than the area of the patch. Concretely, OA-CutMix uses the same 6 Nauen et al. 
+
+rectangular patch mixing as CutMix, but replaces the area-based label weight 
+
+λCutMix with an object-aware one λoa (Equation (6)), like in Figure 1. OA-CutMix consists of two components: offline mask generation and online label reweighting. 
+
+Mask Generation. We use SAM3 [ 1] to segment the class object in each training image prior to training, using the class label to guide segmentation. Concretely, we use the prompt “a <class name>, <hypernym>” to increase the sensitivity of segmentations. For ImageNet-based datasets, we derive the hypernym from the WordNet hierarchy; for CIFAR, we use the coarse category name and for fine-grained datasets, we use the global object type (for example 
+
+“bird” for CUB200). Since SAM3 benefits from higher-resolution inputs, we upscale images whose long side is smaller than 224 pixels before segmentation and rescale the resulting mask back to the original resolution. To handle varying detection confidence across images, we adopt an adaptive thresholding strategy. Let tmax (x) be the maximum detection score produced by SAM3 for a given image. We include all detections above the threshold 
+
+t∗(x) = max(0 .01 , min( tmax (x), 0.5)) , (2) which ensures that confidently detected objects (with tmax (x) ≥ 0.5) are seg-mented at a strict threshold, while weaker detections are retained at a relaxed threshold down to 0.01 . All binary masks above t∗ are merged via a union opera-tion, so that multiple objects of the same class are included. If SAM3 produces no detection even at t∗ = 0 .01 , no mask is created for that image; its handling during label reweighting is described below. In practice, for ImageNet 80 .9% of images already yield a confident detection at t∗ = 0 .5, while only 1.6% yield no detection at t∗ = 0 .01 . The result is a binary segmentation mask for each image in the dataset, stored offline and loaded alongside images during training. Generating masks for the full TinyImageNet training set takes 152 .1 min on a single H100 GPU ( 657 .4 img/s), which is less than one standard training run with CutMix ( 223 .1 min). The preprocessing cost scales linearly in the number of samples. Since masks are computed once and reused across all experiments, this cost is amortized over subsequent runs and becomes negligible in practice. For convenience, we release our generated masks. 1
+
+Label Reweighting. After having precomputed segmentation masks, we use these to create appropriate labels for CutMix images. Masks are transformed jointly with their corresponding images throughout the augmentation pipeline, preserving spatial alignment across geometric transformations. For a pair of images xA, xB ∈ RH×W ×3 with masks mA, mB ∈ { 0, 1}H×W
+
+and labels yA, yB ∈ RC , we sample a random box B, represented by a binary mask 
+
+MB ∈ { 0, 1}H×W . The mixed image follows the standard CutMix formulation: 
+
+˜x = (1 − MB) ⊙ xA + MB ⊙ xB . (3) Rather than weighting labels by the area of B, we instead weight them by the visible object area contributed by each image. We propose two variants for computing the visible object scores fA and fB . 
+
+> 1https://huggingface.co/datasets/TNauen/Sam3-ImageNet-Segmentations OA-CutMix: Correcting the Label Bias of CutMix 7
+
+Absolute mode: In OA-CutMix/abs, we count the number of visible object pixels visible from each image after mixing: 
+
+fA = ∥(1 − MB) ⊙ mA∥1 , fB = ∥MB ⊙ mB ∥1 . (4) For images without a detected mask, we set m ≡ 0, contributing no object signal. 
+
+Relative mode: OA-CutMix/rel normalizes each object’s count by its total size in the respective image, placing equal emphasis on objects regardless of their size: 
+
+fA = ∥(1 − MB) ⊙ mA∥1
+
+∥mA∥1
+
+, fB = ∥MB ⊙ mB ∥1
+
+∥mB ∥1
+
+. (5) For images without a detected mask, we set m ≡ 1, distributing influence uniformly over the image. Under this convention, if neither image has a detected mask, fA and fB reduce to λCutMix = ∥MB ∥1 
+
+> H×W
+
+and 1 − λCutMix respectively, and OA-CutMix falls back exactly to standard CutMix labels. Given fA and fB (absolute or relative) the object-aware mixing weight is 
+
+λoa = fA
+
+fA + fB
+
+(6) and the object-aware label is ˜yoa = λoa yA + (1 − λoa )yB . By construction, OA-CutMix assigns a weight of 0 whenever the pasted patch contains no object pixels, eliminating the ghost labels identified in Section 3. 
+
+## 5 Experiments 
+
+Experimental Setup. We evaluate OA-CutMix by training ResNet18/50 [ 7] and DeiT-Ti/S [ 23 ] from scratch on CIFAR-100, TinyImageNet, and ImageNet-200, a subset of ImageNet [ 4 ] containing all images from the 200 classes used in TinyImageNet, but at full resolution. We additionally finetune models initialized from publicly available checkpoints on three fine-grained benchmarks: FGVC-Aircraft [ 18 ], Stanford Cars [ 11 ], and CUB-200 [ 28 ]. All methods are evaluated under a standard training recipe combining the respective mixing strategy with RandAugment [ 2]-based augmentation and using identical hyperparameters across methods. Our implementation 2 is based on the OpenMixup [13] framework. 
+
+Mixup Comparison. Tables 1 and 2 compare OA-CutMix against 10+ mixing methods when training DeiT and ResNet models from scratch. For DeiT, OA-CutMix/rel achieves the highest accuracy in all six settings, surpassing both static and dynamic methods while incurring a latency overhead comparable to standard CutMix and remaining more than an order of magnitude faster at train-time than all dynamic alternatives. For ResNet, the picture is more varied: No single method dominates across all settings, with OA-CutMix/rel and PuzzleMix followed by Attentive CutMix achieving the best or second-best result most frequently. Averaged over all settings, OA-CutMix/rel attains the highest 
+
+> 2https://github.com/tobna/oa-cutmix
+
+8 Nauen et al. 
+
+Table 1: Top-1 accuracy when training DeiT from scratch on CIFAR-100, ImageNet-200, and TinyImageNet for 400, 200, and 400 epochs respectively. Latency is the time for mixing one batch of size 128 when using DeiT-S. OA-CutMix in relative mode consistently outperforms all other mixing methods, including dynamic ones, while matching the latency of static methods. 
+
+Method CIFAR-100 ImageNet200 TinyImageNet Mean latency DeiT-Ti DeiT-S DeiT-Ti DeiT-S DeiT-Ti DeiT-S [ms] SnapMix [8] 76 .17 76 .16 81 .09 82 .86 54 .39 56 .09 71 .13 39.98 SAMix [12] 79 .72 79 .48 81 .24 82 .12 55 .46 57 .91 72 .65 88.27 PuzzleMix [9] 78 .32 77 .27 81 .22 82 .75 56 .96 60 .81 72 .89 273.28 TokenMix [15] 78 .42 78 .82 80 .03 82 .66 60 .10 60 .49 73 .42 39.91 Attentive CutMix [29] 79 .49 79 .92 81 .76 83 .70 59 .95 56 .57 73 .56 56.10 Vanilla 66 .46 66 .91 73 .32 74 .56 42 .83 46 .18 61 .71 
+
+ResizeMix [20] 71 .85 70 .80 79 .72 79 .68 50 .50 51 .45 67 .33 1.05 Mixup [32] 72 .58 73 .69 77 .69 79 .18 49 .62 53 .71 67 .74 0.73 FMix [6] 76 .30 73 .76 80 .56 81 .35 54 .41 52 .83 69 .87 6.80 Mixup [32] + CutMix [31] 78 .75 77 .99 81 .24 82 .51 56 .74 60 .36 72 .93 0.70 CutMix [31] 79 .83 79 .14 81 .78 83 .43 61 .08 58 .86 74 .02 0.67 CutMix + decoupled [16] 79 .93 80 .32 81 .90 83 .84 61 .65 61 .53 74 .86 0.67 OA-CutMix/rel 80 .58 80 .42 82 .56 84 .18 62 .82 64 .94 75 .92 1.03 
+
+Table 2: Top-1 accuracy when training ResNet from scratch under the same settings as Table 1. Latency is the time for mixing a batch of size 128 when using ResNet50. OA-CutMix is the only static mixing method to match the performance of dynamic methods, while mixing more than 10 times faster.                                                                                                             
+
+> Method CIFAR-100 ImageNet200 TinyImageNet Mean latency ResNet18 ResNet50 ResNet18 ResNet50 ResNet18 ResNet50 [ms] PuzzleMix [9] 80 .90 81 .20 84 .29 87 .91 57 .71 65 .37 76 .23 301.00 SAMix [12] 80 .89 84 .20 55 .23 59 .96 57 .06 60 .10 66 .24 16.68 SnapMix [8] 79 .81 79 .18 84 .07 87 .57 59 .25 64 .64 75 .75 51.49 Attentive CutMix [29] 79 .34 79 .13 84 .07 87 .54 60 .75 66 .14 76 .16 56.36 Vanilla 77 .27 78 .09 83 .17 86 .81 50 .11 57 .37 72 .14
+> Mixup [32] + CutMix [31] 78 .64 79 .08 83 .80 87 .52 53 .71 59 .92 73 .78 0.67 Mixup [32] 79 .09 79 .76 83 .36 87 .74 54 .08 60 .24 74 .05 0.73 Alignmixup [27] 80 .52 81 .70 83 .73 87 .56 54 .34 59 .56 74 .57 1.98 FMix [6] 78 .92 79 .11 83 .82 87 .47 57 .75 62 .14 74 .87 6.68 ResizeMix [20] 80 .13 79 .81 84 .41 88 .01 56 .04 62 .28 75 .11 0.62 CutMix [31] 79 .26 79 .34 84 .08 87 .74 59 .43 61 .79 75 .27 0.61 CutMix + decoupled [16] 79 .09 79 .27 84 .29 87 .64 59 .88 62 .41 75 .43 0.60 OA-CutMix/rel 79 .79 81 .41 84 .31 88 .19 59 .49 64 .48 76 .28 1.02
+
+mean accuracy, with PuzzleMix as a close second, but at 300 × train-time cost. Even when including the preprocessing and training time, OA-CutMix is as fast as 1.1 training runs with Attentive CutMix and faster than a run with PuzzleMix. Additionally, OA-CutMixalso improves model calibration from 9% ECE to 4.3% ,being the only method to reach sub-5% on average (see supplementary). Table 3 reports results for finetuning on fine-grained datasets. While for DeiT-S, PuzzleMix is the performing best, OA-CutMix/rel is the close second best, with the mixing operation being more than 200 times faster. For ResNet50, OA-CutMix/abs is the best performing method, reaching first place in two and second in one out of the three settings. Notably, dynamic methods that are OA-CutMix: Correcting the Label Bias of CutMix 9
+
+Table 3: Top-1 accuracy when finetuning on three fine-grained benchmarks. Each run is initialized from the same publicly available checkpoint. OA-CutMix achieves the highest mean accuracy, with its four variants occupying the top positions.                                                                                                    
+
+> Method Aircraft Cars CUB200 Mean latency DeiT-S ResNet50 DeiT-S ResNet50 DeiT-S ResNet50 [ms] TokenMix [15] 78 .70 89 .83 80 .69 39.91 Attentive CutMix [29] 78 .46 71 .98 89 .44 76 .78 82 .48 51 .38 75 .09 56.10 PuzzleMix [9] 82 .93 76 .45 91 .21 80 .62 84 .05 59 .08 79 .06 273.28 Vanilla 79 .99 86 .02 88 .92 90 .16 81 .69 9.44 72 .70
+> FMix [6] 76 .93 70 .87 89 .69 77 .04 79 .89 49 .90 74 .05 6.80 CutMix [31] 79 .60 72 .07 89 .14 76 .58 79 .69 49 .62 74 .45 0.67 ResizeMix [20] 78 .43 74 .89 90 .25 80 .36 81 .64 55 .82 76 .90 1.05 CutMix + decoupled [16] 80 .53 86 .23 89 .67 90 .98 80 .00 81 .84 84 .87 0.67 Mixup [32] 79 .84 86 .80 89 .47 91 .00 82 .52 83 .00 85 .44 0.73 Mixup [32] + CutMix [31] 80 .65 86 .65 90 .40 90 .51 82 .50 82 .24 85 .49 0.70 OA-CutMix/rel 82 .42 85 .96 90 .66 91 .00 82 .00 82 .00 85 .67 1.03 OA-CutMix/abs 81 .82 87 .28 90 .61 91 .42 81 .45 82 .71 85 .88 1.01 0.0 0.2 0.4 0.6
+> Relative object size
+> 6
+> 7
+> Accuracy
+> improvement
+
+(a) DeiT-S on TinyImageNet. 0.15 0.20 0.25 0.30 0.35  
+
+> Relative object size
+> 15
+> 20
+> Accuracy
+> improvement
+
+(b) ResNet50 on FGVC-Aircraft. 
+
+Fig. 5: Accuracy improvement (p.p.) of training with OA-CutMix over CutMix, compared to object size. The adjusted labels of OA-CutMix are especially benefi-cial for images with smaller objects, precisely where the label error is largest. competitive when training from scratch are substantially weaker when finetuning ResNet. We also find that MixUp outperforms CutMix in the finetuning setting, which might be the result of the pretraining of the public checkpoints including Mixup, making it a natural fit during finetuning. To validate the claim of Section 3, we partition the test sets into equal-sample bins by object size and measure the per-bin accuracy improvement of training with OA-CutMix over CutMix. Figure 5 shows that the accuracy gain of OA-CutMix is largest for small objects, mirroring the misalignment profile of Figure 4. This confirms that improvements delivered by OA-CutMix are concentrated precisely where CutMix’s area-based label assignment is most misaligned. 
+
+Ablations. When comparing OA-CutMix’s modes, relative mode outperforms absolute mode when training from scratch (Table 4), while absolute mode has a slight edge when finetuning ResNet (Table 3). We hypothesize that relative mode benefits from normalizing object sizes, which is more important when training from scratch on datasets with high intra-class size variation. Combin-ing OA-CutMix with the decoupled loss regularizer of [ 16 ] does not improve over standard cross-entropy loss. This contrasts with standard CutMix labels, 10 Nauen et al. 
+
+Table 4: Method ablation. OA-CutMix/rel leads for training from scratch and finetuning DeiT, while OA-CutMix/abs is competitive for finetuning ResNet.                                                   
+
+> Method DeiT-S ResNet50 CIFAR-100 ImageNet200 Aircraft CUB200 CIFAR-100 ImageNet200 Aircraft CUB200 CutMix [31] 79 .14 83 .43 79 .60 79 .69 79 .34 87 .74 72 .07 49 .62
+> CutMix + decoupled [16] 80 .32 83 .84 80 .53 80 .00 79 .27 87 .64 86 .23 81 .84
+> OA-CutMix/abs + decoupled 80 .09 83 .96 82 .12 81 .45 80 .54 87 .90 86 .86 82 .67
+> OA-CutMix/abs 80 .78 83 .68 81 .82 81 .45 80 .35 87 .47 87 .28 82 .71
+> OA-CutMix/rel + decoupled 80 .97 84 .06 81 .58 81 .71 79 .05 88 .11 86 .44 82 .36
+> OA-CutMix/rel 80 .42 84 .18 82 .42 82 .00 81 .41 88 .19 85 .96 82 .00
+
+Table 5: Ablation of mask quality. Masks are progressively degenerated to isolate the contribution of positional and shape information.                                                                       
+
+> Method Masks Pos. Size absolute mode relative mode CUB200 TinyImageNet CUB200 TinyImageNet DeiT-S ResNet50 DeiT-S ResNet50 DeiT-S ResNet50 DeiT-S ResNet50 CutMix [31] ✗79 .69 49 .62 58 .86 61 .79 79 .69 49 .62 58 .86 61 .79
+> CutMix + decoupled [16] ✗80 .00 81 .84 61 .53 62 .41 80 .00 81 .84 61 .53 62 .41
+> OA-CutMix Inter-Class Mix ✗✗80 .48 81 .12 61 .16 62 .50 80 .79 81 .34 62 .50 63 .39
+> Intra-Class Mix ✗∼81 .14 81 .08 61 .32 62 .64 81 .24 81 .41 62 .05 63 .39
+> bounding box ✓✗81 .01 81 .98 63 .30 64 .27 81 .00 82 .10 64 .04 63 .96
+> SAM3 ✓✓81 .45 82 .71 63 .69 65 .53 82 .00 82 .00 64 .94 64 .48
+> annotations ✓✓81 .19 82 .64 80 .86 81 .98
+
+where the regularizer reliably helps, suggesting that the decoupled loss primarily compensates for label inaccuracies that OA-CutMix already corrects. Table 5 ablates the sensitivity of OA-CutMix to mask quality by progressively degrading the masks used for label reweighting. Replacing SAM3 masks with bounding boxes, retaining spatial position but discarding shape information, recovers roughly two thirds of the gain over the CutMix baseline, confirming that positional information is already informative. Shuffling masks within a class further degrades performance, as masks no longer correspond to the correct image but still encode class-level shape and size statistics; shuffling across classes degrades performance further still. Taken together, these results show a monotonic relationship between mask quality and accuracy, while also demonstrating that OA-CutMix is robust to imperfect segmentation. Interestingly, SAM3-generated masks outperform the human annotations available for CUB200. We attribute this to the coarseness of these annotations [ 28 ] compared to SAM3’s output quality. Localizing the bird in an image is straightforward for SAM3 and its masks are more precise than the annotations provided in the dataset. 
+
+## 6 Conclusion & Limitations 
+
+We have identified and quantified a systematic label bias in CutMix. Since mix-ing weights are assigned by patch area rather than by visible object content, a substantial fraction of training samples carry incorrect soft labels, with the problem most acute for small objects. To address this, we proposed OA-CutMix, OA-CutMix: Correcting the Label Bias of CutMix 11 
+
+which replaces the area-based label with one derived from precomputed segmen-tation masks. Experiments across four architectures and six datasets confirm that OA-CutMix consistently improves over CutMix and matches or exceeds dynamic alternatives that are an order of magnitude slower during training. The accuracy gain correlates directly with object size, mirroring the label error profile. These results support our hypothesis: The gains of dynamic mixing can be largely recovered by only aligning the label to the static-mixed image. 
+
+Limitations. OA-CutMix inherits a dependency on SAM3 for mask genera-tion, which requires a one-time offline preprocessing step. Additionally, perfor-mance might degrade for settings where SAM3 mask quality degrades, due to low or biased data in its training set, as reflected in our mask quality ablation. 
+
+Acknowledgements 
+
+This work was funded by the Carl-Zeiss Foundation under the Sustainable Embedded AI project (P2021-02-009) and by the BMFTR project Albatross (funding code 16IW24002). All compute was done thanks to the Pegasus cluster at DFKI Kaiserslautern. 
+
+## References 
+
+1. Carion, N., Gustafson, L., Hu, Y.T., Shoubhik, Hu, R., Suris, D., Ryali, C., Alwala, K.V., Khedr, H., Huang, A., Lei, J., Ma, T., Guo, B., Kalla, A., Marks, M., Greer, J., Wang, M., Sun, P., Rädle, R., Afouras, T., Mavroudi, E., Xu, K., Wu, T.H., Zhou, Y., Momeni, L., Hazra, R., Ding, S., Vaze, S., Porcher, F., Li, F., Li, S., Kamath, A., Cheng, H.K., Dollár, P., Ravi, N., Saenko, K., Zhang, P., Feichtenhofer, C.: Sam 3: Segment anything with concepts (Nov 2025) 2. Cubuk, E.D., Zoph, B., Shlens, J., Le, Q.V.: Randaugment: Practical automated data augmentation with a reduced search space. In: International Conference on Neural Information Processing Systems. Curran Associates Inc. (2020) 3. Cubuk, E.D., Zoph, B., Mané, D., Vasudevan, V., Le, Q.V.: Autoaugment: Learning augmentation strategies from data. 2019 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) pp. 113–123 (2019) 4. Deng, J., Dong, W., Socher, R., Li, L.J., Li, K., Fei-Fei, L.: ImageNet: A large-scale hierarchical image database. In: 2009 IEEE Conference on Computer Vision and Pattern Recognition (2009) 5. Guo, C., Pleiss, G., Sun, Y., Weinberger, K.Q.: On calibration of modern neural networks. In: International Conference on Machine Learning. PMLR (2017) 6. Harris, E., Marcu, A., Painter, M., Niranjan, M., Prügel-Bennett, A., Hare, J.: Fmix: Enhancing mixed sample data augmentation (2020) 7. He, K., Zhang, X., Ren, S., Sun, J.: Deep residual learning for image recognition. In: IEEE Conference on Computer Vision and Pattern Recognition (2016) 8. Huang, S., Wang, X., Tao, D.: Snapmix: Semantically proportional mixing for augmenting fine-grained data. AAAI Conference on Artificial Intelligence (2021) 9. Kim, J.H., Choo, W., Song, H.O.: Puzzle mix: Exploiting saliency and local statistics for optimal mixup. In: International Conference on Machine Learning (2020) 12 Nauen et al. 10. Kim, S., Im, H., Lee, W., Lee, S., Kang, P.: Robustmixgen: Data augmentation for enhancing robustness of visual–language models in the presence of distribution shift. Neurocomputing 619 , 129167 (Feb 2025) 11. Krause, J., Stark, M., Deng, J., Fei-Fei, L.: 3d object representations for fine-grained categorization. In: 4th International IEEE Workshop on 3D Representation and Recognition (3dRR-13). Sydney, Australia (2013) 12. Li, S., Liu, Z., Wang, Z., Wu, D., Liu, Z., Li, S.Z.: Boosting discriminative visual representation learning with scenario-agnostic mixup (2021) 13. Li, S., Wang, Z., Liu, Z., Tian, J., Wu, D., Tan, C., Jin, W., Li, S.Z.: Openmixup: Open mixup toolbox and benchmark for visual representation learning (2022) 14. Liu, C., Fan, F., Schwarz, A., Maier, A.: Cut to the mix: Simple data augmentation outperforms elaborate ones in limited organ segmentation datasets. Medical Image Computing and Computer Assisted Intervention – MICCAI 2024 pp. 145–154 (2024) 15. Liu, J., Liu, B., Zhou, H., Li, H., Liu, Y.: Tokenmix: Rethinking image mixing for data augmentation in vision transformers. In: European conference on computer vision. pp. 455–471. Springer (2022) 16. Liu, Z., Li, S., Wang, G., Wu, L., Tan, C., Li, S.Z.: Harnessing hard mixed sam-ples with decoupled regularizer. In: Conference on Neural Information Processing Systems – NeurIPS (2023) 17. Liu, Z., Li, S., Wu, D., Liu, Z., Chen, Z., Wu, L., Li, S.Z.: Automix: Unveiling the power of mixup for stronger classifiers. In: European Conference on Computer Vision. pp. 441–458. Springer (2022) 18. Maji, S., Kannala, J., Rahtu, E., Blaschko, M., Vedaldi, A.: Fine-grained visual classification of aircraft. Tech. rep. (2013) 19. Nauen, T.C., Moser, B., Raue, F., Frolov, S., Dengel, A.: Foraug: Recombining foregrounds and backgrounds to improve vision transformer training with bias mitigation (2025) 20. Qin, J., Fang, J., Zhang, Q., Liu, W., Wang, X., Wang, X.: Resizemix: Mixing data with preserved object information and true labels (2020) 21. Rahat, F., Hossain, M.S., Ahmed, M.R., Jha, S.K., Ewetz, R.: Data augmentation for image classification using generative ai. In: Proceedings of the Winter Conference on Applications of Computer Vision (WACV). pp. 4173–4182 (February 2025) 22. Shorten, C., Khoshgoftaar, T.M.: A survey on image data augmentation for deep learning. Journal of Big Data 6(1) (2019) 23. Touvron, H., Cord, M., Douze, M., Massa, F., Sablayrolles, A., Jegou, H.: Training data-efficient image transformers & distillation through attention. In: Meila, M., Zhang, T. (eds.) International Conference on Machine Learning (2021) 24. Touvron, H., Cord, M., Jégou, H.: Deit iii: Revenge of the vit. In: Computer Vision – ECCV 2022. pp. 516–533. Springer Nature Switzerland, Cham (2022) 25. Trabucco, B., Doherty, K., Gurinas, M.A., Salakhutdinov, R.: Effective data aug-mentation with diffusion models. In: International Conference on Learning Repre-sentations – ICLR (2024) 26. Uddin, A.F.M.S., Monira, M.S., Shin, W., Chung, T., Bae, S.H.: Saliencymix: A saliency guided data augmentation strategy for better regularization. International Conference On Learning Representations – ICLR (2021) 27. Venkataramanan, S., Kijak, E., Amsaleg, L., Avrithis, Y.: Alignmixup: Improving representations by interpolating aligned features. In: IEEE/CVF conference on computer vision and pattern recognition (2022) 28. Wah, C., Branson, S., Welinder, P., Perona, P., Belongie, S.: Caltech-ucsd birds 200. Tech. Rep. CNS-TR-2011-001, California Institute of Technology (2011) OA-CutMix: Correcting the Label Bias of CutMix 13 29. Walawalkar, D., Shen, Z., Liu, Z., Savvides, M.: Attentive cutmix: An enhanced data augmentation approach for deep learning based image classification. In: International Conference on Acoustics, Speech and Signal Processing – ICASSP (2020) 30. Xu, M., Yoon, S., Fuentes, A., Park, D.S.: A comprehensive survey of image augmentation techniques for deep learning. Pattern Recognition 137 , 109347 (2023) 31. Yun, S., Han, D., Chun, S., Oh, S.J., Yoo, Y., Choe, J.: Cutmix: Regularization strategy to train strong classifiers with localizable features. In: 2019 IEEE/CVF International Conference on Computer Vision – ICCV (2019) 32. Zhang, H., Cisse, M., Dauphin, Y.N., Lopez-Paz, D.: mixup: Beyond empirical risk minimization. In: International Conference on Learning Representations (2018) 33. Zhou, B., Khosla, A., Lapedriza, A., Oliva, A., Torralba, A.: Learning deep features for discriminative localization. In: IEEE Conference on Computer Vision and Pattern Recognition – CVPR (2016) 
+
+## A Training Setup & Implementation 
+
+Table 6: Dataset specific parameters 
+
+Dataset Training Samples Resolution Pretrained Epochs Batch Size CIFAR-100 50 000 32 ResNet, 224 DeiT ✗ 400 100 
+
+TinyImageNet 100 000 64 ✗ 400 256 
+
+ImageNet200 258 758 224 ✗ 200 256 
+
+FGVC-Aircraft 6 667 224 ✓ 200 32 
+
+Stanford Cars 8 144 224 ✓ 200 32 
+
+CUB200 5 994 224 ✓ 200 16 
+
+Table 7: Data augmentation pipeline 
+
+Training from Scratch Finetuning Resize RandomResizedCrop RandomResizedCrop RandomHorizontalFlip RandomHorizontalFlip RandAugment ColorJitter 
+
+All models are trained using PyTorch. For datasets trained from scratch (CIFAR-100, TinyImageNet, ImageNet200), we use ResNet with SGD (momen-tum 0.9) at a learning rate of 0.1 and DeiT with AdamW at 10 −3, training for 400 epochs on the smaller datasets and 200 on ImageNet200. For fine-grained datasets requiring transfer learning (FGVC-Aircraft, Stanford Cars, CUB200), models are initialized from ImageNet-pretrained weights and fine-tuned with reduced learning rates ( 0.002 for ResNet and 10 −4 for DeiT) for 200 14 Nauen et al. 
+
+epochs. All runs use a cosine annealing schedule without restarts. Data augmen-tation follows two pipelines depending on the training regime: scratch training applies RandomResizedCrop , RandomHorizontalFlip , and RandAugment , while fine-tuning substitutes RandAugment with ColorJitter and prepends a Resize 
+
+step to resolution 256 . Tables 6 and 7 present our hyperparameters. All baselines were implemented by openmixup 3 [ 13 ]. All training schedule hyperparameters were the same between methods and all method-specific hyper-parameters were taken from the original papers and the openmixup defaults in case a paper did not adequately specify hyperparameters. 
+
+## B Ghost Label Analysis 0.2 0.4 0.6 0.8 1.0      
+
+> CutMix
+> Ghost A (3.7% of samples)
+> mean=0.454
+> median=0.451
+> 0.0 0.2 0.4 0.6 0.8
+> 1CutMix
+> Ghost B (13.3% of samples)
+> mean=0.153
+> median=0.115
+
+Fig. 6: Distribution of spurious label weights assigned to ghost images. Ghost B (pasted patch contributes no visible object pixels) occurs in 13 .3% of samples with a mean spurious weight of 15 .3% . Ghost A (image A’s object is entirely covered by the patch) occurs in 3.7% of samples yet still receives a mean label weight of 45 .4% .We provide a detailed analysis of the ghost label phenomenon. Figure 6 shows the distribution of the spurious label weight assigned in such cases. Ghost B, where the pasted patch contributes no visible object pixels, occurs in 13 .3% of samples, with a mean spurious weight of 15 .3% . The complementary Ghost A case, where image A’s object is entirely covered by the pasted patch, occurs in 
+
+3.7% of samples, yet still receives a mean label weight of 45 .4% , meaning the model is routinely asked to assign more than half its predictive probability to a class with no visual evidence in the image. Figure 7 further shows that ghost labels are not uniformly distributed across the dataset: For the smallest objects (bottom decile), ghost labels occur in approximately a third of CutMix samples, decreasing monotonically to near zero for large objects that fill the frame. Taken together, these figures show that for small-object classes, CutMix’s area-based label assignment is not merely imprecise but often represents completely missing information. OA-CutMix eliminates ghost labels by construction, assigning a weight of zero whenever no object pixels are visible. 
+
+> 3
+
+https://github.com/Westlake-AI/openmixup OA-CutMix: Correcting the Label Bias of CutMix 15 0 20 40 60 80 100 
+
+> Object size percentile
+> 0%
+> 10%
+> 20%
+> 30%
+> 40%
+> Ghost label rate [%]
+
+Fig. 7: Ghost label rate as a function of object size percentile. For the smallest objects, ghost labels occur in nearly half of CutMix samples, decreasing mono-tonically to zero for large objects that dominate the frame. 
+
+## C Model Calibration 
+
+Table 8: Expected Calibration Error (ECE, ↓) of ResNet models trained from scratch. Settings follow Table 1 of the main paper. OA-CutMix achieves the best mean ECE across both architectures, improving over CutMix by a large margin. 
+
+Method CIFAR-100 ImageNet200 TinyImageNet Mean latency ResNet18 ResNet50 ResNet18 ResNet50 ResNet18 ResNet50 [ms] PuzzleMix [9] 1.10 4.05 17 .09 15 .86 9.70 5.11 8.82 301.00 Attentive CutMix [29] 8.53 12 .26 9.13 5.86 7.51 8.84 8.69 56.36 SnapMix [8] 3.10 5.73 7.71 5.79 8.90 5.82 6.17 51.49 Mixup [32]+CutMix [31] 11 .54 6.46 17 .79 17 .99 16 .30 3.44 12 .25 0.67 Mixup [32] 11 .64 6.03 15 .21 17 .58 16 .62 5.99 12 .18 0.73 Vanilla 5.60 8.20 4.06 4.39 18 .26 15 .46 9.33 
+
+CutMix [31] 6.14 11 .08 13 .26 11 .84 6.93 5.26 9.08 0.61 FMix [6] 4.15 4.12 10 .60 14 .47 7.10 5.44 7.65 6.68 CutMix + decoupled [16] 2.88 7.28 11 .68 10 .76 6.47 5.48 7.42 0.60 Alignmixup [27] 4.00 3.61 4.33 1.85 2.18 20 .81 6.13 1.98 ResizeMix [20] 1.93 5.17 6.61 3.94 5.40 7.18 5.04 0.62 OA-CutMix/abs + decoupled 1.74 5.63 7.83 5.19 3.14 5.58 4.85 1.01 OA-CutMix/rel 2.56 3.69 7.00 4.97 3.49 6.87 4.76 1.02 OA-CutMix/rel + decoupled 2.77 4.53 5.80 4.67 3.18 7.02 4.66 1.00 OA-CutMix/abs 1.79 3.37 7.26 5.88 3.11 4.19 4.27 1.05 
+
+Beyond classification accuracy, we evaluate model calibration via the Expected Calibration Error (ECE) [ 5], which measures the alignment between predicted confidence and empirical accuracy. Since OA-CutMix produces more semantically accurate soft labels during training, we expect models trained with OA-CutMix to be better calibrated than those trained with standard CutMix. Tables 8 and 9 confirm this hypothesis: OA-CutMix variants achieve the lowest mean ECE for 16 Nauen et al. 
+
+Table 9: Expected Calibration Error (ECE, ↓) of DeiT models trained from scratch. Settings follow Table 2 of the main paper. OA-CutMix achieves the lowest mean ECE across all evaluated methods, including dynamic ones, with OA-CutMix (absolute) reaching a mean ECE of 3.27 compared to 8.75 for CutMix. 
+
+Method CIFAR-100 ImageNet200 TinyImageNet Mean latency DeiT-Ti DeiT-S DeiT-Ti DeiT-S DeiT-Ti DeiT-S [ms] SnapMix [8] 9.07 7.92 18 .05 14 .44 4.69 6.72 10 .15 39.98 Attentive CutMix [29] 5.96 5.61 9.83 6.84 5.87 11 .74 7.64 56.10 TokenMix [15] 5.74 5.18 13 .41 8.36 8.01 4.45 7.52 39.91 PuzzleMix [9] 9.69 4.38 12 .17 2.42 4.13 3.81 6.10 273.28 Vanilla 7.56 19 .07 3.47 11 .19 17 .01 30 .36 14 .78 
+
+CutMix [31] 7.77 8.92 13 .15 11 .06 5.61 5.98 8.75 0.67 ResizeMix [20] 7.49 4.64 6.55 5.19 11 .18 9.57 7.44 1.05 Mixup [32]+CutMix [31] 8.86 7.33 11 .73 7.16 4.08 5.31 7.41 0.70 FMix [6] 3.98 4.89 7.38 5.66 8.91 10 .63 6.91 6.80 Mixup [32] 6.49 6.36 7.88 6.02 4.02 5.42 6.03 0.73 CutMix + decoupled [16] 3.04 2.43 2.40 2.57 3.88 13 .96 4.71 0.67 OA-CutMix/rel + decoupled 4.76 3.83 2.80 1.69 3.99 10 .53 4.60 1.11 OA-CutMix/rel 3.77 3.39 2.21 1.66 3.60 9.15 3.96 1.03 OA-CutMix/abs + decoupled 3.01 4.35 3.26 0.77 2.84 7.75 3.66 1.01 OA-CutMix/abs 3.18 3.78 2.73 0.68 2.31 6.94 3.27 1.01 
+
+both ResNet and DeiT, outperforming CutMix by a large margin — from 9.08 
+
+to 4.27 for ResNet and from 8.75 to 3.27 for DeiT. Notably, OA-CutMix also outperforms dynamic methods on calibration despite their more complex mixing procedures. The improvement is consistent across datasets and architectures, and a slightly larger for absolute mode, hinting at a tradeoff between accuracy and calibration between the two modes.

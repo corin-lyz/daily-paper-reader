@@ -1,0 +1,429 @@
+Title: TRIG: Trajectory-Rig Decoupled Metric Geometry Learning
+
+URL Source: https://arxiv.org/pdf/2607.05801v1
+
+Published Time: Wed, 08 Jul 2026 00:26:36 GMT
+
+Number of Pages: 9
+
+Markdown Content:
+# TRIG: Trajectory-Rig Decoupled Metric Geometry Learning 
+
+Lizhou Liao 1,†,∗, Wentao Xu 1,2,†, Handong Wang 1, Lirong Yang 1,‡, Shuai Yang 1, Weiwei Liu 1, Chang Huang 1
+
+Abstract — Vision-centric autonomous driving requires accu-rate metric geometry and ego-motion estimation from syn-chronized multi-camera observations. Recent visual geometry models show strong performance in pose estimation, depth prediction, and 3D reconstruction, but are not tailored to rigid multi-camera driving systems. They often encode camera poses as entangled representations, in which time-varying ego-motion and static camera-rig geometry are jointly modeled, limiting the utilization of vehicle-side geometric priors. We propose Trajectory-Rig Decoupled Metric Geometry Learning (TRIG), a geometry perception framework for autonomous driving. TRIG factorizes camera poses into ego-trajectory and camera-rig components, enabling separate modeling of ego-motion and static multi-camera topology. We introduce decoupled pose encoding and supervision, which separately constrain trajectory evolution and rig geometry for metric-consistent learning. Moreover, sparse Temporal–Spatial attention separates cross-camera interaction from temporal aggregation, reducing global attention cost while preserving geometric reasoning. Experi-ments on five autonomous driving benchmarks show that TRIG achieves state-of-the-art performance in pose estimation, metric depth prediction, and 3D reconstruction. 
+
+I. I NTRODUCTION 
+
+Vision-centric autonomous driving has emerged as a scal-able and cost-effective paradigm for perception, thereby garnering escalating scholarly and industrial interest [1]–[5]. A fundamental challenge in this field is recovering accurate metric scene geometry and ego-motion from synchronized multi-camera observations under rigid camera configurations. Accurate geometric understanding is essential for down-stream applications such as planning [2], simulation [6], and online HD map construction [7]. Recent visual geometry models have demonstrated impressive capabilities in camera pose estimation, depth prediction, and 3D reconstruction from image sequences [8]–[10]. However, directly applying these models to autonomous driving remains challenging due to rigid multi-camera configurations and the requirement for accurate metric geometry. Despite substantial progress, reliable metric geometry es-timation remains challenging for multi-camera autonomous driving. Existing methods are largely image-driven, using vehicle-side geometry, such as odometry and camera-rig calibration, only as auxiliary inputs or supervision rather than explicit representations for reasoning [8], [10]–[12].   
+
+> †These authors contributed equally to this work.
+> 1Carizon. E-mail:
+
+{lizhou.liao, intern.wentao.xu, handong.wang, lirong.yang, shuai.yang, weiwei.liu, chang.huang }@carizon.com .
+
+> 2ShanghaiTech University. All work was done during the internship.
+> ∗Corresponding author.
+> ‡Project leader.
+
+Fig. 1: Radar chart of method rankings across five benchmarks. Radial axes represent datasets; rank scores (0– 1, higher is better) are averaged over five sub-metrics (Acc, Comp, AbsRel, δ1.25 , AUC@ 30 ◦). As a result, metric scale is implicitly inferred from vi-sual appearance, causing scale ambiguity and limited geo-metric accuracy. Recent geometry-prior methods [13]–[15] are mainly designed for generic visual scenes and treat images as independent observations, thus under-exploiting the structural constraints of synchronized rigid camera rigs. A camera pose in autonomous driving naturally consists of a time-varying ego trajectory and a static camera-rig configuration. However, existing methods typically entangle them into a unified pose representation, making it difficult to separately exploit motion dynamics and camera topology. Such entanglement further leads to costly global reasoning or post-processing, e.g., Sim(3) alignment, for consistent metric-scale reconstruction [16], [17]. Motivated by this observation, we propose Trajectory-Rig Decoupled Metric Geometry Learning (TRIG) , a metric-aware perception framework for multi-camera autonomous driving. TRIG explicitly decouples time-varying ego trajec-tories from static camera-rig configurations, allowing motion dynamics and camera topology to be modeled independently yet optimized jointly. This decoupling naturally supports an asymmetric temporal–spatial design. The model continu-ously aggregates trajectory cues but only sparsely injects rig constraints, leading to better scalability and computational efficiency. arXiv:2607.05801v1 [cs.CV] 7 Jul 2026 Fig. 2: Overview of the proposed TRIG framework. Given synchronized multi-camera images, TRIG decouples pose information into static rig priors and time-varying trajectory priors. Image tokens extracted by a frozen DINO backbone are fused with these priors through sparse Temporal–Spatial Attention. Rig Blocks are sparsely inserted at layers 0, 4, 11, 17, and 23 to inject cross-camera rig constraints, while Traj Blocks capture temporal motion across frames. The original VGGT DPT and camera heads produce the final depth and pose predictions, and are omitted for clarity. Our contributions are three-fold:  
+
+> •
+
+We propose TRIG , a trajectory-rig decoupled frame-work that leverages vehicle-side geometric priors for direct metric-coordinate geometry learning in multi-camera autonomous driving.  
+
+> •
+
+We develop a decoupled pose modeling strategy ,including pose encoding and pose supervision, to sep-arately handle ego-motion and camera-rig geometry, improving metric scale consistency, pose stability, and global reconstruction quality.  
+
+> •
+
+We introduce Sparse Temporal–Spatial Attention (STSA) , which performs continuous trajectory aggre-gation and sparse rig-constraint injection for scalable cross-camera geometric reasoning. Experiments on five benchmarks show that TRIG achieves state-of-the-art results on metric depth prediction, 3D reconstruction, and ego-pose estimation. II. R ELATED WORK 
+
+A. Visual Geometry Learning for Autonomous Driving 
+
+Vision-based 3D geometry perception has become an essential component of autonomous driving systems, aiming to recover scene structures from multi-camera observations. Early approaches mainly focused on depth estimation from monocular or multi-view images, providing dense depth maps but only partial 3D understanding of the scene ge-ometry [18]–[20]. To achieve a more comprehensive rep-resentation, recent methods have explored bird’s-eye-view (BEV) perception and 3D occupancy prediction, where the environment is represented in a unified 3D space using voxel-based formulations. These approaches have demonstrated strong performance in autonomous driving perception tasks, including semantic occupancy and scene understanding [1], [21], [22]. However, voxel-based representations suffer from dis-cretization errors and limited spatial resolution, which makes it challenging to accurately model fine-grained geometric structures. Recently, general visual geometry models have advanced 3D reconstruction by predicting dense point maps from image sequences [8], [9], [11], [12], [23]. Despite their impressive reconstruction capability, most existing ap-proaches estimate geometry in relative coordinate systems and require additional scale recovery [8], [10]–[13], [23]. In contrast, TRIG focuses on directly learning metric geometry for rigid multi-camera driving systems by explicitly leveraging vehicle-side geometric priors. 
+
+B. Geometry-aware Visual Models with Camera Priors 
+
+Existing autonomous driving perception methods com-monly exploit calibrated camera geometry through explicit projection using camera intrinsics and extrinsics. Conven-tional autonomous driving perception methods typically rely on explicit camera calibration and geometric projection, such as transforming image features into BEV space using intrinsics and extrinsics parameters [1], [20]. While effective under fixed camera configurations, these approaches often depend heavily on camera-specific assumptions, limiting their generalization to different sensor setups [24]. Recent visual geometry models have explored learning camera poses, depth, and 3D structures jointly from image sequences [8]–[10], [23]. Some approaches further incor-porate geometric priors, such as camera poses, depth con-straints, or external measurements, to improve reconstruction quality [13], [14], [25]. However, most existing methods treat camera poses as a unified geometric condition, without explicitly separating different sources of geometric variation. In multi-camera autonomous driving systems, camera poses naturally contain both time-varying ego-motion trajectories and camera-rig configurations, which provide complemen-tary geometric information. TRIG explicitly decouples these two factors to better exploit vehicle-side priors for metric geometry learning. Moreover, existing visual geometry models commonly rely on global self-attention to capture interactions among multi-view and multi-frame inputs, resulting in quadratic computational complexity with increasing input size. Recent works explore efficient attention or streaming strategies to improve scalability [11], [16], [17], [26]. Different from these approaches, TRIG introduces a sparse temporal–spatial attention mechanism that separates cross-camera spatial in-teraction from temporal feature aggregation, reducing com-putational overhead while maintaining effective geometric reasoning. III. P RELIMINARY 
+
+We adopt VGGT [8] as the basic visual geometry foun-dation model, which predicts camera parameters and dense scene geometry from multi-view images in a feed-forward manner. Given an image set I, a visual encoder first extracts image features and converts them into spatial tokens f . These tokens are combined with learnable camera tokens c and register tokens r to form the input representation of the transformer encoder: 
+
+(ˆ c, ˆr, ˆf ) = E(c, r, f ). (1) The encoder is constructed upon the Alternating Attention (AA) mechanism, which performs local and global feature interactions to capture both intra-view structures and cross-view geometric relationships. After several AA blocks, the refined spatial tokens are decoded by dense prediction heads to estimate depth maps and 3D point maps, while the camera tokens are used to regress camera intrinsics and extrinsics. Through this unified architecture, VGGT achieves joint estimation of scene geometry and camera motion from image sequences. IV. M ETHODOLOGY 
+
+This section details TRIG , a trajectory-rig decoupled framework for multi-camera geometry learning: 1) decoupled pose encoding for metric-aware geometry learning, 2) sparse temporal–spatial attention for efficient long-horizon recon-struction, and 3) decoupled pose supervision for decoupling motion and rig constraints during training. 
+
+A. Overview of TRIG 
+
+TRIG targets multi-camera geometry learning from atemporal sequence of synchronized surround-view images. Given an input clip I = {Ict | t = 1 , . . . , T, c = 1 , . . . , C },where T and C denote the number of frames and cameras, respectively, each image Ict ∈ R3×H×W is associated with a camera pose P tw←c ∈ SE (3) . Here, P tw←c denotes the pose of camera c in the world coordinate system at time 
+
+t. Instead of using P tw←c as a single entangled condition, TRIG factorizes it into an ego-trajectory component and a camera-rig component: 
+
+P tw←c = P tw←ego P c
+
+> ego ←c
+
+, (2) where P tw←ego ∈ SE (3) is the ego-vehicle pose in the world coordinate system at time t, and P cego ←c ∈ SE (3) is the fixed extrinsic transform from camera c to the ego-vehicle coordinate system. As shown in Fig. 2, the pose factors are encoded into trajectory and rig priors, 
+
+zt 
+
+> traj
+
+= ϕtraj (P tw←ego ), zc 
+
+> rig
+
+= ϕrig (P c
+
+> ego ←c
+
+) (3) and injected into the image tokens extracted by a frozen visual backbone. TRIG alternates Rig Blocks and Traj Blocks to separately model cross-camera spatial constraints and cross-frame temporal motion cues. This decoupled design enables sparse temporal–spatial interaction over the token set 
+
+X = {xct } ∪ { zc
+
+> rig
+
+} ∪ { zt
+
+> traj
+
+}. (4) where xct denotes the image tokens of view c at time t. The resulting features X are fed into the original VGGT DPT head and camera head for depth and camera prediction, re-spectively. These heads are kept unchanged and thus omitted in Fig. 2 for clarity. 
+
+B. Decoupled Pose Encoding 
+
+TRIG factorizes multi-camera poses into two complemen-tary components: a temporal ego-motion trajectory and a static camera-rig configuration. Given the input pose se-quence P ∈ RT ×NC ×9, we use the reference camera to represent the shared trajectory, i.e., Ptraj = {P t, 0}Tt=1 ,and encode it as zt 
+
+> traj
+
+= MLP traj (P t, 0). Similarly, the camera rig is extracted from the reference timestamp as 
+
+Prig = {P 0,c }NC
+
+> c=1
+
+, and each camera-specific configuration is encoded by zc 
+
+> rig
+
+= MLP rig (P 0,c ). The final geometry-aware pose embedding is obtained by additive composition: 
+
+zt,c  
+
+> geo
+
+= zt 
+
+> traj
+
++ zc
+
+> rig
+
+. (5) This decomposition separates dynamic ego-motion from static multi-camera geometry, yielding structured geometric priors for surround-view reasoning. Instead of replacing the original VGGT camera tokens, we inject the decoupled pose representation through residual adaptation. Specifically, the geometry feature is projected by a lightweight adapter and added to the original camera token: 
+
+˜zt,c  
+
+> cam
+
+= zt,c  
+
+> cam
+
++ MLP adapter (zt,c 
+
+> geo
+
+), (6) Inputs DVGT TRIG (Ours) 
+
+> KITTI
+> DDAD
+
+Fig. 3: Qualitative comparison of 3D reconstruction. TRIG produces sharper geometry, cleaner object boundaries, and more consistent large-scale scene structure than DVGT across representative driving scenes. where zt,c  
+
+> cam
+
+denotes the camera token produced by VGGT. Following OmniVGGT [13], the adapted camera tokens are inserted into each frame attention block during trans-former refinement, enabling progressive geometric condition-ing while preserving the original visual representation. 
+
+C. Sparse Temporal–Spatial Attention 
+
+Given the decoupled pose tokens, TRIG introduces asparse temporal–spatial attention mechanism to aggregate ge-ometric cues from long-horizon synchronized multi-camera sequences. Let X ∈ RB×S×P ×D denote the input token tensor, where S = T × NC , P is the number of tokens per observation, and D is the token dimension. Each observation contains image tokens and the injected decoupled pose tokens. In contrast to applying dense self-attention over all tokens at every layer, TRIG factorizes token interactions into three structured patterns: frame attention, global attention, and temporal attention, which respectively model local visual refinement, cross-camera communication, and ego-motion consistency. 
+
+a) Structured attention.: Frame attention performs self-attention independently within each camera observation by reshaping X into (BS ) × P × D. This operation refines local image and pose tokens without mixing information across different cameras or timestamps. Global attention flattens all observations and tokens into B × (SP ) × D,enabling communication across all frames and cameras. It provides the interaction path required for cross-camera geometric consistency. Temporal attention first reshapes X
+
+into B×T ×NC ×P ×D, and then applies self-attention along each camera stream with shape (BN C ) × (T P ) × D. This design aggregates long-range temporal cues while preserving camera-specific viewing directions. 
+
+b) Rig and trajectory blocks.: Based on these atten-tion patterns, we define two structured blocks. The Rig Block applies frame attention followed by global attention, i.e., RigBlock( X ) = GlobalAttn(FrameAttn( X )) . Since the token set contains rig-aware pose tokens, the global interaction is conditioned on the fixed camera layout, en-couraging cross-view geometric consistency. The Traj Block applies frame attention followed by temporal attention, i.e., 
+
+TrajBlock( X ) = TempAttn(FrameAttn( X )) . Unlike the Rig Block, the Traj Block constrains long-range aggregation to intra-camera observations, enabling temporal reasoning under ego-motion while preserving view-specific geometry. 
+
+c) Sparse temporal–spatial composition.: The trans-former employs Traj Blocks across all layers to facilitate con-tinuous temporal modeling, while sparsely interleaving Rig Blocks to enable global multi-camera interaction. Following the design of VGGT [17], we inject Rig Blocks at indices 
+
+Lrig = {0, 4, 11 , 17 , 23 } within our 24-layer transformer. The layer update is formulated as: 
+
+X l+1 =
+
+(
+
+RigBlock l TrajBlock l(X l), l ∈ L rig ,
+
+TrajBlock l(X l), l / ∈ L rig , (7) This sparse composition effectively decouples cross-camera spatial interaction from temporal feature aggregation, pre-serving essential geometric information flow while avoiding the prohibitive computational cost of global attention at every layer. Overall, this sparse composition separates cross-camera spatial interaction from temporal feature aggrega-tion, thereby preserving essential geometric interaction paths while reducing unnecessary dense token interactions. 
+
+D. Decoupled Pose Supervision 
+
+To align the training objective with the trajectory-rig factorization of TRIG, we supervise relative poses instead of TABLE I: Quantitative 3D reconstruction results across diverse datasets. The “Metric” column indicates whether a method predicts metric scale directly ( ✓) or requires post-hoc Sim(3) alignment with sparse LiDAR depth via the Umeyama [27] algorithm to recover the metric scale ( ✗). Unlike prior methods, our TRIG predicts metric scale directly and requires no post-hoc alignment. The top-2 results are highlighted as first and second.                                                                                                                  
+
+> Method Metric KITTI NuScenes Waymo OpenScene DDAD Acc ↓Comp ↓Acc ↓Comp ↓Acc ↓Comp ↓Acc ↓Comp ↓Acc ↓Comp ↓
+> OmniVGGT [13] ✗1.111 1.116 1.310 1.703 1.443 1.423 2.704 3.598 2.535 4.317 CUT3R [28] ✗0.965 2.050 2.054 2.603 3.391 4.216 1.864 2.258 2.774 4.677 VGGT [8] ✗1.154 1.294 1.300 1.498 1.641 2.053 1.422 1.496 1.741 2.473 MapAnything [14] ✓1.880 1.014 4.499 4.886 10.205 8.494 3.353 4.303 8.015 8.493 StreamVGGT [16] ✗3.421 2.196 2.588 2.414 3.630 3.275 2.304 2.098 2.717 2.788 Driv3R [29] ✗0.864 1.083 0.742 1.345 0.800 1.311 0.884 1.693 0.950 1.259 DVGT [12] ✓0.846 1.468 0.457 0.494 1.714 2.216 0.402 0.481 0.751 1.009
+> TRIG (Ours) ✓0.333 0.351 0.314 0.361 0.509 1.192 0.380 0.434 0.587 0.842
+
+TABLE II: Quantitative metric depth results across diverse datasets. We report the Absolute Relative Error (Abs Rel ↓)and the inlier ratio δ1.25 (↑), where δ1.25 denotes the percentage of pixels with δ < 1.25 . The top-2 results are highlighted as first and second.                                                                                                         
+
+> Method KITTI NuScenes Waymo OpenScene DDAD AbsRel ↓δ1.25 ↑AbsRel ↓δ1.25 ↑AbsRel ↓δ1.25 ↑AbsRel ↓δ1.25 ↑AbsRel ↓δ1.25 ↑
+> OmniVGGT [13] 0.067 0.949 0.175 0.440 0.096 0.737 0.304 0.655 0.225 0.591 CUT3R [28] 0.217 0.659 0.332 0.547 0.291 0.562 0.278 0.593 0.870 0.315 VGGT [8] 0.158 0.801 0.243 0.729 0.176 0.811 0.241 0.719 0.613 0.476 MapAnything [14] 0.188 0.725 0.568 0.269 0.507 0.211 0.486 0.240 1.971 0.195 StreamVGGT [16] 0.362 0.469 0.412 0.540 0.339 0.584 0.319 0.607 0.838 0.415 Driv3R [29] 0.164 0.784 0.189 0.721 0.168 0.770 0.188 0.740 0.185 0.740 DVGT [12] 0.136 0.849 0.069 0.953 0.106 0.921 0.049 0.971 0.152 0.837
+> TRIG (Ours) 0.046 0.967 0.051 0.974 0.094 0.889 0.041 0.977 0.109 0.903
+
+TABLE III: Quantitative camera pose results across di-verse datasets. The top-2 results are highlighted as first and second.                                          
+
+> Method AUC@30 ◦↑
+> KITTI NuScenes Waymo OpenScene DDAD OmniVGGT 88.9 38.5 44.7 33.9 34.5 CUT3R 51.8 43.5 50.1 34.7 48.6 VGGT 96.9 87.8 87.7 66.3 92.8 MapAnything 90.6 85.0 82.8 65.6 87.0 StreamVGGT 95.8 86.2 85.6 74.1 91.9 DVGT 87.6 86.5 86.4 74.7 95.1
+> TRIG (Ours) 99.1 96.6 97.7 69.5 97.4
+
+absolute camera poses. Relative transformations are invariant to the global coordinate frame and directly capture geo-metric consistency among observations. We divide relative pose pairs into two groups: cross-camera pairs at the same timestamp for rig supervision, and cross-time pairs within the same camera stream for trajectory supervision. 
+
+a) Rig supervision.: Rig supervision constrains the relative geometry between cameras at the same timestamp. For a camera pair (ci, c j ) at time t, the predicted and ground-truth relative transformations are computed as 
+
+ˆT (k),t ci←cj = ˆT (k),t,c i
+
+> w→c
+
+ ˆT (k),t,c j
+
+> w→c
+
+−1
+
+,T tci←cj = T t,c i
+
+> w→c
+
+ T t,c j
+
+> w→c
+
+−1 .
+
+(8) Given that cameras share an identical ego pose at each timestamp, this term primarily constrains the fixed rig layout and promotes cross-camera consistency. 
+
+b) Trajectory supervision.: Trajectory supervision models ego-motion along each camera stream. For camera c
+
+and timestamps (ti, t j ), we define 
+
+ˆT (k),c ti←tj = ˆT (k),t i,c w→c
+
+ ˆT (k),t j ,c w→c
+
+−1
+
+,T cti←tj = T ti,c w→c
+
+ T tj ,c w→c
+
+−1 .
+
+(9) With fixed camera identity, this relative transformation mainly reflects ego-vehicle motion across time. For both rig and trajectory pairs, we adopt the relative pose loss from 
+
+π3 [10], which combines translation regression and rotation geodesic error on SO (3) . Unlike π3’s unified relative pose supervision, TRIG partitions relative pairs according to the trajectory-rig decomposition, yielding Lrig for cross-camera geometry and Ltraj for ego-motion. Following VGGT, we also supervise the focal components in the predicted pose encoding and apply all pose losses to each refinement stage with stage-dependent weights. The final pose objective combines the rig, trajectory, and focal losses. This decoupled pose supervision explicitly separates cross-camera rig constraints from temporal ego-motion con-straints, improving geometric consistency over unified pose supervision. V. E XPERIMENTS 
+
+We conduct extensive experiments to evaluate the perfor-mance of TRIG. To ensure fair comparison, we follow the experimental setup of DVGT, including benchmark selection TABLE IV: Ablation studies on TRIG. All metrics are averaged over DDAD, KITTI, NuScenes, and Waymo.                                     
+
+> Variant Abs Rel ↓δ1.25 ↑Acc. ↓Comp. ↓
+> Full model (Ours) 0.069 0.943 0.411 0.577
+> Training loss
+> VGGT pose loss 0.076 0.923 0.447 0.722
+> Geometry attention
+> w/o Rig block 0.163 0.871 0.881 0.908 Frame-only 0.167 0.863 0.907 0.924 Global-only 0.155 0.874 0.834 0.880 3-layer rig block 0.113 0.901 0.606 0.776
+> Pose prior
+> OmniVGGT pose prior 0.090 0.924 0.533 0.691
+
+TABLE V: Runtime comparison. Measured on NuScenes using a single NVIDIA L20 GPU.                    
+
+> Cams ×Steps Frames Ours VGGT-style attn. Speedup ↑
+> 6×21 126 10.65s 15.18s 1.43 ×
+> 6×40 240 24.87s 42.86s 1.72 ×
+
+and evaluation protocols. Unless otherwise specified, base-line results are taken from the DVGT paper, and TRIG is evaluated under the same setting. Detailed dataset statistics, implementation hyperparameters, and formal metric defini-tions are provided in the Appendix. 
+
+A. 3D Reconstruction and Metric Depth 
+
+3D Reconstruction. As summarized in Table I, TRIG establishes a new state-of-the-art in world-coordinate 3D Accuracy and Completeness across all five benchmarks. It consistently outperforms both general visual geometry models (e.g., CUT3R [28], VGGT [8]) and driving-specific architectures (e.g., DVGT [12]). This quantitative dominance is visually corroborated in Fig. 3, where TRIG yields sig-nificantly sharper geometries and cleaner boundaries than DVGT. Crucially, unlike image-only foundation models that re-quire post-hoc Umeyama [27] alignment to recover scale, TRIG leverages metric pose priors to define a deterministic scale reference, allowing its normalized predictions to be directly restored to metric scale without additional alignment. While recent prior-guided models (OmniVGGT [13], MapA-nything [14]) attempt similar metric-aware predictions, they degrade severely in complex multi-camera setups (e.g., Ma-pAnything’s 4.303 Completeness error on OpenScene). This exposes the vulnerability of entangled priors in wide-baseline surround-view configurations with impoverished appearance cues. By routing temporal ego-motion and static camera-rig topology through isolated pathways, TRIG constructs a stable metric reference frame, ensuring geometric stability where purely visual evidence falls short. 
+
+Metric Depth. Table II demonstrates that the structural ad-vantages of our decoupled representation seamlessly transfer to dense depth estimation. TRIG dominates the primary met-ric error (Abs Rel) and inlier ratio ( δ1.25 ), achieving substan-tial margins over DVGT (the strongest prior-free baseline) on TABLE VI: Pose ablation under multiple angular thresh-olds. All AUC scores are averaged over DDAD, KITTI, NuScenes, and Waymo.                                  
+
+> Variant Pose AUC ↑
+> @5 ◦@10 ◦@15 ◦@30 ◦
+> Full model (Ours) 86.92 92.56 94.77 97.69
+> Training loss
+> VGGT pose loss 76.33 85.58 89.53 94.19
+> Geometry attention
+> w/o Rig block 85.59 91.40 93.81 96.63 Frame-only 86.02 91.78 94.13 96.57 Global-only 86.07 91.73 94.07 96.71 3-layer rig block 85.54 91.47 93.90 96.70
+> Pose prior
+> OmniVGGT pose prior 84.65 88.90 92.50 96.40
+
+highly dynamic datasets like KITTI and NuScenes. On Waymo, while TRIG yields a marginally lower strict 
+
+δ1.25 than DVGT, it maintains a superior global Abs Rel. Because the hard-threshold δ1.25 is disproportionately sen-sitive to isolated boundary artifacts, our consistently lower overall Abs Rel and 3D Completeness (Table I) firmly prove that TRIG achieves a robust global metric consensus rather than overfitting to specific local thresholds. Ultimately, this joint improvement in depth and reconstruction confirms that decoupling dynamic and static poses is a potent geometric catalyst. 
+
+Ego-Pose Estimation. Following VGGT [8], we evaluate relative camera pose accuracy using AUC@ 30 ◦. Table III shows TRIG secures the highest pose accuracy across KITTI, NuScenes, Waymo, and DDAD. Compared to DVGT, TRIG yields profound improvements (e.g., elevating KITTI from 87.6 to 99.1). Furthermore, TRIG circumvents the instability exhibited by recent prior-guided models. Whereas entangled prior injection causes OmniVGGT to degrade severely under wide-baseline configurations—dropping to 38.5 AUC on NuScenes—TRIG maintains a substantially higher AUC of 96.6. These gains are critical for autonomous driving, where drifting poses render downstream reasoning unusable. Rooted in our decoupled supervision strategy, TRIG iso-lates inter-frame temporal constraints (ego-trajectory) from intra-frame spatial constraints (camera-rig). This explicitly optimizes ego-motion without corrupting the static surround-view layout. Consequently, TRIG delivers highly accurate, drift-resistant metric poses, ensuring the reconstructed scene is directly actionable in a driving-oriented 3D coordinate system. 
+
+B. Ablation Studies 
+
+We conduct extensive ablations across the DDAD, KITTI, NuScenes, and Waymo benchmarks to validate TRIG’s core architectural propositions. As summarized in Tables IV, VI and VII, we jointly assess metric depth, 3D reconstruction, and ego-pose estimation to capture holistic geometric im-pacts. TABLE VII: Dataset-Specific Attention Ablation. Performance breakdown of the Sparse Temporal–Spatial Attention (STSA) module. We report metric depth (Rel = Abs Rel, δ = δ1.25 ), 3D reconstruction (Acc, Comp), and ego-pose (AUC = AUC@30 ◦) across four driving datasets. Best results are in bold .                                                                                                                               
+
+> Variant DDAD KITTI NuScenes Waymo Rel ↓δ↑Acc ↓Comp ↓AUC ↑Rel ↓δ↑Acc ↓Comp ↓AUC ↑Rel ↓δ↑Acc ↓Comp ↓AUC ↑Rel ↓δ↑Acc ↓Comp ↓AUC ↑
+> Full model (Ours) 0.099 0.915 0.559 0.767 98.85 0.041 0.977 0.291 0.306 99.44 0.051 0.974 0.317 0.356 96.29 0.085 0.906 0.478 0.879 96.19
+> w/o Rig block 0.157 0.888 0.839 0.894 97.41 0.115 0.953 0.630 0.532 99.37 0.248 0.757 1.256 1.133 95.21 0.133 0.887 0.800 1.073 94.53 Frame-only 0.157 0.886 0.844 0.898 96.19 0.113 0.953 0.627 0.529 99.34 0.260 0.733 1.329 1.179 95.47 0.137 0.882 0.826 1.089 95.27 Global-only 0.146 0.900 0.773 0.875 97.36 0.106 0.955 0.589 0.510 99.14 0.248 0.743 1.268 1.128 95.31 0.120 0.899 0.706 1.006 95.02 3-layer rig block 0.122 0.901 0.636 0.792 97.37 0.089 0.951 0.438 0.475 99.08 0.145 0.857 0.717 0.901 95.28 0.097 0.895 0.634 0.934 95.05
+
+Sparse Temporal–Spatial Attention. We evaluate Sparse Temporal–Spatial Attention (STSA) with four variants: w/o Rig block , Frame-only , Global-only , and 3-layer rig block ,where Rig blocks are inserted at layers 0, 11, and 23. As shown in Table IV, removing Rig blocks increases the reconstruction Accuracy error from 0.411 to 0.881. Frame-only performs even worse, suggesting that local refinement alone is insufficient for preserving global geometry. Although 
+
+Global-only and 3-layer rig block improve upon these weaker baselines, both remain inferior to full STSA, highlighting the importance of jointly modeling temporal and cross-view interactions. Table VII further demonstrates consistent improvements across DDAD, KITTI, NuScenes, and Waymo. In addition, Table V shows that STSA is more efficient than VGGT-style attention, achieving 1.43 × and 1.72 × speedups on 6×21 and 6×40 NuScenes inputs. 
+
+Decoupled Prior Encoding. To demonstrate the superiority of our decoupled strategy, we replace our distinct trajec-tory and rig embeddings with the entangled OmniVGGT pose prior. Table IV shows marked deterioration across all metrics, with point completeness worsening from 0.577 to 0.691. These results provide empirical support for our central hypothesis: ego-motion and camera-rig calibration represent intrinsically heterogeneous sources of information that war-rant separate modeling. By routing them through decoupled pathways, TRIG smoothly integrates multi-modal geometric constraints without corrupting the foundation model’s origi-nal feature space. 
+
+Decoupled Pose Supervision. To assess our decoupled pose supervision, we replace it with the standard VGGT’s pose loss. As shown in Tables IV and VI, this replacement con-sistently degrades both pose accuracy and geometric quality. Our full model substantially improves Pose AUC under all angular thresholds, especially from 76.33 to 86.92 at 5◦,indicating stronger resistance to pose drift. Meanwhile, it also improves dense depth and reconstruction, reducing Abs Rel from 0.076 to 0.069 and Completeness error from 0.722 to 0.577. These results indicate that separately supervising temporal ego-motion and spatial rig constraints is more effective than using a VGGT pose loss. VI. C ONCLUSION 
+
+In this paper, we introduced TRIG, a novel metric geome-try perception framework for multi-camera autonomous driv-ing. By explicitly decoupling dynamic ego-trajectories from static camera-rig topologies, TRIG overcomes the geometric entanglement and scale ambiguity inherent in existing visual foundation models. To achieve this, we proposed a decoupled prior encoding module, a highly efficient Sparse Temporal– Spatial Attention (STSA) mechanism, and a decoupled pose supervision strategy. Extensive experiments across five large-scale driving benchmarks demonstrate that TRIG establishes new state-of-the-art standards in metric depth prediction, 3D scene reconstruction, and ego-pose estimation, providing a robust, scale-deterministic solution for end-to-end 3D scene understanding. APPENDIX 
+
+We train our model on 5 public autonomous driving datasets. All datasets provide calibrated camera intrinsics and extrinsics, along with ground-truth depth and pose annota-tions. Table A.1 summarizes the key statistics of each dataset. 
+
+A. Training Objective 
+
+The full training objective of TRIG consists of three com-ponents: a depth loss, a point map loss, and the Trajectory– Rig Decoupled pose loss: 
+
+L = Ldepth + Lpmap + Lpose , (A.1) where the pose loss is further decomposed into a trajectory loss and a rig loss: 
+
+Lpose = Ltraj + Lrig . (A.2) The trajectory loss supervises the inter-frame relative poses of the front camera, while the rig loss supervises the inter-camera relative poses at the reference timestamp t=0 . This decoupled formulation encourages the model to separately learn temporal ego-motion and static multi-camera rig ge-ometry, reducing the ambiguity between vehicle motion and camera extrinsics. 
+
+B. Model Architecture 
+
+TRIG adopts a ViT-L backbone pretrained with DINOv2 as the image encoder. The image encoder is kept frozen during training to preserve the general-purpose visual repre-sentation learned from large-scale pretraining and to reduce the optimization cost. Given an input sequence with T
+
+timestamps and NC cameras, the images are first encoded into visual tokens by the frozen ViT-L encoder. To inject explicit pose-aware structure into the network, we separately encode the trajectory pose and the rig pose using TABLE A.1: Training dataset statistics. All datasets are sampled at 2 Hz and resized to 960 ×540 (Waymo: 
+
+576 ×384 ). Model input resolution is 518 ×294 .                        
+
+> Dataset # Cameras # Frames Original Res. Weight NuScenes 6∼22K 1600 ×900 6Waymo 5∼157K 1920 ×1280 6KITTI 2∼20K 1242 ×375 5DDAD 6∼13K 1936 ×1216 6OpenScene 8∼513K 1920 ×1080 77
+
+two linear projection layers. Both projections map their cor-responding pose representations into a 1024-dimensional la-tent space. The trajectory embedding has shape (T, 1, 1024) ,while the rig embedding has shape (1 , N C , 1024) . We then combine them through broadcasting and summation: 
+
+Epose = Etraj + Erig , (A.3) resulting in a pose embedding of shape (T, N C , 1024) .This embedding provides each camera-view token with both temporal trajectory information and camera-specific rig in-formation. On top of the image encoder, we employ the proposed Sparse Temporal–Spatial Attention (STSA) module for effi-cient feature interaction across time and camera views. STSA consists of two types of transformer blocks:  
+
+> •
+
+Trajectory Block. The trajectory block is the main building block of STSA and is repeated for 24 layers. Each trajectory block first applies frame-level self-attention to aggregate information within each times-tamp, and then performs per-camera temporal atten-tion to model ego-motion over time. This design cap-tures temporal dynamics efficiently while avoiding the quadratic cost of full spatio-temporal attention over all frames and cameras.  
+
+> •
+
+Rig Block. To model cross-camera geometry, we insert rig blocks at selected layers, specifically at indices 
+
+{0, 4, 11 , 17 , 23 }. Each rig block performs global cross-view attention across cameras, enabling the network to aggregate multi-camera spatial information and reason about the static camera rig configuration. During STSA processing, the pose prior is injected into the frame-level attention of each layer, following the spirit of OmniVGGT. This allows the model to condition feature interaction on the decoupled trajectory and rig embeddings, thereby improving its ability to distinguish temporal motion from multi-camera geometric structure. For dense prediction, we follow the design of VGGT and feed intermediate tokens from the 4th, 11th, 17th, and 23rd transformer blocks into a DPT decoder for upsampling. The DPT decoder progressively fuses multi-scale transformer features and produces dense outputs such as depth maps and point maps. 
+
+C. Training Details 
+
+TRIG is trained on multiple public datasets for 40K iterations. We follow the data preprocessing protocol of DVGT. All input images are resized to 518 × 294 , and the patch size of the ViT encoder is 14 × 14 .We use AdamW as the optimizer with a base learning rate of 1 × 10 −4, weight decay of 5 × 10 −2, and betas of (0 .9, 0.95) . Bias and normalization parameters are ex-cluded from weight decay. The learning rate is scheduled by OneCycleLR with cosine annealing, where the warm-up phase takes the first 10% of training iterations. The initial and final learning-rate division factors are both set to 100. Training is performed with DeepSpeed ZeRO-1 optimiza-tion and bfloat16 mixed precision. We apply gradient norm clipping with a threshold of 1.0 for stable optimization. The model is trained on 64 NVIDIA H20 GPUs for approxi-mately six days. We evaluate our method’s performance on three primary tasks: 3D point map reconstruction, metric depth estimation, and ego-pose estimation. 
+
+3D Point Map Reconstruction. Following prior works, we measure overall geometric quality using Accuracy and 
+
+Completeness . Let P = {pi} and G = {gj } denote the sets of valid points from the predicted point map ˆP and the ground truth P , respectively. These metrics are calculated as: 
+
+Accuracy = 1
+
+|P| 
+
+X
+
+> p∈P
+
+min  
+
+> g∈G
+
+∥p − g∥2, (A.4) 
+
+Completeness = 1
+
+|G| 
+
+X
+
+> g∈G
+
+min  
+
+> p∈P
+
+∥g − p∥2, (A.5) where ∥ · ∥ 2 denotes the L2 distance. Accuracy measures how close each predicted point is to the nearest ground-truth point, reflecting reconstruction precision; Completeness measures how well the ground-truth geometry is covered by the prediction, indicating reconstruction recall. Both metrics are evaluated in the world coordinate frame at metric scale, without any post-hoc Sim(3) alignment. 
+
+Metric Depth Estimation. We evaluate per-camera depth using the Absolute Relative Error (Abs Rel) and the inlier ratio δ1.25 . Let Ω be the set of valid pixels with available ground truth, and let u index a pixel within Ω. Given the predicted metric depth D(u) and ground truth Dgt (u), the metrics are defined as: 
+
+Abs Rel = 1
+
+|Ω|
+
+X
+
+> u∈Ω
+
+|D(u) − Dgt (u)|
+
+Dgt (u) , (A.6) 
+
+Acc δ = 1
+
+|Ω|
+
+X
+
+> u∈Ω
+
+I
+
+
+
+max 
+
+ D(u)
+
+Dgt (u) , Dgt (u)
+
+D(u)
+
+
+
+< δ 
+
+
+
+,
+
+(A.7) where I(·) is the indicator function. Abs Rel captures the average proportional error, while δ1.25 measures the fraction of pixels whose predicted depth falls within 25% of the ground truth. 
+
+Ego-Pose Estimation. Following VGGT, we report the 
+
+Area Under the Curve (AUC) at a 30 ◦ threshold. We first compute the Relative Rotation Accuracy (RRA) and Relative Translation Accuracy (RTA) for all frame pairs within a sequence. RRA measures the geodesic distance between the predicted and ground-truth rotation matrices, while RTA evaluates the angular deviation between translation vectors. The accuracy at threshold τ is the percentage of pairs satisfying max(RRA , RTA) < τ , and the final AUC@ 30 ◦
+
+is obtained by integrating this accuracy: 
+
+AUC@30 ◦ = 130 
+
+Z 30 0
+
+Acc( τ ) dτ, (A.8) where Acc( τ ) represents the fraction of camera pairs with both angular errors smaller than τ .ACKNOWLEDGMENTS 
+
+The authors thank Carizon colleagues for their valuable discussions, technical support, and constructive feedback during this work. REFERENCES [1] Z. Li, W. Wang, H. Li, E. Xie, C. Sima, T. Lu, Q. Yu, and J. Dai, “Bev-former: learning bird’s-eye-view representation from lidar-camera via spatiotemporal transformers,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 47, no. 3, pp. 2020–2036, 2024. [2] Y. Hu, J. Yang, L. Chen, K. Li, C. Sima, X. Zhu, S. Chai, S. Du, T. Lin, W. Wang et al. , “Planning-oriented autonomous driving,” in 
+
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , 2023, pp. 17 853–17 862. [3] H. Fu, D. Zhang, Z. Zhao, J. Cui, D. Liang, C. Zhang, D. Zhang, H. Xie, B. Wang, and X. Bai, “Orion: A holistic end-to-end au-tonomous driving framework by vision-language instructed action generation,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , 2025, pp. 24 823–24 834. [4] S. Gao, J. Yang, L. Chen, K. Chitta, Y. Qiu, A. Geiger, J. Zhang, and H. Li, “Vista: A generalizable driving world model with high fidelity and versatile controllability,” Advances in Neural Information Processing Systems , vol. 37, pp. 91 560–91 596, 2024. [5] A. Hu, L. Russell, H. Yeo, Z. Murez, G. Fedoseev, A. Kendall, J. Shotton, and G. Corrado, “Gaia-1: A generative world model for autonomous driving,” arXiv preprint arXiv:2309.17080 , 2023. [6] N. Huang, X. Wei, W. Zheng, P. An, M. Lu, W. Zhan, M. Tomizuka, K. Keutzer, and S. Zhang, “S3gaussian: Self-supervised street gaus-sians for autonomous driving,” in Proceedings of the IEEE Interna-tional Conference on Robotics and Automation (ICRA) , 2026. [7] B. Liao, S. Chen, X. Wang, T. Cheng, Q. Zhang, W. Liu, and C. Huang, “Maptr: Structured modeling and learning for online vectorized hd map construction,” arXiv preprint arXiv:2208.14437 , 2022. [8] J. Wang, M. Chen, N. Karaev, A. Vedaldi, C. Rupprecht, and D. Novotny, “Vggt: Visual geometry grounded transformer,” in Pro-ceedings of the Computer Vision and Pattern Recognition Conference ,2025, pp. 5294–5306. [9] J. Yang, A. Sax, K. J. Liang, M. Henaff, H. Tang, A. Cao, J. Chai, F. Meier, and M. Feiszli, “Fast3r: Towards 3d reconstruction of 1000+ images in one forward pass,” in Proceedings of the Computer Vision and Pattern Recognition Conference , 2025, pp. 21 924–21 935. [10] Y. Wang, J. Zhou, H. Zhu, W. Chang, Y. Zhou, Z. Li, J. Chen, J. Pang, C. Shen, and T. He, “Pi 3: Permutation-equivariant visual geometry learning,” arXiv preprint arXiv:2507.13347 , 2025. [11] X. Jia, Y. Liu, J. You, R. Xia, Y. Hong, and J. Yan, “Drivevggt: Visual geometry transformer for autonomous driving,” arXiv preprint arXiv:2511.22264 , 2025. [12] S. Zuo, Z. Xie, W. Zheng, S. Xu, F. Li, S. Jiang, L. Chen, Z.-X. Yang, and J. Lu, “Dvgt: Driving visual geometry transformer,” in 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2026, pp. 14 658–14 668. [13] H. Peng, H. Li, Y. Dai, Y. Lan, Y. Luo, T. Qi, Z. Zhang, Y. Zhan, J. Zhang, W. Xu et al. , “Omnivggt: Omni-modality driven visual geometry grounded transformer,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2026, pp. 36 485–36 497. [14] N. Keetha, N. M¨ uller, J. Sch¨ onberger, L. Porzi, Y. Zhang, T. Fischer, A. Knapitsch, D. Zauss, E. Weber, N. Antunes et al. , “Mapany-thing: Universal feed-forward metric 3d reconstruction; map-anything. github. io,” in 2026 International Conference on 3D Vision (3DV) .IEEE, 2026, pp. 499–509. [15] H. Lin, S. Chen, J. Liew, D. Y. Chen, Z. Li, G. Shi, J. Feng, and B. Kang, “Depth anything 3: Recovering the visual space from any views,” arXiv preprint arXiv:2511.10647 , 2025. [16] D. Zhuo, W. Zheng, J. Guo, Y. Wu, J. Zhou, and J. Lu, “Streaming 4d visual geometry transformer,” arXiv preprint arXiv:2507.11539 , 2025. [17] K. Deng, Z. Ti, J. Xu, J. Yang, and J. Xie, “Vggt-long: Chunk it, loop it, align it–pushing vggt’s limits on kilometer-scale long rgb sequences,” arXiv preprint arXiv:2507.16443 , 2025. [18] C. Godard, O. Mac Aodha, M. Firman, and G. J. Brostow, “Digging into self-supervised monocular depth estimation,” in Proceedings of the IEEE/CVF international conference on computer vision , 2019, pp. 3828–3838. [19] Z. Murez, T. Van As, J. Bartolozzi, A. Sinha, V. Badrinarayanan, and A. Rabinovich, “Atlas: End-to-end 3d scene reconstruction from posed images,” in European conference on computer vision . Springer, 2020, pp. 414–431. [20] Y. Li, Z. Ge, G. Yu, J. Yang, Z. Wang, Y. Shi, J. Sun, and Z. Li, “Bevdepth: Acquisition of reliable depth for multi-view 3d object detection,” in Proceedings of the AAAI conference on artificial in-telligence , vol. 37, no. 2, 2023, pp. 1477–1485. [21] J. Huang, G. Huang, Z. Zhu, Y. Ye, and D. Du, “Bevdet: High-performance multi-camera 3d object detection in bird-eye-view,” arXiv preprint arXiv:2112.11790 , 2021. [22] X. Tian, T. Jiang, L. Yun, Y. Mao, H. Yang, Y. Wang, Y. Wang, and H. Zhao, “Occ3d: A large-scale 3d occupancy prediction benchmark for autonomous driving,” Advances in Neural Information Processing Systems , vol. 36, pp. 64 318–64 330, 2023. [23] S. Wang, V. Leroy, Y. Cabon, B. Chidlovskii, and J. Revaud, “Dust3r: Geometric 3d vision made easy,” in Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , 2024, pp. 20 697–20 709. [24] L. Peng, Z. Chen, Z. Fu, P. Liang, and E. Cheng, “Bevsegformer: Bird’s eye view semantic segmentation from arbitrary camera rigs,” in 
+
+Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision , 2023, pp. 5935–5943. [25] S. Li, P. Kachana, P. Chidananda, S. Nair, Y. Furukawa, and M. Brown, “Rig3r: Rig-aware conditioning for learned 3d reconstruction,” arXiv preprint arXiv:2506.02265 , 2025. [26] L.-Z. Chen, J. Gao, Y. Chen, K. L. Cheng, Y. Sun, L. Hu, N. Xue, X. Zhu, Y. Shen, Y. Yao et al. , “Geometric context transformer for streaming 3d reconstruction,” arXiv preprint arXiv:2604.14141 , 2026. [27] S. Umeyama, “Least-squares estimation of transformation parameters between two point patterns,” IEEE Transactions on pattern analysis and machine intelligence , vol. 13, no. 4, pp. 376–380, 1991. [28] Q. Wang, Y. Zhang, A. Holynski, A. A. Efros, and A. Kanazawa, “Continuous 3d perception model with persistent state,” in Proceedings of the Computer Vision and Pattern Recognition Conference , 2025, pp. 10 510–10 522. [29] X. Fei, W. Zheng, Y. Duan, W. Zhan, M. Tomizuka, K. Keutzer, and J. Lu, “Driv3r: Learning dense 4d reconstruction for autonomous driving,” arXiv preprint arXiv:2412.06777 , 2024.

@@ -1,0 +1,682 @@
+Title: HSDF-Lane: Height-Aligned Signed Distance Field with Semantic Lane Prior for 3D Lane Detection
+
+URL Source: https://arxiv.org/pdf/2606.31172v1
+
+Published Time: Wed, 01 Jul 2026 00:41:54 GMT
+
+Number of Pages: 35
+
+Markdown Content:
+# HSDF-Lane: Height-Aligned Signed Distance Field with Semantic Lane Prior for 3D Lane Detection 
+
+Jiyong Boo , Byeongin Joung , Hyemin Yang , and Kuk-Jin Yoon ⋆
+
+KAIST, Republic of Korea 
+
+{boojiyong, byeonginjoung, hyemin0806, kjyoon}@kaist.ac.kr 
+
+Abstract. Monocular 3D lane detection plays a critical role in autonomous driv-ing, yet recovering reliable 3D geometry from a single image remains challeng-ing due to inherent depth ambiguity. Prior methods project image features into Bird’s-Eye-View (BEV) space under a flat-ground assumption, causing geomet-ric distortion on real-world roads. Recent methods instead predict explicit height maps to capture non-planar surfaces, but still rely on sparse anchor-based regres-sion and exploit the recovered geometry merely for spatial transformation rather than semantic understanding. To overcome these limitations, we propose HSDF-Lane , which implicitly models the road surface as a Height-aligned Signed Dis-tance Field (HSDF) over a densely sampled 3D feature volume. Through dif-ferentiable rendering, the HSDF jointly produces an accurate height map and surface-aligned features. We further introduce Lane-aware Semantic Positional Encoding (LSPE), which injects a lane-existence prior derived from the surface-aligned features into the transformer queries, coupling geometric structure with semantic guidance. Extensive experiments on the OpenLane benchmark show that HSDF-Lane achieves state-of-the-art performance in both 3D lane detection and height map estimation. The code is available at https://github.com/ JiyongBoo/HSDF-Lane .
+
+Keywords: 3D Lane Detection · Height Estimation · Signed Distance Field 
+
+## 1 Introduction 
+
+3D lane detection is a key perception task for autonomous driving, as it provides es-sential information about road structure, vehicle localization, and trajectory planning. Monocular camera-based research is particularly attractive due to its cost-effective de-ployment and simple sensor configuration, while still providing rich appearance cues for identifying lane markings. Recent advances in deep neural networks have significantly improved visual un-derstanding from monocular images, enabling remarkable progress in 2D lane detec-tion [6,17,18,20,24,31,33,42,45–47,62]. However, these approaches inherently lack the geometry information required for reliable 3D applications. Motivated by the need to recover 3D geometry from monocular images for downstream tasks, monocular 3D lane detection has been extensively studied in recent years. Early works primarily adopted Inverse Perspective Mapping (IPM) to transform image features into Bird’s-Eye-View  
+
+> ⋆
+
+Corresponding author 
+
+> arXiv:2606.31172v1 [cs.CV] 30 Jun 2026
+
+2 Boo et al. Predict  height -aligned    
+
+> signed distance Render height map Dense sampling
+> Directly predict height map
+> from sparse anchor
+> Multi -slope
+> anchor sampling
+> (b) HSDF -Lane (Ours) (a) Slope Anchor based Method Sparse Dense
+
+Fig. 1: Comparison between slope-anchor methods and HSDF-Lane. (a) Previous ap-proaches [34, 35] rely on a small number of predefined slope anchors and directly regress the height map, which leads to sparse sampling and potential geometric misalignment. (b) HSDF-Lane densely samples the vertical space and predicts a height-aligned signed distance from each sample, enabling dense supervision and geometrically consistent rendering. 
+
+(BEV) representations [3, 7, 10, 19, 32, 37, 63]. However, BEV transformations relying on flat-ground assumptions often suffer from severe geometric misalignment on non-planar roads. To alleviate this limitation, subsequent methods introduced depth estima-tion branches or Lift-Splat-Shoot (LSS) [36] mechanisms to lift image features into 3D space [25, 29, 38]. Nevertheless, depth-based lifting remains unstable in far-range regions or rippled surfaces due to the scale ambiguity of monocular depth estimation and the amplification of projection errors during 3D reconstruction. Concurrently, lane query-based methods [26, 28, 39] directly predict 3D lanes from 2D features using 3D positional encoding (PE) to compensate for insufficient geometric cues. Recent approaches, HeightLane [35] and SC-Lane [34], introduce a height map based architecture for monocular 3D lane detection. Unlike depth, which measures the line-of-sight distance from the camera, a height map represents the absolute ver-tical coordinate at each ground-plane location on the BEV grid. The height map-based modeling significantly alleviates geometric inconsistencies in BEV space. However, the framework still approximates complex road geometry using a sparse set of predefined planar anchors. Existing slope anchors rely on planar assumptions, which inherently in-troduce geometric distortion on complex roads. Furthermore, as distance increases, the spatial gaps between these discrete anchors widen significantly, making it inherently difficult to accurately regress the absolute road height, as shown in Fig. 1 (a). To address the limitations discussed above, we propose HSDF-Lane, a novel 3D lane detection framework that combines dense spatial sampling with implicit surface modeling and effective utilization of spatially aligned features. Rather than relying on sparse slope anchors, HSDF-Lane densely samples the scene along the vertical axis to capture complex road surfaces. The resulting volume is modeled with a Height-aligned Signed Distance Field (HSDF), whose differentiable rendering naturally produces both an explicit height map and spatially consistent features, as illustrated in Fig. 1(b). To stabilize the HSDF representation and enforce physically consistent surfaces, a height-directional Eikonal loss is incorporated during optimization. Furthermore, to address the limited semantic exploitation in previous approaches, we introduce Lane-aware Se-HSDF-Lane 3
+
+mantic Positional Encoding (LSPE). Specifically, a lane heatmap predicted from the rendered HSDF features is converted into a semantic embedding, which then aug-ments the height-based positional encoding to provide semantic guidance for queries. By jointly leveraging dense surface representations and semantic priors, HSDF-Lane enables robust height estimation and accurate 3D lane detection. In summary, the main contributions of this paper are as follows: 
+
+• We propose a dense 3D sampling framework with a Height-aligned Signed Dis-tance Field (HSDF) representation and differentiable rendering pipeline, which re-places sparse anchor-based height regression to produce surface-aligned features and an accurate height map. 
+
+• We propose Lane-aware Semantic Positional Encoding (LSPE), which incorporates lane existence probabilities derived from rendered features as semantic priors for transformer queries. 
+
+• Extensive experiments on the OpenLane benchmark demonstrate that HSDF-Lane significantly improves both height map estimation and 3D lane detection accuracy, achieving state-of-the-art performance. 
+
+## 2 Related Work 
+
+2.1 3D Lane Detection 
+
+Motivated by the rapid progress in 2D lane detection [6, 8, 12, 14, 15, 17, 18, 20, 24, 31, 33,40,42,43,45–47,51,53,54,61,62,65], recent works increasingly explore monocular 3D lane detection to meet the demands of autonomous driving. Early approaches [7, 10, 19, 37] primarily utilized IPM to transform front-view (FV) features into a BEV representation. However, the planar-ground assumption and discretization inherent in IPM often introduce geometric bias and information loss. To mitigate such limitations, subsequent studies [3, 49, 63] incorporate learnable view transformations or feature alignment mechanisms. PersFormer [3] employs Deformable Cross-Attention (DCA) for spatial feature transformation, while BEV-LaneDet [49] introduces a virtual camera module to improve robustness under data augmentation. PVALane [63] proposes view-agnostic feature alignment to reduce the discrepancy between FV and BEV representations. Other studies [21, 38] adopt Lift-Splat-Shoot (LSS) [36] as an alternative strategy for constructing BEV representations. Recently, GLane3D [32] achieves strong performance among IPM-based methods by introducing non-uniform BEV sampling and a graph-based lane assembly scheme. To overcome the geometric misalignment introduced by BEV transformations, anchor-based and query-based methods [1, 13, 26, 28] have been proposed to predict 3D lanes directly from FV images. Recent studies further improve direct 3D lane prediction through lane-aware attention and enhanced lane representations [2, 39]. In particular, SparseLaneSTP [39] demonstrates notable gains by leveraging spatio-temporal priors and a novel curve representation. Recognizing the importance of geometric cues, several approaches explicitly incor-porate depth estimation. SALAD [55] reconstructs 3D lanes by jointly predicting depth and lane segmentation in the image plane. More recently, Depth3DLane [29] distills 4 Boo et al. 
+
+knowledge from foundation depth models [57], and DB3D-L [25] constructs BEV fea-tures with explicit depth supervision. Distinct from these depth-dependent approaches, HeightLane [35] introduces explicit height map estimation with multi-slope anchors and height-guided DCA for BEV transformation, and SC-Lane [34] further improves it with slope-aware adaptive features and temporal consistency. 
+
+2.2 Road Height Estimation 
+
+Road height estimation has been studied in several related contexts, including BEV-based perception, aerial elevation mapping, and ground height prediction. (i) Object-centric height prediction , exemplified by several existing approaches [52,56], which es-timate height as an auxiliary cue for BEV-based perception and 3D object detection. Re-cent frameworks, including Height3D [60], HeightAware-BEV [64], and BEVSpread [50], further predict height distributions to facilitate view transformation and 2D-to-3D map-ping. (ii) Aerial imagery height estimation , represented by HeightFormer [4], which fo-cuses on large-scale elevation mapping and differs substantially from onboard driving scenarios. (iii) Ground height estimation , such as HeightMapNet [41], which leverages multi-camera inputs and map priors but relies on discretized formulations due to limited dense supervision. HeightLane [35] and SC-Lane [34] extend road height estimation to monocular 3D lane detection by introducing dense BEV height maps for explicit road-surface model-ing, while SC-Lane additionally establishes unified metrics for quantitative evaluation. However, both methods remain anchor-based , requiring one-shot regression of abso-lute height from sparse and slope-dependent projections, which becomes particularly challenging on distant or highly non-planar roads. Meanwhile, implicit field representations [30] have shown strong capability for con-tinuous 3D modeling [48,58] in driving scenes. SurroundSDF [23] adopts an SDF-based formulation with Eikonal-style regularization for camera-only surface perception, and InfiniDepth [59] models depth as a neural implicit field enabling continuous, arbitrary-resolution querying. Despite their effectiveness, these approaches primarily target gen-eral scene geometry, rather than explicitly optimizing dense road height maps on a BEV grid. Motivated by this gap, our work leverages an HSDF-based implicit formulation tailored to road height estimation for 3D lane detection. 
+
+## 3 Method 
+
+We define the vehicle coordinate system where the x-axis points to the forward (lon-gitudinal) direction and the y-axis points to the left (lateral) direction in the BEV. The region of interest is quantized into a regular BEV grid G of size H ×W , where each grid cell (i, j ) corresponds to a physical location (xi, y j ). Given a single front-view image 
+
+I, our goal is to predict 3D lanes and a height map on the grid. Specifically, we esti-mate a dense height map H ∈ RH×W , where each value represents the vertical height 
+
+z [35]. For 3D lane detection, we adopt the key-point based approach [49] to predict a lane segmentation map S ∈ RH×W ×1, lateral offsets O ∈ RH×W ×2, and embeddings 
+
+E ∈ RH×W ×Cemb . These dense predictions are clustered to form lane instances, which are subsequently lifted into 3D space using the estimated road surfaces. HSDF-Lane 5Lane Predictor  
+
+> Input Image
+
+## න             
+
+> Differentiable
+> Rendering
+> Feature
+> Extractor
+> HSDF
+> s>0
+> s<0
+> s=0
+> Height -Aligned Signed Distance Field (Sec. 3.2)
+> Dense 3D Feature Volume
+> HSDF
+> Estimator
+> Height Map & Feature Rendering (Sec. 3.3)
+> Lane -aware Semantic P.E. (Sec. 3.4)
+> Height map
+> HSDF feature
+> Height map -based P.E.
+> Semantic P.E.
+> Optimization (Sec. 3.5)
+> ℒ𝑡otal
+> ℋ
+
+ℱℎsdf 
+
+Fig. 2: Overview of HSDF-Lane. Given a monocular image, dense 3D features are constructed by vertically sampling the BEV grid. The HSDF estimator predicts a Height-aligned Signed Dis-tance Field (HSDF) (Sec. 3.2), and following differentiable rendering (Sec. 3.3) produces a height map H and an HSDF-based feature Fhsdf . The feature is further enhanced by Lane-aware Se-mantic Positional Encoding (LSPE) (Sec. 3.4), where a semantic positional encoding derived from a predicted HSDF feature Fhsdf is combined with height-based positional encoding to pro-vide a semantic prior for queries. The refined queries are decoded by the lane predictor, and the entire framework is optimized end-to-end (Sec. 3.5). 
+
+3.1 Overview 
+
+Fig. 2 illustrates the overall pipeline of HSDF-Lane. The input front-view image I
+
+is encoded by a backbone to obtain 2D features FF V . For each BEV cell in G, we densely sample points along the vertical z-axis and project them onto the image plane using intrinsics K and extrinsics T to gather corresponding image features. Stacking the sampled features forms a dense 3D feature volume. An MLP then predicts the Height-aligned Signed Distance Field (HSDF) , which represents the vertical signed distance to the road surface. HSDF enables differentiable rendering of both the height map H and the HSDF-based feature map Fhsdf . To incorporate semantic cues from Fhsdf into lane decoding, we introduce Lane-aware Semantic Positional Encoding (LSPE). A BEV lane heatmap M ∈ RH×W ×1 is predicted from Fhsdf and used to augment BEV queries as an additional positional encoding for the transformer-based lane head. The enriched BEV queries are updated via deformable cross-attention using 3D reference points de-rived from H. Finally, the updated queries are fed into the 3D lane head to produce the final 3D predictions, ( S, O, E). 
+
+3.2 Dense 3D Feature Sampling & HSDF Modeling 
+
+Unlike previous methods that rely on sparse slope anchors, we perform dense sampling along the vertical axis to capture detailed road geometry. For each grid cell (xi, y j ), the vertical search range [zmin , z max ] is defined propor-tional to the longitudinal distance xi:
+
+zmin ,max = xi · tan( ±θ), (1) 6 Boo et al. 
+
+where θ denotes the predefined maximum slope angle. Within this vertical range, we sample N points along the z-axis. To achieve dense sampling across all distances by allocating fewer points at near regions and more points at far regions, we introduce an adaptive sampling strategy based on a target Vertical Sampling Resolution δz . The required number of samples N for a given cell (xi, y j ) is determined as: 
+
+N (xi, y j ) = max 
+
+
+
+2,
+
+ zmax − zmin 
+
+δz
+
+
+
++ 1 
+
+
+
+. (2) To facilitate the softmax operation during the subsequent differentiable rendering phase (detailed in Sec. 3.3), we strictly enforce a minimum of two samples ( N ≥ 2) in near-field regions. The adaptive sampling rule in Eq. 2 guarantees that the spacing between adjacent samples never exceeds δz . Consequently, we obtain a set of discrete 3D sam-pling points Psampled = {(xi, y j , z k) | i ∈ [0 , H ), j ∈ [0 , W ), k ∈ [0 , N )}, where the 
+
+z-coordinates are uniformly partitioned: 
+
+zk = zmin + kN − 1 (zmax − zmin ), k = 0 , . . . , N − 1. (3) Next, we project the 3D sampling points Psampled onto the image plane using the camera parameters to retrieve pixel-aligned features from the 2D backbone feature 
+
+FF V . By stacking the retrieved features along the vertical z-axis up to N , we con-struct a dense 3D feature volume V ∈ RH×W ×Nmax ×C . Invalid sample positions are explicitly handled via a padding mask during the rendering phase. To implicitly model the road surface geometry within V, we propose the Height-aligned Signed Distance Field (HSDF) . Unlike conventional SDF formulations that measure isotropic distances in 3D space, our HSDF is strictly axis-aligned to the ver-tical direction, making it directly interpretable for height estimation. We define the ground-truth HSDF value s at a point (x, y, z ) as: 
+
+s(x, y, z ) = z − H GT (x, y ), (4) where HGT (x, y ) is the ground truth road height. A value of s = 0 indicates the exact road surface, while the sign represents the relative vertical position. Finally, we employ an MLP with a skip connection to predict the HSDF value ˆs using the feature volume 
+
+V:
+
+ˆs(xi, y j , z k) = MLP  cat V(xi, y j , z k), γ (xi, y j , z k) , (5) where γ(·) represents the positional encoding [30]. 
+
+3.3 HSDF-based Differentiable Height Map & Feature Rendering 
+
+In our framework, the road surface is implicitly represented by the coordinates where the HSDF value is zero, s(x, y, z ) = 0 . To extract the explicit height map from the HSDF representation, we employ a differentiable soft argmin operation. For each grid cell (xi, y j ), we compute probability weights wk by applying a softmax function over the valid sampled indices k:
+
+wk(xi, y j ) = softmax k
+
+
+
+− |ˆs(xi, y j , z k)|
+
+τ (xi)
+
+
+
+. (6) HSDF-Lane 7HSDF Volumes      
+
+> 𝑧 𝑚ax  − 𝑧 𝑚in
+> 𝑧 𝑘
+> 𝑠 ↑
+> 𝑠 ↓
+> Height map ℋ𝑤 𝑘
+> 𝑠 (𝑧 )=0
+> Differentiable Height Rendering
+
+Σ 
+
+> Feature ℱℎ𝑠𝑑𝑓
+> Differentiable Feature Rendering
+
+Σ
+
+Σ Differentiable Rendering Operator    
+
+> 𝑧 𝑘 +1
+> 𝑧 𝑘 −1
+> Conv
+> Conv
+> (𝑥 ,𝑦 )
+> (𝑥 ,𝑦 )
+> (𝑥 ,𝑦 )
+
+Fig. 3: HSDF-based differentiable rendering. For each BEV location (x, y ), probability weights wk are computed from the predicted HSDF values using a softmax operator. These weights are used to aggregate vertical samples along the ray, producing the rendered height map 
+
+H and surface-aligned features Fhsdf .
+
+Invalid indices where the sample exceeds the upper boundary ( zk > z max ) are explicitly masked out prior to the softmax operation. Here, the temperature τ (xi) controls the sharpness of the weight distribution. To ensure consistent optimization behavior across varying vertical search ranges, we scale τ adaptively: 
+
+τ (xi) = τ0 · clip 
+
+ zmax − zmin 
+
+δz
+
+, 0.3, 3.0
+
+
+
+, (7) where τ0 is a learnable base temperature, and δz is the fixed vertical sampling inter-val defined in Sec. 3.2. The clipping operation bounds the scaling factor to [0 .3, 3.0] ,preventing numerical instability from near-zero temperatures while avoiding excessive smoothing that would result from large temperatures. Using the weights wk(xi, y j ), we first compute a preliminary continuous height map ˜H. Instead of simply aggregating the discrete sample coordinates zk, we treat the predicted HSDF value ˆs as a local residual to refine the coarse sampling. Specifically, each sample zk is shifted toward the surface using the predicted distance ˆs, and the refined coordinates are aggregated via a weighted sum: 
+
+˜H(xi, y j ) =  
+
+> N−1
+
+X
+
+> k=0
+
+wk(xi, y j ) · (zk − ˆs(xi, y j , z k)) . (8) Because this ray-wise rendering operates independently for each grid cell, it may in-troduce local spatial discontinuities. To improve spatial smoothness while maintaining stable optimization in the early training stages, we apply a zero-initialized 3×3 residual convolution over ˜H to obtain the final height map H.Concurrently, to extract semantic features corresponding to the road surface for lane understanding, we compute a preliminary feature map ˜Fhsdf by aggregating the feature 8 Boo et al. Heatmap  ℳ       
+
+> Learnable vector 𝑣
+> Semantic P.E. 𝐩 𝑠em
+> Lane -aware
+> Semantic P.E. 𝐩 bev
+> Height map -based P.E. 𝐩 geo
+> Multiplication
+> Add
+> 𝑝 0𝑝 1
+> 𝑝 0
+> 𝑝 1
+> 𝑝 0
+> 𝑝 1
+> Input
+> Ours w/o LSPE Ours
+
+Fig. 4: (Left) Lane-aware Semantic Positional Encoding. A Lane heatmap M is multiplied by learnable vector v and builds a semantic embedding psem that is fused with height map–based positional encoding pgeo to produce the final Lane-aware Semantic positional embedding pbev .
+
+(Right) Visualization of Effect of LSPE. We sampled two reference points p0 and p1, and visualized weight of attention. With LSPE, our model shows robust sampling ability to align attention with the lane to enhance lane understanding. 
+
+volume V using the identical weights: 
+
+˜Fhsdf (xi, y j ) =  
+
+> N−1
+
+X
+
+> k=0
+
+wk(xi, y j ) · V (xi, y j , z k). (9) To further improve spatial coherence, the aggregated features ˜Fhsdf are refined using a zero-initialized depthwise-pointwise residual block, producing the final HSDF-based feature map Fhsdf . The overview of HSDF is illustrated in Fig. 3. Furthermore, we introduce a Height-directional Eikonal Regularization . A property of an SDF is that the magnitude of its gradient is equal to 1, i.e., ∥∇ f ∥ = 1 [9, 48, 58]. While conventional approaches enforce the constraint on the full 3D gradient, our HSDF is designed specifically for height estimation along the vertical direction. There-fore, the regularization constrains only the partial derivative along the vertical axis, i.e., 
+
+∂s/∂z = 1 . Because the representation is defined on discrete samples, the derivative is approximated using finite differences: 
+
+Leik = X  
+
+> (xi,y j,z k)
+
+ˆs(xi, y j , z k+1 ) − ˆs(xi, y j , z k)
+
+zk+1 − zk
+
+− 1 . (10) This regularization encourages the network to learn a physically meaningful distance field rather than arbitrary scalar values, stabilizing zero-crossing localization and im-proving height rendering quality. 
+
+3.4 Lane-aware Semantic Positional Encoding (LSPE) 
+
+HSDF-based rendering produces a geometrically aligned feature map Fhsdf , which pro-vides a representation for extracting semantic priors. A lane existence heatmap M ∈ 
+
+RH×W ×1 is predicted directly from Fhsdf using a lightweight CNN. The auxiliary prediction task captures semantic lane information and encourages the features to con-centrate on lane regions, thereby implicitly improving the spatial consistency of Fhsdf .HSDF-Lane 9
+
+As illustrated in the left panel of Fig. 4, the predicted heatmap M is converted into a positional encoding to incorporate the semantic prior into the transformer. In-stead of adopting a full learnable embedding, which may introduce noise and interfere with the geometric positional embedding pgeo [35], a single learnable vector v ∈ RC
+
+is employed. The semantic encoding is obtained by modulating the vector v with the predicted heatmap probability M. The resulting semantic embedding psem is combined with the geometric positional embedding pgeo derived from the heightmap H to con-struct the final Lane-aware Semantic Positional Encoding pbev :
+
+psem (xi, y j ) = M(xi, y j ) · v, (11) 
+
+pbev (xi, y j ) = pgeo (xi, y j ) + psem (xi, y j ). (12) The composite embedding pbev provides the transformer with a semantic prior indi-cating regions where lane existence is highly probable, while preserving the geometric structure encoded in pgeo .Finally, following the height-guided spatial transform framework [35], the rendered height map H and the composite positional embedding pbev are used to generate refined BEV features. The refined features are subsequently processed by the lane detection head to estimate 3D lanes. 
+
+3.5 Training Loss 
+
+The training objective of HSDF-Lane is formulated as a weighted sum of all losses: 
+
+Ltotal = λseg Lseg +λoff Loff + λemb Lemb 
+
++λ2d L2d +λgeo (LH + λeik Leik ) + λhm Lhm . (13) Following [35, 49], the segmentation loss Lseg is implemented as a combination of Binary Cross Entropy (BCE) and IoU losses. The offset loss Loff is optimized using a BCE loss, while the embedding loss Lemb employs the discriminative push–pull loss. The auxiliary 2D supervision loss is denoted as L2d . Geometry-related losses LH, Leik ,and the lane heatmap loss Lhm are employed for geometry learning. Detailed formula-tions of the losses and the weighting coefficients λ are provided in the supplementary material. 
+
+## 4 Experiments 
+
+4.1 Experimental Setup Datasets. To validate our framework, we conducted experiments on the extensive Open-Lane benchmark [3], which is derived from the Waymo Open Dataset [44]. The Open-Lane benchmark encompasses 1,000 driving scenes, totaling 200,000 frames split into 150,000 for training and 50,000 for validation, alongside 880,000 spatial lane annota-tions in 3D coordinates. The evaluation set is categorized into six distinct scenarios: Up & Down, Curve, Extreme Weather, Night, Intersection, and Merge & Split. Further-more, ablation experiments are carried out on OpenLane-300, a representative subset 10 Boo et al. 
+
+Table 1: Quantitative comparison on OpenLane Benchmark [3]. The best results are highlighted in bold , while the second-best results are underlined. ( †): HSDF-Lane equipped with FPN. Method Backbone F1-Score(%) ↑ X-error (m) ↓ Z-error (m) ↓
+
+near far near far PersFormer [3] EfficientNet-B7 50.5 0.485 0.553 0.364 0.431 BEV-LaneDet [49] ResNet-34 58.4 0.309 0.659 0.244 0.631 LATR [28] ResNet-50 61.9 0.219 0.259 0.075 0.104 PVALane [63] Swin-B 63.4 0.226 0.257 0.093 0.119 GroupLane [21] ConvNext-Base 64.1 0.320 0.441 0.233 0.402 HeightLane [35] ResNet-50 62.7 0.240 0.266 0.116 0.165 SC-Lane [34] ResNet-50 64.3 0.227 0.251 0.088 0.128 Rethinking [2] ResNet-50 64.7 0.205 0.255 0.074 0.105 GLane3D-B [32] ResNet-50 63.9 0.193 0.234 0.065 0.090 
+
+SparseLaneSTP [39] ResNet-50 66.1 0.203 0.240 0.066 0.092 
+
+HSDF-Lane (Ours) ResNet-50 66.3 0.201 0.223 0.088 0.114 
+
+HSDF-Lane † (Ours) ResNet-50 66.9 0.186 0.226 0.084 0.114 
+
+Table 2: Quantitative results comparison by scenario on the OpenLane [3] validation set using F1-score (%). The best results for each scenario are highlighted in bold and second-best results are underlined. ( †): HSDF-Lane equipped with FPN.                                                                        
+
+> Method All Up & Down Curve Extreme Weather Night Intersection Merge & Split
+> BEVLaneDet [49] 58.4 48.7 63.1 53.4 53.4 50.3 53.7 LATR [28] 61.9 55.2 68.2 57.1 55.4 52.3 61.5 HeightLane [35] 62.7 53.6 69.3 55.4 54.6 54.1 61.1 PVALane [63] 62.7 54.1 67.3 62.0 57.2 53.4 60.0 SC-Lane [34] 64.3 54.6 70.7 58.1 56.5 56.1 63.0 GLane3D-B [32] 63.9 58.2 71.1 60.1 60.2 55.0 64.8 SparseLaneSTP [39] 66.1 57.3 73.0 60.1 58.3 58.2 66.5
+> HSDF-Lane (Ours) 66.3 58.9 73.7 60.7 57.4 58.3 65.7
+> HSDF-Lane †(Ours) 66.9 58.2 74.2 60.5 59.6 59.2 66.8
+
+consisting of 300 scenes. For height map training, we directly utilize the ground-truth dense height maps provided by HeightLane [35], which were generated by accumulat-ing Waymo LiDAR point clouds. These height maps are structured in a 200 × 48 BEV grid format, covering a physical range of x ∈ [3 m, 103 m] and y ∈ [−12 m, 12 m] with a spatial resolution of 0.5m per cell. 
+
+Baselines. We compare our method with several strong monocular 3D lane detection baselines, including PersFormer [3], BEV-LaneDet [49], LATR [28], PVALane [63], GroupLane [21], and HeightLane [35], as well as recent state-of-the-art methods such as SC-Lane [34], Rethinking [2], GLane3D-B [32], and SparseLaneSTP [39]. For height estimation, we follow the evaluation protocol of SC-Lane and report comparisons with HeightLane and SC-Lane. For qualitative comparisons, we visualize results from HSDF-Lane, HeightLane, and LATR. Other recent methods, such as GLane3D-B and Sparse-HSDF-Lane 11 
+
+LaneSTP, are not included in the qualitative comparison due to the lack of publicly available code. 
+
+Evaluation Metrics. We utilized the established metrics from Gen-LaneNet [10] to as-sess 3D lane detection performance, reporting the F1-score alongside positional errors along the X and Z axes. Here, the X- and Z-errors denote lateral and vertical deviations, differing from the vehicle coordinate system in Sec. 3. Specifically, a predicted lane is treated as a true positive only when a minimum of 75% of its constituent points fall within a 1.5-meter distance threshold from the corresponding ground truth. Spatial de-viations (X and Z errors) are computed over two distinct longitudinal intervals: the near range (0 to 40 meters) and the far range (40 to 100 meters). For height map evaluation, we follow the metrics proposed in SC-Lane [34]. Specifically, we report Mean Abso-lute Error (MAE), Root Mean Square Error (RMSE), and threshold-based accuracies at 0.05m, 0.1m, and 0.2m. 
+
+4.2 Implementation Details Network Architecture. We use ResNet-50 [11] as the backbone network to extract image features FF V with a stride of 16 and a channel size of 1024. The input images are resized to 600 × 800 . We adopt the transformer decoder and 3D lane detection head from HeightLane [35]. To ensure computational efficiency, the transformer decoder is configured with only two layers. We employ four attention heads, with four sampling points per head for the Deformable Cross-Attention (DCA). We additionally report HSDF-Lane †, a variant that adopts a Feature Pyramid Net-work (FPN) [22] following LATR [28]. Instead of relying on a single-scale feature, the FPN aggregates multi-scale features from the backbone at strides of 8, 16 , and 32 ,each with a channel size of 256 . The resulting multi-scale features are jointly fed into the transformer decoder, which is configured with four layers for this variant. All other settings remain identical to the base model. 
+
+Spatial and SDF Settings. The BEV space is quantized into a 200 × 48 grid, rep-resenting a physical range of x ∈ [3 m, 103 m] in the longitudinal direction and y ∈
+
+[−12 m, 12 m] in the lateral direction, which yields a grid resolution of 0.5m per cell. For the dense 3D sampling, the predefined maximum slope angle used to define the vertical search range [zmin , z max ] is set to θ = 5 ◦. We set the target vertical sampling resolution δz to 1.5m. Accordingly, the maximum number of sample points along the z-axis is bounded by Nmax = 13 . The learnable temperature for the soft argmin rendering operation is initialized to τ0 = 0 .3.
+
+4.3 Quantitative Results 
+
+Table 1 presents the quantitative comparison with existing monocular 3D lane detec-tion methods on the OpenLane [3] validation set. HSDF-Lane achieves the best F1-score among existing methods, and its FPN-equipped variant HSDF-Lane † further im-proves it, yielding the top two results and outperforming both anchor-based approaches such as HeightLane [35] and SC-Lane [34] and query-based methods including Sparse-LaneSTP [39]. Both models also achieve competitive geometric accuracy, with HSDF-Lane obtaining the best far-range X-error and HSDF-Lane † the best near-range X-12 Boo et al. Input  Ours  HeightLane  LATR  Ours  HeightLane  GT      
+
+> Fig. 5: Qualitative comparison of 3D lane detection and road height estimation. From left to right: input image I, and 3D lane predictions of HSDF-Lane (ours), HeightLane [35], and LATR [28]. The ground truth (GT) is indicated by red dashed lines. The right panel compares the estimated height maps Hand their corresponding error maps (masked by valid GT regions) for our method and HeightLane, alongside the GT height map HGT . Other recent methods [32, 39] lack public code and are thus excluded. More qualitative results are in the supplementary material.
+
+error. We note that Z-error is influenced by the representation used for lane estima-tion. Height-map-based methods [34, 35], including our HSDF-Lane, predict and su-pervise the height over the entire BEV grid. In contrast, other recent methods such as LATR [28], SparseLaneSTP [39], and GLane3D [32] directly regress the height at each lane point and apply the Z-loss only at those points. Because the supervision is con-centrated on lane locations, such methods tend to report lower Z-error, so the values are not always directly comparable across methods. Nevertheless, HSDF-Lane remains competitive through the proposed HSDF formulation. To analyze performance under different environmental conditions, Table 2 reports F1-score across the scenario-based subsets of OpenLane. HSDF-Lane performs best in the Up & Down scenario, while HSDF-Lane † attains the best results in Curve , Intersec-tion , and Merge & Split , as well as the best overall F1-score. These results demonstrate that the proposed HSDF-based representation and LSPE effectively improve lane de-tection under complex road geometries and diverse environments. Table 3 presents the quantitative comparison of road height estimation. Both vari-ants outperform HeightLane and SC-Lane across most metrics, with HSDF-Lane † ob-taining the lowest MAE and the highest threshold-based accuracies. The only exception is RMSE, where HSDF-Lane is slightly higher than SC-Lane. The anchor-based re-HSDF-Lane 13                               
+
+> Table 3: Comparison of height estimation performance. The best results are highlighted in bold
+> and second-best results are underlined. ( †): HSDF-Lane equipped with FPN.
+> Method Error Metrics (↓)Accuracy Metrics (↑)
+> MAE RMSE @0.05 @0.1 @0.2
+> HeightLane [35] 0.235 0.343 0.253 0.442 0.673 SC-Lane [34] 0.176 0.259 0.293 0.507 0.756
+> HSDF-Lane 0.158 0.313 0.294 0.512 0.763
+> HSDF-Lane †0.149 0.272 0.307 0.527 0.776
+
+gression and temporal consistency loss adopted in SC-Lane suppress outliers and yield lower RMSE, but constrain the representable height range. In contrast, the HSDF-based formulation captures a substantially wider height range, resulting in a marginally higher RMSE. Overall, these results confirm that the proposed HSDF-based representation yields more accurate height estimation than previous anchor-based methods. 
+
+4.4 Qualitative Results 
+
+Fig. 5 presents qualitative comparisons with representative monocular 3D lane detection methods on the OpenLane dataset [3]. Compared with HeightLane [35] and LATR [28], HSDF-Lane produces more geometrically consistent lane predictions, particularly in challenging scenarios such as curved roads, nighttime conditions, and complex urban environments. In addition to improved lane detection, the proposed method also pro-vides accurate road height estimation. As shown in the right panel of Fig. 5, the pre-dicted height maps of HSDF-Lane exhibit smoother and more consistent surface struc-tures, while the corresponding error maps indicate smaller deviations from the ground truth compared with HeightLane. These results demonstrate that modeling the road surface using the proposed HSDF representation enables more reliable geometric un-derstanding, which further benefits downstream 3D lane detection. 
+
+4.5 Ablation Studies 
+
+To evaluate the contributions of the proposed components of HSDF-Lane, we conduct ablation studies on the OpenLane-300 subset [3]. The quantitative results are reported in Table 4. 
+
+Effect of Explicit Height Map Supervision. Using only the Eikonal regularization (Exp. A) fails to capture accurate road elevations, resulting in poor lane detection per-formance. Introducing explicit height map supervision LH (Exp. B) substantially re-duces MAE and RMSE while significantly improving threshold-based accuracies. This improved geometric alignment leads to a higher F1-score, confirming that direct super-vision on the rendered height map is essential for learning the correct road topology. 
+
+Effect of Height-directional Eikonal Regularization. Comparing Exp. B and Exp. C shows that adding the height-directional Eikonal regularization Leik further improves the stability of HSDF-based height estimation. In particular, Leik substantially reduces 14 Boo et al. 
+
+RMSE and slightly lowers MAE, indicating fewer extreme height deviations and a more physically consistent vertical distance field. While the threshold-based accuracies change only marginally, the improved global consistency leads to a gain in F1-score. 
+
+Effect of LSPE. Comparing Exp. C and Exp. D demonstrates the benefit of incorporat-ing LSPE, which introduces the heatmap supervision Lhm . LSPE enhances the F1-score and achieves the best threshold-based accuracies, suggesting that the lane heatmap prior helps the model focus on lane-relevant regions and improve height estimation in a way that is more aligned with lane perception. Although RMSE increases, the overall gains in detection accuracy and threshold-based height metrics indicate that LSPE provides complementary semantic guidance beyond purely geometric supervision. This observa-tion highlights that semantic guidance reinforces geometric supervision and plays a key role in improving 3D lane detection performance.                                      
+
+> Table 4: Ablation study on the key components of HSDF-Lane evaluated on the OpenLane-300 subset [3]. Bold and underlined values indicate the best and second-best performances. Exp. Preserve ( ✓)F1-score ( ↑)Error ( ↓)Accuracy ( ↑)
+> Leik LHLSPE MAE RMSE Acc@0.05 Acc@0.1 Acc@0.2 A✓71.8 0.512 0.648 0.052 0.105 0.197 B✓74.2 0.161 0.333 0.283 0.498 0.755 C✓✓74.7 0.157 0.286 0.275 0.487 0.750 D✓✓✓75.6 0.158 0.326 0.288 0.503 0.767
+
+## 5 Conclusion 
+
+In this paper, we presented HSDF-Lane, a novel monocular 3D lane detection frame-work that addresses the limitations of sparse anchor-based height regression and in-sufficient semantic utilization. To capture complex road geometry, we replaced prede-fined slope anchors with a dense feature volume modeled by a Height-aligned Signed Distance Field (HSDF). Stabilized by a Height-directional Eikonal regularization, this implicit formulation enables accurate differentiable rendering of a dense height map and surface-aligned features. We further proposed Lane-aware Semantic Positional En-coding (LSPE), which predicts a lane existence heatmap from the surface-aligned fea-tures and embeds it into the transformer queries to integrate semantic priors with the rendered geometry. Extensive experiments on the OpenLane benchmark demonstrate that HSDF-Lane achieves state-of-the-art performance in monocular 3D lane detection while improving road height estimation accuracy. 
+
+Limitations. Despite these results, several limitations remain. The height map is pre-dicted over a fixed BEV grid without identifying the drivable road surface, training requires dense LiDAR-derived height-map supervision, and experiments are limited to a monocular setting without multi-view, temporal, or multi-modal extensions. Over-coming these limitations remains future work. HSDF-Lane 15 
+
+## Acknowledgements 
+
+This research was supported by the Challengeable Future Defense Technology Research and Development Program through the Agency For Defense Development (ADD) funded by the Defense Acquisition Program Administration (DAPA) in 2026 (No.915102201). 
+
+## References 
+
+1. Bai, Y., Chen, Z., Fu, Z., Peng, L., Liang, P., Cheng, E.: Curveformer: 3d lane detection by curve propagation with curve queries and attention. arXiv preprint arXiv:2209.07989 (2022) 2. Chang, Y., Huang, J., Wang, X., Ye, Y., Liang, Z., Shan, Y., Du, D., Wang, X.: Rethinking lanes and points in complex scenarios for monocular 3d lane detection. In: Proceedings of the Computer Vision and Pattern Recognition Conference. pp. 6802–6811 (2025) 3. Chen, L., Sima, C., Li, Y., Zheng, Z., Xu, J., Geng, X., Li, H., He, C., Shi, J., Qiao, Y., et al.: Persformer: 3d lane detection via perspective transformer and the openlane benchmark. In: European Conference on Computer Vision. pp. 550–567. Springer (2022) 4. Chen, Z., Zhang, Y., Qi, X., Mao, Y., Zhou, X., Wang, L., Ge, Y.: Heightformer: A multi-level interaction and image-adaptive classification–regression network for monocular height estimation with aerial images. Remote Sensing 16 (2), 295 (2024) 5. Duan, K., Bai, S., Xie, L., Qi, H., Huang, Q., Tian, Q.: Centernet: Keypoint triplets for object detection. In: Proceedings of the IEEE/CVF international conference on computer vision. pp. 6569–6578 (2019) 6. Feng, Z., Guo, S., Tan, X., Xu, K., Wang, M., Ma, L.: Rethinking efficient lane detection via curve modeling. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 17062–17070 (2022) 7. Garnett, N., Cohen, R., Pe’er, T., Lahav, R., Levi, D.: 3d-lanenet: end-to-end 3d multiple lane detection. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 2921–2930 (2019) 8. Ghafoorian, M., Nugteren, C., Baka, N., Booij, O., Hofmann, M.: El-gan: Embedding loss driven generative adversarial networks for lane detection. In: proceedings of the european conference on computer vision (ECCV) Workshops. pp. 0–0 (2018) 9. Gropp, A., Yariv, L., Haim, N., Atzmon, M., Lipman, Y.: Implicit geometric regularization for learning shapes. arXiv preprint arXiv:2002.10099 (2020) 10. Guo, Y., Chen, G., Zhao, P., Zhang, W., Miao, J., Wang, J., Choe, T.E.: Gen-lanenet: A gen-eralized and scalable approach for 3d lane detection. In: European Conference on Computer Vision. pp. 666–681. Springer (2020) 11. He, K., Zhang, X., Ren, S., Sun, J.: Deep residual learning for image recognition. In: Pro-ceedings of the IEEE conference on computer vision and pattern recognition. pp. 770–778 (2016) 12. Hou, Y., Ma, Z., Liu, C., Loy, C.C.: Learning lightweight lane detection cnns by self attention distillation. In: Proceedings of the IEEE/CVF international conference on computer vision. pp. 1013–1021 (2019) 13. Huang, S., Shen, Z., Huang, Z., Ding, Z.h., Dai, J., Han, J., Wang, N., Liu, S.: Anchor3dlane: Learning to regress 3d anchors for monocular 3d lane detection. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 17451–17460 (2023) 14. Huval, B., Wang, T., Tandon, S., Kiske, J., Song, W., Pazhayampallil, J., Andriluka, M., Rajpurkar, P., Migimatsu, T., Cheng-Yue, R., et al.: An empirical evaluation of deep learning on highway driving. arXiv preprint arXiv:1504.01716 (2015) 16 Boo et al. 15. Jin, D., Park, W., Jeong, S.G., Kwon, H., Kim, C.S.: Eigenlanes: Data-driven lane descriptors for structurally diverse lanes. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 17163–17171 (2022) 16. Kirillov, A., Mintun, E., Ravi, N., Mao, H., Rolland, C., Gustafson, L., Xiao, T., White-head, S., Berg, A.C., Lo, W.Y., Dollár, P., Girshick, R.: Segment anything. arXiv:2304.02643 (2023) 17. Ko, Y., Lee, Y., Azam, S., Munir, F., Jeon, M., Pedrycz, W.: Key points estimation and point instance segmentation approach for lane detection. IEEE Transactions on Intelligent Transportation Systems 23 (7), 8949–8958 (2021) 18. Lee, S., Kim, J., Shin Yoon, J., Shin, S., Bailo, O., Kim, N., Lee, T.H., Seok Hong, H., Han, S.H., So Kweon, I.: Vpgnet: Vanishing point guided network for lane and road marking detection and recognition. In: Proceedings of the IEEE international conference on computer vision. pp. 1947–1955 (2017) 19. Li, C., Shi, J., Wang, Y., Cheng, G.: Reconstruct from top view: A 3d lane detection ap-proach based on geometry structure prior. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 4370–4379 (2022) 20. Li, X., Li, J., Hu, X., Yang, J.: Line-cnn: End-to-end traffic line detection with line proposal unit. IEEE Transactions on Intelligent Transportation Systems 21 (1), 248–258 (2019) 21. Li, Z., Han, C., Ge, Z., Yang, J., Yu, E., Wang, H., Zhang, X., Zhao, H.: Grouplane: End-to-end 3d lane detection with channel-wise grouping. IEEE Robotics and Automation Letters 
+
+9(11), 10487–10494 (2024) 22. Lin, T.Y., Dollár, P., Girshick, R., He, K., Hariharan, B., Belongie, S.: Feature pyramid net-works for object detection. In: Proceedings of the IEEE conference on computer vision and pattern recognition. pp. 2117–2125 (2017) 23. Liu, L., Wang, B., Xie, H., Liu, D., Liu, L., Tian, Z., Yang, K., Wang, B.: Surroundsdf: Implicit 3d scene understanding based on signed distance field. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 21614–21623 (2024) 24. Liu, R., Yuan, Z., Liu, T., Xiong, Z.: End-to-end lane shape prediction with transformers. In: Proceedings of the IEEE/CVF winter conference on applications of computer vision. pp. 3694–3702 (2021) 25. Liu, Y., Xu, X., Wang, Z., Yao, Y.: Db3d-l: Depth-aware bev feature transformation for ac-curate 3d lane detection. arXiv preprint arXiv:2505.13266 (2025) 26. Liu, Y., Yan, J., Jia, F., Li, S., Gao, A., Wang, T., Zhang, X.: Petrv2: A unified framework for 3d perception from multi-camera images. In: Proceedings of the IEEE/CVF international conference on computer vision. pp. 3262–3272 (2023) 27. Luo, Y., Cui, S., Li, Z.: Dv-3dlane: End-to-end multi-modal 3d lane detection with dual-view representation. arXiv preprint arXiv:2406.16072 (2024) 28. Luo, Y., Zheng, C., Yan, X., Kun, T., Zheng, C., Cui, S., Li, Z.: Latr: 3d lane detection from monocular images with transformer. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 7941–7952 (2023) 29. Lyu, D., Huang, H., Tan, C., Li, Z.: Depth3dlane: Monocular 3d lane detection via depth prior distillation. arXiv preprint arXiv:2504.18325 (2025) 30. Mildenhall, B., Srinivasan, P.P., Tancik, M., Barron, J.T., Ramamoorthi, R., Ng, R.: Nerf: Representing scenes as neural radiance fields for view synthesis. Communications of the ACM 65 (1), 99–106 (2021) 31. Neven, D., De Brabandere, B., Georgoulis, S., Proesmans, M., Van Gool, L.: Towards end-to-end lane detection: an instance segmentation approach. In: 2018 IEEE intelligent vehicles symposium (IV). pp. 286–291. IEEE (2018) HSDF-Lane 17 32. Öztürk, H.˙ I., Kalfao˘ glu, M.E., Kilinc, O.: Glane3d: Detecting lanes with graph of 3d key-points. In: Proceedings of the Computer Vision and Pattern Recognition Conference. pp. 27508–27518 (2025) 33. Pan, X., Shi, J., Luo, P., Wang, X., Tang, X.: Spatial as deep: Spatial cnn for traffic scene understanding. In: Proceedings of the AAAI conference on artificial intelligence. vol. 32 (2018) 34. Park, C., Seo, E., Hwang, J., Lim, J.: Sc-lane: Slope-aware and consistent road height es-timation framework for 3d lane detection. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 28407–28416 (2025) 35. Park, C., Seo, E., Lim, J.: Heightlane: Bev heightmap guided 3d lane detection. In: 2025 IEEE/CVF Winter Conference on Applications of Computer Vision (WACV). pp. 1692– 1701. IEEE (2025) 36. Philion, J., Fidler, S.: Lift, splat, shoot: Encoding images from arbitrary camera rigs by implicitly unprojecting to 3d. In: European conference on computer vision. pp. 194–210. Springer (2020) 37. Pittner, M., Condurache, A., Janai, J.: 3d-splinenet: 3d traffic line detection using parametric spline representations. In: Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision. pp. 602–611 (2023) 38. Pittner, M., Janai, J., Condurache, A.P.: Lanecpp: Continuous 3d lane detection using phys-ical priors. In: Proceedings of the IEEE/CVF Conference on computer vision and pattern recognition. pp. 10639–10648 (2024) 39. Pittner, M., Janai, J., Faigle, M., Condurache, A.P.: Sparselanestp: Leveraging spatio-temporal priors with sparse transformers for 3d lane detection. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 29099–29109 (2025) 40. Pizzati, F., Allodi, M., Barrera, A., García, F.: Lane detection and classification using cas-caded cnns. In: International conference on computer aided systems theory. pp. 95–103. Springer (2019) 41. Qiu, W., Pang, S., Zhang, H., Fang, J., Xue, J.: Heightmapnet: Explicit height modeling for end-to-end hd map learning. In: 2025 IEEE/CVF Winter Conference on Applications of Computer Vision (WACV). pp. 6022–6031. IEEE (2025) 42. Qu, Z., Jin, H., Zhou, Y., Yang, Z., Zhang, W.: Focus on local: Detecting lane marker from bottom up via key point. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 14122–14130 (2021) 43. Su, J., Chen, C., Zhang, K., Luo, J., Wei, X., Wei, X.: Structure guided lane detection. arXiv preprint arXiv:2105.05403 (2021) 44. Sun, P., Kretzschmar, H., Dotiwalla, X., Chouard, A., Patnaik, V., Tsui, P., Guo, J., Zhou, Y., Chai, Y., Caine, B., et al.: Scalability in perception for autonomous driving: Waymo open dataset. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 2446–2454 (2020) 45. Tabelini, L., Berriel, R., Paixao, T.M., Badue, C., De Souza, A.F., Oliveira-Santos, T.: Keep your eyes on the lane: Real-time attention-guided lane detection. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 294–302 (2021) 46. Tabelini, L., Berriel, R., Paixao, T.M., Badue, C., De Souza, A.F., Oliveira-Santos, T.: Poly-lanenet: Lane estimation via deep polynomial regression. In: 2020 25th international confer-ence on pattern recognition (ICPR). pp. 6150–6156. IEEE (2021) 47. Wang, J., Ma, Y., Huang, S., Hui, T., Wang, F., Qian, C., Zhang, T.: A keypoint-based global association network for lane detection. In: Proceedings of the IEEE/CVF conference on com-puter vision and pattern recognition. pp. 1392–1401 (2022) 48. Wang, P., Liu, L., Liu, Y., Theobalt, C., Komura, T., Wang, W.: Neus: Learning neu-ral implicit surfaces by volume rendering for multi-view reconstruction. arXiv preprint arXiv:2106.10689 (2021) 18 Boo et al. 49. Wang, R., Qin, J., Li, K., Li, Y., Cao, D., Xu, J.: Bev-lanedet: An efficient 3d lane detection based on virtual camera via key-points. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 1002–1011 (2023) 50. Wang, W., Lu, Y., Zheng, G., Zhan, S., Ye, X., Tan, Z., Wang, J., Wang, G., Li, X.: Bevspread: Spread voxel pooling for bird’s-eye-view representation in vision-based roadside 3d object detection. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 14718–14727 (2024) 51. Wang, Z., Ren, W., Qiu, Q.: Lanenet: Real-time lane detection networks for autonomous driving. arXiv preprint arXiv:1807.01726 (2018) 52. Wu, Y., Li, R., Qin, Z., Zhao, X., Li, X.: Heightformer: Explicit height modeling without extra data for camera-only 3d object detection in bird’s eye view. IEEE Transactions on Image Processing 34 , 689–700 (2024) 53. Xu, H., Wang, S., Cai, X., Zhang, W., Liang, X., Li, Z.: Curvelane-nas: Unifying lane-sensitive architecture search and adaptive point blending. In: European Conference on Com-puter Vision. pp. 689–704. Springer (2020) 54. Xu, S., Cai, X., Zhao, B., Zhang, L., Xu, H., Fu, Y., Xue, X.: Rclane: Relay chain predic-tion for lane detection. In: European conference on computer vision. pp. 461–477. Springer (2022) 55. Yan, F., Nie, M., Cai, X., Han, J., Xu, H., Yang, Z., Ye, C., Fu, Y., Mi, M.B., Zhang, L.: Once-3dlanes: Building monocular 3d lane detection. In: Proceedings of the IEEE/CVF Confer-ence on Computer Vision and Pattern Recognition. pp. 17143–17152 (2022) 56. Yang, L., Yu, K., Tang, T., Li, J., Yuan, K., Wang, L., Zhang, X., Chen, P.: Bevheight: A robust framework for vision-based roadside 3d object detection. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 21611–21620 (2023) 57. Yang, L., Kang, B., Huang, Z., Zhao, Z., Xu, X., Feng, J., Zhao, H.: Depth anything v2. Advances in Neural Information Processing Systems 37 , 21875–21911 (2024) 58. Yariv, L., Gu, J., Kasten, Y., Lipman, Y.: Volume rendering of neural implicit surfaces. Ad-vances in neural information processing systems 34 , 4805–4815 (2021) 59. Yu, H., Lin, H., Wang, J., Li, J., Wang, Y., Zhang, X., Wang, Y., Zhou, X., Hu, R., Peng, S.: Infinidepth: Arbitrary-resolution and fine-grained depth estimation with neural implicit fields. arXiv preprint arXiv:2601.03252 (2026) 60. Zhang, Z., Sun, C., Wang, B., Guo, B., Wen, D., Zhu, T., Ning, Q.: Height3d: A roadside visual framework based on height prediction in real 3-d space. IEEE Transactions on Intelli-gent Transportation Systems (2025) 61. Zheng, T., Fang, H., Zhang, Y., Tang, W., Yang, Z., Liu, H., Cai, D.: Resa: Recurrent feature-shift aggregator for lane detection. In: Proceedings of the AAAI conference on artificial intelligence. vol. 35, pp. 3547–3554 (2021) 62. Zheng, T., Huang, Y., Liu, Y., Tang, W., Yang, Z., Cai, D., He, X.: Clrnet: Cross layer refine-ment network for lane detection. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 898–907 (2022) 63. Zheng, Z., Zhang, X., Mou, Y., Gao, X., Li, C., Huang, G., Pun, C.M., Yuan, X.: Pvalane: Prior-guided 3d lane detection with view-agnostic feature alignment. In: Proceedings of the AAAI Conference on Artificial Intelligence. vol. 38, pp. 7597–7604 (2024) 64. Zhou, R., Li, J., Su, Z., Lu, C., Wang, Z.: Heightaware-bev: Height-aware feature mapping for efficient bird’s-eye-view perception. In: 2025 IEEE/RSJ International Conference on In-telligent Robots and Systems (IROS). pp. 6172–6178. IEEE (2025) 65. Zou, Q., Jiang, H., Dai, Q., Yue, Y., Chen, L., Wang, Q.: Robust lane detection from contin-uous driving scenes using deep neural networks. IEEE transactions on vehicular technology 
+
+69 (1), 41–54 (2019) Supplementary Material for HSDF-Lane: Height-Aligned Signed Distance Field with Semantic Lane Prior for 3D Lane Detection 
+
+Jiyong Boo , Byeongin Joung , Hyemin Yang , and Kuk-Jin Yoon    
+
+> KAIST
+> {boojiyong, byeonginjoung, hyemin0806, kjyoon}@kaist.ac.kr
+
+## S1 Overview of Supplementary Material 
+
+This supplementary material provides additional details on the network architecture (Sec. S2.1), training losses (Sec. S2.2), and training details (Sec. S2.3). We further include additional experiments on the Apollo dataset [10] (Sec. S3.1), an ablation study on the hyperparameter θ (Sec. S3.2), a computational efficiency comparison (Sec. S3.3), an analysis of the HSDF formulation and the height-directional Eikonal regularization (Sec. S3.4), an ablation of the LSPE design (Sec. S3.5), an evaluation of scalability without dense LiDAR supervision (Sec. S3.6), and additional qualitative results on the OpenLane [3] and Apollo datasets (Sec. S3.7). 
+
+## S2 Implementation Details 
+
+S2.1 Architecture Dense 3D Sampling. In our framework, the number of vertical samples N (xi, y j )
+
+varies across the BEV grid because the valid vertical search range is defined according to the camera view frustum. Specifically, for each BEV location (xi, y j ), the vertical interval is clipped by the local bounds [zmin (xi), z max (xi)] , which expand with lon-gitudinal distance and therefore produce different valid sampling lengths at different grid cells. As a result, the required number of samples N (xi, y j ) is determined adap-tively for each location. However, directly using a different number of samples for each grid cell leads to irregular tensor shapes. To simplify the implementation, we construct a dense 3D coordinate volume of size (Nmax , H, W ) using a global maximum num-ber of samples, where Nmax corresponds to the largest sampling count across the grid. This allows all BEV locations to share a consistent tensor structure while the effec-tive number of valid samples is still controlled by the adaptive bounds. To achieve this, we introduce a binary padding mask that marks invalid sample locations. In particular, vertical samples zk that exceed the local upper bound zmax (xi) are masked out during subsequent rendering operations. In addition, to guarantee at least two valid samples (N ≥ 2) and avoid degenerate zero-entropy distributions in the softmax-based render-ing, the first two vertical samples are always preserved and excluded from the padding mask. 20 Boo et al. 
+
+3D-to-2D Feature Projection. We adopt a pre-trained ResNet-50 [11] to extract the front-view feature map FF V . Specifically, we utilize the output from the conv4_x 
+
+block (corresponding to layer3 in PyTorch implementations), which provides a fea-ture map with C = 1024 channels and a spatial resolution of 1/16 of the original input image. To construct a dense 3D feature volume from the extracted feature map FF V , the sampled 3D points Psampled are first projected onto the original image plane (resized to 
+
+600 × 800 ) using the camera intrinsics and extrinsics. The projected image coordinates are then downscaled by a factor of 16 to align with the spatial dimensions of FF V .Using PyTorch’s grid_sample function with bilinear interpolation, we retrieve the pixel-aligned features for all valid 3D points, yielding a batched 4D feature volume V
+
+of shape (B, C, N max , H, W ), where B is the batch size. 
+
+Implicit HSDF Network. To efficiently predict the HSDF values ˆs across the dense 3D feature volume V, we first compress the feature sizes and design a MLP equipped with explicit positional encoding. To mitigate computational costs, we first compress the features from 1024 to 256 channels via a Linear layer, followed by LayerNorm 
+
+and ReLU .To effectively capture high-frequency geometric details of the road surface, we ap-ply the Fourier positional encoding γ(·) introduced in NeRF [30]. 
+
+Lane-aware Semantic Positional Encoding (LSPE). To construct the LSPE, the learn-able vector v ∈ R1024 is initialized from a normal distribution N (0 , 0.02 2). The derived semantic embedding psem is element-wise added to the geometric embedding pgeo to form the final positional representation. 
+
+S2.2 Training Losses 
+
+We adopt BEV lane detection losses following HeightLane [35] with novel objectives for our HSDF and LSPE. 
+
+Segmentation Loss Lseg . The segmentation loss is used to supervise the binary clas-sification of lane existence at each BEV grid cell. Essentially, it trains the network to scan the top-down BEV space and identify exactly which grid cells are occupied by any lane markings. To effectively handle the inherent class imbalance between sparse lane pixels and the background, we combine Binary Cross-Entropy (BCE) and Intersection over Union (IoU) loss: 
+
+LBCE = − 1
+
+NBEV 
+
+X h 
+
+Yseg log ˆYseg + (1 − Yseg ) log(1 − ˆYseg )
+
+i
+
+, (S1) 
+
+LIoU = 1 −
+
+P ˆYseg Yseg 
+
+P( ˆYseg + Yseg − ˆYseg Yseg ) , (S2) 
+
+Lseg = LBCE + LIoU , (S3) where NBEV is the total number of grid cells, Yseg is the binary ground truth, and 
+
+ˆYseg = σ(Pseg ) is the predicted probability after the sigmoid activation. 
+
+Offset Loss Loff . Due to the discretization of the BEV grid, predicting exact lane coor-dinates requires sub-grid refinement. The offset loss aims to recover the precise lateral HSDF-Lane 21 
+
+sub-pixel position (y-offset) of the lane points within each occupied grid cell. Rather than formulating this as an unbounded regression problem, the relative lateral offset from the left edge to the right edge of a cell is normalized to a continuous range of 
+
+[0 , 1] . We then treat this normalized offset prediction as a classification-like task using BCE, which naturally restricts the network’s output to the cell boundaries. It is com-puted only for valid lane regions: 
+
+Loff = − 1
+
+P Yseg 
+
+X Yseg 
+
+h
+
+Yoff log ˆYoff + (1 − Yoff ) log(1 − ˆYoff )
+
+i
+
+, (S4) where ˆYoff is the predicted sub-grid offset probability. 
+
+Embedding Loss Lemb . To differentiate multiple lanes within the same BEV space, we formulate lane clustering as an instance embedding task. We employ a push-pull loss [31] that pulls pixel embeddings ei belonging to the same lane instance close to their cluster center μc, while pushing the centers of different lane instances apart: 
+
+Lpull (c) = 1
+
+NcNcX
+
+> i=1
+
+max  0, ∥ei − μc∥ − δv
+
+2, (S5) 
+
+Lpush (cA, c B ) = max  0, δ d − ∥ μcA − μcB ∥2, (S6) 
+
+Lemb = 1
+
+Nlane Nlane X
+
+> c=1
+
+Lpull (c) + 1
+
+Nlane (Nlane − 1) 
+
+X 
+
+> cA̸=cB
+
+Lpush (cA, c B ),
+
+(S7) where Nlane is the number of lane instances and Nc is the number of pixels in instance 
+
+c. The variance margin δv and distance margin δd control the clustering tightness and inter-cluster separation, respectively. 
+
+2D Supervision Loss L2d . To provide direct supervision to the image backbone and sta-bilize feature learning before the 3D lifting stage, we apply an auxiliary 2D supervision task on the perspective image plane. Specifically, the network predicts a dense 2D lane segmentation map and a corresponding instance embedding map from the front-view feature map. The 2D supervision consists of two components. First, a 2D segmenta-tion loss ( Lseg_2d ) identifies lane pixels in the image using a combination of Binary Cross Entropy (BCE) and IoU losses. Second, a 2D instance embedding loss ( Lemb_2d )groups pixels belonging to the same lane using the discriminative push–pull formula-tion. Therefore, the auxiliary loss is defined as: 
+
+L2d = λseg_2d Lseg_2d + λemb_2d Lemb_2d . (S8) 
+
+Height map Loss LH. The height map loss supervises the road geometry recovered from the HSDF at two levels: the rendered surface and the per-sample distance field. It consists of a rendered height map loss Lrender and an HSDF loss Lhsdf .The rendered height map loss directly supervises the road height map rendered from the HSDF. We utilize a Smooth L1 loss between the estimated height map H and the 22 Boo et al. 
+
+ground truth HGT , computed on valid regions masked by MH:
+
+Lrender = 1
+
+P MH
+
+X MH · SmoothL1  H − H GT 
+
+, (S9) where SmoothL1 (d) = 0 .5 d2 if |d| < 1 and |d| − 0.5 otherwise. In addition to the rendered surface, we directly supervise the predicted HSDF value at each sample point. The ground-truth HSDF at sample (xi, y j , z k) is defined as sGT =
+
+zk − H GT (xi, y j ). We apply a Smooth L1 loss between the predicted value ˆs and sGT 
+
+over valid samples masked by Ms, which combines the valid ground-truth region with the per-sample validity mask: 
+
+Lhsdf = 1
+
+P Ms
+
+X Ms · SmoothL1  ˆs − sGT 
+
+. (S10) This point-wise supervision enforces a geometrically consistent distance field across the entire sampled volume, complementing the surface-level supervision of Lrender .The total height map loss is the sum of the two terms: 
+
+LH = Lrender + Lhsdf . (S11) 
+
+Height-directional Eikonal Regularization Leik . To ensure the HSDF estimator learns a reliable distance field, we introduce the novel Height-directional Eikonal constraint. As our HSDF represents distances along the vertical direction, the gradient magnitude along the z-axis is theoretically expected to be 1. Approximating this property using finite differences across adjacent valid samples, we formulate the loss as: 
+
+Leik = 1
+
+P MH
+
+X
+
+> (i,j,k )
+
+MH
+
+ˆs(xi, y j , z k+1 ) − ˆs(xi, y j , z k)
+
+zk+1 − zk
+
+− 1 . (S12) 
+
+Heatmap Loss Lhm . The heatmap loss optimizes the lane heatmap M predicted from the HSDF features Fhsdf . Since the BEV space is heavily dominated by non-lane pix-els, we employ a Gaussian focal loss [5] to provide soft supervision and mitigate the resulting class imbalance: 
+
+Lhm = − 1
+
+Npos 
+
+X (
+
+(1 − M )α log( M), if MGT = 1 (1 − M GT )β Mα log(1 − M ), otherwise  (S13) where Npos is the number of positive lane center points, and the hyper-parameters α and 
+
+β control the penalties for easy and hard examples. 
+
+S2.3 Training Details 
+
+Our HSDF-Lane model is trained end-to-end using the AdamW optimizer with a weight decay of 10 −2 and a cosine annealing learning rate scheduler. The initial learning rate is set to 5 × 10 −4, preceded by a linear warmup over the first 1000 iterations that HSDF-Lane 23 
+
+increases the rate from zero to this value. To ensure full convergence across differ-ent dataset scales, the training process spans 24 epochs for the OpenLane dataset [3] and 100 epochs for the Apollo 3D synthetic dataset [10]. We use a total batch size of 
+
+32 distributed across two NVIDIA H200 GPUs. The weighting hyperparameters are empirically set as follows: λseg = 5 , λoff = 60 , λemb = 1 , λ2d = 1 (λseg_2d = 3 ,
+
+λemb_2d = 0 .5), λgeo = 10 , λeik = 0 .1 and λhm = 5 .
+
+## S3 Additional Experiments 
+
+In this section, we provide additional experimental analyses to comprehensively eval-uate the proposed HSDF-Lane. Specifically, we present: 1) experimental results on the Apollo 3D Synthetic dataset [10], 2) an ablation study analyzing the impact of the spatial sampling hyperparameter, 3) an analysis of computational efficiency, and 4) ad-ditional qualitative visualizations in complex driving scenarios. 
+
+S3.1 Results on Apollo Dataset Dataset and Setup. The Apollo 3D Synthetic dataset [10] is a synthetic dataset built using the Unity game engine to simulate diverse 3D autonomous driving worlds. It comprises a total of 10,500 images rendered from highway, urban, and residential maps based on real regions in Silicon Valley, including varying day-times, camera heights, and pitch angles. Based on specific evaluation criteria, the dataset provides three distinct splits: Balanced Scenes for standard benchmarking, Rarely Observed Scenes to test generalization to unfamiliar urban layouts and sharp turnings, and Scenes with Visual Variations to evaluate robustness against illumination changes. Because the Apollo dataset does not provide LiDAR point clouds, we construct the ground-truth road height maps by leveraging the provided depth maps and 2D semantic segmentation data. For certain scenes where explicit road segmentation annotations are missing, we utilize the Segment Anything Model (SAM) [16] to automatically generate pseudo road masks. Specifically, we project the 3D lane annotations onto the 2D image plane and sample points along these projected lanes to serve as positive prompts for SAM. To spatially constrain the road surface extraction, we utilize points from existing object masks and the top 25% region of the image as negative prompts, effectively suppressing background regions. 
+
+Quantitative Results. We evaluate the 3D lane detection performance using F1-Score, X-error, and Z-error, consistent with the OpenLane benchmark [3], alongside Average Precision (AP), which is specifically employed for the Apollo dataset. As shown in Ta-ble S1, HSDF-Lane consistently achieves state-of-the-art performance across all three dataset splits. In the Balanced Scene , our method outperforms the baseline Height-Lane [35]. The performance gap significantly widens in more challenging scenarios. In the Rare Scene and Visual Variations splits, our approach demonstrates superior gener-alization capability to unfamiliar road topologies and varying lighting conditions. No-tably, our method drastically reduces the far-range Z-error in the Rare Scene .Furthermore, Table S2 reports the height map estimation metrics. HSDF-Lane con-sistently reduces both MAE and RMSE across all evaluation splits. Notably, HSDF-Lane shows clear improvements in the Rare Scene subset. These results demonstrate 24 Boo et al.   
+
+> Table S1: Quantitive results on Apollo 3D Synthetic dataset [10]. The best results are high-lighted in bold , while the second-best results are underlined.
+
+Scene Method F1-Score(%) ↑ AP(%) ↑ X-error Z-error near (m) ↓ far (m) ↓ near (m) ↓ far (m) ↓
+
+> Balanced Scene
+
+PersFormer [3] 92.9 - 0.054 0.356 0.010 0.234 BEVLaneDet [49] 96.9 - 0.016 0.242 0.020 0.216 LaneCPP [38] 97.4 99.5 0.030 0.277 0.011 0.206 LATR [28] 96.8 97.9 0.022 0.253 0.007 0.202 DV-3DLane [27] 96.4 97.6 0.046 0.299 0.016 0.213 GLane3D-B [32] 98.1 98.8 0.021 0.250 0.007 0.213 HeightLane [35] 97.9 98.9 0.022 0.075 0.051 0.133 
+
+HSDF-Lane (Ours) 98.8 99.5 0.021 0.072 0.041 0.095 
+
+> Rare Scene
+
+PersFormer [3] 87.5 - 0.107 0.782 0.024 0.602 BEVLaneDet [49] 97.6 - 0.031 0.594 0.040 0.556 LaneCPP [38] 96.2 98.6 0.073 0.651 0.023 0.543 LATR [28] 96.1 97.3 0.050 0.600 0.015 0.532 DV-3DLane [27] 95.5 97.2 0.071 0.664 0.025 0.568 GLane3D-B [32] 98.4 99.1 0.044 0.621 0.023 0.566 HeightLane [35] 95.3 97.5 0.037 0.064 0.104 0.272 
+
+HSDF-Lane (Ours) 99.2 99.6 0.034 0.061 0.065 0.134 
+
+> Visual Variations
+
+PersFormer [3] 89.6 - 0.074 0.430 0.015 0.266 BEVLaneDet [49] 95.0 - 0.027 0.320 0.031 0.256 LaneCPP [38] 90.4 93.7 0.054 0.327 0.020 0.222 LATR [28] 95.1 96.6 0.045 0.315 0.016 0.228 DV-3DLane [27] 91.3 93.4 0.095 0.417 0.040 0.320 GLane3D-B [32] 92.7 94.8 0.046 0.364 0.020 0.317 HeightLane [35] 97.0 98.6 0.026 0.109 0.055 0.137 
+
+HSDF-Lane (Ours) 97.9 99.0 0.026 0.103 0.048 0.113 
+
+that the proposed HSDF modeling produces a more accurate and geometrically consis-tent road surface compared to prior anchor-based direct regression approaches. 
+
+Qualitative Results. The qualitative results on the Apollo dataset [10] are shown in Fig. S1 and Fig. S2. HSDF-Lane robustly reconstructs 3D lanes under varying gradients and illumination conditions. Unlike prior methods that suffer from height fluctuations, our approach maintains geometric consistency to yield smooth predictions, demonstrat-ing the effectiveness of the proposed HSDF and LSPE. 
+
+S3.2 Effect of the Maximum Slope Angle θ
+
+Ablation Setup. In our dense 3D sampling strategy, the maximum slope angle θ is a crucial hyperparameter. A smaller θ restricts the search space, potentially truncating valid road surfaces on steep inclines, whereas a larger θ degrades spatial resolution and introduces noise unless sampling density is proportionally increased. To evaluate the impact of θ, we performed an ablation study on the OpenLane-300 subsets [3] by vary-ing θ ∈ { 4◦, 5◦, 6◦} and comparing our proposed HSDF-Lane with HeightLane [35]. HSDF-Lane 25 
+
+Table S2: Comparison of height map estimation on Apollo 3D Synthetic dataset [10]. The best results for each scenario are highlighted in bold .
+
+Scene Method Error Metrics (↓) Accuracy Metrics (↑)
+
+MAE RMSE @0.05 @0.1 @0.2 
+
+HeightLane [35] 0.063 0.157 0.762 0.859 0.923 
+
+Balanced Scene HSDF-Lane 0.026 0.056 0.849 0.946 0.991 
+
+HeightLane [35] 0.098 0.188 0.573 0.736 0.863 
+
+Rare Scene HSDF-Lane 0.048 0.095 0.707 0.875 0.966 
+
+HeightLane [35] 0.054 0.145 0.777 0.881 0.943 
+
+Visual Variations HSDF-Lane 0.032 0.082 0.835 0.932 0.980 
+
+Results. As summarized in Table S3, HSDF-Lane demonstrates strong robustness to different vertical sampling bounds and consistently achieves better height estimation accuracy than the baseline. The best overall performance is obtained when θ = 5 ◦,which is the configuration adopted in the main manuscript. 
+
+Table S3: Ablation study of the parameter θ on the OpenLane 300 subset [3]. The best results are highlighted in bold .                                   
+
+> Method θF1-Score(%) ↑X-error (m) ↓Z-error (m) ↓HError ↓HAccuracy ↑
+> near far near far MAE RMSE @0.05 @0.1 @0.2 HeightLane 74.8 0.219 0.289 0.205 0.238 0.178 0.327 0.265 0.474 0.730 HSDF-Lane 475.6 0.229 0.286 0.198 0.149 0.169 0.332 0.260 0.472 0.745 HeightLane 73.3 0.225 0.293 0.204 0.236 0.181 0.351 0.272 0.482 0.736 HSDF-Lane 575.6 0.208 0.268 0.159 0.146 0.158 0.326 0.288 0.503 0.767
+> HeightLane 75.3 0.239 0.284 0.213 0.246 0.184 0.336 0.262 0.472 0.727 HSDF-Lane 674.8 0.231 0.283 0.174 0.161 0.157 0.284 0.288 0.498 0.749
+
+S3.3 Computational Efficiency Evaluation Setup. To evaluate the practicality of HSDF-Lane for real-world autonomous driving, we analyze computational efficiency in terms of inference speed (FPS), floating-point operations (FLOPs), and total parameter count. The comparison includes repre-sentative state-of-the-art 3D lane detection models [28, 34, 35, 39]. All inference speeds are measured on a single NVIDIA RTX 3090 GPU with a batch size of 1. To ensure stable timing measurements, we first run 100 warm-up iterations, followed by 500 iter-ations to compute the average FPS. 
+
+Results. As summarized in Table S4, the proposed framework operates at the highest inference speed while maintaining superior performance among the compared methods. 
+
+S3.4 Effectiveness of the HSDF Formulation and Eikonal Regularization 
+
+Unlike conventional SDFs that model an isotropic field in full 3D space, HSDF adopts a 2.5D formulation that captures continuous road geometry on a BEV grid while substan-26 Boo et al. 
+
+Table S4: Efficiency comparison. We evaluate the F1-score, inference speed (FPS), and com-putational overhead (FLOPs and parameter count) for each method, measured on an RTX 3090 with a batch size of 1. The best results are highlighted in bold . (§): Reproduced due to lack of official code. ( †): HSDF-Lane equipped with FPN. 
+
+Methods Backbone F1-Score ↑ FPS ↑ FLOPs # of Params. 
+
+LATR [28] ResNet-50 61.9 15.92 135.87G 46.84M HeightLane [35] ResNet-50 62.7 17.24 417.58G 73.40M SC-Lane [34] ResNet-50 64.3 18.02 375.10G 70.10M SparseLaneSTP § [39] ResNet-50 66.1 11.02 147.46G 51.54M 
+
+HSDF-Lane ResNet-50 66.3 18.76 269.55G 28.35M 
+
+HSDF-Lane † ResNet-50 66.9 23.19 145.08G 31.25M 
+
+tially reducing 3D complexity. By constraining the Eikonal loss to the vertical derivative (∂s/∂z = 1 ), the surface is regularized along the height direction with minimal com-putational overhead. To verify that HSDF is more than a reparameterization of direct height regression, we compare the two formulations on the full OpenLane dataset [3] in Table S5. The HSDF-based formulation yields consistent gains across all error and accuracy metrics over direct regression. Adding the height-directional Eikonal regularization Leik further improves geometric consistency, with the most notable gains in the far range and the accuracy-based metrics. 
+
+Table S5: Ablation on the HSDF formulation and the height-directional Eikonal regularization 
+
+Leik , evaluated on height map H prediction over the full OpenLane dataset [3]. All variants are trained with height map estimation supervision only.                                  
+
+> Method Overall (↓)Close (↓)Far (↓)Accuracy Metrics (↑)
+> MAE RMSE MAE RMSE MAE RMSE @0.05 @0.1 @0.2
+> Direct regression 0.183 0.524 0.144 0.244 0.231 0.737 0.252 0.457 0.730 HSDF w/o Leik 0.159 0.347 0.123 0.208 0.204 0.465 0.293 0.510 0.761 HSDF (Ours) 0.157 0.331 0.124 0.210 0.199 0.436 0.295 0.511 0.762
+
+S3.5 Ablation of the LSPE Design 
+
+We compare our LSPE design with alternative ways of injecting the lane heatmap into the transformer queries on the full OpenLane dataset [3], as reported in Table S6. En-coding the heatmap with a full learnable MLP (B) introduces noise that interferes with the geometric positional embedding pgeo , performing even below the no-LSPE baseline (A). Directly concatenating the heatmap (C) also underperforms, as the single-channel semantic signal is overwhelmed by the high-dimensional pgeo . In contrast, our design (D) modulates a single learnable vector with the heatmap probability, acting as a clean attention gate that injects the semantic prior without introducing conflicting signals. HSDF-Lane 27                                                                
+
+> Table S6: Ablation of LSPE design choices on the full OpenLane dataset [3] (F1-Score, %). Method All Up & Down Curve Extreme Weather Night Intersection Merge & Split A: no LSPE 65.9 56.3 72.8 56.9 58.6 58.0 64.7 B: MLP 65.7 55.4 72.8 57.7 58.2 57.7 63.0 C: Concat 66.0 57.8 72.9 59.6 57.4 58.2 64.1 D: Ours 66.3 58.9 73.7 60.7 57.4 58.3 65.7
+> Table S7: Comparison of height map supervision sources on the full OpenLane dataset [3].
+> Method F1(%) X error (↓)Z error (↓)HError (↓)Accuracy Metrics (↑)near far near far MAE RMSE @0.05 @0.1 @0.2 E: Lane-derived 66.0 0.198 0.220 0.090 0.113 0.279 0.549 0.224 0.399 0.622 F: Raw LiDAR + Lane 66.7 0.194 0.211 0.090 0.155 0.322 0.643 0.212 0.378 0.599 G: Dense LiDAR (Ours) 66.3 0.201 0.223 0.088 0.114 0.158 0.313 0.294 0.512 0.763
+
+S3.6 Scalability without Dense LiDAR Supervision 
+
+The main experiments use dense ground-truth height maps accumulated from LiDAR point clouds. To assess whether HSDF-Lane remains applicable under weaker super-vision, we retrain the model on the full OpenLane dataset [3] using pseudo height maps derived from (E) 3D lane annotations only like [38] and (F) 3D lane annotations combined with raw single-frame LiDAR. As shown in Table S7, both variants achieve F1-scores on par with the dense-supervision setting (G), indicating that the proposed framework does not strictly depend on dense LiDAR-derived height maps. As expected, the dense-supervision setting still attains the best height estimation accuracy, since its supervision is directly aligned with the height metrics. 
+
+S3.7 Additional Qualitative Results. 
+
+We provide additional qualitative results on the OpenLane dataset [3]. Each example consists of a pair of figures showing the 3D lane detection result and the corresponding estimated height map: (Fig. S3, Fig. S4), (Fig. S5, Fig. S6), and (Fig. S7, Fig. S8). As shown in the figures, our proposed method demonstrates robust performance in both 3D lane detection and height estimation across diverse and challenging driving scenar-ios. Specifically, the model effectively handles conditions with limited visibility, such as nighttime and adverse weather. Furthermore, it accurately captures complex road geometries, maintaining high precision on severe slopes and sharp curves. 28 Boo et al. Ours  HeightLane  GT 
+
+Fig. S1: Qualitative results on Apollo 3D Synthetic dataset [10]. We compare our proposed HSDF-Lane against HeightLane [35]. The visualizations illustrate the 3D lane projections onto the input image, the reconstructed 3D lanes, and the corresponding estimated height maps. The Ground Truth (GT) is displayed on the far left, with GT lanes denoted by red dashed lines. HSDF-Lane 29 Ours  HeightLane  GT 
+
+Fig. S2: Qualitative results on Apollo 3D Synthetic dataset [10]. We compare our proposed HSDF-Lane against HeightLane [35]. The visualizations illustrate the 3D lane projections onto the input image, the reconstructed 3D lanes, and the corresponding estimated height maps. The Ground Truth (GT) is displayed on the far left, with GT lanes denoted by red dashed lines. 30 Boo et al. Input  Ours  HeightLane  LATR 
+
+Fig. S3: Qualitative result of 3D lane detection on OpenLane Benchmark [3]. From left to right: input image I, and 3D lane predictions of HSDF-Lane (ours), HeightLane [35], and LATR [28]. The ground truth (GT) is indicated by red dashed lines. HSDF-Lane 31 Input  Ours  HeightLane  GT 
+
+Fig. S4: Qualitative comparison of height map estimation on OpenLane Benchmark [3]. 
+
+From left to right: input image I, estimated height maps H and their corresponding error maps (masked by valid GT regions) for our method and HeightLane [35], alongside the GT height map. 32 Boo et al. Input  Ours  HeightLane  LATR 
+
+Fig. S5: Qualitative result of 3D lane detection on OpenLane Benchmark [3]. From left to right: input image I, and 3D lane predictions of HSDF-Lane (ours), HeightLane [35], and LATR [28]. The ground truth (GT) is indicated by red dashed lines. HSDF-Lane 33 Input  Ours  HeightLane  GT 
+
+Fig. S6: Qualitative comparison of height map estimation on OpenLane Benchmark [3]. 
+
+From left to right: input image I, estimated height maps H and their corresponding error maps (masked by valid GT regions) for our method and HeightLane [35], alongside the GT height map. 34 Boo et al. Input  Ours  HeightLane  LATR 
+
+Fig. S7: Qualitative result of 3D lane detection on OpenLane Benchmark [3]. From left to right: input image I, and 3D lane predictions of HSDF-Lane (ours), HeightLane [35], and LATR [28]. The ground truth (GT) is indicated by red dashed lines. HSDF-Lane 35 Input  Ours  HeightLane  GT 
+
+Fig. S8: Qualitative comparison of height map estimation on OpenLane Benchmark [3]. 
+
+From left to right: input image I, estimated height maps H and their corresponding error maps (masked by valid GT regions) for our method and HeightLane [35], alongside the GT height map.

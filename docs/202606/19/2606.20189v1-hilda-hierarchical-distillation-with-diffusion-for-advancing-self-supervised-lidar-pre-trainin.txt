@@ -1,0 +1,1184 @@
+Title: HilDA: Hierarchical Distillation with Diffusion for Advancing Self-Supervised LiDAR Pre-trainin
+
+URL Source: https://arxiv.org/pdf/2606.20189v1
+
+Published Time: Fri, 19 Jun 2026 01:06:07 GMT
+
+Number of Pages: 56
+
+Markdown Content:
+# HilDA: Hi erarchical Disti l lation with Diffusion for Advancing Self-Supervised LiDAR Pre-training 
+
+Maciej Wozniak ∗,1 , Jesper Ericsson ∗1,3 , Hariprasath Govindarajan 2,4 , Truls Nyberg 1,3 , Thomas Gustafsson 3 , Patric Jensfelt 1 , and Olov Andersson 1 
+
+> 1
+
+KTH Royal Institute of Technology, Sweden 
+
+{maciejw, jesperik, patric, olovand}@kth.se  
+
+> 2
+
+Linköping University, Sweden 
+
+hariprasath.govindarajan@liu.se  
+
+> 3
+
+TRATON AB, Sweden 
+
+{truls.nyberg, thomas.gustafsson}@scania.com  
+
+> 4
+
+Qualcomm Auto Ltd Sweden Filial 
+
+> ∗
+
+Equal contribution. 
+
+Abstract. Leveraging Vision Foundation Models (VFMs) for camera-to-LiDAR knowledge distillation offers a promising solution to the scarcity of annotated data needed to represent the immense geometric and kinematic diversity of real-world autonomous driving (AD). However, current ap-proaches typically treat VFMs as black-box teachers, relying exclusively on frame-wise feature similarity. Consequently, they do not fully exploit the teacher’s layer-wise semantic structure and global context, as well as the rich spatiotemporal information inherent in LiDAR sequences. We propose HilDA , a self-supervised pre-training framework for LiDAR backbones that better captures the semantic what and geometric where 
+
+needed for driving tasks. HilDA combines hierarchical distillation com-prising multi-layer distillation for progressive semantic alignment and global context distillation for scene-level semantics, with a temporal occu-pancy diffusion objective promoting spatiotemporal consistency. Models pre-trained with HilDA achieve state-of-the-art results on cross-modal dis-tillation benchmarks and outperform models trained via prior distillation approaches on 3D object detection, scene flow, and semantic occupancy prediction. Code available at: https://maxiuw.github.io/hilda .
+
+Keywords: Autonomous Driving · SSL · Knowledge Distillation 
+
+## 1 Introduction 
+
+Robust spatial perception in dynamic and challenging environments is essential for autonomous driving safety. While LiDAR provides high-fidelity spatial data, training 3D models typically demands massive, labeled datasets. However, the main limitation is not only the annotation cost but also the inability of manual labeling to cover the combinatorial diversity of real-world geometry and mo-tion [21, 55]. To mitigate this challenge, focus has shifted towards Knowledge 
+
+> arXiv:2606.20189v1 [cs.CV] 18 Jun 2026
+
+2 M. Wozniak et al. HilDA: Hierarchical Distillation with Diffusion Diffusion UNet      
+
+> ++Multi-layer
+> +
+> …
+> Diffusion UNet
+> …
+> …
+> Diffusion UNet
+> …
+> Segmentation Errors
+> 2D Teacher 2D Teacher
+> 3D Student 3D Student
+> Baseline (a) (b) (c)
+
+Fig. 1: Effect of HilDA components on semantic accuracy. From baseline (left), we can see error reduction by adding (a) temporal occupancy diffusion, (b) multi-layer distillation, and (c) global context distillation. Best viewed zoomed in Û.
+
+Distillation (KD) from Vision Foundation Models (VFMs) into self-supervised LiDAR backbones as a pre-training step [24, 49, 63, 88, 90]. By using VFMs as a teacher, recent work has successfully equipped 3D networks with dense semantic features robust to domain shifts and adverse weather conditions [49, 50, 68]. While these methods established a solid foundation for cross-modal distillation, we observe that they only distill the features from the final layer of the VFM [24, 49, 50, 63, 68, 86, 88, 90]. This approach limits the ability to fully harness the rich representational knowledge that recent work suggests is distributed throughout the VFM’s layers [6]. In vision encoders, the multi-layer progression of features across layers captures increasingly abstract and semantically rich information [2]. Because of this, restricting distillation to the final layer may cause two important drawbacks. First, the progressive semantic refinement across layers is potentially lost, limiting the transfer of intermediate representations, which are often better suited for various downstream tasks [6, 20, 34, 95]. Second, the final-layer approach overlooks the global context captured by the CLS token [19]. Recent studies on image-based VFMs demonstrate that this token encodes scene-specific information, including the prominence of objects and their relational cues [17, 29, 65]. Instead of distilling only the last layer features, we investigate distilling the hierarchy of how the VFM learns semantics by using both multi-layer features and the global CLS token. We term this approach hierarchical distillation .Finally, while VFMs trained on images excel at semantic recognition, they inherently lack explicit information about 3D scene geometry and temporal cues, leaving these aspects underconstrained during pre-training. This issue has been noted in prior cross-modal distillation and pre-training works [24, 52, 104], which introduce an auxiliary occupancy prediction objective to improve downstream performance. However, none of these methods explores the pairing of discriminative and generative priors for spatiotemporal coherence. Recent findings in 2D image space have shown that diffusion-based denoising can serve as geometry-oriented supervision [27,31,51,98,106], encouraging models to internalize spatial manifolds and surface hierarchies through denoising. By combining the semantic what from VFMs and the generative where from diffusion, we aim to create a representation that is both semantically informed and structurally HilDA: Hierarchical Distillation with Diffusion for LiDAR Pre-training 3
+
+robust [99], particularly in the dynamic and occluded environments typical of autonomous driving [11]. Concretely, we introduce a temporal occupancy prediction task with diffusion as an auxiliary pre-training objective and show that this design yields representations that surpass prior methods on cross-modal distillation benchmarks and improve downstream performance on 3D tasks requiring semantic and spatiotemporal reasoning. To address both the aspects of final-layer distillation and the lack of ex-plicit 3D spatiotemporal supervision, we introduce HilDA , a self-supervised pre-training framework that combines hierarchical distillation with temporal occupancy diffusion. Our main contributions are summarized as follows: 
+
+– Hierarchical Distillation: We introduce a novel cross-modal distillation ap-proach that goes beyond standard final-layer distillation by capturing the semantic evolution of the VFM. This is achieved through a dual mechanism: first, a multi-layer distillation strategy utilizes intermediate layers to teach the student LiDAR model how to progressively construct features; second, a 
+
+global context distillation aligns the VFM’s CLS token with a novel, learnable 3D global context token to promote holistic scene-level representations. 
+
+– Temporal Occupancy Diffusion : We introduce an auxiliary self-supervised diffusion objective that casts future occupancy prediction as conditional generation, encouraging predictive geometric and motion encoding while addressing the spatiotemporal limits of pure semantic distillation. Figure 1 visualizes the effect of progressively incorporating temporal occupancy diffusion and hierarchical distillation. Compared to standard final-layer distilla-tion, adding consecutive components yields visibly reduced segmentation errors, indicating increasingly structured and semantically aligned LiDAR represen-tations. Extensive experiments on autonomous driving benchmarks in Sec. 4 demonstrate that HilDA achieves state-of-the-art (SOTA) performance in camera-LiDAR cross-modal distillation. Whether evaluated via linear probing, few-shot transfer, or as an initialization for full supervision, our approach consistently outperforms existing methods. Furthermore, our distillation strategy produces features with enhanced multi-task transferability. Beyond 3D semantic segmenta-tion, our model outperforms previous SOTA distillation approaches in 3D object detection, scene flow, and semantic occupancy prediction. 
+
+## 2 Related Work 
+
+Cross-Modal Distillation Methods. In VFMs, the pre-training objective strongly shapes the learned representations. For example, global alignment en-hances aggregated feature semantics [9, 25, 64], while dense prediction localizes features and promotes boundary adherence [39, 107]. When transferring such features, early camera–LiDAR distillation methods largely relied on contrastive objectives, which can be sensitive to noisy point–pixel correspondences, as high-lighted by [24, 63]. Several methods [49, 68, 88, 103] therefore used grouping or semantic priors ( e.g ., SAM [39] or OpenSeed [97] pseudo-masks). While helpful, 4 M. Wozniak et al. HilDA: Hierarchical Distillation with Diffusion 
+
+these priors add overhead, and contrastive distillation can still exhibit “self-conflict” by sampling semantically similar regions as negatives [49, 63, 68, 88, 103]. Recent work instead favors direct feature alignment [24, 63, 86, 90], using e.g ., expressive 2D-to-3D transfer [24] or scaling teacher/student models and data [63]. Because VFM layers differ in semantic abstraction [6, 72, 92], the progressively learned feature hierarchy is distributed across intermediate layers rather than confined to the final output [71,93]. This hierarchy contains signals about “how” to learn the features. Yet both contrastive and direct-alignment pipelines supervise only the final-layer [24, 49, 50, 63, 68, 86, 88, 90] and discard the teacher CLS 
+
+token [19], limiting global alignment despite its shown benefit in the 2D setting [29, 65]. Rather than relying on computationally heavy grouping priors or data scaling, we leverage the VFM’s hierarchical progression via multi-layer distillation and global CLS token distillation to strengthen cross-modal alignment. 
+
+Geometric and Temporal Auxiliaries. Image-based VFMs transfer seman-tics but typically lack explicit 3D geometric or temporal supervision. Many camera–LiDAR distillation methods prioritize cross-modal feature alignment [86], or semantic-temporal consistency objectives [88, 90]. Recent approaches [24, 104] and representation learning works [1, 18, 52] increasingly use occupancy predic-tion to impose spatiotemporal priors. While effective, discriminative occupancy prediction trained with per-query/voxel binary cross-entropy supervision models local marginals rather than the joint scene distribution. Shared receptive fields may implicitly promote consistency, but this objective provides no explicit incen-tive for globally coherent configurations, limiting its ability to capture complex 3D structure [79]. In practice, occupancy is correlated across space and time, forming continuous structures [81] and maintaining object permanence [54]. This motivates the use of generative objectives that can model occupancy jointly and impose scene-level spatiotemporal structure through iterative refinement [26]. Diffusion models [30, 66], analogous to denoising autoencoders trained across noise levels [13, 84, 91], define a coarse-to-fine refinement process over dense structured targets [75]. Applied to spatiotemporal denoising, they can learn to represent stochastic future evolution by encoding global scene dynamics [74]. In autonomous driving, diffusion is used for spatiotemporal prediction and re-finement, including LiDAR completion [60], world-model rollouts [76, 100, 105], BEV/scene-flow refinement [47, 94], and as action decoders [22, 45, 78]. While the diffusion objective alone can overemphasize local detail and weaken semantic dis-crimination, pairing it with robust discriminative teachers ( e.g ., DINOv2 [61]) is shown to preserve semantics while improving geometric priors [44, 99]. Motivated by this complementarity, we use diffusion as a pre-training objective [31], denois-ing future occupancy from past context across noise levels to inject multi-scale geometric and motion cues into the LiDAR encoder. 
+
+## 3 Method 
+
+In this section, we define the pre-training formulation and present the components comprising our framework HilDA . Figure 2 shows an architectural overview. HilDA: Hierarchical Distillation with Diffusion for LiDAR Pre-training 5Futură    
+
+> LćDAR Poćnt ClouĂ
+> Tămporÿl Oāāupÿnāy DćfĄusćon (Săā. 3.4)
+> 2D TăÿāĆăr
+> …
+> GloĀÿl Contăxt
+> Dćstćllÿtćon (Săā. 3.3)
+> Multć-Lÿyăr Dćstćllÿtćon (Săā. 3.2)
+> 2D Multć-lÿyăr Făÿturăs
+> LćDAR Poćnt ClouĂs
+> Multć-Vćăw
+> Cÿmărÿ Imÿąăs
+> Gănărÿtă BEV Oāāupÿnāy
+> ConĂćtćonćną
+> DćfĄusćon UNăt
+> Conāÿt
+> Projăāt to BEV
+> 2D GloĀÿl Făÿtură
+> 3D GloĀÿl Făÿtură
+> FćnĂ ovărlÿppćną răąćons Ąor ÿll āÿmărÿs
+> ……
+> …
+> …
+> …
+> 3D StuĂănt
+> …
+> …
+
+Fig. 2: Overview of HilDA. With LiDAR sweeps and synchronized multi-view images, HilDA learns a 3D backbone using three self-supervised objectives: (1) multi-layer point–pixel distillation from a frozen VFM, (2) global context distillation via CLS tokens (t−1 and t0 are processed independently through the distillation modules), and (3) 
+
+temporal occupancy diffusion conditioned on the student features (Ft−1 
+
+> L
+
+, Ft0 
+
+> L
+
+). Features are extracted from t−1 and t0, while t1 constructs the future BEV occupancy target. 
+
+3.1 Problem Definition and Motivation 
+
+The primary objective of cross-modal knowledge distillation is to pre-train a LiDAR student network by transferring rich and dense semantic knowledge from a VFM while also learning geometric features exclusive to the LiDAR modality. For this task, let the input be a point cloud P = {pi | i = 1 , . . . , N } of N
+
+points, where each point pi ∈ R4 denotes the 3D spatial coordinates (x, y, z ) and intensity. Let V be the number of synchronized cameras forming a surround view 
+
+I = {Ic | c = 1 , . . . , V }, where Ic ∈ RH×W ×3 is the RGB-image from camera c.The challenge lies in the fundamental discrepancy between modalities: LiDAR data is geometrically precise but semantically sparse and texture-less, whereas camera images are semantically dense but lack explicit depth or metric 3D structure. We aim to pre-train a LiDAR backbone Sθ (·) in a self-supervised manner to inherit visual semantics without requiring manual annotations, while simultaneously learning spatiotemporal features through a generative auxiliary task. The outcome of our self-supervised pre-training is a backbone Sθ that can produce robust feature representations useful for various perception tasks (note, for inference we remove all other components used in pre-training). HilDA processes temporal sequences of three frames {t−1, t 0, t 1}. Feature extraction is restricted to the past and present frames, {t−1, t 0}, while the future frame t1
+
+serves exclusively as the target for occupancy prediction. We omit the temporal index in the two following Secs. 3.2 and 3.3 for notational simplicity. 6 M. Wozniak et al. HilDA: Hierarchical Distillation with Diffusion 
+
+3.2 Multi-Layer Distillation 
+
+To effectively transfer semantic knowledge, we employ a dense-to-sparse distilla-tion strategy. This process relies strictly on geometric calibration, avoiding the need for semantic priors. We find corresponding points and pixels by projecting the point coordinates (xi, y i, z i) onto the image plane (ui, v i)c of camera c using calibration information. The following sensor calibration parameters are used: 
+
+ui vi 1T = ρ(i) = 1 
+
+> zi
+
+× ΓI × Γc←LiDAR × xi yi zi
+
+T , where ΓI denotes the camera-intrinsic matrix and Γc←LiDAR is the transformation matrix from the LiDAR sensor to each camera. This enables a mapping between points and pixels for each camera image. Let Mc be the set of valid point–pixel correspondences for image Ic. We define a pair (i, j ) ∈ M c if the projection of the 3D point pi
+
+onto camera c maps to the pixel with index j. Points outside Mc are excluded from multi-layer distillation but still contribute to the losses in Secs. 3.3 and 3.4. We distill features from multiple teacher layers into the corresponding student layers to capture not only the teacher’s final representation, but also how features form across the VFM hierarchy. By default, we use the last two layers. Let L be the index of the final output layer for both teacher and student 5 (the two networks may have different total depths). We define the layer index ℓ ∈ { L − K, . . . , L }.We denote the student point-feature tensor at layer ℓ by Fℓ ∈ RN ×Cℓ , and the feature of point i by fi,ℓ = Fℓ[i] ∈ RCℓ . Let Qℓ,c ∈ RH×W ×Dℓ be the feature map at the corresponding teacher layer for camera c, bi-linearly up-sampled to the image resolution H × W . From this, we can obtain the teacher feature at pixel j as qj,ℓ,c = Qℓ,c [j] ∈ RDℓ . We apply a lightweight, layer-specific MLP 
+
+Hℓ : RCℓ → RDℓ to align the teacher and student feature dimensions (see Fig. 2). Cosine distance is then minimized over point-pixel pairs across layers and images: 
+
+Ldistill = 1
+
+V (K + 1) 
+
+> L
+
+X
+
+> ℓ=L−KV
+
+X
+
+> c=1
+
+1
+
+|M c|
+
+X
+
+> (i,j )∈M c
+
+
+
+1 − Hℓ(fi,ℓ ) · qj,ℓ,c 
+
+∥H ℓ(fi,ℓ )∥2 ∥qj,ℓ,c ∥2
+
+
+
+. (1) By maximizing similarity across layers, the 3D student learns to progressively encode visual concepts using an information hierarchy similar to the teacher. 
+
+3.3 Global Context Distillation 
+
+Local point-pixel distillation ensures fine-grained alignment but may miss the holistic context of a scene ( e.g ., distinguishing a highway environment from a residential area). ViT-based VFMs inherently encode global context in their CLS 
+
+token. Thus, as part of our novel hierarchical distillation strategy, we complement the local multi-layer distillation loss in Eq. (1) with global context distillation. To construct a unified visual scene descriptor CLS QL , we extract the CLS 
+
+tokens from the teacher’s final layer L for all V camera images and apply a    
+
+> 5In the case of MinkUnet34 [15], it consists of “planes” that have multiple layers. We refer to these planes as “student layers”. For the teacher, we select adjacent ViT transformer blocks and refer to these as “teacher layers”. Thus, each selected feature layer from the student and teacher includes a non-trivial stage/block-level transformation rather than a single atomic layer. HilDA: Hierarchical Distillation with Diffusion for LiDAR Pre-training 7
+
+max-pooling across them. Correspondingly, for the LiDAR scene P, we design a global context “token” CLS FL by applying a dedicated MLP projection head 
+
+HCLS (·) to the features from the final layer L of the student network, followed by global max-pooling over all point features in the scene. Max pooling highlights the most active features. We then align the global representation of the student with the teacher by minimizing the Mean Squared Error (MSE): 
+
+LCLS = ∥CLS FL − CLS QL ∥22. (2) This objective acts as a scene-level regularizer, encouraging the 3D backbone to aggregate global context by matching the student’s pooled representation to the VFM’s CLS embedding. This emphasizes salient view- and point-level activations to align global semantic cues between the student and the teacher. Section A and Tab. 9 ablates different loss formulations for Eq. (2) as well as different pooling methods for constructing CLS QL and CLS FL .
+
+3.4 Spatiotemporal Self-Supervised Learning as an Auxiliary Task 
+
+Distillation provides semantic context but does not explicitly model spatiotem-poral scene dynamics. We therefore add a label-free auxiliary task that predicts future BEV occupancy with a conditional diffusion model, encouraging the 3D student Sθ to learn predictive spatial representations [31, 62]. Given two LiDAR sweeps Pt−1 and Pt0 , Sθ encodes them into features Ft−1 
+
+> L
+
+and Ft0 
+
+> L
+
+, which are collapsed into a shared dense BEV history feature map Chistory . The future sweep 
+
+Pt1 is transformed into the t0 frame and projected to a ground-removed BEV occu-pancy target xocc ∈ { 0, 1}HBEV ×WBEV . We formulate future occupancy prediction as conditional DDPM denoising [30]. At diffusion step τ , the target occupancy is corrupted as xτ = √¯ατ xocc + √1 − ¯ατ ϵ, with ϵ ∼ N (0 , I) and ¯ατ = Qτs=1 (1 − βs).A denoising network (2D UNet [67]) then predicts ϵθ (xτ , τ, Chistory ), as shown in Fig. 2. Conditioning is implemented via channel-wise concatenation of xτ and 
+
+Chistory , following [43]. We train it with the hybrid objective 
+
+Ldiffusion = Eτ,ϵ, Chistory 
+
+h
+
+ϵ − ϵθ (xτ , τ, Chistory ) 22
+
+i| {z }
+
+> Noise Prediction
+
++ λ xocc − ˆxocc 
+
+> 22
+
+| {z }
+
+> Occ. Reconstr.
+
+(3) where the first term supervises noise prediction, while the second, weighted by λ,provides a complementary reconstruction signal [58] which improves conditioning at low τ (see Sec. A.4 for ablation). The reconstructed occupancy ˆxocc is recovered from the noisy sample by inverting the forward process using the predicted noise. Training across varying τ exposes the model to denoising tasks at different noise levels, encouraging a coarse-to-fine behavior from global structure to local detail. Full implementation details and target construction are provided in Sec. C. 
+
+3.5 Final Pre-Training Objective 
+
+HilDA is trained end-to-end on three objectives, encouraging the 3D student to learn detailed semantics via distillation, while jointly learning scene geometry 8 M. Wozniak et al. HilDA: Hierarchical Distillation with Diffusion 
+
+and dynamics via diffusion-based temporal occupancy prediction: 
+
+Ltotal = ωds Ldistill + ωgl LCLS + ωdf Ldiffusion . (4) 
+
+## 4 Experiments 
+
+4.1 Experimental Setup 
+
+We distill from DINOv2 [61] to MinkUnet34 [15], the standard backbone in prior camera–LiDAR distillation work. Our method also supports other 3D backbones, 
+
+e.g ., PTv3 [83] (supplementary Sec. A). Each teacher–student configuration is pre-trained once on the nuScenes training split [8] using synchronized RGB–LiDAR data and calibration only; no task labels are used. The resulting backbone is transferred to all downstream benchmarks without target-dataset re-pre-training. Table 1 varies the DINOv2 teacher size, while Sec. 4.3 uses the same ViT-B/MinkUnet34 checkpoint for all transfer tasks. We evaluate segmentation on nuScenes [8], SemanticKITTI [4], Waymo [70], ScribbleKITTI [73], RELLIS-3D [32], SemanticSTF [85], and DAPS-3D [40]; robustness on nuScenes-C [41]; 3D detection on KITTI [23] and nuScenes; semantic occupancy on nuScenes; and scene flow on Argoverse 2 [82]. Linear probing (LP) freezes the pre-trained backbone and trains only a linear head, whereas data-scarce/full fine-tuning updates the full network using the indicated label fraction. For semantic occupancy, we freeze the backbone and train a lightweight decoder. Metrics are mIoU for segmentation/occupancy, mAP for detection, EPE-based metrics for scene flow, and mCE/mRR for robustness. We use author-reported results unless stated otherwise and provide details in supplementary Sec. C. HilDA † denotes HilDA without the diffusion auxiliary pre-training loss; it is excluded from best /2nd -best ranking to emphasize the comparison of HilDA against prior SOTA. 
+
+4.2 Cross-Modal Distillation Benchmarks 
+
+In the next three tables, we compare our method with previous SOTA approaches on standard cross-modal distillation benchmarks for 3D semantic segmentation. 
+
+Main Results. As shown in Tab. 1, HilDA achieves SOTA performance across all scenarios (except for one - second best). The most significant gains are ob-served in the data-scarce scenarios (1%–10%) where our method outperforms previous SOTA by a significant margin, including CleverDistiller [24], LiMoE [86], and ScaLR [63]. While LiMA [90] previously set a clear margin on linear probing (LP), our method surpasses it while also delivering stronger fine-tuning results. This suggests that our hierarchical distillation with a temporal diffusion strategy yields a richer representation than prior methods relying on e.g ., global con-trastive learning or semantic priors, thereby reducing dependence on large-scale annotated data. Additionally, it substantially improves transfer to new domains like Semantic-KITTI [4] or the Waymo Open Dataset [70]. This pattern holds across different teacher sizes (ViT-S, ViT-B, and ViT-L). We also qualitatively observe this in Fig. 3, where our features yield notably lower segmentation error and work much better for long-tail cases ( e.g ., a person on the top of a truck). HilDA: Hierarchical Distillation with Diffusion for LiDAR Pre-training 9
+
+Table 1: 3D semantic segmentation results for cross-modal distillation methods pre-trained on nuScenes [8], and fine-tuned on nuScenes, SemanticKITTI [4], and Waymo [70]. All methods use the MinkUnet34 [15] backbone. LP denotes linear probing with a frozen backbone. “S.P.” refers to usage of semantic priors. 
+
+Method Venue Teacher S.P. nuScenes SKITTI Waymo LP 1% 5% 10% 25% Full 1% 1% 
+
+Random - - ✗ 8.10 30.30 47.84 56.15 65.48 74.66 39.50 39.41 SLidR [68] CVPR’22 ViT-S ✓ 44.70 41.16 53.65 61.47 66.71 74.20 44.67 47.57 Seal [49] NIPS’23 ViT-S ✓ 45.16 44.27 55.13 62.46 67.64 75.58 46.51 48.67 SuperFlow [88] ECCV’24 ViT-S ✓ 46.44 47.81 59.44 64.47 69.20 76.54 47.97 49.94 LiMoE [87] CVPR’25 ViT-S ✓ 48.20 49.60 60.54 65.65 71.39 77.27 49.53 51.42 CleverDistiller [24] BMVC’25 ViT-S ✗ 49.81 56.90 64.55 65.92 70.11 77.61 50.59 50.99 SuperFlow++ [89] TPAMI’25 ViT-S ✓ 48.57 49.07 60.57 65.21 70.05 76.92 49.27 51.25 LiMA [90] ICCV’25 ViT-S ✗ 54.76 48.75 60.83 65.41 69.31 76.94 49.28 50.23 
+
+HilDA † - ViT-S ✗ 55.13 57.81 66.26 67.32 70.54 77.17 50.80 50.87 
+
+HilDA - ViT-S ✗ 56.29 59.46 68.57 70.22 73.94 78.15 52.88 52.16 
+
+SLidR [68] CVPR’22 ViT-B ✓ 45.35 41.64 55.83 62.68 67.61 74.98 45.50 48.32 Seal [49] NIPS’23 ViT-B ✓ 46.59 45.98 57.15 62.79 68.18 75.41 47.24 48.91 SuperFlow [88] ECCV’24 ViT-B ✓ 47.66 48.09 59.66 64.52 69.79 76.57 48.40 50.20 ScaLR [63] CVPR’24 ViT-B ✗ 41.80 55.83 63.46 65.24 68.70 74.76 45.59 49.60 LiMoE [87] CVPR’25 ViT-B ✓ 49.07 50.23 61.51 66.17 71.56 77.81 50.30 51.77 CleverDistiller [24] BMVC’25 ViT-B ✗ 51.89 59.80 66.44 67.65 69.53 78.49 51.48 53.56 SuperFlow++ [89] TPAMI’25 ViT-B ✓ 48.86 49.56 60.75 65.46 70.19 77.29 49.90 51.65 LiMA [90] ICCV’25 ViT-B ✗ 56.65 51.29 61.11 65.62 70.43 76.91 50.44 51.35 
+
+HilDA † - ViT-B ✗ 56.51 61.01 67.17 70.13 72.83 77.53 51.58 52.11 
+
+HilDA - ViT-B ✗ 58.95 62.71 70.19 71.00 73.68 79.12 53.44 53.89 
+
+SLidR [68] CVPR’22 ViT-L ✓ 45.70 42.77 57.45 63.20 68.13 75.51 47.01 48.60 Seal [49] NIPS’23 ViT-L ✓ 46.81 46.27 58.14 63.27 68.67 75.66 47.55 50.02 SuperFlow [88] ECCV’24 ViT-L ✓ 48.01 49.95 60.72 65.09 70.01 77.19 49.07 50.67 ScaLR [63] CVPR’24 ViT-L ✗ 40.12 55.78 63.28 64.76 68.19 75.09 44.85 50.34 LiMoE [87] CVPR’25 ViT-L ✓ 49.35 51.41 62.07 66.64 71.59 77.85 50.69 51.93 CleverDistiller [24] BMVC’25 ViT-L ✗ 52.45 60.64 67.03 67.29 70.45 78.29 52.28 54.83 
+
+SuperFlow++ [89] TPAMI’25 ViT-L ✓ 49.78 50.92 61.83 66.30 71.07 77.63 50.33 52.12 LiMA [90] ICCV’25 ViT-L ✗ 56.67 53.22 62.46 66.00 70.59 77.23 52.29 51.19 
+
+HilDA † - ViT-L ✗ 56.91 61.60 67.57 70.71 72.68 78.47 51.99 52.64 
+
+HilDA - ViT-L ✗ 60.06 62.82 70.58 72.55 75.06 79.44 54.48 54.41 
+
+Domain Generalization. In Tab. 2, we evaluate the transferability of our model, pre-trained on nuScenes, to four diverse datasets. The results show that our learned representations are transferable to various sensor configurations and urban layouts. On ScriKITTI [73], despite extremely sparse scribble-level annotations, our method maintains top performance, demonstrating its ability to extract meaningful features from minimal and spatially disconnected supervision. On Rellis-3D [32], which is recorded in an unstructured off-road environment, our model outperforms strong baselines such as LiMoE [86]. This indicates that our approach captures fundamental geometric and semantic properties that generalize across drastically different terrains. Consistent gains on SemSTF [85] and DAPS-3D [40] further confirm that our pre-training produces robust, dataset-agnostic features serving as strong universal initializations. 
+
+Robustness. In Tab. 3 (and supplementary Sec. A for full fine-tuning), we evaluate feature robustness on the corrupted nuScenes-C [41] benchmark. HilDA exhibits superior resilience compared to previous methods, achieving the lowest mean Corruption Error (mCE) and highest mean Relative Robustness (mRR). It performs particularly well under Cross-Sensor and Snowy corruptions, which involve heavy interference and sparsity, clearly outperforming previous SOTA methods in these scenarios. These results confirm that our combination of 10 M. Wozniak et al. HilDA: Hierarchical Distillation with Diffusion Baseline HilDA GT 
+
+> Scene 1 Scene 2
+
+Fig. 3: Qualitative comparison of segmentation performance of HilDA and ScaLR. HilDA makes fewer errors and correctly segments rare cases like a scooter driver (Scene 1) or a person on top of a truck (Scene 2). 
+
+Table 2: Domain generalization benchmarks. Models pre-trained on nuScenes and fine-tuned on listed datasets. Metrics in mIoU.                                                                                   
+
+> Method ScriKITTI Rellis-3D SemSTF DAPS-3D 1% 10% 1% 10% 50% 100% 50% 100%
+> Random 23.81 47.60 38.46 53.60 48.03 48.15 74.32 79.38 SLidR 39.60 50.45 49.75 54.57 52.01 54.35 81.00 85.40 Seal 40.64 52.77 51.09 55.03 53.46 55.36 81.88 85.90 ScaLR 36.45 49.16 47.91 48.86 52.10 54.40 81.92 85.58 SuperFlow 42.70 54.00 52.83 55.71 54.72 56.57 82.43 86.21 LiMoE 43.95 55.96 53.74 56.67 55.60 57.31 83.24 86.68 CleverD 44.03 56.70 58.35 60.92 53.99 55.66 83.06 87.95 LiMA 45.90 55.13 55.62 57.15 55.45 56.70 83.11 86.63
+> HilDA †48.26 59.02 56.77 59.04 55.86 58.11 84.26 87.18
+> HilDA 48.39 58.22 59.49 62.88 56.72 57.83 85.93 89.08
+
+hierarchical distillation and temporal occupancy prediction produces reliable 3D representations even under severe sensor degradation. 
+
+4.3 Transferability to Spatiotemporal Tasks 
+
+We further assess transfer to tasks requiring spatial and temporal reasoning: 3D object detection (spatial), semantic occupancy (spatiotemporal), and scene flow (spatiotemporal). All experiments use the same ViT-B/MinkUnet34 backbone after pre-training. We re-trained ScaLR, SuperFlow, and CleverDistiller (SF/CD) using author settings and verified that their segmentation performance matches the reported results 6; details are in supplementary Sec. C. 
+
+3D Object Detection. We evaluate PointRCNN [69] with HilDA on KITTI [23] and nuScenes [8]. As shown in Tab. 4, HilDA consistently outperforms prior dis-tillation baselines across datasets. Notably, we find that our model demonstrates  
+
+> 6Checkpoints/complete code for LiMoE/LiMA is unavailable, authors reported lost access. CD (code provided by CD’s authors)/ScaLR/SF code was used for obtaining the checkpoints.
+
+HilDA: Hierarchical Distillation with Diffusion for LiDAR Pre-training 11 
+
+Table 3: Comparison on robustness under weather corruption and sensor failure on nuScenes-C [41] benchmark using linear probing. Metrics given in percentage (%). 
+
+Method mCE ↓ mRR ↑ mIoU ↑
+
+Fog Rain Snow Blur Beam Cross Echo Sensor Mean 
+
+SLidR [68] 179.38 77.18 34.88 38.09 32.64 26.44 33.73 20.81 31.54 21.44 29.95 Seal [49] 166.18 75.38 37.33 42.77 29.93 37.73 40.32 20.31 37.73 24.94 33.88 SuperFlow [88] 161.78 75.52 37.59 43.42 37.60 39.57 41.40 23.64 38.03 26.69 35.99 Scalr [63] 173.18 78.91 37.55 37.96 36.29 33.64 33.06 23.01 33.62 23.70 33.59 LiMoE [86] 155.77 78.23 40.35 45.28 39.14 42.10 44.21 27.33 39.20 29.49 38.39 CleverD [24] 151.21 79.76 43.96 46.91 41.20 41.05 42.15 45.67 41.30 28.85 41.39 LiMA [90] 137.23 79.30 51.52 54.90 45.63 50.55 49.67 27.24 45.76 34.09 44.92 
+
+HilDA † 134.63 80.70 50.41 55.86 49.63 49.95 45.25 50.18 44.09 34.44 47.58 
+
+HilDA 124.27 88.20 55.99 57.97 54.29 51.16 51.30 56.29 47.91 40.31 52.00 
+
+robust detections in complex scenarios, such as at long-range and under heavy occlusion (see Fig. 4). This suggests that hierarchical distillation with temporal diffusion yields semantically consistent and geometrically grounded features. 
+
+Table 4: Evaluation on 3D Object Detection (3DOD) benchmarks. 
+
+Method KITTI (mAP) nuSc (mAP) 5% 10% 20% 5% 10% 20% Random 56.1 59.1 61.6 38.1 43.5 45.2 PPKT 57.8 60.1 61.2 - - -SLidR 57.8 61.4 62.4 - - -ScaLR 56.2 62.3 66.5 46.1 50.3 55.1 SF 59.3 62.7 64.2 45.9 51.1 54.5 CD 59.8 66.6 67.1 47.9 51.9 54.3 
+
+HilDA † 60.1 66.3 69.4 47.0 52.2 55.7 
+
+HilDA 61.4 67.3 71.0 50.4 54.9 57.9 HilDA (ours) CleverDistiller   
+
+> Scene 1 Scene 2 Scene 3
+> id: 333, scene: c2d44a70-9fd4-3298-ad0a-c4c9712e6f1e, ts: 3159765889
+
+Fig. 4: Qualitative comparison of 3DOD. Green boxes are GT, and red are predictions. 
+
+Semantic Occupancy. We evaluate 3D/4D semantic occupancy following Occ4cast [48], with added class labels. The pre-trained backbone is frozen and only a lightweight decoder is trained. Inputs are t−1 and t0 (∆t = 0 .5s). We predict occupancy at t0 for 3D, and at t0 and t1 for 4D, and report frame-averaged metrics. Table 5 aggregates IoU into dynamic , static , and surface classes (see Sec. A for a class-wise breakdown across time horizons and a detailed discussion on the effects of including the diffusion auxiliary task. Section B shows qualitative results). HilDA outperforms all baselines in 3D and 4D. The largest gains from including the diffusion-based loss during pre-training are on dynamic/object-centric classes where future occupancy directly supervises object permanence and short-term motion. Surface gains are smaller because the ground-removed pre-training BEV target emphasizes free/occupied boundaries and removes vertical cues useful for within-region semantic distinctions ( e.g ., terrain vs . sidewalk). Figure 5 shows that HilDA maintains the highest mIoU across a horizon of up to 5 seconds. 12 M. Wozniak et al. HilDA: Hierarchical Distillation with Diffusion 
+
+Table 5: Comparison of frozen pre-trained backbones on nuScenes semantic occupancy prediction. Frame-averaged metrics. 
+
+Method mIoU Dyna. Stat. Surf. 3D 
+
+Random 10.6 3.7 10.6 24.4 ScaLR 16.2 9.5 16.4 29.4 SF 12.5 5.2 12.1 25.7 CD 16.5 10.0 16.5 29.4 
+
+HilDA † 19.0 13.3 19.0 30.2 
+
+HilDA 20.0 14.5 20.2 30.4 4D 
+
+Random 10.3 3.1 10.7 24.4 ScaLR 14.9 7.1 15.9 29.5 SF 11.9 4.9 12.2 25.6 CD 15.5 8.0 16.5 29.6 
+
+HilDA † 17.3 10.1 18.5 30.4 
+
+HilDA 18.4 11.4 20.2 30.5 
+
+t0 t1 t2 t3 t4 t5 t6 t7 t8 t9 t10 
+
+10 
+
+12 
+
+14 
+
+16 
+
+18 
+
+Forecast frame at tk   
+
+> mIoU (%)
+> HilDA HilDA †
+> CleverDistiller ScaLR
+> SF Random
+
+Fig. 5: Semantic mIoU over forecast hori-zon. Decoder trained from t0 through t10 .
+
+Table 6: Scene flow on ArgoverseV2 [82]. Ego Motion refers to the apparent motion of points caused solely by the movement of ego itself.                                                  
+
+> Methods 3-way EPE Norm. EPE Mean ↓FD ↓FS ↓BS ↓Dyn ↓Stat ↓
+> Ego Motion 0.181 0.534 0.010 0.000 1.000 0.007 SSF [37] 0.028 0.058 0.018 0.009 0.267 0.013 +ScaLR [63] 0.026 0.056 0.016 0.007 0.234 0.012 +SF [89] 0.025 0.053 0.015 0.007 0.198 0.012 +CD [24] 0.024 0.049 0.016 0.008 0.210 0.011 +HilDA †0.024 0.051 0.015 0.007 0.181 0.011
+> +HilDA 0.021 0.044 0.014 0.006 0.146 0.011 Scene 1 Scene 2
+> Ground Truth Flow  CleverDistiller  HilDA (ours)
+
+Fig. 6: Qualitative scene flow com-parison. 
+
+Scene Flow. We integrate MinkUnet34 into SSF [37] and evaluate scene flow on Argoverse 2 [82], jointly testing task transfer and domain generalization. Replacing the randomly initialized backbone with HilDA pre-trained weights improves all metrics in Tab. 6, especially dynamic object estimation. Figure 6 shows lower speed/direction errors (indicated by fewer red regions) and cleaner motion maps compared to baseline, indicating that HilDA features better capture temporal structure and enable better motion estimation where baselines fail. 
+
+4.4 Ablations 
+
+We ablate the different components and design choices of our method, using 3D semantic segmentation as the evaluation task. See the supplementary material in Sec. A for an extensive set of additional ablations. 
+
+Component Analysis. In Tab. 7, ablation of our proposed components are presented. Adding diffusion (a) or hierarchical distillation (c) both significantly HilDA: Hierarchical Distillation with Diffusion for LiDAR Pre-training 13 
+
+Table 7: Ablation of pre-training loss components. ScaLR [63] with MLP projection head is (base).                                                    
+
+> #Diff Distill CLS nuScenes SK Waymo LP 1% 1% 1% (base) ✗✗✗46.36 55.01 50.15 49.08 (a) ✓✗✗50.43 56.97 49.59 49.84 (b) ✗✓✗53.77 57.03 50.63 50.71 (c) ✗✓✓55.13 57.81 50.80 50.87 (d) ✓✓✗55.53 59.04 52.41 51.89 (e) ✓✓✓56.29 59.46 52.88 52.16
+
+improves the baseline, while applying both components (e) yields the highest overall performance, demonstrating the synergy between hierarchical distillation and temporal occupancy diffusion. 
+
+Multi-Layer Distillation Design. We ablate how to transfer the VFM hier-archy for calibrated point–pixel supervision. While multi-layer distillation has been studied in 2D [12], camera-to-LiDAR distillation introduces an additional geometric point–pixel correspondence constraint. Earlier MinkUnet34 student layers aggregate coarser, irregular 3D neighborhoods whose sparse features con-tain voxels that may project to different semantic regions. Additionally, overly early VFM teacher layers may not match the abstraction level of late LiDAR fea-tures. HilDA therefore uses what we term Separate late-layer matching, aligning neighboring blocks ( e.g ., QL→FL and QL−1→FL−1). Table 8 shows that this design outperforms both final- and penultimate-layer distillation. Extending it to earlier layers reduces performance, but still sur-passes single-layer. This supports the view that intermediate teacher features are useful when their abstraction level and geometric support remain compatible with the student features. The Separate strategy also outperforms KR-style 
+
+aggregation [12], Aggregate matching, and non-uniform matching. In KR-style aggregation, sliding windows of teacher layers supervise successive student layers, 
+
+{QL−k}K−1 
+
+> k=j
+
+→FL−j with j = 0 , 1 for a K-layer aggregation. Aggregate match-ing instead concatenates the selected teacher-layer features into a single target, 
+
+{QL−k}K−1 
+
+> k=0
+
+→FL, whereas non-uniform matching skips intermediate layer pairs, 
+
+e.g ., (QL→FL, QL−2→FL−2). Thus, the gain comes from preserving compatible late-layer correspondences rather than simply adding more teacher features. Ta-ble 9 further shows that cosine distance is the strongest point–pixel alignment loss. Since ViT teacher and MinkUnet34 student features have different architectures and feature-norm distributions, cosine supervises semantic direction rather than cross-architecture scale matching. For a more extensive analysis, see Sec. A.4. 
+
+Global Context Distillation Design. Table 9 shows that max pooling is the strongest aggregation strategy for constructing CLS FL , outperforming learnable pooling and per-view/frustum student CLS tokens. This suggests that scene-level alignment benefits from surfacing the most salient responses, and that global 
+
+CLS distillation best complements the local multi-layer distillation, making the 14 M. Wozniak et al. HilDA: Hierarchical Distillation with Diffusion 
+
+Table 8: Ablation of multi-layer distil-lation designs. All rows use only Ldistill 
+
+during pre-training. HilDA corresponds to “Separate, Last 2”.          
+
+> Design nuSc LP
+> Final layer only 46.4 Penultimate only 49.9 Separate, Last 2 53.8
+> Separate, Last 3 52.0 Separate, Last 4 51.6 Aggregate, Last 3 53.0 3-layer KR-style [12] 51.4 Non-uniform matching 52.4
+
+Table 9: Ablation of several design choices. Each block changes one component while keeping the HilDA setups (cosine, max pool-ing, diffusion) fixed.              
+
+> Comp. Variant nuSc LP
+> Ldistill
+> ℓ253.8 Kullback-Leibler 52.1 Cosine distance 56.3
+> CLS pool. Learnable pool. 55.9 Per-img. CLS FL55.5 Max pooling 56.3
+> Occ. dec. Simple decoder 49.1 ALSO 54.7 Diffusion 56.3
+
+hierarchical distillation design of HilDA the most effective configuration. A more extensive analysis is found in Sec. A.4. 
+
+Diffusion vs . Occupancy Decoders. To isolate temporal occupancy diffusion, we replace it with deterministic occupancy decoders: a simple decoder [48] and ALSO [7]. Table 9 shows that diffusion performs best, supporting our use of a joint generative scene objective rather than independent per-voxel occupancy prediction which may miss global structural coherence. Through iterative denoising, diffusion provides a label-free spatiotemporal pre-training signal that better captures complex 3D-scene structure and multi-modal evolution through coarse-to-fine refinement. As shown in Secs. 4.2 and 4.3, this auxiliary yields gains across all evaluated tasks, complementing hierarchical distillation. 
+
+## 5 Conclusion 
+
+We introduced HilDA, a self-supervised LiDAR pre-training framework that leverages the hierarchical information in VFMs to address limitations of prior camera-to-LiDAR distillation. With hierarchical distillation, combining multi-layer and global context distillation, HilDA captures how semantic features evolve across VFM layers, yielding stronger representations. HilDA also uses temporal occupancy diffusion as an auxiliary task, encouraging features to encode geometric structure and temporal dynamics. The result is an informative 3D representation that captures both the semantic what and the geometric where .Across segmentation, detection, semantic occupancy, robustness, and scene flow, HilDA improves over prior camera–LiDAR distillation methods. A limitation of point–pixel distillation is sensitivity to LiDAR–camera misalignment. HilDA however partly mitigates this with alignment-free global context distillation and temporal diffusion. Future work could explore how to optimize layer-to-layer distillation through learned matching strategies and dynamic loss weighting, and extend diffusion beyond BEV ( e.g ., via latent diffusion [66]) to better preserve 3D geometry and temporal evolution. HilDA: Hierarchical Distillation with Diffusion for LiDAR Pre-training 15 
+
+## Acknowledgements 
+
+We are grateful to Mohammad Nazari, Ajinkya Khoche, Qingwen Zhang, and John Folkesson for insightful discussions and helpful feedback on the proposed method. This work was partially supported by the Wallenberg AI, Autonomous Systems and Software Program (WASP) funded by the Knut and Alice Wallen-berg Foundation. This work has been performed with support from Sweden’s Innovation Agency (VINNOVA) through the Strategic Vehicle Research and In-novation Programme (FFI), grant no. 2024-03640, and from TRATON AB. The computations and data handling were enabled by the Berzelius resource provided by the Knut and Alice Wallenberg Foundation at the National Supercomputer Centre. 
+
+## References 
+
+1. Agro, B., Sykora, Q., Casas, S., Gilles, T., Urtasun, R.: UnO: Unsupervised occupancy fields for perception and forecasting. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (2024) 2. Ahn, S., Lee, D., Park, J.: Adaptability of vision foundation models for 3d medical image segmentation. IEEE Open Journal of Signal Processing (2026). https: //doi.org/10.1109/OJSP.2025.3650437 
+
+3. Austin, J., Johnson, D.D., Ho, J., Tarlow, D., van den Berg, R.: Structured denoising diffusion models in discrete state-spaces. In: NeurIPS. vol. 34, pp. 17981– 17993 (2021) 4. Behley, J., Garbade, M., Milioto, A., Quenzel, J., Behnke, S., Stachniss, C., Gall, J.: SemanticKITTI: A dataset for semantic scene understanding of LiDAR sequences. In: Proceedings of the International Conference on Computer Vision (2019) 5. Blattmann, A., Rombach, R., Ling, H., Dockhorn, T., Kim, S.W., Fidler, S., Kreis, K.: Align your latents: High-resolution video synthesis with latent diffusion models. In: IEEE Conference on Computer Vision and Pattern Recognition (CVPR) (2023) 6. Bolya, D., Huang, P.Y., Sun, P., Cho, J.H., Madotto, A., Wei, C., Ma, T., Zhi, J., Rajasegaran, J., Bangalath, H., Wang, J., Monteiro, M., Xu, H., Dong, S., Ravi, N., Li, S.W., Dollár, P., Feichtenhofer, C.: Perception encoder: The best visual embeddings are not at the output of the network. In: Advances in Neural Information Processing Systems (2025) 7. Boulch, A., Sautier, C., Michele, B., Puy, G., Marlet, R.: ALSO: Automotive LiDAR self-supervision by occupancy estimation. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (2023) 8. Caesar, H., Bankiti, V., Lang, A.H., Vora, S., Liong, V.E., Xu, Q., Krishnan, A., Pan, Y., Baldan, G., Beijbom, O.: nuScenes: A multimodal dataset for autonomous driving. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (2020) 9. Caron, M., Touvron, H., Misra, I., Jégou, H., Mairal, J., Bojanowski, P., Joulin, A.: Emerging properties in self-supervised vision transformers. In: Proceedings of the International Conference on Computer Vision. pp. 9650–9660 (2021) 10. Chan, P.H., Li, B., Baris, G., Sadiq, Q., Donzella, V.: The inconvenient truth of ground truth errors in automotive datasets and DNN-based detection. Data-Centric Engineering p. e34 (2024) 16 M. Wozniak et al. HilDA: Hierarchical Distillation with Diffusion 11. Chen, L., Wu, P., Chitta, K., Jaeger, B., Geiger, A., Li, H.: End-to-end autonomous driving: Challenges and frontiers. IEEE Transactions on Pattern Analysis and Machine Intelligence (2024). https://doi.org/10.1109/TPAMI.2024.3435937 
+
+12. Chen, P., Liu, S., Zhao, H., Jia, J.: Distilling knowledge via knowledge review. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 5008–5017 (2021) 13. Chen, X., Liu, Z., Xie, S., He, K.: Deconstructing denoising diffusion models for self-supervised learning. In: Proceedings of the International Conference on Learning Representations (ICLR) (2025) 14. Chodosh, N., Ramanan, D., Lucey, S.: Re-evaluating lidar scene flow. In: Pro-ceedings of the IEEE Winter Conference on Applications of Computer Vision. pp. 6005–6015 (January 2024) 15. Choy, C., Gwak, J., Savarese, S.: 4D spatio-temporal ConvNets: Minkowski con-volutional neural networks. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (2019) 16. Contributors, P.: Pointcept: A codebase for point cloud perception research. GitHub repository (2023) 17. Darcet, T., Oquab, M., Mairal, J., Bojanowski, P.: Vision transformers need registers. Proceedings of the International Conference on Learning Representations (2024) 18. Diehl, C., Sykora, Q., Agro, B., Gilles, T., Casas, S., Urtasun, R.: Dio: Decompos-able implicit 4d occupancy-flow world model. In: Proceedings of the Computer Vision and Pattern Recognition Conference. pp. 27456–27466 (2025) 19. Dosovitskiy, A., Beyer, L., Kolesnikov, A., Weissenborn, D., Zhai, X., Unterthiner, T., Dehghani, M., Minderer, M., Heigold, G., Gelly, S., et al.: An image is worth 16x16 words: Transformers for image recognition at scale. In: Proceedings of the International Conference on Learning Representations (2021) 20. El Banani, M., Raj, A., Maninis, K.K., Kar, A., Li, Y., Rubinstein, M., Sun, D., Guibas, L., Johnson, J., Jampani, V.: Probing the 3d awareness of visual foundation models. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 21795–21806 (2024) 21. Fang, J., Zhou, D., Yan, F., Zhao, T., Zhang, F., Ma, Y., Wang, L., Yang, R.: Aug-mented lidar simulator for autonomous driving. IEEE Robotics and Automation Letters 5(2), 1931–1938 (2020) 22. Fu, H., Zhang, D., Zhao, Z., Cui, J., Liang, D., Zhang, C., Zhang, D., Xie, H., Wang, B., Bai, X.: Orion: A holistic end-to-end autonomous driving framework by vision-language instructed action generation. In: Proceedings of the International Conference on Computer Vision. pp. 24823–24834. IEEE (2025) 23. Geiger, A., Lenz, P., Stiller, C., Urtasun, R.: Vision meets robotics: The KITTI dataset. The International Journal of Robotics Research (2013). https://doi. org/10.1177/0278364913491297 
+
+24. Govindarajan, H., Wozniak, M., Klingner, M., Maurice, C., Kiran, B.R., Yogamani, S.: Cleverdistiller: Simple and spatially consistent cross-modal distillation (2025) 25. Grill, J.B., Strub, F., Altché, F., Tallec, C., Richemond, P., Buchatskaya, E., Doersch, C., Avila Pires, B., Guo, Z., Gheshlaghi Azar, M., et al.: Bootstrap your own latent-a new approach to self-supervised learning. In: NeurIPS (2020) 26. Gu, S., Yin, W., Jin, B., Guo, X., Wang, J., Li, H., Zhang, Q., Long, X.: Dome: Taming diffusion model into high-fidelity controllable occupancy world model. arXiv preprint arXiv:2410.10429 (2024) HilDA: Hierarchical Distillation with Diffusion for LiDAR Pre-training 17 27. He, J., Li, H., Yin, W., Liang, Y., Li, L., Zhou, K., Zhang, H., Liu, B., Chen, Y.C.: Lotus: Diffusion-based visual foundation model for high-quality dense prediction. In: The Thirteenth International Conference on Learning Representations (2025) 28. He, K., Zhang, X., Ren, S., Sun, J.: Deep residual learning for image recognition. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (2016) 29. Heinrich, G., Ranzinger, M., Yin, H., Lu, Y., Kautz, J., Tao, A., Catanzaro, B., Molchanov, P.: Radiov2. 5: Improved baselines for agglomerative vision founda-tion models. In: Proceedings of the Computer Vision and Pattern Recognition Conference. pp. 22487–22497 (2025) 30. Ho, J., Jain, A., Abbeel, P.: Denoising diffusion probabilistic models. In: NeurIPS. vol. 33 (2020) 31. Hudson, D.A., Zoran, D., Malinowski, M., Lampinen, A.K., Jaegle, A., McClelland, J.L., Matthey, L., Hill, F., Lerchner, A.: Soda: Bottleneck diffusion models for representation learning. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 23115–23127 (2024) 32. Jiang, P., Osteen, P., Wigness, M., Saripalli, S.: RELLIS-3D dataset: Data, bench-marks and analysis. In: 2021 IEEE International Conference on Robotics and Au-tomation (ICRA) (2021). https://doi.org/10.1109/ICRA48506.2021.9561251 
+
+33. Justo Miro, A., af Klinteberg, L., Timus, B., Asefaw, A., Khoche, A., Gustafsson, T., Mansouri, S.S., Daneshtalab, M.: Correcting and Quantifying Systematic Errors in 3D Box Annotations for Autonomous Driving. In: Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision (WACV). pp. 6724–6732 (March 2026) 34. Keetha, N., Mishra, A., Karhade, J., Jatavallabhula, K.M., Scherer, S., Krishna, M., Garg, S.: AnyLoc: Towards universal visual place recognition. IEEE Robotics and Automation Letters 9(2), 1286–1293 (2024). https://doi.org/10.1109/LRA. 2023.3343602 
+
+35. Khatri, I., Vedder, K., Peri, N., Ramanan, D., Hays, J.: I Can’t Believe It’s Not Scene Flow! In: Proceedings of the European Conference on Computer Vision (2024). https://doi.org/10.1007/978-3-031-72649-1_14 
+
+36. Khoche, A., Asefaw, A., González, A., Timus, B., Mansouri, S.S., Jensfelt, P.: Addressing data annotation challenges in multiple sensors: A solution for scania collected datasets. In: 2024 European Control Conference (ECC). pp. 1032–1038 (2024) 37. Khoche, A., Zhang, Q., Sánchez, L.P., Asefaw, A., Mansouri, S.S., Jensfelt, P.: SSF: Sparse long-range scene flow for autonomous driving. In: Proceedings of the IEEE International Conference on Robotics and Automation (2025). https: //doi.org/10.1109/ICRA55743.2025.11128770 
+
+38. Kingma, D.P., Ba, J.: Adam: A method for stochastic optimization. In: Interna-tional Conference on Learning Representations (ICLR) (2015) 39. Kirillov, A., Mintun, E., Ravi, N., Mao, H., Rolland, C., Gustafson, L., Xiao, T., Whitehead, S., Berg, A.C., Lo, W.Y., et al.: Segment anything. In: Proceedings of the International Conference on Computer Vision (2023) 40. Klokov, A.A., Pak, D.U., Khorin, A., Yudin, D.A., Kochiev, L., Luchinskiy, V.D., Bezuglyj, V.D.: DAPS3D: Domain adaptive projective segmentation of 3D LiDAR point clouds. IEEE Access 11 , 79341–79356 (2023) 41. Kong, L., Liu, Y., Li, X., Chen, R., Zhang, W., Ren, J., Pan, L., Chen, K., Liu, Z.: Robo3D: Towards robust and reliable 3D perception against corruptions. In: Proceedings of the International Conference on Computer Vision (2023) 18 M. Wozniak et al. HilDA: Hierarchical Distillation with Diffusion 42. KTH-RPL, contributors: Opensceneflow: A codebase for point cloud scene flow estimation research. GitHub repository (2026), accessed 2026-01-09 43. Li, B., Guo, J., Liu, H., Zou, Y., Ding, Y., Chen, X., Zhu, H., Tan, F., Zhang, C., Wang, T., Zhou, S., Zhang, L., Qi, X., Zhao, H., Yang, M., Zeng, W., Jin, X.: Uniscene: Unified occupancy-centric driving scene generation. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 11971–11981 (June 2025) 44. Li, J., Saltori, C., Poiesi, F., Sebe, N.: Cross-modal and uncertainty-aware ag-glomeration for open-vocabulary 3d scene understanding. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 19390– 19400 (June 2025) 45. Liao, B., Chen, S., Yin, H., Jiang, B., Wang, C., Yan, S., Zhang, X., Li, X., Zhang, Y., Zhang, Q., Wang, X.: Diffusiondrive: Truncated diffusion model for end-to-end autonomous driving. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 12037–12047. IEEE (2025) 46. Liebel, L., Körner, M.: Auxiliary tasks in multi-task learning. arXiv preprint arXiv:1805.06334 (2018) 47. Liu, J., Wang, G., Ye, W., Jiang, C., Han, J., Liu, Z., Zhang, G., Du, D., Wang, H.: Difflow3d: Toward robust uncertainty-aware scene flow estimation with iterative diffusion-based refinement. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 15109–15119 (2024) 48. Liu, X., Gong, M., Fang, Q., Xie, H., Li, Y., Zhao, H., Feng, C.: LiDAR-based 4D occupancy completion and forecasting. In: 2024 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) (2024). https://doi.org/ 10.1109/IROS58592.2024.10801302 
+
+49. Liu, Y., Kong, L., Cen, J., Chen, R., Zhang, W., Pan, L., Chen, K., Liu, Z.: Segment any point cloud sequences by distilling vision foundation models. In: Advances in Neural Information Processing Systems. vol. 36 (2023) 50. Liu, Y.C., Huang, Y.K., Chiang, H.Y., Su, H.T., Liu, Z.Y., Chen, C.T., Tseng, C.Y., Hsu, W.H.: Learning from 2D: Contrastive pixel-to-point knowledge transfer for 3D pretraining. arXiv preprint arXiv:2104.04687 (2021) 51. Liu, Y., Fu, J., Wu, Y., Wu, K., Li, P., Wu, J., Zhou, S., Xin, J.: Mind the gap: Aligning vision foundation models to image feature matching. In: Proceedings of the International Conference on Computer Vision (2025) 52. Ljungbergh, W., Lilja, A., Tonderski, A., Ling, A.L., Lindström, C., Verbeke, W., Fu, J., Petersson, C., Hammarstrand, L., Felsberg, M.: GASP: Unifying geometric and semantic self-supervised pre-training for autonomous driving. In: Proceedings of the IEEE Winter Conference on Applications of Computer Vision (2026) 53. Loshchilov, I., Hutter, F.: Decoupled weight decay regularization. In: International Conference on Learning Representations (ICLR) (2019) 54. Ma, J., Chen, X., Huang, J., Xu, J., Luo, Z., Xu, J., Gu, W., Ai, R., Wang, H.: Cam4docc: Benchmark for camera-only 4d occupancy forecasting in autonomous driving applications. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 21486–21495 (2024) 55. Meng, Q., Wang, W., Zhou, T., Shen, J., Jia, Y., Van Gool, L.: Towards a weakly supervised framework for 3D point cloud object detection and annotation. IEEE Transactions on Pattern Analysis and Machine Intelligence 44 (8), 4454–4468 (2022). https://doi.org/10.1109/TPAMI.2021.3063611 
+
+56. MMDetection3D Contributors: MMDetection3D: OpenMMLab next-generation platform for general 3D object detection (2020) HilDA: Hierarchical Distillation with Diffusion for LiDAR Pre-training 19 57. Murrugarra-Llerena, J., Kirsten, L., Jung, C.R.: Can we trust bounding box annotations for object detection? In: 2022 IEEE/CVF Conference on Computer Vision and Pattern Recognition Workshops (CVPRW). pp. 4812–4821 (2022) 58. Nichol, A.Q., Dhariwal, P.: Improved denoising diffusion probabilistic models. In: International Conference on Machine Learning. Proceedings of Machine Learning Research, vol. 139, pp. 8162–8171. PMLR (2021) 59. Northcutt, C.G., Athalye, A., Mueller, J.: Pervasive label errors in test sets destabilize machine learning benchmarks. In: Proceedings of the 35th Conference on Neural Information Processing Systems Track on Datasets and Benchmarks (December 2021) 60. Nunes, L., Marcuzzi, R., Mersch, B., Behley, J., Stachniss, C.: Scaling diffusion models to real-world 3d lidar scene completion. In: IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 14770–14780. IEEE (2024) 61. Oquab, M., Darcet, T., Moutakanni, T., Vo, H.V., Szafraniec, M., Khalidov, V., Fernandez, P., Haziza, D., Massa, F., El-Nouby, A., Assran, M., Ballas, N., Galuba, W., Howes, R., Huang, P.Y., Li, S.W., Misra, I., Rabbat, M., Sharma, V., Synnaeve, G., Xu, H., Jegou, H., Mairal, J., Labatut, P., Joulin, A., Bojanowski, P.: DINOv2: Learning robust visual features without supervision. Transactions on Machine Learning Research (2024) 62. Preechakul, K., Chatthee, N., Wizadwongsa, S., Suwajanakorn, S.: Diffusion autoencoders: Toward a meaningful and decodable representation. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) (2022). https://doi.org/10.1109/CVPR52688.2022.01036 
+
+63. Puy, G., Gidaris, S., Boulch, A., Siméoni, O., Sautier, C., Pérez, P., Bursuc, A., Marlet, R.: Three pillars improving vision foundation model distillation for LiDAR. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (2024) 64. Radford, A., Kim, J.W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., Krueger, G., Sutskever, I.: Learning transferable visual models from natural language supervision. In: International Conference on Machine Learning (2021) 65. Ranzinger, M., Heinrich, G., Kautz, J., Molchanov, P.: Am-radio: Agglomerative vision foundation model reduce all domains into one. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 12490– 12500 (2024) 66. Rombach, R., Blattmann, A., Lorenz, D., Esser, P., Ommer, B.: High-resolution image synthesis with latent diffusion models. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 10684–10695 (2022) 67. Ronneberger, O., Fischer, P., Brox, T.: U-net: Convolutional networks for biomed-ical image segmentation. In: Medical Image Computing and Computer-Assisted Intervention – MICCAI 2015. Lecture Notes in Computer Science, vol. 9351, pp. 234–241. Springer, Cham (2015) 68. Sautier, C., Puy, G., Gidaris, S., Boulch, A., Bursuc, A., Marlet, R.: Image-to-LiDAR self-supervised distillation for autonomous driving data. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (2022) 69. Shi, S., Wang, X., Li, H.: PointRCNN: 3D object proposal generation and detection from point cloud. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (2019) 70. Sun, P., Kretzschmar, H., Dotiwalla, X., Chouard, A., Patnaik, V., Tsui, P., Guo, J., Zhou, Y., Chai, Y., Caine, B., Vasudevan, V., Han, W., Ngiam, J., Zhao, H., 20 M. Wozniak et al. HilDA: Hierarchical Distillation with Diffusion Timofeev, A., Ettinger, S., Krivokon, M., Gao, A., Joshi, A., Zhang, Y., Shlens, J., Chen, Z., Anguelov, D.: Scalability in perception for autonomous driving: Waymo open dataset. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (2020) 71. Tian, H., Xu, B., Li, S.: Distillation dynamics: Towards understanding feature-based distillation in vision transformers. Proceedings of the AAAI Conference on Artificial Intelligence (2026). https://doi.org/10.1609/aaai.v40i11.37913 
+
+72. Touvron, H., Cord, M., Douze, M., Massa, F., Sablayrolles, A., Jégou, H.: Training data-efficient image transformers & distillation through attention. In: International conference on machine learning. pp. 10347–10357. PMLR (2021) 73. Unal, O., Dai, D., Van Gool, L.: Scribble-supervised LiDAR semantic segmentation. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 2697–2707 (2022) 74. Voleti, V., Jolicoeur-Martineau, A., Pal, C.: Mcvd: Masked conditional video diffusion for prediction, generation, and interpolation. In: NeurIPS (2022) 75. Wang, G., Wang, Z., Tang, P., Zheng, J., Ren, X., Feng, B., Ma, C.: Occgen: Generative multi-modal 3d occupancy prediction for autonomous driving. In: Proceedings of the European Conference on Computer Vision. pp. 95–112. Springer (2024) 76. Wang, X., Zhu, Z., Huang, G., Chen, X., Zhu, J., Lu, J.: Drivedreamer: Towards real-world-drive world models for autonomous driving. In: Computer Vision – ECCV 2024 (2025). https://doi.org/10.1007/978-3-031-73195-2_4 
+
+77. Wang, X., Zhu, Z., Xu, W., Zhang, Y., Wei, Y., Chi, X., Ye, Y., Du, D., Lu, J., Wang, X.: Openoccupancy: A large scale benchmark for surrounding semantic oc-cupancy perception. In: Proceedings of the International Conference on Computer Vision. pp. 17850–17859 (October 2023) 78. Wang, Y., Luo, W., Bai, J., Cao, Y., Che, T., Chen, K., Chen, Y., Diamond, J., Ding, Y., Ding, W., et al.: Alpamayo-r1: Bridging reasoning and action pre-diction for generalizable autonomous driving in the long tail. arXiv preprint arXiv:2511.00088 (2025) 79. Wang, Y., Liu, Y., Yuan, T., Mao, Y., Liang, Y., Yang, X., Zhang, H., Zhao, H.: Diffusion-based generative models for 3D occupancy prediction in autonomous driving. In: 2025 IEEE International Conference on Robotics and Automation (ICRA) (2025). https://doi.org/10.1109/ICRA55743.2025.11128716 
+
+80. Wei, C., Mangalam, K., Huang, P.Y., Li, Y., Fan, H., Xu, H., Wang, H., Xie, C., Yuille, A.L., Feichtenhofer, C.: Diffusion models as masked autoencoders. In: Proceedings of the International Conference on Computer Vision. pp. 16238–16248 (2023) 81. Wei, Y., Zhao, L., Zheng, W., Zhu, Z., Zhou, J., Lu, J.: Surroundocc: Multi-camera 3d occupancy prediction for autonomous driving. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 21729–21740 (2023) 82. Wilson, B., Qi, W., Agarwal, T., Lambert, J., Singh, J., Khandelwal, S., Pan, B., Kumar, R., Hartnett, A., Pontes, J.K., Ramanan, D., Carr, P., Hays, J.: Argoverse 2: Next generation datasets for self-driving perception and forecasting. In: NeurIPS (2021) 83. Wu, X., Jiang, L., Wang, P.S., Liu, Z., Liu, X., Qiao, Y., Ouyang, W., He, T., Zhao, H.: Point Transformer V3: Simpler, faster, stronger. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (2024) 84. Xiang, W., Yang, H., Huang, D., Wang, Y.: Denoising diffusion autoencoders are unified self-supervised learners. In: Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) (2023) HilDA: Hierarchical Distillation with Diffusion for LiDAR Pre-training 21 85. Xiao, A., Huang, J., Xuan, W., Ren, R., Liu, K., Guan, D., El Saddik, A., Lu, S., Xing, E.P.: 3D semantic segmentation in the wild: Learning generalized models for adverse-condition point clouds. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (2023) 86. Xu, X., Kong, L., Shuai, H., Pan, L., Liu, Z., Liu, Q.: Limoe: Mixture of lidar representation learners from automotive scenes. In: Proceedings of the Computer Vision and Pattern Recognition Conference. pp. 27368–27379 (2025) 87. Xu, X., Kong, L., Shuai, H., Pan, L., Liu, Z., Liu, Q.: LiMoE: Mixture of LiDAR representation learners from automotive scenes. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (2025) 88. Xu, X., Kong, L., Shuai, H., Zhang, W., Pan, L., Chen, K., Liu, Z., Liu, Q.: 4D contrastive superflows are dense 3D representation learners. In: Proceedings of the European Conference on Computer Vision (2024) 89. Xu, X., Kong, L., Shuai, H., Zhang, W., Pan, L., Chen, K., Liu, Z., Liu, Q.: Enhanced spatiotemporal consistency for image-to-LiDAR data pretraining. IEEE Transactions on Pattern Analysis and Machine Intelligence (2026). https://doi. org/10.1109/TPAMI.2025.3640589 
+
+90. Xu, X., Kong, L., Wang, S., Zhou, C., Liu, Q.: Beyond one shot, beyond one perspective: Cross-view and long-horizon distillation for better lidar representations. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 25506–25518 (2025) 91. Yang, X., Wang, X.: Diffusion model as representation learner. In: Proceedings of the International Conference on Computer Vision (2023) 92. Yang, Z., Li, Z., Jiang, X., Gong, Y., Yuan, Z., Zhao, D., Yuan, C.: Focal and global knowledge distillation for detectors. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 4643–4652 (2022) 93. Yang, Z., Li, Z., Zeng, A., Li, Z., Yuan, C., Li, Y.: ViTKD: Feature-based knowledge distillation for vision transformers. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops. pp. 1379–1388 (2024) 94. Ye, X., Yaman, B., Cheng, S., Tao, F., Mallik, A., Ren, L.: Bevdiffuser: Plug-and-play diffusion model for bev denoising with ground-truth guidance. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 1495–1504 (2025) 95. Yoon, H., Jung, J., Kim, J., Choi, H., Shin, H., Lim, S., An, H., Kim, C., Han, J., Kim, D., Eom, C., Hong, S., Kim, S.: Visual representation alignment for multimodal large language models. In: ICLR 2026 Workshop on Multimodal Intelligence (2026) 96. Yu, S., Kwak, S., Jang, H., Jeong, J., Huang, J., Shin, J., Xie, S.: Representation alignment for generation: Training diffusion transformers is easier than you think. In: Proceedings of the International Conference on Learning Representations (2025) 97. Zhang, H., Li, F., Zou, X., Liu, S., Li, C., Yang, J., Zhang, L.: A simple frame-work for open-vocabulary segmentation and detection. In: Proceedings of the International Conference on Computer Vision (2023) 98. Zhang, J., Herrmann, C., Hur, J., Chen, E., Jampani, V., Sun, D., Yang, M.H.: Telling left from right: Identifying geometry-aware semantic correspondence. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (2024) 22 M. Wozniak et al. HilDA: Hierarchical Distillation with Diffusion 99. Zhang, J., Herrmann, C., Hur, J., Polania Cabrera, L., Jampani, V., Sun, D., Yang, M.H.: A tale of two features: Stable diffusion complements dino for zero-shot semantic correspondence. Advances in Neural Information Processing Systems 36 ,45533–45547 (2023) 100. Zhang, K., Tang, Z., Hu, X., Pan, X., Guo, X., Liu, Y., Huang, J., Yuan, L., Zhang, Q., Long, X.X., Cao, X., Yin, W.: Epona: Autoregressive diffusion world model for autonomous driving. In: Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) (2025) 101. Zhang, Q., Khoche, A., Yang, Y., Ling, L., Mansouri, S.S., Andersson, O., Jens-felt, P.: HiMo: High-speed objects motion compensation in point clouds. IEEE Transactions on Robotics (2025). https://doi.org/10.1109/TRO.2025.3619042 
+
+102. Zhang, Q., Yang, Y., Fang, H., Geng, R., Jensfelt, P.: DeFlow: Decoder of scene flow network in autonomous driving. In: 2024 IEEE International Conference on Robotics and Automation (ICRA). pp. 2105–2111 (2024). https://doi.org/10. 1109/ICRA57147.2024.10610278 
+
+103. Zhang, Y., Hou, J.: Fine-grained image-to-LiDAR contrastive distillation with visual foundation models. Advances in Neural Information Processing Systems (2024) 104. Zhang, Y., Hou, J.: Is contrastive distillation enough for learning comprehensive 3D representations? International Journal of Computer Vision (2026). https: //doi.org/10.1007/s11263-026-02879-z 
+
+105. Zhang, Y., Gong, S., Xiong, K., Ye, X., Li, X., Tan, X., Wang, F., Huang, J., Wu, H., Wang, H.: BEVWorld: A multimodal world simulator for autonomous driving via scene-level BEV latents. arXiv preprint arXiv:2407.05679 (2024) 106. Zheng, S., Bao, Z., Zhao, R., Hebert, M., Wang, Y.X.: Diff-2-in-1: Bridging generation and dense perception with diffusion models. In: Proceedings of the International Conference on Learning Representations (2025) 107. Zhou, J., Wei, C., Wang, H., Shen, W., Xie, C., Yuille, A., Kong, T.: Image BERT pre-training with online tokenizer. In: Proceedings of the International Conference on Learning Representations (2022) HilDA: Hierarchical Distillation with Diffusion for LiDAR Pre-training 1
+
+## Supplementary Material 
+
+A Additional Quantitative Results . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 1A.1 Robustness Benchmark using Fully Fine-Tuned Backbones . . . . . . 1A.2 3D Semantic Segmentation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 2A.3 Semantic Occupancy Prediction . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 2A.4 Additional Ablations . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 5B Additional Qualitative Results . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 14 B.1 3D Semantic Segmentation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 14 B.2 3D Object Detection . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 15 B.3 Semantic Occupancy Prediction . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 16 B.4 Scene Flow . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 16 B.5 Feature Similarity . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18 B.6 Remarks on Annotation Noise . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21 C Implementation Details . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 22 C.1 Pre-Training Architecture . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 23 C.2 3D Semantic Segmentation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 27 C.3 3D Object Detection . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 28 C.4 Semantic Occupancy Prediction . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 28 C.5 Scene Flow . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 30 D Datasets . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 30 D.1 NuScenes Experiments . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 30 D.2 Cross-Domain Transfer Learning . . . . . . . . . . . . . . . . . . . . . . . . . . . . 31 D.3 Robustness and Adverse Conditions . . . . . . . . . . . . . . . . . . . . . . . . . 31 E Limitations and Future Work . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 31 F Hyperparameter Settings . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 32 
+
+## A Additional Quantitative Results 
+
+The baseline results displayed in this section correspond to the ones reported by the respective authors unless indicated otherwise. We also show the results for 
+
+HilDA †, our method excluding the diffusion auxiliary task during pre-training. In all the tables, the best/ 2nd best results are bold /underline . We exclude HilDA †
+
+from this ranking to emphasize the difference between HilDA (our best model) and previous SOTA. 
+
+A.1 Robustness Benchmark using Fully Fine-Tuned Backbones 
+
+The main paper reports linear-probing results to isolate representation quality. In Tab. A1, we complement these with robustness benchmarks under full fine-tuning (after pre-training). We observe state-of-the-art performance in most configurations and the best average performance overall. 2 M. Wozniak et al. HilDA: Hierarchical Distillation with Diffusion 
+
+Table A1: Performance comparison on robustness under weather corruption and sensor failure on nuScenes-C [41] benchmark using full fine-tuning with 100% labeled data. All mCE ( ↓), mRR ( ↑), and mIoU ( ↑) metrics are given in percentage (%).                                                                                                                            
+
+> Method mCE ↓mRR ↑mIoU ↑
+> Fog Rain Snow Blur Beam Cross Echo Sensor Mean
+> Random 112.20 72.57 62.96 70.65 55.48 51.71 62.01 31.56 59.64 39.41 54.18 SLidR [68] 106.08 75.99 65.41 72.31 56.01 56.07 62.87 41.94 61.16 38.90 56.83 Seal [49] 92.63 83.08 72.66 74.31 66.22 66.14 65.96 57.44 59.87 39.85 62.81 SuperFlow [88] 91.67 83.17 70.32 75.77 65.41 61.05 68.09 60.02 58.36 50.41 63.68 Scalr [63] 99.86 81.35 69.23 72.47 60.67 55.11 64.07 56.93 60.34 46.11 60.62 LiMoE [86] 88.43 83.28 71.10 75.92 65.66 63.86 68.52 60.78 61.91 50.66 64.80 CleverDistiller [24] 91.28 87.42 72.83 70.91 66.03 60.18 66.85 68.04 60.17 53.63 64.83 LiMA [90] 91.43 82.57 71.24 73.38 67.33 66.73 66.71 47.66 61.72 48.65 62.93
+> HilDA †90.05 82.27 73.48 72.78 68.97 59.48 65.39 66.97 62.60 51.12 65.10
+> HilDA 85.08 85.13 74.77 74.75 68.06 63.45 66.69 69.17 63.25 51.48 67.36
+
+A.2 3D Semantic Segmentation 
+
+As observed in Table A2, HilDA achieves the highest mean Intersection over Union (mIoU) across all evaluated Vision Transformer backbones (ViT-S, ViT-B, and ViT-L). The improvements over the second-best, CleverDistiller [24], are primarily concentrated in geometrically diverse classes and static road features. Notably, HilDA yields substantial gains in the classes traffic cone , truck , and other flat surfaces. Furthermore, both the ViT-B and ViT-L architectures overcome the 0.0 IoU failure state for the bicycle class. 
+
+A.3 Semantic Occupancy Prediction 
+
+Table A3 shows 3D and 4D semantic occupancy prediction with a frozen pre-trained backbone and a trainable decoder (details on model, data, training, and metrics can be found in Sec. C). For this task, we inherit the data pre-processing and target generation pipeline of Occ4cast [48] to produce ground truth semantic occupancy in 3D and 4D using the nuScenes [8] lidarseg dataset. HilDA consistently achieves the best mIoU across all settings, and its margin over cross-modal distillation baselines persists as the prediction horizon increases. While performance naturally degrades with longer forecasting horizons, HilDA maintains a stable lead even at 10-step prediction, indicating stronger long-term spatiotemporal priors in the learned representation. Ablating the future BEV occupancy diffusion component (HilDA vs . HilDA †)shows that it provides a consistent benefit beyond the 2D teacher distillation signal. Notably, during the LiDAR backbone pre-training, the temporal diffusion objective conditions on LiDAR data from frames at time (t−1, t 0) and predicts occupancy at t1, with ∆t = 0 .5 s . This supervision is directly aligned with the 4D (-1/1) setting in Tab. A3 (corresponding to predicting t1 conditioned on (t−1, t 0)), where we also observe the largest ablation gain ( +1 .1 mIoU). Notation -1/T indicates two input frames starting from t−1 and a prediction horizon up to and including tT . The observed pattern suggests that the diffusion-based occupancy HilDA: Hierarchical Distillation with Diffusion for LiDAR Pre-training 3
+
+Table A2: 3D semantic segmentation. Per-class IoU scores (%) of state-of-the-art pre-training methods pre-trained and fine-tuned on nuScenes with 1% annotations. 
+
+Method mIoU 
+
+> barrier
+> bicycle
+> bus
+> car
+> const. veh.
+> motorcycle
+> pedestrian
+> traffic cone
+> trailer
+> truck
+> drive surf.
+> other flat
+> sidewalk
+> terrain
+> manmade
+> vegetation
+
+ViT-S 
+
+SLidR 41.2 0.0 0.0 26.6 72.0 12.4 15.8 51.4 22.9 11.7 35.3 92.9 36.3 58.7 63.6 81.2 82.3 Seal 44.3 20.0 0.0 19.4 74.7 10.6 45.7 60.3 29.2 17.4 38.1 93.2 26.0 58.8 64.5 81.9 81.9 ScaLR 53.0 58.4 0.0 64.9 83.3 10.5 20.7 59.6 24.6 26.4 55.8 93.9 51.2 63.4 68.5 83.7 83.1 SuperFlow 47.8 38.2 1.8 25.8 79.0 15.3 43.6 60.3 0.0 28.4 55.4 93.7 28.8 59.1 59.9 83.5 83.1 LiMoE 49.6 39.9 4.6 27.3 80.2 17.1 45.4 61.2 6.2 29.5 58.4 94.0 34.2 62.3 64.6 84.1 84.5 
+
+CleverD 56.9 60.2 0.0 71.2 84.9 11.8 47.1 65.1 26.6 31.4 61.7 94.2 54.1 64.9 69.5 84.2 83.5 
+
+HilDA † 57.8 65.0 0.5 73.0 77.0 11.4 47.1 61.9 33.0 34.4 61.2 94.9 60.5 66.9 70.1 84.6 83.4 
+
+HilDA 59.4 69.2 0.0 76.6 81.9 30.4 12.1 62.4 42.2 39.0 68.7 95.6 62.3 68.1 71.7 85.5 84.1 
+
+ViT-B 
+
+PPKT 40.9 0.0 0.0 24.5 73.5 12.2 7.0 51.0 13.5 15.4 36.3 93.1 40.4 59.2 63.5 81.7 82.2 SLidR 41.6 0.0 0.0 26.7 73.4 10.3 16.9 51.3 23.3 12.7 38.1 93.0 37.7 58.8 63.4 81.6 82.7 Seal 46.0 43.0 0.0 26.7 81.3 9.9 41.3 56.2 0.0 21.7 51.6 93.6 42.3 62.8 64.7 82.6 82.7 SuperFlow 48.1 39.1 0.9 30.0 80.7 10.3 47.1 59.5 5.1 27.6 55.4 93.7 29.1 61.1 63.5 82.7 83.6 ScaLR 55.8 60.8 0.0 69.7 85.1 20.4 30.6 60.8 27.8 29.5 58.1 94.2 55.6 64.3 69.3 84.1 83.1 LiMoE 50.2 41.5 3.8 32.2 81.7 12.9 49.3 61.1 7.3 29.3 57.8 94.2 35.1 62.9 65.4 84.0 84.8 CleverD 59.8 61.8 0.0 72.8 85.7 35.2 49.6 65.4 33.6 32.9 62.6 94.5 59.5 65.6 69.5 84.7 83.5 
+
+HilDA † 61.0 69.4 4.9 74.0 81.9 32.0 25.6 67.4 44.6 38.4 68.3 95.2 64.4 69.2 72.0 84.7 84.1 
+
+HilDA 62.7 69.7 7.4 78.3 85.7 41.6 11.1 67.9 47.5 39.3 75.5 95.9 67.5 71.6 73.3 86.2 85.0 ViT-L 
+
+PPKT 42.1 0.0 0.0 24.4 78.8 15.1 9.2 54.2 14.3 12.9 39.1 92.9 37.8 59.8 64.9 82.3 83.6 SLidR 42.8 0.0 0.0 23.9 78.8 15.2 20.9 55.0 28.0 17.4 41.4 92.2 41.2 58.0 64.0 81.8 82.7 Seal 46.3 41.8 0.0 23.8 81.4 17.7 46.3 58.6 0.0 23.4 54.7 93.8 41.4 62.5 65.0 83.8 83.8 SuperFlow 50.0 44.5 0.9 22.4 80.8 17.1 50.2 60.9 21.0 25.1 55.1 93.9 35.8 61.5 62.6 83.7 83.7 LiMoE 51.4 45.3 4.1 25.3 82.2 18.4 52.5 61.8 22.3 26.4 56.2 94.3 37.6 63.3 63.9 84.4 85.0 
+
+ScaLR 55.8 65.0 0.0 68.7 85.3 15.9 27.7 61.4 28.3 31.0 61.8 94.2 51.6 64.6 70.0 84.1 83.0 CleverD 60.6 65.5 0.0 72.3 88.3 37.2 37.4 65.1 35.3 40.9 71.9 94.5 55.8 66.5 70.6 85.0 83.8 
+
+HilDA † 61.6 70.4 5.8 69.0 82.9 27.2 58.7 52.0 46.0 36.2 66.8 95.5 64.8 69.6 72.4 85.1 83.2 
+
+HilDA 62.8 68.3 7.6 67.9 88.0 38.6 35.9 66.8 44.5 39.3 72.6 95.8 64.3 70.8 73.4 85.9 84.6 
+
+supervision complements the knowledge distillation by injecting training signals that promote learning temporal cues. Importantly, the diffusion component disproportionately improves hard and rare occupied categories, such as construction vehicle , traffic cone , and motorcycle ,with additional gains on truck and barrier . At the longest horizon 4D (-1/10), the same effect remains visible. These gains are consistent with the intuition that diffusion supervision encourages geometric and temporal structure, which is particularly valuable for compact, occluded, or low-frequency objects. We also observe a mild trade-off where diffusion improves most difficult foreground classes but can slightly reduce performance on a small set of more ambiguous or boundary-heavy categories. For example, we observe a decrease for the classes 4 M. Wozniak et al. HilDA: Hierarchical Distillation with Diffusion 
+
+Table A3: 3D/4D semantic occupancy IoU results with a frozen pre-trained backbone and a trainable occupancy decoder head. We compare cross-modal distillation pre-training baselines against HilDA using occupancy targets and inputs produced by the Occ4Cast [48] pre-processing pipeline. The results are shown for different time horizons. The models input up to two sweeps ( t−1, t0) and predict occupancy up to and including tT (t0, ..., tT ). Notation -1/T indicates two input frames starting from 
+
+t−1 and a prediction horizon up to and including tT . Notation 0/0 indicates input and target are both at frame t0. The 4D metrics are averaged over frame-wise metrics. The aggregate metric corresponds to the semantic class averaged mIoU. Best/second-best are in bold /underlined. 
+
+Method mIoU 
+
+> barrier
+> bicycle
+> bus
+> car
+> const. veh.
+> motorcycle
+> pedestrian
+> traffic cone
+> trailer
+> truck
+> drive surf.
+> other flat
+> sidewalk
+> terrain
+> manmade
+> vegetation
+> 3D (0/0)
+
+Random 10.0 1.7 0.0 0.0 16.8 0.0 0.0 0.0 0.0 8.3 7.4 34.2 6.9 11.8 17.7 31.8 23.3 ScaLR 14.9 11.1 0.0 1.9 24.7 1.0 0.6 10.6 1.4 13.9 16.1 36.9 16.2 18.9 22.2 36.0 26.1 SuperFlow 11.8 2.2 0.0 0.3 21.3 0.2 0.0 0.6 0.5 12.7 12.7 35.5 11.1 13.3 18.6 34.2 25.0 CleverDistiller 15.7 14.4 0.0 7.8 25.0 2.5 0.5 14.2 1.2 13.0 16.2 36.6 15.6 19.0 22.5 36.2 26.1 
+
+HilDA † 17.9 18.1 0.0 16.5 25.8 5.5 4.5 18.4 3.0 15.1 18.9 36.9 16.8 20.2 23.4 37.0 26.6 
+
+> 3D (0/0)
+
+HilDA 18.8 19.9 0.0 18.1 26.3 11.2 6.4 18.2 5.3 13.8 20.6 37.1 15.9 20.5 23.5 37.1 26.6 3D (-1/0)  Random 10.6 1.4 0.0 0.0 16.0 0.0 0.0 0.0 0.0 6.7 6.9 38.8 6.4 13.5 20.0 34.5 25.4 ScaLR 16.2 9.4 0.0 4.8 25.3 2.3 0.2 12.0 3.0 14.1 16.9 41.8 14.2 20.9 26.1 38.9 28.9 SuperFlow 12.5 3.0 0.0 0.5 20.7 0.2 0.0 1.6 0.7 12.4 11.7 39.5 9.5 14.4 21.3 37.0 27.5 CleverDistiller 16.5 11.5 0.0 5.4 25.7 1.7 0.6 16.0 2.3 13.9 16.8 41.9 12.9 20.8 26.0 39.2 29.0 
+
+HilDA † 19.0 17.2 0.0 16.7 26.6 7.2 2.1 19.7 3.6 15.3 19.1 42.1 15.5 22.6 26.7 39.8 29.2 
+
+> 3D (-1/0)
+
+HilDA 20.0 18.8 0.0 17.3 27.3 10.9 6.0 19.8 5.3 14.5 20.7 42.1 17.0 23.0 27.3 39.9 29.3 4D (-1/1)  Random 10.3 1.1 0.0 0.0 12.6 0.0 0.0 0.0 0.0 6.4 5.6 38.6 7.2 13.2 20.3 34.5 25.4 ScaLR 14.9 9.6 0.0 1.8 21.3 1.2 0.0 5.1 1.0 14.2 13.3 42.0 14.1 20.8 26.2 39.0 28.9 SuperFlow 11.9 2.6 0.0 0.5 16.8 0.2 0.0 0.2 0.3 11.2 10.0 39.7 9.0 14.2 21.0 36.8 27.3 CleverDistiller 15.5 11.4 0.0 4.1 21.8 2.0 0.2 8.0 1.9 13.8 14.0 41.9 13.6 21.1 26.2 39.1 29.0 
+
+HilDA † 17.3 14.8 0.0 10.9 22.4 5.0 1.7 10.2 2.9 14.5 16.0 42.1 16.6 23.1 26.9 39.7 29.3 
+
+> 4D (-1/1)
+
+HilDA 18.4 19.0 0.0 15.7 23.3 9.6 1.1 10.1 5.1 13.8 18.0 42.4 16.8 23.2 27.2 39.9 29.2 
+
+> 4D (-1/5)
+
+Random 9.6 0.8 0.0 0.0 9.9 0.0 0.0 0.0 0.0 5.4 3.5 38.1 3.1 12.7 20.2 34.1 25.4 ScaLR 13.5 7.2 0.0 0.2 17.3 0.4 0.0 1.1 0.7 11.5 11.0 41.8 11.7 20.6 25.8 38.6 28.6 SuperFlow 11.2 2.5 0.0 0.0 13.7 0.1 0.0 0.1 0.1 9.6 7.5 39.6 6.9 14.2 21.3 36.7 27.2 CleverDistiller 14.0 9.2 0.0 1.8 17.6 0.7 0.0 1.6 1.3 11.5 11.8 41.5 13.2 20.2 25.8 39.1 28.8 
+
+HilDA † 15.4 12.4 0.0 4.7 18.6 2.9 0.1 3.6 2.1 12.5 13.1 42.2 14.6 22.9 27.0 39.8 29.3 
+
+> 4D (-1/5)
+
+HilDA 16.3 16.1 0.0 6.4 18.6 8.1 2.0 3.3 2.9 12.2 14.3 42.1 16.4 22.7 27.0 39.9 29.2 
+
+> 4D (-1/10)
+
+Random 9.4 0.4 0.0 0.0 8.6 0.0 0.0 0.0 0.0 4.9 2.8 38.5 3.9 12.2 19.6 34.3 25.4 ScaLR 13.5 7.4 0.0 0.1 15.4 0.8 0.0 0.6 0.8 11.3 9.9 42.0 12.5 20.8 26.1 38.7 28.7 SuperFlow 10.8 1.6 0.0 0.0 11.8 0.0 0.0 0.0 0.0 7.6 6.7 39.6 7.0 14.2 20.9 36.6 27.2 CleverDistiller 13.4 6.7 0.0 1.5 15.6 1.0 0.0 0.7 0.2 9.9 10.8 41.8 11.7 21.0 26.1 38.9 28.8 
+
+HilDA † 14.8 11.7 0.0 3.6 16.5 2.5 0.0 2.1 0.3 10.7 11.8 42.4 16.5 23.2 26.8 39.8 29.2 
+
+> 4D (-1/10)
+
+HilDA 15.4 14.8 0.0 4.4 16.4 6.8 0.0 1.7 1.2 11.4 13.2 42.0 16.0 22.5 27.1 39.9 29.3 
+
+trailer and other flat in 3D (0/0). In 4D (-1/10), other flat and sidewalk decreases. These drops are modest and do not affect the overall trend (mIoU increases across all horizons). Consistent with our discussion in Sec. 4.3, we hypothesize that this reflects a shift toward geometry-aligned discrimination where our future BEV HilDA: Hierarchical Distillation with Diffusion for LiDAR Pre-training 5
+
+occupancy diffusion objective provides supervision for free–occupied boundaries and spatial extent, but it does not directly supervise semantic distinctions within occupied regions ( e.g ., differentiating surface categories such as sidewalk vs .
+
+drivable surface ). While diffusion may capture scene-layout priors, it is less aligned with the semantic boundaries required by IoU, as highlighted by [99]. Moreover, the BEV projection removes vertical cues that can be informative for certain semantic separations. 
+
+OpenOccupancy Benchmark. HilDA is also evaluated on the 3D semantic occupancy task introduced by OpenOccupancy [77] to compare against dedicated occupancy predictors. To this end, we apply our frozen backbone together with the same occupancy decoder head used in the Occ4cast setting. We use the standard OpenOccupancy target and output shape for a direct comparison with prior work. The frozen and pre-trained features of HilDA, coupled with a lightweight decoder head, perform competitively with 3D semantic occupancy frameworks [75, 77], as shown in Tab. A4. Notably, the LiDAR-only baselines are purpose-built occupancy predictors trained end-to-end for the task, with reported model sizes of 63M parameters for L-OpenOccupancy [77] and L-CONet [77], and 62M for L-OccGen [75]. In contrast, HilDA relies on a frozen pre-trained sparse LiDAR backbone with 39.1M parameters and only a 0.4M trainable occupancy-specific decoder head. The comparison therefore highlights that competitive occupancy performance can be obtained from a substantially lighter task-specific adaptation of a self-supervised pre-trained 3D representation. 
+
+Table A4: 3D semantic occupancy using the OpenOccupancy [77] benchmark. The table shows geometric IoU (binary occupancy) scores, mean IoU averaged over the semantic class scores, and the per-class IoU scores. Results from baselines are obtained directly from the published papers. Compared to dedicated occupancy networks [75, 77], frozen HilDA with a lightweight occupancy decoder head is able to compare competitively.                                                                    
+
+> Method IoU mIoU
+> barrier
+> bicycle
+> bus
+> car
+> const. veh.
+> motorcycle
+> pedestrian
+> traffic cone
+> trailer
+> truck
+> drive surf.
+> other flat
+> sidewalk
+> terrain
+> manmade
+> vegetation
+> L-OpenOccupancy [77] 30.8 11.7 12.2 4.2 11.0 12.2 8.3 4.4 8.7 4.0 8.4 10.3 23.5 16.0 14.9 15.7 15.0 17.9 L-CONet [77] 30.9 15.8 17.5 5.2 13.3 18.1 7.8 5.4 9.6 5.6 13.2 13.6 34.9 21.5 22.4 21.7 19.2 23.5 L-OccGen [75] 31.6 16.8 18.8 5.1 14.8 19.6 7.0 7.7 11.5 6.7 13.9 14.6 36.4 22.1 22.8 22.3 20.6 24.5
+> HilDA 30.0 13.0 11.6 1.5 7.9 19.6 3.5 4.6 22.6 5.8 5.3 11.2 28.4 8.9 13.2 14.5 23.3 26.2
+
+A.4 Additional Ablations 
+
+In this section, we further motivate our design choices by providing additional ablation studies. All ablations are made on the 3D semantic segmentation down-stream task. 6 M. Wozniak et al. HilDA: Hierarchical Distillation with Diffusion                            
+
+> Table A5: Sensitivity analysis of loss weights for future BEV occupancy diffusion ( ωdf )and global context distillation ( ωgl ) on NuScenes [8]. Results show performance on downstream 3D semantic segmentation. Setting LP 1%
+> ωdf = 0 .153.95 57.12
+> ωdf = 0 .255.82 58.65
+> ωdf = 0 .555.98 58.82
+> ωdf =1.056.29 59.46
+> ωgl =0.05 56.29 59.46
+> ωgl = 0 .15 56.12 59.19
+> ωgl = 0 .255.93 58.47
+
+Loss Component Sensitivity. To understand the contribution of each objective during pre-training to final performance, we independently ablate the weights of the distillation ( ωgl ) and diffusion ( ωdf ) losses (Tab. A5), while fixing ωds = 1 .0
+
+as a reference. Consistent with findings in multi-task learning [46], downstream performance is sensitive to the weighting of auxiliary pre-training objectives, although the variation we observe is moderate compared to prior reports such as CleverDis-tiller [24]. Increasing the future BEV occupancy diffusion weight ωdf leads to a monotonic improvement in both linear probing and 1% fine-tuning. This indi-cates that the diffusion objective provides a complementary supervisory signal that improves representation quality, rather than destabilizing the training. This observation is aligned with recent works combining diffusion supervision with VFM distillation [44, 96, 99]. Global context distillation yields the largest gains at 
+
+ωgl = 0 .05 , providing complementary scene-level guidance. Larger values slightly degrade performance, indicating diminishing returns for stronger distillation. 
+
+Diffusion Loss Components. The auxiliary ℓ2 reconstruction loss on ˆxocc 
+
+is preferred over a cross-entropy alternative because the denoised estimate ˆxocc 
+
+is continuous-valued by construction under the Gaussian forward process [30], making pixel-wise ℓ2 a consistent supervision signal. Binary cross-entropy is instead the natural choice under discrete-state diffusion formulations [3]. Fur-thermore, augmenting the noise-prediction objective with a direct reconstruction term has been shown to improve training stability in diffusion models [58]. We balance the two loss terms using a scalar hyperparameter. As shown in Tab. A6, adding the reconstruction term consistently improves downstream linear probing performance on nuScenes across all teacher sizes, indicating that adding explicit 
+
+ˆxocc supervision helps guide representation learning during pre-training. 
+
+Diffusion Temporal Step. We ablate the time interval ∆t between conditioning frames ( t−2∆t , t−∆t ) and the target frame ( t) to determine the optimal temporal receptive field. As shown in Tab. A7, a stride of 0.5s performs best. Small strides (0.1s ) yield negligible point cloud differences, causing the model to collapse into a HilDA: Hierarchical Distillation with Diffusion for LiDAR Pre-training 7                                     
+
+> Table A6: Ablation of diffusion loss terms during pre-training and their impact on downstream linear probing performance on nuScenes [8]. “Noise pred.” denotes using only the diffusion noise-prediction loss, while “Noise & recon.” denotes using both noise-prediction and reconstruction losses. Results are reported for different DINOv2 teacher sizes and show downstream performance on 3D semantic segmentation.
+> Teacher Noise pred. Noise & recon. ViT-S 56.03 56.29 ViT-B 58.16 58.95 ViT-L 59.33 60.06 Table A7: Ablation of temporal stride ∆t . We condition on t−2∆t and t−∆t to predict
+> t. Results are reported on downstream 3D semantic segmentation on nuScenes.
+> Setting Stride Cond. nuSc (∆t )Win. LP 1%
+> High Freq. 0.1s0.2s53.15 55.82
+> Medium 0.5s1.0s56.29 59.46
+> Long Horiz. 1.0s2.0s54.42 58.10 Mixed Horiz. 0.1s1.2s55.40 57.63
+
+trivial identity mapping. Conversely, large strides ( 1.0s ) introduce significant non-linear motion and occlusions that break local feature correspondences. Ultimately, using three frames (two conditioning, one target) with a moderate stride is optimal because it provides the minimal curvature and acceleration cues necessary for predicting complex dynamic agents [5]. 
+
+Diffusion vs . Occupancy Decoders. We provide an extended version of Tab. 9, comparing downstream 3D semantic segmentation performance for occupancy-based auxiliary decoders. We report both linear-probing performance and fine-tuning with 1% of the labels on nuScenes. 
+
+Computational Time. The ablation study in Tab. A9 demonstrates a consis-tent performance improvement on the nuScenes dataset as each component is integrated. The full configuration (e) achieves the highest mIoU for both linear probing and 1% fine-tuning, marking a significant gain over the ScaLR [63] base model. However, these architectural additions introduce a non-negligible overhead where the model parameters increase from 66 .4M to 77 .1M and peak memory usage grows from 36 .2GB to 54 .0GB. This translates to a 16 .11 % parameter increase, which can be compared to the 21 .42 % increase in LP performance. Adding only diffusion (a) yields a 0.6 % parameter increase with 8.78 % increase in LP. Notably, diffusion incurs a training-time computational overhead compa-rable to that of multi-layer distillation (b), primarily because the ground-truth occupancy target is constructed online during training (this target generation 8 M. Wozniak et al. HilDA: Hierarchical Distillation with Diffusion                                                                           
+
+> Table A8: Comparison of occupancy decoder variants for downstream 3D semantic segmentation on nuScenes.
+> Occupancy Decoder nuScenes LP 1%
+> Sim. Dec. 49.1 52.9 ALSO 54.7 56.6 Diffusion 56.3 59.5 Table A9: Ablation study of different components of our pre-training method on MinkUnet34 [15]. Results in mIoU for 3D semantic segmentation. ScaLR [63] with MLP projection head is (base). Memory and time measured with a batch size of 4 on 8 NVIDIA A100 80GB GPUs. #Diff Distill CLS nuScenes Params. Memory Train Time LP 1% (M) (GB) (Hours) (base) ✗✗✗46.36 55.01 66.4 36.2 ≈20h (a) ✓✗✗50.43 56.97 66.8 37.8 ≈24h (b) ✗✓✗53.77 57.03 71.5 46.4 ≈24.5h (c) ✗✓✓55.13 57.81 76.7 52.5 ≈26h (d) ✓✓✗55.53 59.04 71.9 47.9 ≈28.5h (e) ✓✓✓56.29 59.46 77.1 54.0 ≈30h
+
+could however be shifted to a pre-processing stage). It is important to note that while the reported memory and training time ( ≈ 30 h) were measured using a batch size of 4 on high-end A100 80 GB GPUs, the memory can be effectively scaled down by reducing the batch size. This adjustment allows for training when large-memory GPUs are unavailable, and our observations indicate that such a reduction does not result in a significant change in model performance. It is further important to emphasize that the size of the trained LiDAR encoder backbone remains constant , and inference-time usage is thus not affected by these pre-training additions. 
+
+Masking. In Tab. A10, we ablate randomly masking the inputs to the auxiliary future BEV occupancy diffusion head. We compare the default unmasked setting against masking either the LiDAR BEV features that condition the diffusion UNet or the noisy future occupancy BEV map itself. Random masking is applied at 
+
+50% . Masking the BEV conditioning features degrades downstream performance, indicating that depriving the diffusion head of encoder-provided spatiotemporal context weakens the gradients that encourage informative LiDAR features, yield-ing less transferable representations. Masking the noisy occupancy input reduces linear-probe performance but slightly improves 1% fine-tuning. We hypothesize that moderate masking can increase reliance on the available conditioning signal, consistent with observations that visible-context conditioning is important in HilDA: Hierarchical Distillation with Diffusion for LiDAR Pre-training 9          
+
+> Table A10: Ablation of diffusion input masking strategies. We either mask the LiDAR encoder BEV features (conditioning) or the noisy future BEV occupancy map (input), applying random masking at 50% . Masking conditioning features degrades downstream performance, indicating that full encoder context is important for learning transferable LiDAR representations. Results show performance on downstream 3D semantic seg-mentation.
+> Strategy nuScenes
+> LP 1%
+> no masking 56.29 59.46 random masking (BEV feat.) 53.05 58.42 random masking (noisy occ.) 54.61 60.33
+
+masked pretraining [80]. While this appears to reduce linear separability (LP), it may provide a mild regularizing effect that benefits 1% fine-tuning. 
+
+Multi-Layer Distillation Design (Extended). In this section, we ablate the design choices behind our multi-layer distillation strategy and discuss the specific challenges that arise in the cross-modal camera-to-LiDAR setting. While multi-layer distillation has been studied in 2D [12], our contribution is identifying a design that fits point–pixel cross-modal supervision. Prior 2D-VFM-to-3D-LiDAR methods distill only the final teacher layer, discarding the VFM’s layer-wise abstraction hierarchy. Unlike same-modality distillation, camera-to-LiDAR supervision is constrained by calibrated point–pixel correspondences. Earlier student blocks aggregate coarser, irregular 3D neighborhoods whose points can project to pixels with different semantics, making fine-grained 2D targets less reliable. At the same time, too early teacher blocks may not match the semantic abstraction level of late student features. HilDA therefore matches neighboring late teacher and student blocks, e.g ., ( QL→FL, QL−1→FL−1), where abstraction levels and point–pixel correspondences are both more consistent. We refer to this strategy as the “ Separate ” strategy. We evaluate five different multi-layer distillation designs corresponding to: (i) ablating the distillation depth for the Separate strategy; (ii) complementing the depth ablation by a variant distilling only from the penultimate layer of the teacher; (iii) the Aggregate strategy where we concatenate features from the last K teacher layers to one single target {QL−k}K−1 
+
+> k=0
+
+→FL; (iv) a “ Knowledge Review ”-style [12] (KR-style) aggregation, where aggregated teacher features supervise the final two student layers. Specifically, for a K-layer aggregation, we distill {QL−k}K−1 
+
+> k=j
+
+→FL−j , j = 0 , 1; and (v) the Non-Uniform variant where student-teacher layer pairs are distilled with a skipped layer in-between ( QL→FL,
+
+QL−2→FL−2). The Separate (HilDA default) and Aggregate strategies are illus-trated in Fig. A1. Note that, in Sec. A.4, we also evaluate multi-layer distillation using a different PTv3 [83] student model architecture. Table A11 shows that distilling from multiple layers consistently outperforms using only the final teacher layer ( Last 1 ), indicating that intermediate teacher fea-10 M. Wozniak et al. HilDA: Hierarchical Distillation with Diffusion                       
+
+> Table A11: Ablation of distillation depth and multi-layer distillation strategy on nuScenes linear probing. We report results for pre-training with all loss components enabled, and when only multi-layer distillation is included. Results show performance on downstream 3D semantic segmentation.
+> Layers All losses included Multi-layer distillation
+> Separate Aggregate Separate Aggregate Last 1 50.84 –46.36 –
+> Last 2 56.29 53.62 53.77 51.92 Last 3 52.59 55.37 52.02 52.97 Last 4 52.19 54.54 51.56 52.25
+
+tures provide complementary supervision. Furthermore, the penultimate-teacher-layer distillation results in Tab. A12 indicate that the performance gains of multi-layer distillation are not attributable to the penultimate layer alone, but rather to the use of multiple teacher layers. As seen in Tab. A11, the optimal distillation depth depends on the distillation strategy, and the trend is consistent across both studied training setups (all pre-training loss components included vs. multi-layer distillation only). Separate outperforms Aggregate in all cases and achieves its best results by distilling the last two layers. In contrast, Aggregate is strongest when applied to the last three layers. We hypothesize that Separate is more effective because it preserves layer-wise correspondence, providing matched supervision across abstraction levels. In contrast, Aggregate compresses features from multiple teacher layers into a single target for the final student layer, which can dilute layer-specific signals. We further attribute Separate peaking at the 2-layer depth to the fact that distilling earlier layers can violate geometric corre-spondence, where earlier and coarser 3D (MinkUnet34) up-sampling features do not perfectly align with the VFM’s 2D patches. In contrast, Aggregate benefits from including one additional teacher layer (last three), which may enrich the final-layer target with useful mid-level cues before the aggregated representation becomes too heterogeneous to compress effectively. The results in Tab. A12 show that the proposed Separate strategy remains strongest. KR-style aggregation improves over the final-block baseline but remains below Separate matching. We attribute this to the same aggregation bottleneck we observed with the Aggregate strategy. Non-uniform matching also underperforms neighboring-block matching (Separate), suggesting that, in the cross-modal set-ting, preserving local semantic correspondence between late-stage blocks is more effective than distilling broader non-adjacent feature-transformation processes. Together with Tab. A11, these results indicate that HilDA’s multi-block distil-lation is a principled design effectively implemented for the camera-to-LiDAR distillation setting. Furthermore, these results stay consistent with prior obser-vations that late teacher representations (DINOv2 [61]) are most aligned with semantic segmentation [6]. HilDA: Hierarchical Distillation with Diffusion for LiDAR Pre-training 11 …
+
+> 2D TăÿāĆăr
+> …
+> …
+> 3D StuĂănt
+> 2D TăÿāĆăr
+> …
+> …
+> 3D StuĂănt
+
+[ ]… 
+
+> Săpÿrÿtă Strÿtăąy Aąąrăąÿtă Strÿtăąy
+
+Fig. A1: Illustration of the Separate and Aggregate multi-layer distillation strategies ablated in Sec. A.4. The separate strategy is shown to produce better performance on downstream 3D semantic segmentation. 
+
+Table A12: Ablation of multi-layer matching strategies. Separate matching yields the strongest overall performance. We report results for pre-training when only multi-layer distillation is included. Results show performance on downstream 3D semantic segmentation. 
+
+Strategy nuScenes SKITTI Waymo 
+
+LP 1% 1% 1% Penultimate 49.9 55.4 46.5 48.9 2-layer KR 50.0 56.8 47.2 49.2 3-layer KR 51.4 57.0 47.8 49.7 4-layer KR 51.1 56.3 47.5 49.6 Non-uniform 52.4 56.1 50.5 50.2 Separate (HilDA) 53.8 57.0 50.7 50.6 
+
+Furthermore, we ablate the dense point–pixel alignment loss in Tab. A13. For unit-normalized features, ℓ2 and cosine distance are equivalent. The practical difference between the two formulations is thus whether feature magnitudes are also constrained. In our setting, the teacher (ViT) and student (MinkUnet34) features originate from different architectures and normalization schemes, so their norm distributions are not expected to be aligned. Consequently, when applied across millions of point–pixel pairs and multiple distillation layers, an 
+
+ℓ2 objective can be dominated by scale mismatch, potentially steering optimiza-tion away from semantic feature direction. Cosine distance instead focuses the supervision on directional alignment, and yields better downstream performance 12 M. Wozniak et al. HilDA: Hierarchical Distillation with Diffusion                     
+
+> Table A13: Ablation of multi-layer distillation loss formulations. Cosine distance provides the strongest downstream performance across datasets and is used as the default
+> Ldistill in HilDA. Results show performance on downstream 3D semantic segmentation.
+> Loss nuScenes SKITTI Waymo
+> LP 1% 1% 1%
+> ℓ253.8 58.8 52.2 51.5 KL 52.1 57.4 51.0 50.7 Cosine (HilDA) 56.3 59.5 52.9 52.2
+
+in Tab. A13. Notably, LiMA [90] adopts an ℓ2 formulation, whereas ScaLR [63] and CleverDistiller [24] use cosine. Moreover, cosine loss also outperforms the Kullback–Leibler (KL) divergence loss, which aligns predictive distributions and may be more sensitive to distribution shifts. Finally, as discussed in Sec. 2, con-trastive losses require negatives, positive-negative sampling strategies (because an exhaustive point-pixel comparison is computationally prohibitive), semantic priors/superpixels, and temperature calibration. Recent state-of-the-art methods have moved away from contrastive formulations [24,63,90]. Based on these results and considerations, we use cosine distance as the default formulation for Ldistill 
+
+in HilDA. For the global context distillation we use the ℓ2 loss because there we have a single pooled feature per scene, and scale mismatch is less dominant. Ablations further show the ℓ2 loss to be dominant for the final-layer derived CLS 
+
+token distillation. 
+
+PTv3 with HilDA. In the main paper, we use MinkUnet34 [15] as the LiDAR encoder during pre-training. To assess whether our proposed cross-modal pre-training transfers to alternative 3D backbones, we additionally instantiate the LiDAR encoder as PTv3 [83] and repeat the same pre-training and downstream evaluation. Table A14 reports linear probing and fine-tuning results on nuScenes, as well as 1% fine-tuning on SemanticKITTI and Waymo. We observe that HilDA yields consistent gains over prior distillation baselines for PTv3, indicating that the benefits of our pre-training are not specific to MinkUnet34 and generalize to a substantially different LiDAR architecture. Finally, we ablate the multi-layer distillation depth by distilling multiple teacher–student layer pairs, where “3 layers” denotes using three layer pairs in the multi-layer distillation objective. In this setting, increasing the distillation depth is generally beneficial. For ViT-B, the 3-layer variant achieves the strongest results in every reported setting, while for ViT-S it gives the best results in most nuScenes settings and on Waymo, with the 2-layer variant performing best on nuScenes 25 % and SemanticKITTI 1 % .This suggests that the optimal number of distilled layer pairs is backbone- and setting-dependent ( 2 layers for MinkUnet34. See Tab. A11). This may reflect differences in how MinkUnet34 (a sparse backbone with an encoder–decoder hierarchy) and PTv3 (a transformer-based point backbone) organize intermediate representations, suggesting that the appropriate multi-layer distillation depth HilDA: Hierarchical Distillation with Diffusion for LiDAR Pre-training 13  
+
+> Table A14: 3D semantic segmentation results for cross-modal distillation methods pre-trained on nuScenes [8], and fine-tuned on nuScenes, SemanticKITTI [4], and Waymo [70]. All methods use the PTv3 [83] backbone. LP denotes linear probing with a frozen backbone.
+
+Method nuScenes SKITTI Waymo LP 1% 5% 10% 25% 1% 1% ViT-S 
+
+ScaLR 44.99 62.07 69.10 72.91 75.69 56.92 60.09 CleverDistiller 58.49 62.54 71.09 73.89 76.64 61.95 62.19 
+
+HilDA 59.16 65.39 72.21 75.27 78.86 64.30 65.09 
+
+HilDA 3 layers 60.18 67.15 73.03 76.02 77.68 64.11 65.72 ViT-B 
+
+ScaLR 41.62 63.54 71.74 73.84 76.56 60.74 57.17 CleverDistiller 60.54 63.93 72.27 74.11 76.93 63.31 62.20 
+
+HilDA 60.15 67.84 75.59 76.80 78.14 62.31 62.07 
+
+HilDA 3 layers 61.49 69.80 77.33 78.44 79.00 63.80 62.93 
+
+from a DINOv2 [61] ViT [19] teacher should be tuned per encoder. Concretely, deeper distillation exposes the student to features at varying abstraction levels, and the most effective depth likely depends on how well these levels align with the student’s intermediate representations. 
+
+Global Context Distillation Design (Extended). We ablate three design choices for global context distillation: the aggregation of per-view teacher CLS 
+
+tokens to construct CLS QL , the aggregation of projected sparse student voxel features to construct CLS FL , and the loss used to align global teacher and student representations. For teacher-side aggregation, we compare average and max pooling for combining the per-view teacher CLS token features into CLS QL. For student-side aggregation, we compare max pooling against a learnable single-query attention pooling module and a per-view/frustum-level distillation strategy, where a separate student CLS FL token is constructed for each teacher-view CLS 
+
+token and the resulting distillation losses are averaged. As shown in Tabs. A15 and A16, max pooling consistently improves perfor-mance for both linear probing and 1% fine-tuning, suggesting that scene-level alignment benefits from preserving the strongest camera view-specific and point cloud feature responses. Conversely, average pooling can attenuate salient cues by averaging them with less informative or noisier views. On the student side, learnable pooling introduces additional flexibility without a corresponding per-formance gain, while the per-view CLS FL variant also underperforms global max pooling. This indicates that a single global scene-level CLS distillation objec-tive best complements the local multi-view distillation, making the hierarchical distillation design of HilDA the most effective configuration. Finally, Tab. A17 shows that ℓ2 alignment slightly outperforms cosine simi-larity in the low-label fine-tuning setting, while matching it for linear probing on 14 M. Wozniak et al. HilDA: Hierarchical Distillation with Diffusion 
+
+Table A15: Effect of global CLS token aggregation (pooling strategy) on the teacher 
+
+side ( CLS QL ) evaluated on downstream nuScenes 3D semantic segmentation. Pooling occurs over the per-view teacher CLS tokens in the multi-view input. 
+
+Pooling nuScenes 
+
+LP 1% Average pooling 55.52 58.91 Max pooling (HilDA) 56.29 59.46 Table A16: Effect of global CLS token aggregation (pooling strategy) on the student 
+
+side ( CLS FL ) evaluated on downstream 3D semantic segmentation. Pooling occurs over the projected sparse voxel features HCLS (FL) produced from the point cloud P.
+
+Pooling nuScenes SKITTI Waymo 
+
+LP 1% 1% 1% Learnable pooling 55.9 58.9 52.2 51.4 Per-image CLS FL 55.5 57.7 50.4 50.6 Max pooling (HilDA) 56.3 59.5 52.9 52.2 Table A17: Effect of global context distillation loss formulation on downstream 3D semantic segmentation. 
+
+Loss nuScenes SKITTI Waymo 
+
+LP 1% 1% 1% Cosine similarity 56.3 59.1 52.5 52.1 
+
+ℓ2 (HilDA) 56.3 59.5 52.9 52.2 
+
+nuScenes. We therefore use ℓ2 loss for global context distillation, together with max pooling on both the teacher and student sides. 
+
+## B Additional Qualitative Results 
+
+In this section, we provide additional qualitative visualizations to complement the quantitative results in the main paper and to better illustrate the behavior of our method across different scenarios. 
+
+B.1 3D Semantic Segmentation 
+
+In Figs. B1 and B2, we provide a qualitative comparison on two representative nuScenes scenes. We visualize a PCA projection of the learned point embeddings, the predicted semantic segmentation, and per-point error maps for HilDA and CleverDistiller [24]. The PCA views serve as a proxy for feature separability, HilDA: Hierarchical Distillation with Diffusion for LiDAR Pre-training 15 
+
+where more coherent and class-consistent clusters typically indicate a representa-tion that is easier to linearly separate. Notably, the PCA separation of HilDA bears resemblance to its segmentation masks. Across both scenes, HilDA exhibits fewer and more spatially localized errors than CleverDistiller, aligning with our quantitative gains and suggesting that the proposed pre-training improves the semantic prediction capability of our pre-trained features, leading to cleaner deci-sion boundaries. At the same time, HilDA can still struggle with geometrically ambiguous surface regions, such as the ground underneath vehicles. This is con-sistent with the BEV diffusion limitation discussed in Sec. 4.3, since the auxiliary occupancy target emphasizes 2D object-centric geometric structure rather than fine-grained surface semantics. Moreover, Fig. B3 highlights challenging classes and scenes where HilDA also outperforms ScaLR. CleverDistiller HilDA  
+
+> PCA Seg Error Ground Truth
+> Fig. B1: Qualitative comparison for 3D semantic segmentation. We show PCA projec-tions of HilDA and CleverDistiller [24] feature embeddings, and the corresponding error maps.
+
+B.2 3D Object Detection 
+
+In Figs. B4 and B5, we provide additional qualitative results for 3D object detec-tion, comparing CleverDistiller against HilDA across multiple nuScenes scenes. 16 M. Wozniak et al. HilDA: Hierarchical Distillation with Diffusion CleverDistiller HilDA  
+
+> PCA Seg Error Ground Truth
+> Fig. B2: Qualitative comparison for 3D semantic segmentation covering a different scene. We show PCA projections of HilDA and CleverDistiller [24] feature embeddings, and the corresponding error maps.
+
+Across these examples, HilDA yields more complete detections with noticeably fewer false negatives over various object categories. The improvements are par-ticularly apparent for long-range instances, where HilDA more reliably recovers objects that are missed by CleverDistiller, consistent with the quantitative gains reported in the main paper. 
+
+B.3 Semantic Occupancy Prediction 
+
+Figure B6 qualitatively supports the quantitative gains in Table A3. Using HilDA as a frozen backbone yields cleaner semantic occupancy. In the shown scenes, the baseline backbones misclassifies various semantic classes ( e.g ., exca-vator/construction vehicle, cars, buses, and pedestrians) to a higher degree than HilDA, illustrating improved class discrimination and completion. 
+
+B.4 Scene Flow 
+
+Figure B7 provides an enlarged view of the qualitative LiDAR scene flow results presented in the main paper. We compare the 3D motion predictions of HilDA HilDA: Hierarchical Distillation with Diffusion for LiDAR Pre-training 17 Baseline Error HilDA Error HilDA Segmentation Camera Image 
+
+> Scene 1 Scene 2 Scene 3
+
+Fig. B3: Qualitative comparison for 3D semantic segmentation highlighting difficult examples for three different scenes. We show segmentation errors for both a baseline model (ScaLR [63]) and HilDA, the semantic prediction made by HilDA, and a camera image for clarity. The scenes show cases where HilDA outperforms the baseline on classifying: a pedestrian on top of truck, a scooter, and a truck with opened rear cargo doors. HilDA (ours) CleverDistiller Image with GT 
+
+> Scene 1 Scene 2 Scene 3
+
+Fig. B4: Qualitative comparison of 3D object detection across three scenes, comparing CleverDistiller with HilDA. Green boxes denote ground truth and red boxes denote predictions. The examples show cases where HilDA better detects object instances, particularly at far distances. 18 M. Wozniak et al. HilDA: Hierarchical Distillation with Diffusion Baseline HilDA HilDA Baseline   
+
+> Fig. B5: Additional qualitative 3D object detection scenes where HilDA outperforms CleverDistiller, exhibiting fewer false negatives across various object categories. Best viewed zoomed Û.
+
+and CleverDistiller with the ground-truth flow for two representative scenes. In the prediction rows, color denotes motion error, with redder regions indicating larger errors. In the ground-truth row, motion is visualized using a flywheel, where hue represents direction and color intensity represents speed. In both scenes, HilDA produces motion estimates that are closer to the ground truth, particularly in maintaining coherent flow over the truck and bus. The zoomed-in views further illustrate that CleverDistiller fails to capture the pedestrian motion, while HilDA recovers it and yields a clearer separation between moving objects and the static background. 
+
+B.5 Feature Similarity 
+
+We qualitatively assess cross-modal alignment using cosine-similarity maps. For each scene, we choose an anchor pair (a LiDAR point and its corresponding image pixel). We compare the anchor-point feature from HilDA to the features of all 3D points in the scene produced by HilDA, and the anchor-pixel feature from DINOv2 to the DINOv2 features at point-projected pixels in 2D. That is, similarity is visualized on this sparse set rather than the full H × W grid to emphasize point-aligned evaluation. As shown in Fig. B8, the produced similarity neighborhoods are highly consistent across modalities, indicating that HilDA preserves DINOv2-like semantic arrangement while operating in 3D. We also observe that DINOv2 shows higher-contrast similarity maps, while HilDA keeps the background more moderate. We further probe cross-view consistency by comparing a single 2D anchor pixel feature against DINOv2 features at the point-projected pixels across all 
+
+surround-view cameras. Similarly, we compare the corresponding 3D anchor against all points in the LiDAR sweep. In Fig. B9 (car anchor) and Fig. B10 (pedestrian anchor), both methods exhibit strong intra-class responses across views, while HilDA is slightly stronger and more localized, producing sharper object extents. HilDA: Hierarchical Distillation with Diffusion for LiDAR Pre-training 19 HilDA ScaLR      
+
+> CleverDistiller Ground Truth HilDA ScaLR
+> CleverDistiller Ground Truth HilDA ScaLR
+> CleverDistiller Ground Truth
+
+Fig. B6: Semantic occupancy prediction. Illustrating higher misclassification error of various semantic classes from baselines compared with HilDA. Figure shows correctly predicted occupied voxels with correct class label. Class labels colored according to Tab. A3. 20 M. Wozniak et al. HilDA: Hierarchical Distillation with Diffusion Scene 1 Scene 2  
+
+> Ground Truth Flow  CleverDistiller  HilDA (ours)
+> Fig. B7: Qualitative scene flow comparison. Scene flow predictions for two example scenes. From top to bottom: HilDA, CleverDistiller, and ground-truth flow. For the top two rows (HilDA and CleverDistiller), color denotes motion error, with redder regions indicating larger errors. Ground-truth motion is visualized with a color wheel, where hue encodes direction and color intensity encodes speed. Red boxes highlight regions where HilDA produces more accurate and spatially consistent flow predictions.
+
+Finally, Fig. B11 highlights a possible artifact of patch/token-based 2D features. Because DINOv2 features are defined on a coarse token grid and visualized in pixel space via bi-linear up-sampling, similarity responses can “bleed” across boundaries, especially around thin structures and depth discontinuities. In contrast, we observe that HilDA better respects semantic and geometric boundaries, which we attribute to its voxel-based metric representation providing an explicit spatial prior. While distillation can potentially inherit these teacher-side projection artifacts, our auxiliary temporal occupancy diffusion objective may act as a structural regularizer. The denoising task emphasizes reconstructing spatial occupancy over time, encouraging sharper geometric transitions. These observations align with the complementary strengths of discriminative and generative representations noted in A Tale of Two Features [99]. Specifically, it reports that DINO-style discriminative features yield sparse but semantically accurate matches, whereas diffusion features often induce stronger spatial layout HilDA: Hierarchical Distillation with Diffusion for LiDAR Pre-training 21 Truck (rear) Manmade (rear) Vegetation (front) 
+
+> DINOv2 HilDA
+
+Fig. B8: Feature cosine similarity. Three scenes (columns) show cosine-similarity maps for an anchor LiDAR point–pixel correspondence ( yellow dot). The anchor pair is selected from LiDAR–image correspondences obtained by projecting the point cloud into the camera view and matching points to pixels. For HilDA, we compute similarity between the 3D anchor feature and all 3D point features. For DINOv2, we compute similarity between the anchor pixel feature and 2D features at point-projected pixels. The similar patterns across modalities indicate strong cross-modal alignment across environments and semantic classes. Bottom: full point cloud with the same 3D anchor. Best viewed zoomed Û.
+
+and coherence. By co-optimizing DINOv2 distillation with a generative temporal occupancy diffusion task, HilDA yields representations that remain semantically expressive while exhibiting improved geometric and boundary fidelity. 
+
+B.6 Remarks on Annotation Noise 
+
+We further observe that annotation quality can become a limiting factor once representations are sufficiently strong. In the qualitative examples (Figs. B12 to B14), HilDA produces predictions that disagree with the ground truth in ways that are visually attributable to missing or inconsistent annotations. We link this behavior to HilDA’s self-supervised (cross-modal) pre-training. Since self-supervised learning does not optimize directly against potentially flawed human labels, it can learn label-agnostic structure from geometry and appearance, and thus be less susceptible to annotation artifacts. Compared to prior distillation baselines, HilDA likely benefits from the hierarchical distillation strategy (com-prising multi-layer distillation and global context distillation), which improves the transfer of VFM representations into the LiDAR encoder and yields stronger, more semantically grounded 3D features. 22 M. Wozniak et al. HilDA: Hierarchical Distillation with Diffusion Car (front) Car (side) Car (rear)      
+
+> DINOv2 HilDA
+> Fig. B9: Cross-view feature cosine similarity (car anchor). Within a single scene, we compare a single 2D anchor ( yellow dot) pixel feature against DINOv2 features at the point-projected pixels across all surround-view cameras. Similarly, we compare the corresponding 3D anchor (same dot) against all points in the LiDAR sweep. Consistent high similarity on other cars across views indicates category-level cross-modal and cross-view alignment. Best viewed zoomed Û.
+
+These cases also highlight an “evaluation ceiling” induced by imperfect an-notations. When test labels contain non-trivial error rates, benchmark metrics may under-estimate true progress and conflate genuine model mistakes with an-notation artifacts. This effect is evident, for example, in metrics such as Average Precision (AP), where correct detections may be counted as false positives when the corresponding ground-truth instances are missing or mislabeled. Such issues have been documented [10, 33, 36, 57, 59, 101] in common benchmarks, where per-vasive test-set label errors can destabilize model comparisons [59]. Consequently, as performance improves, qualitative inspection becomes increasingly important for separating model failure modes from limitations in annotation. 
+
+## C Implementation Details 
+
+In this section, we provide additional implementation details, including the pre-training architecture, training protocol, and key hyperparameter settings used in our experiments. If anything is unclear, please refer to our codebase (link to be provided upon publication), open a GitHub issue, or contact the authors directly (contact information anonymized). HilDA: Hierarchical Distillation with Diffusion for LiDAR Pre-training 23 DINOv2 HilDA   
+
+> Pedestrian (front) Pedestrian (side) Pedestrian (rear)
+
+Fig. B10: Cross-view feature cosine similarity (pedestrian anchor). Same setup as for Fig. B9, but with the anchor placed on a pedestrian ( yellow dot) for a different scene. HilDA yields sharper pedestrian class boundaries and stronger similarity on more pedestrian points than DINOv2. Best viewed zoomed Û.DINOv2 HilDA 
+
+Fig. B11: Feature cosine similarity close-up. Close-up from various scenes showing HilDA’s superior ability to respect semantic object boundaries compared to DINOv2. In this figure, the displayed anchor point is shown for reference only and is not important to the point being made. Best viewed zoomed Û.
+
+C.1 Pre-Training Architecture 
+
+Our framework is a multi-task learning system designed to learn robust 3D repre-sentations through cross-modal distillation and generative occupancy forecasting. The architecture consists of three primary components: a sparse 3D LiDAR encoder (MinkUnet34), a Vision Foundation Model (DINOv2) for distillation, and a BEV diffusion UNet head for future prediction. 24 M. Wozniak et al. HilDA: Hierarchical Distillation with Diffusion Baseline HilDA 
+
+> Scene 1 Scene 2
+
+Fig. B12: Annotation false negatives (3D object detection). False-negative bounding boxes are highlighted in two scenes. While CleverDistiller [24] fails to capture these missed objects, HilDA recovers the missing detections, including pedestrians (Scene 1) and parked cars (Scene 2). Best viewed zoomed Û.Predicted Segmentation Segmentation Error Ground Truth Segmentation 
+
+> Camera Image (side) Camera Image (front)
+> 1: “vegetation”
+> 2: “ vegetation ”
+> Ground Truth
+> HilDA
+> 1: “manmade”
+> 2: “ manmade ”
+
+1 2 1 2
+
+1 2
+
+1 2
+
+Fig. B13: Annotation errors (3D semantic segmentation). We highlight a mislabeled instance where the ground truth classifies a light pole and two construction signs as “vegetation”, while HilDA correctly predicts them as “manmade”. 
+
+LiDAR Encoder. While our method is compatible with various 3D backbones, we select MinkUnet34 to align with benchmarks established by previous methods. Following previous methods [15, 16], our MinkUnet34 backbone is designed as a HilDA: Hierarchical Distillation with Diffusion for LiDAR Pre-training 25 Predicted Segmentation Segmentation Error Ground Truth Segmentation  
+
+> Feature PCA Camera Image
+
+1
+
+2 3 1
+
+2 3
+
+1
+
+2 3
+
+1
+
+2 3  
+
+> 1: “ sidewalk ”
+> 2: “sidewalk”
+> 3:“sidewalk ”
+> Ground Truth
+> HilDA
+> 1: “manmade”
+> 2: “terrain”
+> 3: “terrain”
+
+Fig. B14: Annotation errors (3D semantic segmentation). We show another mislabeled example where the ground truth assigns a light pole and patches of grass to “sidewalk”, while HilDA correctly predicts “manmade” and “terrain”. 
+
+sparse ResNet-based [28] U-Net [67]. The model takes a voxelized point cloud as input with a grid size of 0.05 m , using relative coordinates and intensity as input features. The network follows a symmetric encoder–decoder design with skip connections, comprising four down-sampling and four up-sampling stages (called planes in many implementations). The channel dimensions for the down-sampling stages are C = (32 , 64 , 128 , 256) , with the up-sampling stages mirroring these dimensions to yield a final feature map of 96 channels. The network depth is governed by Lenc = (2 , 3, 4, 6) blocks for the encoder stages and Ldec = (2 , 2, 2, 2) 
+
+for the decoder, utilizing Batch Normalization with momentum 0.1.
+
+Cross-Modal Distillation. To inject 2D semantic inductive bias into the 3D encoder, we distill features from a frozen vision teacher. We use a pre-trained DINOv2 [61] model that processes multi-view camera images to produce dense feature maps and global CLS tokens. For 2D–3D alignment, we project the 96 -channel MinkUnet34 features into the teacher embedding space ( 384 -D) using a 3-layer MLP projection head Hℓ with hidden dimension 2048 , GELU activations, and LayerNorm. Distillation is performed across three temporal LiDAR sweeps by optimizing a point-wise alignment loss that maximizes cosine similarity between projected 3D points and their corresponding image-plane features, together with a global context CLS -token distillation loss. 
+
+Spatiotemporal Self-Supervised Learning as an Auxiliary Task (Ex-tended). While distillation provides semantic context, it does not explicitly train the model on scene dynamics, occlusion handling, or spatial structure. To address this gap, we introduce a generative auxiliary task consisting of predicting future Bird’s-Eye-View (BEV) occupancy using diffusion to steer the 3D student Sθ
+
+toward learning robust, predictive spatiotemporal features [31, 62]. 26 M. Wozniak et al. HilDA: Hierarchical Distillation with Diffusion 
+
+Concretely, let Sθ (·) sequentially encode two LiDAR sweeps Pt−1 (past ) and 
+
+Pt0 (present ) into sparse features Ft−1 
+
+> L
+
+and Ft0 
+
+> L
+
+at the final student output layer. To condition the diffusion model, we must extract dense spatiotemporal cues from the sparse 3D backbone. We collapse the vertical dimension of both Ft−1 
+
+> L
+
+and Ft0
+
+> L
+
+via average pooling, followed by zero-padding, to form dense BEV representations. To explicitly capture motion dynamics, these multi-frame BEV maps are channel-wise concatenated and projected through a point-wise convolution block. The resulting tensor Chistory serves as the conditioning for the diffusion process. Guided by this condition, the diffusion model denoises the future BEV occu-pancy at t1. To supervise this process, we utilize the future LiDAR sweep Pt1 to construct the target ground truth xocc ∈ { 0, 1}HBEV ×WBEV . We first transform 
+
+Pt1 into the current coordinate frame corresponding to t0, effectively stabilizing the static background while retaining object motion. After removing the ground plane, we project the remaining points onto the BEV grid. A cell is marked as occupied ( 1) if any point from Pt1 falls within it, and zero otherwise. We formulate future occupancy prediction as a conditional Denoising Dif-fusion Probabilistic Model (DDPM) [30]. In the forward process, the ground-truth future occupancy map xocc is progressively corrupted with Gaussian noise 
+
+ϵ ∼ N (0 , I) over T diffusion steps according to a predefined variance schedule 
+
+{βτ }Tτ =1 : xτ = √¯ατ xocc + √1 − ¯ατ ϵ, where ¯ατ = Qτs=1 (1 − βs). The reverse denoising process, which predicts the added noise, is parameterized by a neu-ral network ϵθ (xτ , τ, Chistory ), as shown in Fig. 2. It is implemented as a 2D UNet [67], which predicts the injected noise ϵ given the noisy future occu-pancy xτ , conditioned on the historical BEV features Chistory and diffusion timestep τ . Conditioning is implemented via channel-wise concatenation of xτ
+
+and Chistory , following [43]. The reconstructed occupancy ˆxocc is recovered from the noisy sample by inverting the forward process using the predicted noise 
+
+ˆxocc = ( xτ − √1 − ¯ατ ϵθ (xτ , τ, Chistory )) /√¯ατ . Training across varying τ exposes the model to denoising tasks at different noise levels, encouraging a coarse-to-fine behavior from global structure to local detail. We optimize the hybrid objective given in Eq. (3). 
+
+BEV Diffusion Auxiliary Head. We introduce a future BEV occupancy diffusion auxiliary head. Sparse 3D features from the MinkUnet34 are projected onto a 512 × 512 BEV grid with an effective stride of 8 relative to the voxel grid by mean-pooling features within each BEV pillar using torch_scatter .The diffusion model is conditioned on fused BEV context from the current sweep ( t0) and the previous sweep ( t−1), which are concatenated and compressed with a convolutional grouping block ( 192 → 32 channels) using GroupNorm and SiLU activations. The denoising network is a lightweight 2D Unet that takes the noisy future state (targeting occupancy at t1) together with the history-conditioned context Chistory , and uses time embeddings ( dim = 16 ) and ResBlocks. We adopt a cosine β-schedule with T = 1000 diffusion steps. Training uses a composite objective consisting of the standard diffusion noise prediction MSE and a reconstruction ℓ-2 norm loss on the denoised ˆxocc estimate. The reconstruction loss term is weighted by λ = 0 .5.HilDA: Hierarchical Distillation with Diffusion for LiDAR Pre-training 27 
+
+Training. We implement our framework using PyTorch and conduct training on a cluster of 8 NVIDIA A100 GPUs. The model is trained for 100 epochs with a global batch size of 32 (4 samples per GPU), utilizing Automatic Mixed Precision (AMP). We optimize the network using AdamW [53] with a weight decay of 0.005 . Learning rate scheduling is managed via the OneCycle policy with a peak learning rate of 1 × 10 −3. This schedule comprises a linear warmup for the initial 4% of iterations (starting from lr max  
+
+> 10
+
+) followed by cosine annealing that decays to lr max  
+
+> 1000
+
+. Input point clouds are voxelized with a grid size of 0.05 m. To mitigate overfitting, we apply standard augmentations: (1) random rotation around the z-axis in the range θ ∈ [−1, 1] radians; (2) random uniform scaling 
+
+s ∈ [0 .9, 1.1] ; (3) random horizontal flipping ( p = 0 .5); and (4) Gaussian point jittering ( σ = 0 .005 ) clipped at 0.02 .
+
+C.2 3D Semantic Segmentation 
+
+For the downstream semantic segmentation experiments, we utilize a specialized decoding module to evaluate the quality of the learned representations. The architecture consists of the pre-trained LiDAR backbone followed by a lightweight segmentation head. As shown in the implementation, this head is composed of a single 1D Batch Normalization layer followed by a linear projection layer that maps the feature dimension CL to the number of semantic classes Ncls .In the linear probing configuration, we explicitly freeze the parameters of the pre-trained backbone to assess the expressiveness of the fixed feature rep-resentations. During training, gradients are not computed for the backbone. Optimization is restricted strictly to the parameters of the segmentation head (the batch norm and linear layers). For the fine-tuning configuration, we initialize the backbone with the pre-trained weights and allow all model parameters to be updated. The entire network (backbone and segmentation head) is trained end-to-end using the standard cross-entropy loss. 
+
+Metrics. We report the standard Intersection-over-Union (IoU) for individual categories and the mean IoU (mIoU) for overall performance. The IoU for category 
+
+i is defined as: 
+
+IoU i = TP i
+
+TP i + FP i + FN i
+
+, (C1) where TP i, FP i, and FN i denote true positives, false positives, and false negatives, respectively. For the robustness analysis on Robo3D [41], we adopt the Corruption Error (CE) and Resilience Rate (RR) metrics, defined as: 
+
+CE i =
+
+P3
+
+> j=1
+
+(1 − mIoU i,j )
+
+P3
+
+> j=1
+
+(1 − mIoU base  
+
+> i,j
+
+) , RR i =
+
+P3 
+
+> j=1
+
+mIoU i,j 
+
+3 × mIoU clean 
+
+, (C2) where mIoU i,j represents the score for scenario i at severity level j. mIoU base 
+
+> i,j
+
+refers to the baseline model’s performance, and mIoU clean denotes performance on the clean validation set. Consistent with prior work, all evaluations are performed without test-time augmentation or ensembling. 28 M. Wozniak et al. HilDA: Hierarchical Distillation with Diffusion 
+
+C.3 3D Object Detection 
+
+The model architecture is implemented within the open-source MMDetection3D [56] framework and follows a two-stage 3D object detection paradigm based on PointR-CNN. For point cloud feature extraction, the standard PointNet++ backbone is replaced with a MinkUnet34 module. The input point clouds, possessing a dimensionality of 4 (x, y, z, intensity ), are processed to yield dense point-wise features in R96 . Notably, we use MinkUnet34 weights pretrained with ours and baseline methods. 
+
+Detection Model. In the first stage, the Region Proposal Network maps the 128-dimensional point features through linear layers of dimension (256 , 256) 
+
+to generate initial 3D bounding box proposals. The bounding boxes are en-coded as 8-dimensional vectors (center residual ∈ R3, size regression ∈ R3, and orientation [cos (θ), sin (θ)] ∈ R2). This stage is optimized via Focal Loss for foreground/background classification across three categories (Pedestrian, Cyclist, Car) and Smooth L1 Loss for bounding box regression. In the second stage, a Point Head refines the initial proposals. It pools features from 512 sampled points per Region of Interest (RoI). The pooled points, initially represented by 5-dimensional vectors (spatial coordinates, classification score, and depth), are processed through successive Set Abstraction layers that expand the feature dimensionality to 512 . Finally, Multi-Layer Perceptrons (MLPs) with hidden channels of (256 , 256) perform the final classification and bounding box parameter refinement. 
+
+Metrics. Performance is evaluated using the standard mean Average Precision (mAP) metric. We calculate mAP across different difficulty levels ( Easy , Moderate ,
+
+Hard ) with thresholds specific to each class, following standard benchmark protocols [23]. 
+
+C.4 Semantic Occupancy Prediction 
+
+For this task, we inherit the data pre-processing pipeline of Occ4cast [48] to produce ground truth semantic occupancy in 3D and 4D using the nuScenes [8] lidarseg dataset. 
+
+Semantic Occupancy Decoder. All semantic occupancy experiments are run with a pre-trained and frozen sparse 3D backbone and a trainable, lightweight occupancy decoder head, which comprises ∼ 1 % of the total model parameters. The backbone takes point cloud data carrying spatial position (x, y, z ) and intensity as input, voxelized at 0.05 m , and produces sparse 3D voxel features with a channel dimension of 96 . For decoding, sparse features are pooled to the 
+
+0.2 m output grid cells and projected to a BEV feature map via scatter-mean aggregation over (x, y ) bins. The BEV features are densified into a 2D grid by zero-filling empty cells, and projected to a 64 -channel latent space. We then apply two stride-2 convolutional blocks to down-sample the BEV map, followed HilDA: Hierarchical Distillation with Diffusion for LiDAR Pre-training 29 
+
+by a single transformer encoder block layer for global aggregation (one self-attention head with dimension 64 ). We add 2D sine–cosine positional embeddings to the BEV tokens before attention. The attention layer provides global context over the backbone features, enabling spatial propagation of information used to infer structural connectivity between sparse points, as demonstrated by [18]. The features are then up-sampled back to the original BEV resolution using two transposed-convolution blocks. To lift the BEV representation to 3D, we use a learned 1 × 1 projection that expands the channel dimension to 64 × H
+
+(with H being the height dimension) and reshapes the resulting tensor into a dense 3D volume. This volume is fused with a densified 3D skip branch from the sparse backbone features aligned on the same target grid. Fusion is performed by channel-wise concatenation followed by a voxel-wise convolution, and the result is mapped to semantic logits via a final per-voxel linear projection. Predictions are produced on a dense 3D grid with 0.2 m resolution, within 
+
+[−51 .2, 51 .2] × [−25 .6, 25 .6] × [−2.0, 4.4] m (512 × 256 × 32 voxels). 
+
+Loss Function. We train the semantic occupancy decoder using a multi-class cross-entropy loss over voxel labels, which include free space and an unlabeled occupied category in addition to the 16 semantic classes shown in Tab. A3. Invalid voxels are ignored, following [48]. 
+
+Training. To mitigate the dominance of free-space voxels, we include all voxels labeled as occupied and uniformly subsample free voxels when forming the loss. We found a 5 :1 free-to-occupied sampling ratio to work best and use it for all results. Importantly, we retain free-space supervision in the loss to explicitly learn the occupancy boundary and prevent semantic labels from bleeding into empty space. We train the decoder for 15 epochs using Adam [38] with initial learning rate 5 × 10 −4 and StepLR decay (step size 5 epochs, decay factor 0.1). We use a per-GPU batch size of 4 (global batch size 16 ) over 4 NVIDIA A100 GPUs, and automatic mixed precision. The semantic occupancy prediction uses either a single input sweep at  t0 or two sweeps at  (t−1, t 0), where each sweep is encoded independently by the frozen backbone and the resulting features are channel-wise concatenated and projected into the decoder latent space. The max forecasting horizon is set to either t0, t1, t5, or t10 (inclusive). 
+
+Metrics. During evaluation, we report semantic IoU over labeled occupied semantic classes, excluding free space and unlabeled occupied . While unlabeled occupied is included during training to account for uncertain occupancy, it is omitted from IoU reporting to focus on semantic performance on labeled classes. For multi-step forecasting, metrics are computed separately for each prediction horizon ( t0, . . . , t N ), where N ranges from 1 to 10 . For each horizon, we average class-wise IoUs to obtain a per-horizon mIoU. We then report a single summary score by averaging mIoU across horizons. 30 M. Wozniak et al. HilDA: Hierarchical Distillation with Diffusion 
+
+C.5 Scene Flow 
+
+We implement our experiments using the OpenSceneFlow [42] framework. For the scene flow estimation task, we adopt the SSF method [37] as our baseline. We replace the default SSF sparse backbone [37] with a MinkUnet34 backbone [15] and use our pre-trained model weights. 
+
+Data and Voxelization. We conduct training and evaluation on the Argo-verseV2 [82] dataset. The input point clouds are clipped to a spatial range of 
+
+[−51 .2, 51 .2] m along the x and y axes, and [−3, 3] m along the z axis. We employ a voxel grid size of 0.05 m for fine-grained geometric processing. 
+
+Training Configuration. We set the initial learning rate to 2 × 10 −4. To preserve the pre-trained representations of the backbone while adapting to the task, the backbone learning rate is scaled down by a factor of 0.1 (resulting in an effective rate of 2 × 10 −5). The network is supervised using the DeFlow [102] loss function, following the configuration in [37]. 
+
+Metrics. We evaluate scene flow using two primary metrics: three-way End Point Error (EPE) [14] and Dynamic Bucket-Normalized EPE [35]. The End Point Error (EPE) is defined as the ℓ2 norm of the difference between the predicted flow vector ˆf and the ground truth flow vector fgt , measured in centimeters: 
+
+EPE = ∥ˆf − fgt ∥2. (C3) The three-way EPE computes the unweighted average EPE over three distinct regions: Foreground Dynamic (FD), Foreground Static (FS), and Background Static (BS). The regions are classified based on two criteria: (1) a point is classified as dynamic if its ground truth velocity satisfies ∥vgt ∥ > 0.5 m/s, (2) a point is considered foreground if it lies within the bounding box of any tracked object. Dynamic Bucket-Normalized EPE groups points into predefined motion buckets based on their speeds. This metric normalizes the error relative to the magnitude of motion: 
+
+Normalized EPE = Mean EPE Mean Speed . (C4) 
+
+## D Datasets 
+
+We assess the performance and generalization capability of our method through three primary experimental setups: linear probing, data-efficient fine-tuning, and cross-domain transfer learning. 
+
+D.1 NuScenes Experiments 
+
+We utilize the nuScenes dataset [8] as our primary testbed, employing standard splits of 700 scenes for training ( 29 , 130 frames) and 150 scenes for validation HilDA: Hierarchical Distillation with Diffusion for LiDAR Pre-training 31 
+
+(6, 019 frames). Performance is measured across 16 semantic classes. To evaluate the quality of the frozen representations, we train only a linear head on top of the fixed backbone using the full training set. We further assess the adaptability of the pre-trained weights by fine-tuning the entire network. To simulate varying data regimes, we train on subsets containing 1% , 5% , 10% , 25% , and 100% of the available annotated data. 
+
+D.2 Cross-Domain Transfer Learning 
+
+To verify the generalization of our pre-training, we transfer the model to a diverse set of datasets. 
+
+Large-Scale Real-World Data. We utilize SemanticKITTI [4] and Waymo Open [70], both captured with 64 -beam LiDARs. For data-efficient transfer, we construct 1% subsets by sampling every 100 th frame. 
+
+Weak and Sparse Annotations. We employ ScribbleKITTI [73], which shares scans with SemanticKITTI but uses line-scribble annotations (covering only 
+
+8.06% of points) to test performance under weak supervision. 
+
+Specialized Environments. We include RELLIS-3D [32], an off-road multi-modal dataset which is challenging for its class imbalance and unstructured topography. 
+
+Adverse Conditions. Robustness to weather is tested on SemanticSTF [85], which contains 2, 076 scans spanning rainy, snowy, and foggy conditions. 
+
+Synthetic Data. We further evaluate on simulated environments using the large-scale semi-synthetic DAPS-3D [40] (DAPS-1 subset). 
+
+D.3 Robustness and Adverse Conditions 
+
+We utilize the nuScenes-C dataset from the Robo3D benchmark [41] to evaluate robustness against sensor corruption. This benchmark introduces eight corruption types ( e.g ., motion blur, crosstalk, beam missing) across three severity levels (light, moderate, heavy). Models are evaluated on all levels, and we report the average performance. 
+
+## E Limitations and Future Work 
+
+We summarize the main limitations of HilDA and identify several avenues for extending the proposed framework. 32 M. Wozniak et al. HilDA: Hierarchical Distillation with Diffusion 
+
+Calibration. Although our method is robust to common data corruptions (as seen in Tab. A1), distillation is performed on well-calibrated data and relies on calibration parameters to project points onto image pixels. Small misalignments are often tolerated due to the ViT [19] patch-based representation, whereas larger offsets can lead to incorrect point–pixel correspondences and degraded performance. In the full pre-training setup of HilDA, global context distillation and temporal diffusion, neither of which depends on strict pairwise alignment, may help reduce this sensitivity. We further reduce sensitivity to small 2D–3D random misalignments during distillation using point-cloud jittering at pre-training. 
+
+Multi-Layer Distillation. We report extensive experiments with a DINOv2 [61] teacher and two LiDAR backbones, MinkUnet34 [15] and PTv3 [83]. MinkUnet34 is widely used in prior cross-modal distillation benchmarks, which facilitates comparison to existing work. Our results with PTv3 indicate that the benefits of HilDA transfer to a substantially different LiDAR architecture, and that the optimal multi-layer distillation depth can be backbone-dependent. Beyond the fixed layer-matching strategy used here, an interesting direction is to optimize teacher–student layer pairing via matching, learned correspondences, or dynamic loss weighting. Moreover, we only evaluate how the proposed multi-layer dis-tillation performs for a single teacher family (varying sizes of DINOv2). Since different vision foundation models produce features with distinct inductive biases and semantic content, both the optimal layer correspondences and resulting distilled LiDAR representations may be teacher-dependent. Characterizing this dependence, and extending the framework to distill from multiple complemen-tary teachers, are promising directions for future work within the cross-modal distillation field. 
+
+Auxiliary Diffusion Objective. Finally, the current diffusion target operates in BEV, which offers a compact and efficient representation but inevitably compresses 3D structure into a 2D plane. Extending the diffusion target to more expressive 3D-aware representations ( e.g ., tri-plane, or other volumetric or implicit formulations) could better preserve fine-grained geometry and improve modeling of temporal evolution. A complementary direction is to move the diffusion process to a latent space ( e.g ., latent diffusion [66]), which may retain richer scene information while avoiding an explicit 3D-to-2D bottleneck. We do not pursue this here because it would introduce an additional pre-trained variational auto-encoder pathway and associated distillation, potentially confounding the analysis of what is learned from the diffusion loss itself. Nonetheless, latent (and more generally fully 3D-aware) diffusion targets remain a promising avenue for future work. 
+
+## F Hyperparameter Settings 
+
+For implementation, we reuse the Pointcept [16] framework. We use the standard training configuration and MinkUnet34 [15] from the available configurations in HilDA: Hierarchical Distillation with Diffusion for LiDAR Pre-training 33 
+
+the repository. Tables F1 to F3 summarize the hyperparameter settings used in our experiments. 
+
+Table F1: Hyperparameters for training and optimization settings. 
+
+Parameter Value 
+
+Epochs 100 Batch Size 32 (Total across all GPUs) Optimizer AdamW Learning Rate (lr) 0.001 Weight Decay 0.005 Scheduler OneCycleLR Max LR 0.001 Pct Start 0.04 Anneal Strategy Cosine ( cos )Div Factor / Final Div Factor 10.0 / 100.0 Mixed Precision (AMP) Enabled 
+
+Table F2: Model Architecture configurations for the 3D student (MinkUnet34 back-bone). 
+
+Parameter Value 
+
+Backbone Out Channels 96 Input Channels 4Base Channels 32 Planes (32, 64, 128, 256, 256, 128, 96, 96) Layer (per plane) (2, 3, 4, 6, 2, 2, 2, 2) BatchNorm Momentum 0.1 3D Head Type (all) MLP (3 layers, In: 96, Out: 384, Norm: True) 34 M. Wozniak et al. HilDA: Hierarchical Distillation with Diffusion 
+
+Table F3: Data augmentation and processing parameters for distillation. 
+
+Parameter Value 
+
+Grid Size (Train) 0.05 Random Rotate (z-axis) Angle: [−1, 1] radians, p = 0 .5
+
+Random Scale [0 .9, 1.1] 
+
+Random Flip p = 0 .5
+
+Random Jitter σ = 0 .005 , Clip: 0.02

@@ -1,0 +1,483 @@
+Title: ScalePredictor: Instance-aware Scale Learning for Accurate Quantization of Vision Transformers
+
+URL Source: https://arxiv.org/pdf/2606.21947v1
+
+Published Time: Tue, 23 Jun 2026 01:51:22 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# ScalePredictor: Instance-aware Scale Learning for Accurate Quantization of Vision Transformers 
+
+Changjun Li 1⋆, Runqing Jiang 1∗, Lian Xu 2, Ye Zhang 1, Qingyong Hu 3, and Yulan Guo 1 
+
+> 1
+
+School of Electronics and Communication Engineering, Shenzhen Campus, Sun Yat-sen University, Shenzhen, China 
+
+{lichj68, jiangrq3}@mail2.sysu.edu.cn, {zhangy2658, guoyulan}@sysu.edu.cn  
+
+> 2
+
+Computer Science and Software Engineering, The University of Western Australia, Perth, Australia  
+
+> 3
+
+University of Oxford, Oxford, United Kingdom 
+
+Abstract. Vision Transformers have achieved remarkable success in many fields, yet their deployment on edge devices remains challenging due to their substantial computational demands. Post-Training Quanti-zation (PTQ) offers an attractive solution by compressing models using a small calibration set with minimal training overhead. However, most existing PTQ works adopt a static quantization paradigm that is uni-formly applied to all instances. Given the substantial diversity of nat-ural images, the activation distributions vary significantly across sam-ples, making these methods inherently suboptimal. In this paper, we propose ScalePredictor, a dynamic quantization framework for accurate and efficient quantization scale learning of ViTs. We first reveal a hidden correlation between the distribution range of shallow-layer activations and the optimal scales of deeper layers. Based on this, we develop a scale learning mechanism that integrates an efficient range extraction approach to capture robust range statistics at the shallow stage, which are then fed into a Taylor-motivated polynomial scale projection module to generate all quantization scales simultaneously. With the efficiency of polynomial approximation, ScalePredictor introduces insignificant com-putational overhead while avoiding costly just-in-time calibration. Ex-tensive experiments on ImageNet demonstrate that ScalePredictor con-sistently outperforms prior PTQ methods, achieving a more favorable accuracy–efficiency trade-off. Code and additional results are shown in the supplementary materials. 
+
+Keywords: Vision Transformers · Quantization · Dynamic Network 
+
+## 1 Introduction 
+
+The rapid advancement of Vision Transformers (ViTs) has substantially pushed the performance boundaries of a wide range of computer vision tasks [2, 7,  
+
+> ⋆
+
+Equal contribution. 
+
+> arXiv:2606.21947v1 [cs.CV] 20 Jun 2026
+
+2 C. Li et al.        
+
+> (a) (b) (c) FP Activation
+> Quantized Activation
+> Quantizer
+> Static Quantizer Params
+> Dynamic Quantizer Params
+> Runtime Min/Max reduction
+> Scale Predictor
+> 𝑆 : Quantizer Parameter Scale 𝑟 : Robust Range
+> 𝑆
+> Static PTQ
+> Clipping
+> Range 𝑆 0
+> 𝑆 1
+> 𝑆 2
+> Dynamic Quantization
+> Clipping
+> Range 𝑆 0
+> 𝑆 1
+> 𝑆 2
+> [𝑟 0,𝑟 1,𝑟 2]
+> ScalePredictor (Ours)
+> Clipping
+> Range
+> 𝑋 1
+> 𝑋 2
+> 𝑋 3
+> 𝑋 1
+> 𝑞
+> 𝑋 2
+> 𝑞
+> 𝑋 3
+> 𝑞
+> 𝑋 1
+> 𝑋 2
+> 𝑋 3
+> 𝑋 1
+> 𝑞
+> 𝑋 2
+> 𝑞
+> 𝑋 3
+> 𝑞
+> 𝑋 1
+> 𝑋 2
+> 𝑋 3
+> 𝑋 1
+> 𝑞
+> 𝑋 2
+> 𝑞
+> 𝑋 3
+> 𝑞
+
+Fig. 1: Comparison of different quantization paradigms. (a) Static PTQ: All in-put samples share a single, unified static quantizer with fixed parameters. (b) Dynamic Quantization: Each sample calculates its own quantizer parameters on-the-fly based on runtime min/max reductions of the current activation tensor. (c) ScalePredictor (Ours): A robust range r(x) is extracted once per image from the patch embedding output, and a scale predictor is used to compute instance-specific quantizer parameters for subsequent layers without per-layer runtime tensor reductions. 
+
+14, 20, 32, 35]. Despite their impressive success, the complex architectures and intensive computations of ViTs pose significant challenges for deployment on resource-constrained edge devices. To alleviate these limitations, a variety of model compression techniques have been developed, including compact architec-tural design [3, 16], network pruning [10, 23], knowledge distillation [9, 33], and model quantization [11, 13]. Among these approaches, model quantization has attracted considerable attention, which converts model weights and intermedi-ate activations from high-precision floating-point representations ( e.g ., 32-bit) to low-bit formats ( e.g ., 8-bit). As a lightweight quantization paradigm, post-training quantization (PTQ) methods compress neural networks without the need for the entire training data and expensive retraining procedures, making it attractive for real-world deployment, especially for modern ViTs [11, 13, 30, 37]. Despite their merits, most existing PTQ methods adopt sample-agnostic quantization configurations, where all input samples share a single set of quan-tizer parameters, as illustrated in Fig. 1(a). Such designs neglect the substantial diversity among individual instances in natural image datasets, which becomes particularly pronounced under low-bit settings such as W3/A3, where activa-tion heterogeneity across samples can severely degrade performance. A natural solution is to employ dynamic quantization strategies that adapt quantizer pa-rameters to each input instance. However, existing dynamic quantization tech-niques [21, 24] typically calculate quantization parameters on-the-fly via per-layer, full-tensor reductions [25, 31]. As illustrated in Fig. 1(b), such runtime re-ductions introduce severe synchronization barriers and memory-bound overheads on modern hardware accelerators, drastically undermining inference speed. Abbreviated paper title 3Block 0 Block 1 Block 10 Block 11      
+
+> ...
+> ...
+> ...
+> ViT-Small DeiT-Tiny
+> Fig. 2: Correlation between Shallow Range and Layer-wise Optimal Scales.
+> It plots the relationship across 5,000 validation samples for different transformer blocks in ViT-Small [6] and DeiT-Tiny [26]. The x-axis represents the robust range r(x),i.e ., the chunk-averaged activation spread of the Patch Embedding output that suppresses outlier influence. The y-axis denotes the oracle per-sample optimal scale s∗
+> l(x)for the input activation quantization of the corresponding qkv layers at different depths.
+
+In this work, we revisit instance-level activation heterogeneity from a dif-ferent perspective. We observe that the optimal activation quantization scales across different transformer layers are not independent. Instead, they exhibit a strong dependency on the activation magnitude observed at shallow layers. As illustrated in Fig. 2, the robust activation range extracted from the patch embedding output shows a clear and consistent correlation with the oracle per-sample optimal scales across multiple transformer blocks. Notably, this trend persists across both early and late layers, as well as across different model ar-chitectures such as ViT-Small and DeiT-Tiny. These observations suggest that instance-level scale variations propagate coherently through the network depth and can be effectively captured by early-layer activation statistics. Motivated by this insight, we propose a novel post-training quantization method, termed ScalePredictor , for accurate and efficient dynamic compres-sion of ViTs. As illustrated in Fig. 1(c), ScalePredictor predicts instance-specific quantization scales from shallow-layer statistics, avoiding repeated runtime re-ductions during inference. More specifically, we first introduce a robust range extraction mechanism that computes stable activation statistics from shal-low layers, effectively mitigating the influence of outliers without relying on hardware-unfriendly percentile sorting. Building on this statistic, we further de-sign a Taylor-Motivated polynomial predictor module that takes the robust range as input and predicts all layer-wise quantization scales in a single pass. The projection coefficients are learned during the calibration stage, enabling the model to capture cross-layer scale dependencies with negligible inference overhead. As a result, quantization parameters can be determined early in the inference pipeline, enabling instance-aware quantization while eliminating the need for repeated runtime reductions at every layer. In conclusion, our main contributions are summarized as follows: 4 C. Li et al. 
+
+– We introduce ScalePredictor, a novel approach designed to address instance-level distribution heterogeneity via instance-aware scale prediction. To the best of our knowledge, ScalePredictor is the first post-training quantization method for ViTs that leverages dynamic quantization. 
+
+– ScalePredictor integrates a robust range extraction mechanism with a Taylor-inspired polynomial scale projection, enabling accurate quantization scale prediction on-the-fly with minimal inference overhead. 
+
+– Extensive experiments on ImageNet demonstrate that ScalePredictor achieves consistent improvements over static PTQ baselines across a wide range of quantization regimes, while introducing negligible additional overhead. 
+
+## 2 Related Work 
+
+Post-Training Quantization. Post-training quantization (PTQ) slims neu-ral networks by limiting the bit-width of weights and activations with a few calibration data, which have been recognized as a popular model compression technique. Approaches like FQ-ViT [19], PTQ4ViT [36] and RepQ-ViT [18] address the post-Softmax/GeLU distribution compatibility, while Bi-ViT [15] and AdaLog [29] explore binary quantization and logarithmic quantization for extreme compression. To mitigate the quantization errors of model weights, AIQViT [11] leverages a low-rank compensation mechanism, which determines the ranks by network architecture search. Furthermore, SmoothQuant [31] and Outlier Suppression+ [28] propose migrating quantization difficulty from activa-tions to weights through mathematical equivalence, thereby effectively mitigat-ing the impact of outliers. More recently, GPTQ [8] and ZeroQuant [34] extend PTQ techniques to billion-scale language Transformer models, demonstrating the broad applicability of quantization approaches across model scales. How-ever, most ViT-oriented PTQ methods ignore the diversity of instances, so that they use fixed quantization parameters uniformly. Such a paradigm generally shows limited performance, especially in ultra-low bit configuration. 
+
+Dynamic Neural Networks. Dynamic neural networks adapt their compu-tation to each input instance at runtime, enabling efficient and instance-aware inference. In the quantization domain, this dynamism takes several forms. Stan-dard dynamic quantization computes per-layer min/max activation statistics at runtime, achieving instance-specific scales but incurring synchronization over-head that grows linearly with network depth. Instance-aware mixed-precision methods such as DQNet [21] and IGQ-ViT [24] instead assign different bit-widths to layers or samples via a learned policy [5]; while effective, they require QAT with full training data and specialized mixed-precision hardware. A closely related work is QPP [12], which learns a regression model to estimate quanti-zation parameters for each input sample prior to inference. Our work shares a similarity with QPP in that both methods attempt to avoid expensive runtime reductions by predicting instance-aware quantization parameters. However, our method differs from QPP in several key aspects: ( i) QPP is designed for CNNs and operates on raw image pixels, whereas our method targets Vision Trans-formers and leverages the Patch Embedding output already computed in the Abbreviated paper title 5
+
+forward pass. ( ii ) QPP predicts quantization parameters independently for each layer. In contrast, our method predicts all layer-wise scales jointly from a single shallow-layer statistic. ( iii ) QPP relies on generic regression predictors, while our method introduces a Taylor-inspired polynomial projection to model cross-layer scale dependencies. 
+
+## 3 Method 
+
+In this section, we present ScalePredictor , an instance-aware post-training quantization framework tailored for Vision Transformers. We first revisit the preliminaries of ViT architecture and the widely-used uniform affine quantiza-tion. After that, We present the motivation for our proposed method. Next, we detail the proposed ScalePredictor, involving a robust range extraction approach and a Taylor-motivated polynomial scale projection module. Finally, we give the training process and the efficiency analysis during inference. 
+
+3.1 Preliminaries Vision Transformers. Vision Transformer processes an image by first dividing it into a sequence of patches, which are linearly projected into token embed-dings X0 ∈ RN ×C , where N is the number of tokens and C is the embedding dimension. The tokens are then processed by Nb consecutive transformer blocks. Each block consists of a Multi-Head Self-Attention (MSA) module and a Feed-Forward Network (FFN), preceded by Layer Normalization (LN). The forward propagation for the b-th block is formulated as: 
+
+X′ 
+
+> b
+
+= Xb−1 + MSA(LN( Xb−1)) , (1) 
+
+Xb = X′ 
+
+> b
+
++ FFN(LN( X′
+
+> b
+
+)) . (2) 
+
+Uniform Affine Quantization. Uniform affine quantization is widely used to convert the high-precision floating-point activations (e.g., 32-bit) and weights to low-bit integers (e.g., 8-bit). Given a floating-point activation tensor X, the quantization process is: 
+
+Q(X; s, z ) = s · clip 
+
+ X
+
+s
+
+
+
++ z, 0, 2n − 1
+
+
+
+− s · z,  (3) where s > 0 is the quantization scale, z is the zero-point, n is the bit-width, ⌊·⌉ 
+
+denotes the round-to-nearest operator, and clip( ·) bounds the values within the integer range. 
+
+3.2 Motivation 
+
+A critical challenge in low-bit quantization of ViTs is the severe variation of ac-tivation distributions across different input instances. To address such volatility, 6 C. Li et al. Patch Embed  Block x N  Head                        
+
+> Robust Range Extraction
+> ①②
+> ③
+> ④
+> ⑤
+> ①Patch Embed Output ②Chunk Partition
+> ③Chunk -wise Min / Max ④Average Pooling
+> ⑤Robust Range 𝑟 =𝑥 𝑚𝑎𝑥 −𝑥 𝑚𝑖𝑛
+> Taylor -Motivated Polynomial Predictor
+> 𝑠𝑐𝑎𝑙𝑒 =෍
+> 𝑘 =0
+> 𝑑
+> 𝑐 𝑘 ×𝑟 𝑘
+> ⑤⑥
+> ⑦
+> ⑨
+> ⑤Robust Range 𝑟
+> ⑥FP Activation
+> ⑦Input Quantizer
+> ⑧Scale Prediction
+> ⑨Sample -wise Activation
+> Quantization
+> ⑧
+
+Fig. 3: Overview of ScalePredictor. The left panel: the patch embedding output is partitioned into chunks to compute chunk-wise min/max values, which are then average-pooled to extract a robust range r(x). The right panel: the extracted robust range r(x) is fed into a polynomial scale predictor to generate the sample-wise scale, which configures the input quantizer for the subsequent full-precision activations. 
+
+standard Dynamic Quantization (DQ) computes the quantization scale on-the-fly for each layer based on the current input tensor, as illustrated in Fig. 1(b): 
+
+sDQ (X) = max( |X|)2n−1 − 1 . (4) Although adapting successfully to instance-specific fluctuations, DQ necessitates a full-tensor reduction over every activation ( e.g ., 197 × 768 elements in ViT-Base) at runtime. Consequently, such operations introduce severe synchroniza-tion barriers and substantially increase the overall inference overhead [22]. This raises a fundamental question: How to retain instance-wise adaptivity without incurring massive just-in-time computation. To answer this, we analyze the oracle optimal scales across various depths offline. As illustrated in Fig. 2, our investigation reveals a consistent functional dependency where the robust range extracted from shallow activations strongly correlates with the ideal scales of subsequent layers. Such a phenomenon indicates that early network representa-tions natively encapsulate sufficient instance-level context to guide subsequent scaling decisions. Furthermore, it also shows that mapping is not strictly uniform and inherently drifts across different network depths and model architectures, which motivates a learnable, layer-aware prediction mechanism that adapts to specific structures during calibration. 
+
+3.3 ScalePredictor 
+
+In this section, we propose ScalePredictor to seamlessly instantiate this instance-aware scale prediction. The overall pipeline of our method is illustrated in Fig. 3. Abbreviated paper title 7
+
+Specifically, it comprises a Robust Range Extraction mechanism to dis-till a stable scalar context from the initial patch embeddings, and a Taylor-Motivated Polynomial Predictor to model the dependencies between this shallow context and the ideal scales of subsequent layers. 
+
+Robust Range Extraction. Inspired by [1] and [12], we hypothesize that the deep feature distributions of an individual input image are firmly anchored in its shallow representations. Let x denote an input image, and let x0 ∈ RN ×C
+
+denote the output of the Patch Embedding layer, i.e ., the first feature layer that projects raw image patches into token embeddings before any Transformer block. To avoid the negative influence of outliers, which frequently emerge in ViTs but are largely irrelevant to the global image contrast, we aim to extract a robust range r(x) for each instance. While a straightforward global min/max operation is highly sensitive to isolated activation outliers, and exact quantile-based clipping, for example 99 .9% , requires time-consuming sorting operations, we propose a balanced alternative termed Chunk-based Min/Max Average .Specifically, we first partition the flattened tensor x0 into K non-overlapped chunks with equal size, denoted as {x(1) 0 , x(2) 0 , . . . , x(K)0 }. We then compute the local maximum and minimum for each chunk, and average these local extrema to obtain the robust global maximum and minimum. The robust range r(x) is defined as the difference between these averaged extrema: 
+
+r(x) = 1
+
+K
+
+> K
+
+X
+
+> i=1
+
+max( x(i)0 ) − 1
+
+K
+
+> K
+
+X
+
+> i=1
+
+min( x(i)0 ). (5) This chunk-based averaging acts as a coarse-grained percentile approximation. By carefully selecting the number of chunks K, it effectively smooths out iso-lated outliers without excessively degrading the true dynamic range. To ensure numerical stability and prevent out-of-distribution samples from causing the predicted scale to diverge, we clamp r(x) within [rmin , r max ], determined by the 
+
+0.1% and 99 .9% quantiles of r(x) over the calibration set. For simplicity, we use the clamped context ˆr(x) = clip( r(x), r min , r max ) and omit the hat in the following. For a mini-batch, this procedure is applied independently to each im-age, producing a vector of contexts {r(xi)}, and the subsequent scale prediction yields per-layer, per-image scales {sl(xi)}.The above process is exceptionally efficient, since computing local extrema and their average requires only O(N · C) complexity and completely avoids sort-ing. Besides, this extraction is performed exactly once per image at the very beginning of the network. 
+
+Taylor-Motivated Polynomial Predictor. In a deep ViT, let l = 1 , . . . , M 
+
+index all quantized activation operators sequentially across the network. The oracle per-sample activation scale s∗ 
+
+> l
+
+(x) for the l-th quantized layer is influenced by the input context summarized by r(x). However, due to the nature of com-plicated architectures of ViTs, explicitly modeling the dependency between the optimal scales in deeper layers and the shallow ones is intractable. Instead, we model s∗ 
+
+> l
+
+(x) as being governed by a dominant implicit non-linear trend Φl
+
+ r(x):8 C. Li et al. 
+
+s∗ 
+
+> l
+
+(x) ≈ Φl
+
+ r(x) (6) After that, another problem arises: How to effectively learn this trend. To answer this, we first assume the Φl
+
+ r(x) is d-times differentiable, which can be roughly validated in Fig. 2. Then, motivated by a local Taylor expansion around the expected context ¯r = Ex∼D c [r(x)] over the calibration set, we reformulate the trend Φl
+
+ r(x) as: 
+
+sl(x) ≈ Φl(¯ r)+ Φ′
+
+> l
+
+(¯ r) r(x)−¯r+· · · + 1
+
+d! Φ(d) 
+
+> l
+
+(¯ r) r(x)−¯rd+O (r(x)−¯r)d+1 , (7) where Φ′
+
+> l
+
+(¯ r) and Φ(d) 
+
+> l
+
+(¯ r) respectively denote the first-order and d-order derivative at the point of ¯r. By expanding the polynomial terms and absorbing the constant 
+
+¯r along with the derivatives into the learnable parameters, we formulate the scale prediction as a lightweight polynomial: 
+
+sl(x) = 
+
+> d
+
+X
+
+> k=0
+
+cl,k · (r(x)) k, (8) where cl = {cl, 0, . . . , c l,d } are the learnable projection coefficients for the l-th quantized layer. This formulation ensures that each individual sample x receives its own unique quantization scale sl(x) tailored to its specific shallow activation range r(x). By controlling the polynomial degree d, we can effectively balance the model’s capacity to capture non-linear scale variations against the risk of overfitting on the limited calibration data. In practice, the optimal degree d can be flexibly selected based on the specific architecture and quantization bit-width to achieve the best trade-off. Notably, we find that even low-degree polynomials are sufficient to achieve strong performance, as demonstrated in Sec. 4. 
+
+3.4 Calibration and Hardware-Friendly Inference Calibration Objective. In the calibration phase, we first obtain the base quan-tization parameters of the activation quantizers using standard sample-agnostic calibration methods ( e.g ., Min-Max, grid search, or learning-based optimiza-tion over the calibration set). To stabilize the training process, we initialize the constant term cl, 0 of the predictor with the obtained optimal sample-agnostic scale, and set the higher-order coefficients ( e.g ., cl, 1, c l, 2) to zero. This guaran-tees that the dynamic predictor initially behaves exactly like a well-calibrated sample-agnostic quantizer. We then optimize the polynomial coefficients block by block. For the b-th transformer block, we minimize the block-wise reconstruction loss [17] on the calibration set Dc:
+
+min 
+
+> {cl}l∈I b
+
+EX∼D c Fb(Xb−1) − F qb (Xqb−1; {cl}l∈I b , r(X)) 2 
+
+> F
+
+, (9) 
+
+Complexity and Inference Overhead. During inference, ScalePredictor com-putes the robust range r(x) once per image at the Patch Embedding layer via Abbreviated paper title 9
+
+an O(N · C) chunk-based reduction. For every subsequent quantized layer, the instance-specific scale sl(x) is produced by evaluating a degree-d polynomial (Eq. 8), which costs O(1) FLOPs and requires no access to deep activation tensors. By contrast, conventional Dynamic Quantization generally performs an O(N · C) min/max reduction per layer, per instance, creating a significant memory-bound bottleneck. Our method therefore achieves the same per-layer inference complexity as static PTQ, whose activation scales are fixed at cali-bration time, while preserving instance-level adaptivity. We empirically validate in Sec. 4.4 that this translates to only 0.4–0.8% end-to-end latency overhead over static PTQ on an RTX 3090 GPU. The complete calibration and inference pipeline is summarized in Algorithm 1. 
+
+Algorithm 1 ScalePredictor: Calibration and Inference 
+
+Input: Full-precision ViT M, Calibration set Dc, Bit-width n, Polynomial degree d
+
+Output: Quantized ViT Mq with optimized polynomial coefficients c
+
+1: % Phase 1: Offline Calibration 
+
+2: for each transformer block b = 1 , 2, . . . , N b do 
+
+3: for each quantized layer l ∈ I b do 
+
+4: Initialize cl, 0 with the sample-agnostic optimal scale for layer l, and set cl,k ←
+
+0 for k > 0.5: end for 
+
+6: while not converged do 
+
+7: Sample a mini-batch of images X ∼ D c.8: Get Patch Embedding output X0 and compute a vector of robust ranges r
+
+(one per instance) via Eq. 5. 9: Clamp r element-wise to [rmin , r max ].10: for each quantized layer l ∈ I b do 
+
+11: Predict instance-wise scales sl = Pdk=0 cl,k · rk .12: end for 
+
+13: Compute block-wise reconstruction loss L via Eq. 9. 14: Update {cl}l∈I b using gradient descent with the Straight-Through Estimator. 15: end while 
+
+16: end for 
+
+17: % Phase 2: Online Inference 
+
+18: Given: A single new input image x
+
+19: Compute Patch Embedding output x0 from x.20: Extract instance-specific scale context r(x) from x0 using Eq. 5. 21: Clamp r(x) to [rmin , r max ].22: for each transformer block b = 1 , 2, . . . , N b do 
+
+23: for each quantized layer l ∈ I b do 
+
+24: Predict instance scale sl(x) = Pdk=0 cl,k · r(x)k % O(1) scalar op 
+
+25: end for 
+
+26: Execute quantized block forward pass Fqb using {sl(x)}l∈I b .27: end for 10 C. Li et al. 
+
+## 4 Experiments 
+
+4.1 Experimental Setup Datasets and Models. We evaluate our proposed ScalePredictor on the Ima-geNet dataset [4], which contains 1.2 million training images and 50,000 valida-tion images across 1,000 classes. We conduct extensive experiments on a wide range of representative Vision Transformer architectures, including ViT (ViT-Small, ViT-Base) [6], DeiT (DeiT-Tiny, DeiT-Small, DeiT-Base) [26], and Swin Transformer (Swin-Small, Swin-Base) [20]. 
+
+Baselines. To demonstrate the effectiveness of our method, we integrate ScalePre-dictor into several representative and widely adopted post-training quantization frameworks, including classical PTQ methods like BRECQ [17] and QDrop [27], and ViT-tailored approaches like AdaLog [29] and I&S-ViT [37]. 
+
+Implementation Details. Our implementation is based on the publicly avail-able codebase of I&S-ViT [37]. Following standard PTQ protocols, we randomly sample 1,024 images from the ImageNet training set for calibration. We use sym-metric uniform quantization for weights. Activation quantization follows each baseline (Log-√2 for I&S-ViT, AdaLog quantization for AdaLog, and uniform quantization otherwise). We extract the robust range r(x) from the Patch Em-bedding layer using Chunk-based Min/Max Average with K = 32 chunks. The polynomial predictor is optimized with the straight-through estimator during block-wise reconstruction. ScalePredictor targets activation quantization; weight quantization follows the underlying PTQ baseline. All experiments are conducted on an NVIDIA GeForce RTX 3090 GPU using PyTorch. 
+
+4.2 Main Results 
+
+Table 1 summarizes the ImageNet Top-1 accuracy under W2/A3, W3/A3, and W4/A3 configurations. For each PTQ baseline, the unshaded row reports the static quantization result with a degree-0 predictor, i.e . a per-layer constant scale, while the shaded “+ Ours” row reports the result using our ScalePredictor. 
+
+Comparison with PTQ Baselines. Integrating ScalePredictor improves ac-curacy in the vast majority of settings across all four PTQ baselines and seven ViT architectures. The gains are most pronounced at W2/A3, where activation scale mismatch is most severe: for instance, I&S-ViT on Swin-Small improves from 33.57% to 44.15%, a gain of 10.58%. Substantial gains persist at higher pre-cisions, such as BRECQ on ViT-Small from 31.46% to 40.17% at W3/A3 and QDrop on DeiT-Small from 32.60% to 43.00% at W3/A3. As weight precision increases to W4, the margins naturally shrink since the static baseline already better approximates the optimal scale, yet remain consistently positive for the majority of configurations. We observe a small number of regressions concen-trated in QDrop, the largest being Swin-Small at W2/A3 declining from 21.97% to 20.19%; at W4/A3, QDrop also drops slightly on DeiT-Tiny, Swin-Small, and Swin-Base. All regressions remain within 1.8%, suggesting that the interaction Abbreviated paper title 11 
+
+Table 1: Experimental results on ImageNet. Top-1 accuracy (%) across seven ViT architectures (ViT-S/B, DeiT-T/S/B, Swin-S/B) under three bit-width configu-rations (W2/A3, W3/A3, W4/A3). We compare ScalePredictor (Ours) integrated into four PTQ baselines (BRECQ, QDrop, AdaLog, I&S-ViT) against: (i) the baselines themselves with static scales, and (ii) dynamic quantization methods (JIT Min/Max and JIT Percentile), which compute activation scales on-the-fly via runtime reductions. Bits (W/A) Method ViT-S ViT-B DeiT-T DeiT-S DeiT-B Swin-S Swin-B W2/A3 JIT Min/Max [25] 0.17 0.14 0.30 0.20 0.30 0.19 0.19 JIT Percentile [25] 0.50 0.62 1.65 0.97 18.16 3.40 3.95 BRECQ [17] 1.10 17.58 2.23 5.00 43.34 3.14 13.16 BRECQ + Ours 4.15 24.56 4.99 10.36 48.96 4.33 20.36 QDrop [27] 7.75 30.61 9.87 3.99 48.72 21.97 40.23 QDrop + Ours 10.49 34.98 12.29 9.43 51.36 20.19 42.42 AdaLog [29] 2.34 9.37 5.70 12.08 39.99 6.44 2.93 AdaLog + Ours 3.02 11.00 7.25 12.58 42.40 8.95 13.05 I&S-ViT [37] 16.10 53.09 14.51 23.94 61.61 33.57 45.82 I&S-ViT + Ours 16.79 53.51 19.75 30.31 63.79 44.15 51.87 W3/A3 JIT Min/Max [25] 0.31 0.16 0.32 0.38 0.35 0.25 0.20 JIT Percentile [25] 4.79 4.31 8.88 4.54 42.51 40.19 41.64 AIQViT [11] 41.32 43.68 38.51 55.36 66.15 71.42 63.01 BRECQ [17] 31.46 53.92 22.76 34.75 68.20 56.03 61.49 BRECQ + Ours 40.17 58.41 30.62 41.98 70.26 57.16 64.09 QDrop [27] 28.93 59.90 38.58 32.60 69.22 62.29 66.42 QDrop + Ours 34.00 62.63 39.12 43.00 69.94 61.36 67.07 AdaLog [29] 37.46 60.16 34.45 49.28 67.55 63.01 63.84 AdaLog + Ours 42.61 60.97 37.37 51.35 68.80 64.78 66.32 I&S-ViT [37] 47.38 71.20 44.50 58.89 73.79 68.66 70.86 I&S-ViT + Ours 48.50 71.53 48.10 62.03 74.59 70.95 72.85 W4/A3 JIT Min/Max [25] 0.30 0.17 0.35 0.45 0.40 0.23 0.22 JIT Percentile [25] 7.97 9.28 13.41 7.50 50.24 46.14 46.55 BRECQ [17] 45.95 64.70 32.32 54.72 73.54 66.04 70.96 BRECQ + Ours 51.71 67.04 39.79 58.54 73.90 66.55 72.02 QDrop [27] 37.19 67.88 46.46 58.07 73.91 69.11 72.54 QDrop + Ours 41.33 68.90 45.73 60.74 74.38 68.55 72.46 AdaLog [29] 51.03 69.12 44.74 63.60 74.12 71.57 73.23 AdaLog + Ours 55.06 69.11 47.55 65.84 74.56 72.11 74.28 I&S-ViT [37] 57.45 75.67 52.85 68.71 77.17 73.51 75.25 I&S-ViT + Ours 58.14 75.77 55.43 69.67 77.27 74.80 76.37 
+
+between ScalePredictor and QDrop’s dropout-based calibration can occasion-ally be counterproductive. In extremely challenging cases where the baseline nearly collapses, such as BRECQ on ViT-Small at W2/A3 with only 1.10%, ScalePredictor still raises accuracy to 4.15%, demonstrating meaningful relative improvement even when absolute performance remains low. 12 C. Li et al. 
+
+Comparison with JIT Dynamic Quantization. We additionally compare against just-in-time dynamic quantization, abbreviated as JIT, which computes activation scales on-the-fly at inference. From Table 1, we can easily observe that both JIT Min/Max and JIT Percentile severely degrade accuracy compared to PTQ baselines, even though they adapt scales per instance. This is because over-riding scales at test time breaks the calibrated weight–activation relationship established during PTQ. In contrast, our ScalePredictor learns instance-aware scales during calibration via a differentiable polynomial predictor with a ro-bust range extraction process, preserving calibration consistency while enabling instance-level adaptivity. 
+
+4.3 Ablation Studies 
+
+We conduct ablation studies to examine the key design choices of ScalePredictor, including the predictor input, range extraction location, chunk size and poly-nomial degree, and predictor function family. All experiments use the W3/A3 quantization setting.  
+
+> Table 2: Ablation on predictor input (ViT-S, AdaLog, W3/A3). ImageNet Top-1 accuracy (%).
+
+Input Acc. Input Acc. 
+
+r 42.61 σ 39.08 
+
+μ 37.12 κ 39.35 
+
+r+σ 42.38 μ+κ 40.00 
+
+r+μ 41.25 σ+κ 39.56 
+
+r+κ 41.03 μ+σ 38.34 
+
+r+μ+σ 41.54 μ+σ+κ 39.64 
+
+r+σ+κ 41.34 r+μ+σ+κ 40.97 
+
+r+μ+κ 41.21 - -
+
+Influence of Predictor Input. We study how different Patch Embedding statistics used as predictor inputs affect quantiza-tion performance, including the robust range (r), channel-wise mean ( μ), standard devia-tion ( σ), and kurtosis ( κ), and their com-binations. Table 2 shows that using the ro-bust range r alone achieves the best accu-racy of 42.61%. Adding extra statistics does not improve performance: the best two-feature combination ( r + σ) reaches 42.38%, suggest-ing mild overfitting under limited calibration data. Combinations that exclude range per-form worse, confirming that the robust range captures the most essential input-dependent information for scale prediction. We therefore adopt range as the sole predictor input for its simplicity and optimality.        
+
+> Table 3: Ablation on predictor function (DeiT-Tiny, W3/A3). ImageNet Top-1 accuracy (%). Predictor AdaLog I&S-ViT MLP 33.53 44.12 Polynomial 37.37 48.10
+
+Influence of Predictor Function. Table 3 compares our polynomial predictor against a single-hidden-layer MLP (192 hidden units). The polynomial outperforms the MLP by 3.8-4.0% while requiring only d+1 coefficients per quantizer, far fewer than the MLP’s hundreds of weights. The polynomial also benefits from a stronger inductive bias aligned with the smooth range-to-scale relationship, avoids overfitting on the limited calibration set, and requires only O(d) multiply-adds evaluable via Horner’s method, con-firming that it is both more accurate and more efficient than an MLP alternative. 
+
+Influence of Range Extraction Location. Fig. 4a compares extracting the robust range from Patch Embedding and several intermediate Transformer blocks Abbreviated paper title 13 P.Emb Blk 1 Blk 3 Blk 5 Blk 7 Blk 9 Blk 11                           
+
+> 30
+> 34
+> 38
+> 42
+> 46
+> 50
+> Top-1 accuracy (%)
+> I&S-ViT
+> AdaLog
+> 48.10 47.54
+> 45.15
+> 42.88
+> 40.97 39.76 39.92
+> 37.37 36.38
+> 32.40 33.22 32.30 31.54 32.16
+> (a) Range extraction location. 24816 32 64 128
+> 0
+> 5
+> 15
+> 25
+> 30
+> 34
+> 37
+> 39
+> 41
+> 43
+> 45
+> Top-1 accuracy (%)
+> d= 4
+> d= 3
+> d= 2
+> d= 1
+> d= 0 (static)
+> 42.61 42.44
+> 37.46 (static)
+> 41.23
+> 41.89
+> 30.23
+> 0.09
+> 3.94
+> 34.98 (b) Chunk size Kand polynomial degree d.
+
+Fig. 4: Ablation studies on ViT-S (W3/A3). (a) Top-1 accuracy when extracting the robust range from different layers, on AdaLog and I&S-ViT. (b) Top-1 accuracy vs. chunk size K for polynomial degrees d=0 –4 on AdaLog. d=0 is the static baseline. 
+
+(Block 1-11). Patch Embedding consistently performs best. For I&S-ViT, ex-tracting the range at Patch Embedding achieves 48.10%, while using Block 11 drops to 39.92%. A similar trend is observed for AdaLog. Overall, accuracy gen-erally decreases when the extraction point moves deeper, supporting our choice of using shallow features for stable instance-aware context. We therefore adopt Patch Embedding as the default extraction point. 
+
+Influence of Chunk Size and Polynomial Degree. Fig. 4b jointly stud-ies the chunk size K and polynomial degree d. The degree-0 baseline achieves 37.46%. Degree-1 and degree-2 predictors consistently surpass it by 3–5% across all K values, peaking at 42.61% ( K=32 , d =1 ). Higher degrees become increas-ingly sensitive to K: d=3 degrades sharply at small K but stabilizes once K≥8,while d=4 never exceeds the static baseline, indicating overfitting under limited calibration data. We therefore adopt K=32 with d≤2 as the default. 
+
+4.4 Efficiency Analysis 
+
+To empirically validate the hardware efficiency of ScalePredictor, we implement the critical inference operations as optimized C++/CUDA kernels compiled via the PyTorch C++ extension. We profile a representative Swin-Small forward pass on an NVIDIA RTX 3090 GPU using CUDA events (30 warmup + 100 timed iterations). We compare four inference modes: (i) Static PTQ, (ii) JIT Min/Max (per-layer runtime min/max), (iii) JIT Percentile (per-layer runtime sort-based 0.1%/99.9% quantile), and (iv) ScalePredictor (Ours): chunk-based range extraction + polynomial scale prediction, once at the Patch Embedding layer). All quantized modes use half-precision (FP16) Tensor Core arithmetic for linear layers, following the standard reduced-precision deployment pipeline. 
+
+End-to-End Latency. Table 4 compares end-to-end forward-pass latency across four inference modes at batch sizes 16, 32, and 64. As shown in the ∆ column, JIT Min/Max incurs an average overhead of +19% due to per-layer min/max 14 C. Li et al. 
+
+Table 4: End-to-end inference latency (ms) of Swin-Small on an RTX 3090 GPU (averaged over 100 runs). All modes use FP16 Tensor Core arithmetic for linear layers. 
+
+∆ reports the average latency overhead relative to Static PTQ across all batch sizes. Method BS = 16 BS = 32 BS = 64 ∆
+
+Static PTQ 23.3 44.6 87.2 -JIT Min/Max 27.8 53.3 104.0 +19% JIT Percentile 58.6 113.6 223.5 +154% ScalePredictor (Ours) 23.5 44.8 87.6 +0.6% 
+
+Table 5: Scale computation over-head (μs) of Swin-Small on RTX 3090 GPU (averaged over 200 runs), isolating the cost of computing quantization scales.             
+
+> Method BS = 16 BS = 32 BS = 64 JIT Min/Max 5,206 7,595 12,250 JIT Percentile 66,136 125,474 243,882 ScalePredictor (Ours) 130 150 238
+
+Table 6: Range Extraction Latency 
+
+(μs) of different range extraction methods on Swin-Small (RTX 3090 GPU, averaged over 200 runs).             
+
+> Method BS = 16 BS = 32 BS = 64 Min/Max 82 136 242 Percentile 1,148 2,207 4,352 Chunk 89 134 219
+
+reductions, while JIT Percentile is +154% slower, as per-layer sort operations scale poorly with both layer count and batch size. ScalePredictor introduces only +0.6% overhead relative to Static PTQ across all batch sizes, confirming that the one-time chunk-based range extraction and polynomial evaluation introduce neg-ligible overhead. This directly validates our core claim: ScalePredictor matches the efficiency of static while delivering the accuracy of dynamic quantization. 
+
+Scale Computation Overhead. Table 5 isolates the scale computation cost, the only component that differs between static, JIT, and our method. Static PTQ computes scales offline, so its runtime cost is zero. JIT Min/Max requires a full-tensor min/max reduction at every quantized layer; JIT Percentile additionally performs a sort. Our method performs a single chunk-based range extraction at the Patch Embedding layer and then evaluates a degree-2 polynomial for all quantizer points. Our scale computation is 40–52 × faster than JIT Min/Max and 507–1025 × faster than JIT Percentile. The advantage grows with batch size because per-layer reductions of JIT methods scale linearly with the batch size, whereas our O(1) polynomial evaluation is essentially constant. 
+
+Chunk-based vs. Percentile Range Extraction. Table 6 disentangles the range extraction step at the Patch Embedding layer. Plain Min/Max is fastest with O(N · C) single-pass complexity, but as shown in Sec. 4.3, it is susceptible to outliers and yields lower accuracy. Our chunk-based method is O(N · C) by averaging local extrema over K=32 chunks, achieving comparable latency to Min/Max while significantly improving robustness. Percentile sorting has O(N ·
+
+C log( N · C)) complexity and is 13–20 × slower than our chunk-based method, making it impractical for deployment. Abbreviated paper title 15 
+
+## 5 Conclusion 
+
+In this paper, we propose ScalePredictor, a novel dynamic quantization frame-work that significantly improves post-training quantization of Vision Transform-ers in low-bit regimes. By revisiting the hidden relationships between the shallow layer distribution and the optimal scales of subsequent activations, ScalePredic-tor employs a lightweight polynomial predictor to generate quantization scales independently for each input, leveraging shallow features without introducing heavy computational overhead. Based on this, ScalePredictor can be seamlessly integrated into mainstream PTQ frameworks to boost their performance. Ex-tensive experiments on ImageNet demonstrate that ScalePredictor consistently improves four representative PTQ baselines across seven ViT architectures, with gains up to +10.58% on I&S-ViT (Swin-Small, W2/A3) and +8.71% on BRECQ (ViT-Small, W3/A3), while introducing negligible scale-computation overhead compared to static quantization. 
+
+## References 
+
+1. Cadena, S.A., Weis, M.A., Gatys, L.A., Bethge, M., Ecker, A.S.: Diverse feature visualizations reveal invariances in early layers of deep neural networks. In: ECCV. pp. 217–232 (2018) 2. Chen, C.F.R., Fan, Q., Panda, R.: CrossViT: Cross-attention multi-scale vision transformer for image classification. In: ICCV. pp. 357–366 (2021) 3. Chen, Y., Dai, X., Chen, D., Liu, M., Dong, X., Yuan, L., Liu, Z.: Mobile-Former: Bridging MobileNet and transformer. In: CVPR. pp. 5270–5279 (2022) 4. Deng, J., Dong, W., Socher, R., Li, L.J., Li, K., Fei-Fei, L.: ImageNet: A large-scale hierarchical image database. In: CVPR (2009) 5. Dong, Z., Yao, Z., Arfeen, D., Gholami, A., Mahoney, M.W., Keutzer, K.: HAWQ-v2: Hessian aware trace-weighted quantization of neural networks. In: NeurIPS (2020) 6. Dosovitskiy, A., Beyer, L., Kolesnikov, A., Weissenborn, D., Zhai, X., Unterthiner, T., Dehghani, M., Minderer, M., Heigold, G., Gelly, S., Uszkoreit, J., Houlsby, N.: An image is worth 16x16 words: Transformers for image recognition at scale. In: ICLR (2021) 7. Fang, Y., Liao, B., Wang, X., Fang, J., Qi, J., Wu, R., Niu, J., Liu, W.: You only look at one sequence: Rethinking transformer in vision through object detection. In: NeurIPS. pp. 26183–26197 (2021) 8. Frantar, E., Ashkboos, S., Hoefler, T., Alistarh, D.: GPTQ: Accurate post-training quantization for generative pre-trained transformers. In: ICLR (2023) 9. Jiang, R., Yan, Y., Xue, J.H., Chen, S., Wang, N., Wang, H.: Knowledge distil-lation meets label noise learning: Ambiguity-guided mutual label refinery. IEEE Transactions on Neural Networks and Learning Systems 36 (1), 939–952 (2023) 10. Jiang, R., Yan, Y., Xue, J.H., Wang, B., Wang, H.: When sparse neural network meets label noise learning: A multistage learning framework. IEEE Transactions on Neural Networks and Learning Systems 35 (2), 2208–2222 (2022) 11. Jiang, R., Zhang, Y., Wang, L., Yu, P., Guo, Y.: AIQViT: Architecture-informed post-training quantization for vision transformers. In: AAAI. pp. 17635–17643. No. 17 (2025) 16 C. Li et al. 12. Kryzhanovskiy, V., Balitskiy, G., Kozyrskiy, N., Zuruev, A.: QPP: Real-time quan-tization parameter prediction for deep neural networks. In: CVPR. pp. 10684–10692 (2021) 13. Li, C., Jiang, R., Song, Z., Yu, P., Zhang, Y., Guo, Y.: Pack-PTQ: Advanc-ing post-training quantization of neural networks by pack-wise reconstruction. arXiv:2505.00259 (2025) 14. Li, Y., Mao, H., Girshick, R., He, K.: Exploring plain vision transformer backbones for object detection. In: ECCV. pp. 280–296 (2022) 15. Li, Y., Xu, S., Lin, M., Cao, X., Liu, C., Sun, X., Zhang, B.: Bi-ViT: Pushing the limit of vision transformer quantization. In: AAAI (2024) 16. Li, Y., Yuan, G., Wen, Y., Hu, J., Evangelidis, G., Tulyakov, S., Wang, Y., Ren, J.: EfficientFormer: Vision transformers at MobileNet speed. In: NeurIPS. pp. 12934– 12949 (2022) 17. Li, Y., Gong, R., Tan, X., Yang, Y., Hu, P., Zhang, Q., Yu, F., Wang, W., Gu, S.: BRECQ: Pushing the limit of post-training quantization by block reconstruction. In: ICLR (2021) 18. Li, Z., Xiao, J., Yang, L., Gu, Q.: RepQ-ViT: Scale reparameterization for post-training quantization of vision transformers. In: ICCV. pp. 17227–17236 (2023) 19. Lin, Y., Zhang, T., Sun, P., Li, Z., Zhou, S.: FQ-ViT: Post-training quantization for fully quantized vision transformer. arXiv:2111.13824 (2021) 20. Liu, Z., Lin, Y., Cao, Y., Hu, H., Wei, Y., Zhang, Z., Lin, S., Guo, B.: Swin transformer: Hierarchical vision transformer using shifted windows. In: ICCV. pp. 10012–10022 (2021) 21. Liu, Z., Wang, Y., Han, K., Ma, S., Gao, W.: Instance-aware dynamic neural network quantization. In: CVPR. pp. 12434–12443 (2022) 22. Luo, X., Liu, Z., Zhou, Y., Fang, S., Huang, Z., Feng, Y., Zhang, C., Sun, S., Zheng, Z., Leng, J., Guo, M.: ClusterFusion: Expanding operator fusion scope for LLM inference via cluster-level collective primitive. arXiv preprint (2025) 23. Molchanov, P., Mallya, A., Tyree, S., Frosio, I., Kautz, J.: Importance estimation for neural network pruning. In: CVPR. pp. 11264–11272 (2019) 24. Moon, J., Kim, D., Cheon, J., Ham, B.: Instance-aware group quantization for vision transformers. In: CVPR. pp. 16132–16141 (2024) 25. Nagel, M., Fournarakis, M., Amjad, R.A., Bondarenko, Y., Van Baalen, M., Blankevoort, T.: A white paper on neural network quantization. arXiv:2106.08295 (2021) 26. Touvron, H., Cord, M., Douze, M., Massa, F., Sablayrolles, A., Jégou, H.: Training data-efficient image transformers & distillation through attention. In: ICML (2021) 27. Wei, X., Gong, R., Li, Y., Liu, X., Yu, F.: QDrop: Randomly dropping quantization for extreme-bit post-training quantization. In: ICLR (2022) 28. Wei, X., Zhang, Y., Li, Y., Zhang, X., Gong, R., Guo, J., Liu, X.: Outlier Suppres-sion+: Accurate quantization of large language models by equivalent and effective shifting and scaling. In: Proceedings of the Conference on Empirical Methods in Natural Language Processing. pp. 1648–1665 (2023) 29. Wu, Z., Chen, J., Zhong, H., Huang, D., Wang, Y.: AdaLog: Post-training quanti-zation for vision transformers with adaptive logarithm quantizer. In: ECCV (2024) 30. Wu, Z., Wang, S., Zhang, J., Chen, J., Wang, Y.: FIMA-Q: Post-training quan-tization for vision transformers by fisher information matrix approximation. In: CVPR. pp. 14891–14900 (2025) 31. Xiao, G., Lin, J., Seznec, M., Wu, H., Demouth, J., Han, S.: SmoothQuant: Accu-rate and efficient post-training quantization for large language models. In: ICML (2023) Abbreviated paper title 17 32. Xu, L., Bennamoun, M., Boussaid, F., Laga, H., Ouyang, W., Xu, D.: MCT-former+: Multi-class token transformer for weakly supervised semantic segmen-tation. IEEE TPAMI 46 (12), 8380–8395 (2024) 33. Yang, F., Jiang, R., Yan, Y., Xue, J.H., Wang, B., Wang, H.: Dual-mode learning for multi-dataset x-ray security image detection. IEEE Transactions on Information Forensics and Security 19 , 3510–3524 (2024) 34. Yao, Z., Yazdani Aminabadi, R., Zhang, M., Wu, X., Li, C., He, Y.: ZeroQuant: Efficient and affordable post-training quantization for large-scale transformers. In: NeurIPS (2022) 35. Yuan, L., Chen, Y., Wang, T., Yu, W., Shi, Y., Jiang, Z., Tay, F.E., Feng, J., Yan, S.: Tokens-to-token ViT: Training vision transformers from scratch on ImageNet. In: ICCV. pp. 558–567 (2021) 36. Yuan, Z., Xue, C., Chen, Y., Wu, Q., Sun, G.: PTQ4ViT: Post-training quantiza-tion for vision transformers with twin uniform quantization. In: ECCV (2022) 37. Zhong, Y., Hu, J., Chen, M., Ji, R., et al.: I&S-ViT: An inclusive & stable method for pushing the limit of post-training ViTs quantization. arXiv:2311.10126 (2023)

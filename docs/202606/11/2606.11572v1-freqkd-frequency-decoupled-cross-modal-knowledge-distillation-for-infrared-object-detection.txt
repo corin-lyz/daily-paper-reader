@@ -1,0 +1,406 @@
+Title: FreqKD: Frequency-Decoupled Cross-Modal Knowledge Distillation for Infrared Object Detection
+
+URL Source: https://arxiv.org/pdf/2606.11572v1
+
+Published Time: Thu, 11 Jun 2026 00:25:09 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+> arXiv:2606.11572v1 [cs.CV] 10 Jun 2026
+
+THAKER, NARAYANAN, ABURADDAHA, RAWASHDEH: FREQKD CROSS-MODAL KD 1
+
+# FreqKD: Frequency-Decoupled Cross-Modal Knowledge Distillation for Infrared Object Detection 
+
+Keval Thaker 
+
+tkeval@umich.edu 
+
+Venkatraman Narayanan 
+
+venn@umich.edu 
+
+Abdalmalek Aburaddaha 
+
+abdmalek@umich.edu 
+
+Samir A. Rawashdeh 
+
+srawa@umich.edu 
+
+University of Michigan-Dearborn 4901 Evergreen Rd Dearborn, MI 48128, USA 
+
+Abstract 
+
+Transfer learning from large-scale RGB foundation models to infrared (IR) imagery through knowledge distillation (KD) remains challenging due to fundamental differences in image formation physics. We investigate the spectral structure of the RGB–IR modal-ity gap and observe that feature divergence is not uniform across spatial frequencies: low-frequency components (shape, layout) show greater cross-modal alignment than high-frequency components (texture, fine edges), which reflect modality-specific char-acteristics. Based on this analysis, we propose FreqKD , a frequency-decoupled distilla-tion framework that applies asymmetric supervision adapted to each band’s cross-modal consistency. The method employs strict mean squared error (MSE) on the low-frequency band to preserve shared structural information and a relaxed log-MSE loss (weighted at 0.1) on the high-frequency band to provide edge guidance while tolerating texture differ-ences. Spectral divergence analysis on 500 paired samples shows that high-frequency divergence exceeds low-frequency divergence by a factor of 2 .4× on average across all analysed transformer layers. On KAIST multispectral pedestrian detection, FreqKD achieves 64 .1 mAP 50 , improving 2 .4 points over the DINOv2 baseline. The learned representation transfers across datasets (FLIR ADAS, +2.1 mAP 50 ), tasks (MFNet seg-mentation, +1.85 mean intersection-over-union), and architectures (ResNet-50, +1.0mAP 50 ). Code is available here. 
+
+# 1 Introduction 
+
+Infrared (IR) perception is essential for autonomous driving at night [12], surveillance in low light [13], and search-and-rescue operations, yet IR detectors typically underperform their RGB counterparts. A key reason is the absence of large-scale pretrained representations for thermal imagery: while pretraining recipes such as DINOv2 [22] and CLIP [26] have pro-duced visual encoders with broad semantic coverage in RGB, no equivalent backbone exists 
+
+© 2026. The copyright of this document resides with its authors. It may be distributed unchanged freely in print or electronic forms. 2 THAKER, NARAYANAN, ABURADDAHA, RAWASHDEH: FREQKD CROSS-MODAL KD 
+
+for the thermal domain, where labelled data is one to two orders of magnitude smaller and the imaging physics differs fundamentally (emitted long-wave radiation rather than reflected short-wave light [34]). A natural approach is cross-modal knowledge distillation (KD): using a pretrained RGB teacher to supervise an IR student trained on paired data. However, direct application of standard KD techniques proves challenging in this cross-modal setting. We observe that uni-form feature-matching, cosine-similarity alignment, and response-level distillation all fail to improve over the baseline when transferring from RGB DINOv2 to IR on the KAIST dataset. This suggests a mismatch: RGB teachers encode appearance cues (colour distributions, il-lumination patterns, reflectance properties) that have no direct correspondence in thermal imagery, where sensors measure emitted rather than reflected radiation. Consequently, naïve distillation may introduce supervisory signals that conflict with the target task rather than supporting it. 
+
+Our observation is that the RGB–IR modality gap is not uniform across spatial frequen-cies . Coarse, low-frequency content (object location, body shape, scene layout) tends to be shared across modalities: a pedestrian has similar silhouette structure in both RGB and ther-mal imagery. In contrast, fine, high-frequency content (micro-texture, sharp colour edges, fabric pattern) depends strongly on reflected light and is less consistent across modalities due to the different underlying physics. Treating these frequency bands identically conflates a useful supervisory signal with a potentially harmful one. Building on this observation, we propose FreqKD , a frequency-decoupled cross-modal distillation framework. For every matched layer, RGB teacher and IR student features are normalised, transformed by 2D fast Fourier transform (FFT), and split via a centred radial mask into a low-pass band and a high-pass band. The low-frequency band is supervised by a strong mean squared error (MSE) loss; the high-frequency band by a relaxed log-MSE loss, downweighted by 0 .1, that admits boundary guidance without enforcing strict texture identity. The student backbone is updated through low-rank adaptation (LoRA) adapters [10] and merged into the dense weights for a second detection-finetuning stage. 
+
+Contributions. (1) A spectral characterization of the RGB–IR gap. We show through analy-sis of 500 paired samples that the RGB–IR feature divergence is frequency-dependent, with high-frequency divergence exceeding low-frequency divergence (mean ratio 2 .4×) at every analysed transformer layer. This measurement quantifies, for the thermal modality, the asym-metry that motivates frequency-specific distillation. (2) A concrete frequency-decoupled loss for RGB-to-IR transfer. Building on the principle that low-frequency content transfers across modalities while high-frequency content does not [19], we instantiate it for dense thermal prediction with a 2D-FFT radial split and an asymmetric loss pair: strict MSE on the low band and relaxed 0 .1× log-MSE on the high band, with the cut-off set from the measured divergence. Unlike prior cross-modal frequency distillation, the design needs no shared clas-sifier or label-space alignment, as it distils from a frozen foundation-model teacher. (3) Aparameter-efficient two-stage training pipeline. We employ low-rank adaptation (LoRA) during distillation to preserve the pretrained prior, then merge the adapters to produce a single reusable IR backbone that can initialize downstream tasks without task-specific distillation. (4) Empirical evaluation across datasets, tasks, and architectures. On KAIST multispectral pedestrian detection FreqKD reaches 64 .1 mAP 50 , and the learned Stage-1 representation transfers to new datasets (FLIR ADAS), new tasks (MFNet semantic segmentation), and new architectures (ResNet-50 via cross-architecture distillation). A frequency-resolved centered kernel alignment (CKA) analysis shows selective alignment with the teacher: low-frequency similarity increases while high-frequency similarity decreases. THAKER, NARAYANAN, ABURADDAHA, RAWASHDEH: FREQKD CROSS-MODAL KD 3
+
+# 2 Related Work 
+
+Multispectral and thermal detection. Most work on the KAIST benchmark [12] fuses RGB and thermal inputs, from the early two-stream MSDS-RCNN [17] to MBNet [48], the late-fusion ensemble ProbEn [1], and the transformer-based CFT [2]. These methods re-quire both modalities at test time. We target the harder deployment setting in which only IR is available at inference, using paired RGB solely as a distillation signal during train-ing; the fusion detectors above are therefore complementary references rather than direct competitors. 
+
+Visual foundation models and IR transfer. Self-supervised pretraining on web-scale RGB has produced general-purpose visual encoders such as DINOv2 [22], SAM/SAM2 [15, 30], and CLIP/SigLIP [26, 36, 41], which transfer well across RGB benchmarks via linear prob-ing or light fine-tuning. None of these models were trained on long-wave thermal imagery, and direct fine-tuning on small IR datasets erodes the pretrained priors. Recent IR-specific adaptations either attach task-specific decoders to a frozen RGB foundation (SAMamba [37], SHIFNet [47], DistillMatch [38]) or align IR to a CLIP-like joint embedding using close-range data (ImageBind [6]). Our work addresses the upstream question of how an RGB encoder should transfer its knowledge to an IR encoder during pretraining, and produces a backbone that subsequently plugs into any of those downstream heads. 
+
+Knowledge distillation: feature- vs. response-level. Hinton et al . [9] introduced response-level KD via temperature-softened logits. Feature-level distillation, beginning with Fit-Nets [32], instead constrains intermediate representations and is often more effective for representation transfer. For object detection in particular, FGD [39] separates foreground and background regions with focal and global terms, and MGD [40] forces the student to regenerate masked teacher features; at the foundation-model scale, AM-RADIO [28] and PHI-S [27] perform multi-teacher feature distillation. All of these methods operate within asingle modality, so the teacher’s intermediate features are a directly attainable target. We find that this assumption does not hold in the cross-modal setting and address it with a frequency-aware loss. 
+
+Cross-modal knowledge distillation. C2KD [11] bridges RGB-text gaps with bidirec-tional distillation and on-the-fly sample selection; CroDiNo-KD [3] uses disentanglement for RGBD segmentation; HalluciDet [21] hallucinates an RGB modality from IR for pedes-trian detection. For RGB-to-IR transfer specifically, Zhang et al . [44] and Li et al . [18] distil visible knowledge into RGB-T trackers, and Kim et al . [14] align thermal-student pyramid features to an RGB teacher for IR-only detection. SS-DC [45] also decouples spatial–spectral components across the visible–infrared gap, but in an unsupervised domain-adaptation framework rather than teacher–student distillation. These methods apply a single distillation pressure to the entire feature map. We instead split the supervisory signal in the frequency domain, supervise the two bands with different losses, and reuse the resulting backbone across tasks. 
+
+Frequency-domain learning and distillation. One line of work uses the spectrum to in-form model design: FcaNet [25] replaces channel attention with frequency-band statistics, GFNet [29] mixes tokens directly in Fourier space, and spectrum analyses of vision trans-formers [23] report that ViTs preferentially encode low-frequency content. A second line transfers knowledge in the frequency domain. FreeKD [46] distils using a learned semantic frequency prompt, observing that low-frequency bands carry general context while high-frequency bands are informative but noisy; Wavelet KD [43] distils only the high-frequency wavelet bands for image-to-image translation; DS 2D2 [5] applies wavelet-based spectral-4 THAKER, NARAYANAN, ABURADDAHA, RAWASHDEH: FREQKD CROSS-MODAL KD 
+
+decoupling distillation to remote-sensing detection; and Frequency Attention [24] learns a global frequency-domain filter under teacher guidance. These methods operate within a sin-gle modality , where teacher and student share the same input. Concurrent to us, FD-CMKD [19] also decouples cross-modal distillation by frequency, applying strong alignment to the low band and relaxed alignment to the high band. It ad-dresses classification on audio–visual and vision–language pairs and depends on a shared classifier and a scale-consistency loss to bridge the modalities. We take the asymmetric low/high principle as given and contribute its first study in the RGB-to-IR regime, where it differs fundamentally: (i) we tackle dense detection and segmentation, not classification; (ii) distilling from a frozen DINOv2 teacher needs no shared classifier or label-space align-ment; and (iii) unlike prior frequency distillation that learns prompts or filters, our 2D-FFT split with a radial cut-off and a strict-MSE / relaxed-log-MSE pair is parameter-free, with the cut-off read directly off the measured RGB–IR spectral divergence (Section 4.2) rather than tuned. 
+
+Domain adaptation and distribution matching. Classical domain adaptation methods such as CORAL [33], MMD [7], and DANN [4] align two domains by matching global feature statistics or by adversarially suppressing domain-discriminative patterns. These methods operate on the full feature distribution and therefore cannot separate the modality-invariant component from the modality-specific component that we identify spectrally; they are or-thogonal to FreqKD rather than direct competitors, and could in principle be combined with it. 
+
+Parameter-efficient adaptation. LoRA [10] injects low-rank updates into frozen pretrained weights and has become a standard recipe for adapting large backbones with little compute. We use LoRA during Stage 1 to keep the DINOv2 prior intact while absorbing IR-specific structure, then merge the adapter back at Stage 2. 
+
+# 3 Method 
+
+We are given paired RGB and IR images (xR, xI ) from a registered multispectral dataset. A frozen RGB teacher ET (DINOv2 ViT-Large with 4 register tokens, vit_large_patch14_reg4 
+
+consumes the three-channel RGB image xR; an IR student ES with the same architecture con-sumes the thermal image xI . Since the single-channel thermal image is incompatible with the RGB-pretrained stem, we replicate it across three channels and apply the same Ima-geNet normalisation as the teacher, so that both encoders share an identical input pipeline. Throughout, subscripts T and S denote teacher and student quantities. Because the two encoders share an architecture, we distil block-for-block at a fixed set of matched blocks 
+
+L={7, 15 , 19 , 21 , 23 }: block l of the student is supervised by block l of the teacher. Each block produces token features F(l) 
+
+> T
+
+, F(l) 
+
+> S
+
+∈ RN×d , which we reshape (dropping the class and register tokens) to spatial maps F(l) 
+
+> T
+
+, F(l) 
+
+> S
+
+∈ RH×W ×d for spectral analysis. Figure 1 sum-marises the pipeline. 
+
+# 3.1 Frequency-Decoupled Distillation Loss 
+
+Our method assumes that the RGB–IR feature gap is concentrated in the high spatial fre-quencies, while the low spatial frequencies, which encode object shape and scene layout, remain largely consistent across modalities. The distillation loss treats the two frequency bands differently. We develop the loss in three steps: a normalization that isolates spatial THAKER, NARAYANAN, ABURADDAHA, RAWASHDEH: FREQKD CROSS-MODAL KD 5
+
+structure from activation magnitude, a spectral decomposition that separates the two bands, and a pair of band-specific objectives that supervise each band according to its cross-modal consistency. Because RGB and IR features differ systematically in their mean and scale, a direct comparison would be dominated by these differences rather than by the spatial patterns. We therefore apply a centred L2 normalisation to each channel of the teacher and student features independently. For a feature map F(l) ∈ { F(l) 
+
+> T
+
+, F(l) 
+
+> S
+
+} and channel c,˜F(l) 
+
+> ·,c
+
+= F(l) 
+
+> ·,c
+
+− μ(l)
+
+> c
+
+∥F(l) 
+
+> ·,c
+
+− μ(l) 
+
+> c
+
+∥2 + ε , c ∈ { 1, . . . , d}, (1) where μ(l) 
+
+> c
+
+is the spatial mean of channel c and ε=10 −6 avoids division by zero. This mean-centred, unit-norm projection makes the subsequent loss depend on the spatial pattern of each channel rather than on its mean or magnitude. We then decompose the normalised features into frequency bands. For each block l in the matched set L, we apply the two-dimensional fast Fourier transform FFT 2D along the spatial dimensions and centre the zero-frequency component, ˆF(l) = fftshift  FFT 2D( ˜F(l)) ∈ CH×W ×d , (2) applied per channel. A binary radial mask M ∈ { 0, 1}H×W splits the centred spectrum at frequency coordinate (u, v) (measured from the centre) using a normalised radius 
+
+ρ(u, v) = 
+
+p(u/umax )2 + ( v/vmax )2
+
+√2 ∈ [0, 1], M(u, v) = ⊮[ρ(u, v) ≤ rc] , (3) where umax =H/2 and vmax =W /2 are the Nyquist frequencies along each axis, so that ρ=0at the centre and ρ=1 at the corner of the spectrum. This yields a low-pass band ˆ Flow =
+
+M ⊙ ˆF and a high-pass band ˆ Fhigh = ( 1 − M) ⊙ ˆF, from which the inverse transform recovers the band-limited spatial features Flow , Fhigh ∈ RH×W ×d . The cut-off rc=0.50 is selected empirically (Section 4.5) and matches our spectral analysis (Section 4.2), which finds the high-frequency band to be more divergent across modalities than the low-frequency band at every analysed layer. The two bands are supervised by different objectives that reflect their differing cross-modal reliability. The low-pass band, which captures the shared structural content, is matched with a mean squared error term, 
+
+L(l) 
+
+> low
+
+= F(l) 
+
+> S,low
+
+− sg  F(l)
+
+> T,low
+
+ 22, (4) where sg (·) denotes the stop-gradient operator, reflecting that the teacher is frozen through-out. The high-pass band, which is dominated by modality-specific texture, is instead super-vised by a logarithmically compressed error, 
+
+L(l) 
+
+> high
+
+= log 
+
+
+
+1 + F(l) 
+
+> S,high
+
+− sg  F(l)
+
+> T,high
+
+ 22
+
+
+
+. (5) The compression log (1 + ∥ · ∥ 2) behaves as a standard squared error for small residuals but saturates for large ones. This lets the student match boundary structure shared across modal-ities without being heavily penalized for the pointwise texture differences that come from the 6 THAKER, NARAYANAN, ABURADDAHA, RAWASHDEH: FREQKD CROSS-MODAL KD 
+
+Table 1: Frequency-band treatment in FreqKD (Section 4.2).          
+
+> Band Dominant content Modality gap Loss
+> Low-pass shape, layout, position lower strict MSE High-pass texture, fine edges higher relaxed log-MSE (0 .1×)
+
+modality gap. The two terms are combined across the matched layers with a fixed mixing coefficient η=0.1 that downweights the high-frequency contribution, 
+
+LFreqKD = ∑
+
+> l∈L
+
+ L(l) 
+
+> low
+
++ η L(l)
+
+> high
+
+. (6) Table 1 summarises the band-specific treatment. 
+
+# 3.2 LoRA-Adapted Two-Stage Training 
+
+We train the IR student in two stages that separate representation learning from detection fine-tuning. In the first stage, the backbone is pre-trained on paired data under the frequency-decoupled objective alone, without any detection head. We freeze every dense parameter of the student backbone and inject low-rank adaptation (LoRA) adapters [10] of rank r=64 into the attention and MLP projections. Only the low-rank factors A ∈ Rr×d and B ∈ Rd×r
+
+are updated, which keeps the pretrained RGB weights fixed while adapting to the thermal domain. The objective is LFreqKD applied at the five matched blocks, and training runs for 12 epochs without using any detection labels. Because this stage uses only the distillation signal, it separates representation learning from the detector, and we reuse the resulting checkpoint unchanged across all downstream experiments in Section 4. In the second stage, the learned adapters are fused into the backbone and the resulting encoder is fine-tuned for detection. We merge the LoRA factors into the dense weights with a scale factor α,
+
+Wmerged = Wbase + α · BA , (7) and set α=0.5 throughout, a value we find to be optimal in the ablation of Table 11(e). At this scale, the adapter adds the distilled IR signal while leaving the RGB weights largely intact. The merged backbone then initialises a DINO-DETR detector [42] with five-scale deformable attention, which is trained end-to-end for 12 epochs under the standard DINO classification, L 1, and GIoU losses, using a backbone learning rate reduced by a factor of ten relative to the detection head. Decoupling the two stages has two consequences. First, because the second stage uses only the standard detection objective, gains from pre-training cannot be attributed to implicit regularization within the detector. Second, the same first-stage checkpoint initialises the detection and segmentation pipelines in Sections 4.7 to 4.9, so downstream gains reflect the pretrained representation rather than task-specific tuning. 
+
+# 3.3 Relation to Standard Distillation Objectives 
+
+FreqKD differs from two standard distillation objectives that operate uniformly across the feature spectrum. Uniform feature-matched KD applies MSE to the entire feature map, which requires the student to reproduce high-frequency texture that an IR sensor does not THAKER, NARAYANAN, ABURADDAHA, RAWASHDEH: FREQKD CROSS-MODAL KD 7
+
+Figure 1: Overview of FreqKD. Stage 1 (left): a frozen RGB DINOv2 ViT-L teacher and an IR DINOv2 student with rank-64 LoRA adapters process registered RGB–IR pairs; only the LoRA parameters are trainable. Frequency decomposition module (centre): at each matched block l ∈ { 7, 15 , 19 , 21 , 23 }, teacher and student features are channel-wise normalised, trans-formed by 2D FFT, and split at radial cut-off rc=0.50 into a shared low-frequency band (strict MSE, Llow ) and a modality-specific high-frequency band (relaxed log-MSE, Lhigh ), combined into LFreqKD with η=0.1. Stage 2 (right): the LoRA adapters are merged into the student backbone, which initialises a DINO-DETR detector fine-tuned with detection super-vision. capture. Response-level KD aligns detector queries to the teacher’s confidence and box pre-dictions, which are themselves conditioned on RGB appearance cues (colour-edge bound-aries, illumination) without an IR counterpart. In both cases, the supervisory signal mixes a transferable low-frequency component with a non-transferable high-frequency component, whereas FreqKD separates the two bands and supervises each according to its cross-modal consistency. 
+
+# 4 Experiments 
+
+We evaluate FreqKD across six dimensions: (i) spectral divergence analysis that charac-terises the core frequency hypothesis (Section 4.2), (ii) in-distribution detection on KAIST 8 THAKER, NARAYANAN, ABURADDAHA, RAWASHDEH: FREQKD CROSS-MODAL KD 
+
+(Section 4.3), (iii) frequency-band and cut-off ablations (Section 4.4, Section 4.5), (iv) fea-ture representation analysis via CKA (Section 4.6), (v) cross-dataset and cross-task gener-alisation (Section 4.7, Section 4.8), and (vi) cross-architecture distillation to CNNs (Sec-tion 4.9). Ablations of the remaining design choices are reported in Section 4.10. 
+
+# 4.1 Implementation Details 
+
+Backbone and detector. The student backbone is DINOv2 ViT-Large with 4 register to-kens ( vit_large_patch14_reg4_dinov2.lvd142m ); the same checkpoint is used to instantiate the frozen RGB teacher. The detection head is the five-scale DINO-DETR [42]. 
+
+Optimization. Both stages use AdamW [20] with lr =5×10 −5, weight decay 10 −4, batch size 2 per GPU, and 12 epochs. Backbone parameters and the deformable detail layers (sampling_offsets , reference_points ) receive a 0 .1× learning-rate multiplier; gradients are clipped to L 2 norm 0 .1. Stage 1 trains LoRA factors of rank r=64; Stage 2 fine-tunes the merged backbone end-to-end with the detection head. 
+
+Datasets. KAIST [12]: 9 ,466 training and 967 validation images using the cleaned instancesonl 
+
+split. Following standard practice in multispectral pedestrian detection, we evaluate on the 
+
+Person class only (cyclist counts are too small for stable AP). FLIR ADAS [35]: used for cross-dataset transfer of the Stage-1 checkpoint. MFNet [8]: 784 train / 392 val / 393 test (205 day, 188 night) at 480 ×640 with eight foreground classes; used for cross-task semantic segmentation. 
+
+Evaluation metrics. For detection we report mean average precision (mAP) following the COCO protocol: mAP 50 is the average precision at an intersection-over-union (IoU) thresh-old of 0 .5, and mAP averages precision over IoU thresholds from 0 .5 to 0 .95 in steps of 0 .05. For segmentation we report the mean intersection-over-union (mIoU), the IoU between pre-dicted and ground-truth masks averaged over classes. All metrics are reported in percent, and higher is better. 
+
+Baselines. (i) DINOv2 pre-trained. : the public DINOv2 ViT-L checkpoint, fine-tuned on the IR target dataset; this baseline carries the same RGB pre-training that FreqKD inherits but without any cross-modal distillation. (ii) Uniform feature KD. : full-band MSE on the same five blocks. (iii) Cosine-similarity feature KD. : per-token cosine alignment on the same five blocks. (iv) GT-matched response KD. : Hungarian-matched query alignment with temperature-softened classification KL ( τ=2.0) and L 1 box loss. 
+
+# 4.2 Spectral Divergence Analysis 
+
+To examine whether the RGB–IR feature gap concentrates in high frequencies, we measure the cross-modal divergence as a function of spatial frequency on 500 paired KAIST samples. For each matched block we apply the centred L2 normalisation of Equation (1) to the teacher and student features, apply the 2D FFT, and partition the radial spectrum at rc=0.50. We define the divergence within a band b ∈ { low , high } as the mean squared difference between the band-limited teacher and student spectra, averaged over channels and samples, 
+
+D(l) 
+
+> b
+
+= E
+
+h ˆF(l) 
+
+> T,b
+
+− ˆF(l)
+
+> S,b
+> 22
+
+i
+
+. (8) Table 2 reports Dlow and Dhigh at the five matched ViT-Large blocks, computed on the pre-trained backbones before any distillation. THAKER, NARAYANAN, ABURADDAHA, RAWASHDEH: FREQKD CROSS-MODAL KD 9
+
+Table 2: Cross-modal spectral divergence on KAIST (500 paired samples), computed via Equation (8) between the pretrained RGB and IR DINOv2 features before any distilla-tion. Dlow and Dhigh denote the divergence in the low- and high-frequency bands (split at 
+
+rc=0.50). High-frequency divergence exceeds low-frequency divergence at every analysed layer.                      
+
+> Layer Dlow Dhigh Ratio
+> Block 7 0.398 0.884 2.22 Block 15 0.339 0.894 2.64 Block 19 0.362 0.909 2.51 Block 21 0.373 0.917 2.46 Block 23 0.394 0.921 2.34
+> Mean 0.373 0.905 2.42
+
+Table 3: KAIST Person detection results (mAP 50 , single class). All comparable methods use an IR-only student. The greyed row reports the RGB teacher evaluated on RGB input; it operates on a different modality and is shown only as a reference, not as a competing method.          
+
+> Method mAP 50
+> RGB teacher (RGB input, not comparable) [22] 68.0
+> DINOv2 pretrained, IR (no distillation) [22] 61.7
+> Standard cross-modal distillation (IR student)
+> Uniform feature-level KD (MSE) 61.1 Cosine-similarity feature KD 62.1 Response-level KD (Hungarian matching) 58.8
+> FreqKD (proposed, rc=0.50 ,η=0.1)64.1
+
+The high-frequency divergence exceeds the low-frequency divergence at every anal-ysed layer, by a factor ranging from 2 .22 × to 2 .64 × (mean 2 .42 ×). The effect is present across network depth rather than concentrated in any single block. This indicates that high-frequency feature content is more modality-specific than low-frequency content, motivating the asymmetric band treatment formalised in Equation (6). 
+
+# 4.3 KAIST Pedestrian Detection 
+
+Table 3 presents the main detection results. The DINOv2 baseline achieves 61 .7 mAP 50 
+
+without distillation. Standard distillation approaches yield mixed results: uniform feature-level KD achieves 61 .1 (slightly below baseline), cosine-similarity feature alignment reaches 62 .1 ( +0.4), and ground-truth-matched response-level KD obtains 58 .8 ( −2.9). FreqKD achieves 64 .1 mAP 50 (+2.4 over baseline). For reference, the RGB teacher trained on RGB images achieves 68 .0 mAP 50 ; the remaining performance gap reflects the information asym-metry between modalities (thermal sensors measure emitted radiation while RGB cameras measure reflected light). 10 THAKER, NARAYANAN, ABURADDAHA, RAWASHDEH: FREQKD CROSS-MODAL KD 
+
+Table 4: Frequency-band ablation on KAIST. The high-band signal is harmful at full strength but useful when relaxed; the two bands together are strictly better than either alone. 
+
+Variant mAP 50 ∆ baseline 
+
+Baseline (no KD) 61.7 —High-freq only (MSE) 58.4 −3.3Low-freq only (MSE) 62.6 +0.9
+
+FreqKD (low MSE + 0.1× high logMSE) 64.1 +2.4
+
+Table 5: Cut-off ablation on KAIST. All swept values of rc improve over the baseline, with the maximum at rc=0.50.              
+
+> Cut-off radius mAP 50 ∆baseline
+> Baseline (no KD) 61.7 —
+> rc=0.10 62.7 +1.0
+> rc=0.25 63.1 +1.4
+> rc=0.50 64.1 +2.4
+> rc=0.75 62.3 +0.6
+
+# 4.4 Frequency Band Ablation 
+
+Table 4 isolates the contribution of each frequency band. Supervising only the low-frequency band yields a modest improvement ( +0.9), while supervising only the high-frequency band with strict MSE degrades performance ( −3.3), consistent with the spectral divergence anal-ysis. The complete asymmetric loss combines both bands for a total improvement of +2.4. This pattern is consistent with the high-frequency band carrying boundary information that is usable only when the supervision is relaxed: the log-MSE formulation in Equation (5) approximates MSE for small residuals (preserving boundary structure) while saturating for large residuals (tolerating modality-specific texture differences). 
+
+# 4.5 Frequency Cut-off Ablation 
+
+Table 5 sweeps the radial cut-off rc over {0.10 , 0.25 , 0.50 , 0.75 }. Performance peaks at 
+
+rc=0.50 (64 .1). Setting rc too low ( rc=0.10, mAP 50 = 62 .7) discards shared low-frequency structure, while setting it too high ( rc=0.75, mAP 50 = 62 .3) admits modality-specific high-frequency content into the strictly supervised band. All swept values improve over the base-line, indicating the result is not specific to a single cut-off, with a clear maximum at 0 .50. 
+
+# 4.6 Feature Representation Analysis via CKA 
+
+To understand how frequency-decoupled distillation reshapes the learned representation, we compute Centered Kernel Alignment (CKA) [16] between the RGB teacher and the IR stu-dent on 500 KAIST validation pairs, reported separately on the low- and high-frequency components of the feature maps (band split at the cut-off rc=0.50). Table 6 shows that Fre-qKD changes low- and high-frequency alignment in opposite directions. Relative to the no-distillation baseline, FreqKD increases low-frequency CKA (0 .82 → 0.91) while decreasing high-frequency CKA (0 .13 → 0.02), consistent with the student retaining IR-specific high-frequency content rather than matching the teacher’s texture. The full -feature CKA also de-THAKER, NARAYANAN, ABURADDAHA, RAWASHDEH: FREQKD CROSS-MODAL KD 11 
+
+Table 6: CKA similarity between RGB teacher and IR student on KAIST validation (500 pairs, mean across the five matched blocks, band split at rc=0.50). FreqKD increases low-frequency alignment while reducing high-frequency and full-feature alignment.             
+
+> Method CKA (full) CKA (low-freq) CKA (high-freq)
+> No KD (DINOv2 baseline) 0.65 0.82 0.13 Uniform feature KD 0.66 0.80 0.15
+> FreqKD (ours) 0.30 0.91 0.02
+
+Table 7: Frequency-resolved diagnostic on the same KAIST feature set as Table 6. The rep-resentational divergence concentrates in the high band, whereas the global teacher–student MMD does not; a single global matching objective does not separate the bands in the same way FreqKD does.             
+
+> Quantity Low band High band High/Low
+> Representational divergence (Table 2) 0.37 0.90 2.42 Teacher–student MMD ( ×10 −3, no KD) 3.9 2.9 0.74 FreqKD effective loss weight 1.0 0.1 0.10
+
+creases under FreqKD (0 .65 → 0.30): the student becomes less similar to the RGB teacher overall while improving on the IR task. This is consistent with the gain arising from transfer of low-frequency structure rather than from overall feature mimicry. Uniform feature KD instead raises high-frequency CKA (0 .13 → 0.15), moving the student toward the teacher’s high-frequency texture, alongside its lack of improvement in detection (Table 3). 
+
+Relation to global distribution matching. A relevant question is whether a generic distribution-matching objective, such as Maximum Mean Discrepancy (MMD) [7], could capture the same frequency structure that FreqKD exploits. As a diagnostic, we measure the teacher– student MMD on the cached features, computed separately on the low- and high-frequency bands, and compare it against the representational divergence from Table 2 (Table 7). The two statistics order the bands differently. The representational divergence is concentrated in the high-frequency band (high-to-low ratio 2 .42), which is precisely the asymmetry that motivates downweighting the high band. The global MMD statistic is slightly larger in the low-frequency band (ratio 0 .74), so a single global matching objective would not pref-erentially relax the high band. This motivates the frequency-resolved 1 .0 : 0 .1 low-to-high weighting used in FreqKD. We note that this is a diagnostic on fixed features rather than a trained comparison, and a full empirical evaluation of an MMD-based distillation loss is left to future work. 
+
+# 4.7 Cross-Dataset Transfer (FLIR) 
+
+We transfer the KAIST Stage-1 checkpoint to FLIR ADAS without any FLIR-specific distil-lation. As shown in Table 8, the FreqKD initialization improves over the DINOv2 baseline by +2.1 mAP 50 , with gains across all three object classes (Person +1.7, Car +0.7, Bicy-cle +4.2). Both pretrained initializations outperform random initialization. Because the DINOv2 baseline shares the same RGB pretraining, the improvement is attributable to the cross-modal distillation rather than to the pretraining alone, and transfers to a second thermal dataset. 12 THAKER, NARAYANAN, ABURADDAHA, RAWASHDEH: FREQKD CROSS-MODAL KD 
+
+Table 8: Cross-dataset detection on FLIR ADAS. The Stage-1 FreqKD checkpoint (trained on KAIST) initialises a DINO-DETR detector on FLIR thermal imagery; we compare to detectors initialised from a random ViT-L backbone and from the public DINOv2 ViT-L checkpoint, both fine-tuned with the same recipe.                           
+
+> Backbone init mAP mAP 50 Person Car Bicycle
+> Random init 18.4 39.8 43.5 64.8 10.9 DINOv2 pre-trained [22] 34.9 70.5 73.7 83.9 53.8
+> FreqKD Stage-1 (ours) 35.1 72.6 75.4 84.6 58.0
+> ∆vs. DINOv2 +0.2+2.1+1.7+0.7+4.2
+
+Table 9: MFNet thermal semantic segmentation (per-class IoU over the eight object classes). The Stage-1 FreqKD checkpoint (trained on KAIST detection) is used as a frozen backbone with a segmentation head trained on MFNet.                                     
+
+> Backbone car person bike curve stop bump cone guard mIoU
+> DINOv2 baseline 86.89 65.53 59.67 39.76 24.82 49.36 42.36 7.21 46.95
+> FreqKD (ours) 87.70 67.02 61.03 41.76 26.16 54.81 45.16 6.72 48.80
+> ∆+0.81 +1.49 +1.36 +2.00 +1.34 +5.45 +2.80 −0.49 +1.85
+
+# 4.8 Cross-Task Transfer (MFNet Semantic Segmentation) 
+
+We further evaluate transfer to a different task, thermal semantic segmentation on MFNet [8]. Table 9 shows that the FreqKD Stage-1 checkpoint achieves 48 .80 mIoU compared to 46 .95 for the DINOv2 baseline, an improvement of +1.85. The largest gains occur on bump 
+
+(+5.45), color_cone (+2.80), curve (+2.00), and person (+1.49); a regression occurs on the rare guardrail class ( −0.49). Here both the dataset and the task change (from KAIST detection to MFNet segmentation), so the improvement does not depend on the detection task or the KAIST data. Figure 2 shows representative outputs across the three settings. On KAIST, the base-line misses the pedestrians at the gate and fires on background structures, whereas FreqKD recovers the annotated pedestrians; on FLIR, FreqKD localises the central vehicle and the side cars that the baseline drops; and on MFNet, FreqKD produces cleaner person and curve masks. The qualitative differences are most visible on small and low-contrast structures, consistent with the role of the preserved low-frequency band. 
+
+# 4.9 Cross-Architecture Distillation (ResNet-50) 
+
+Finally, we examine whether the frequency-decoupled loss generalizes beyond the trans-former architecture by applying it to a Faster R-CNN [31] detector with a ResNet-50 IR student, distilling from the DINOv2 ViT-L teacher to the four ResNet stages. As shown in Table 10, FreqKD improves the ImageNet-pretrained baseline by +1.0 mAP 50 . As a control, same-architecture distillation (ResNet-50 teacher to ResNet-50 student) yields no improve-ment (54 .7 → 54 .7). Since the same-architecture control gives no gain, the improvement here is attributable to the cross-modal foundation-model teacher rather than to a generic regular-ization effect of distillation, and the formulation also applies to a convolutional backbone. THAKER, NARAYANAN, ABURADDAHA, RAWASHDEH: FREQKD CROSS-MODAL KD 13 
+
+Figure 2: Qualitative results across the three transfer settings. Columns show ground truth, the DINOv2 baseline, and FreqKD (ours). Top, KAIST detection: the baseline misses the pedestrians near the gate and produces false positives on background structures, while Fre-qKD detects the annotated pedestrians. Middle, FLIR cross-dataset: FreqKD localises the central vehicle and the partially visible side cars that the baseline omits. Bottom, MFNet cross-task segmentation: FreqKD yields cleaner masks for person and curve . Improvements are most pronounced on small and low-contrast objects, where the preserved low-frequency structure aids localisation. 
+
+# 4.10 Ablation Studies 
+
+Table 11 reports ablations of the remaining design choices, all measured on KAIST mAP 50 
+
+under the same fixed 12-epoch Stage-1 and 12-epoch Stage-2 budget, so differences reflect the design choice rather than training length. First, the logarithmic compression of the high-frequency loss matters: replacing it with raw MSE degrades performance below the baseline (−1.2, panel a). Second, the centred L2 normalisation of Equation (1) contributes +1.4 by removing the mean and scale shift between the modalities prior to spectral decomposition (panel b). Third, distilling at all five blocks outperforms each tested subset (panel c). Fourth, a LoRA rank of r=64 provides the best trade-off, as smaller ranks insufficiently adapt the backbone while full fine-tuning over-adapts and erodes the RGB prior (panel d). Finally, the LoRA merge scale peaks at α=0.5 (64 .1), with both α=0.25 (60 .4) and α=1.0 (62 .8) lower; this is consistent with the merge scale trading off injection of distilled IR structure against preservation of the RGB prior in the dense weights (panel e). 14 THAKER, NARAYANAN, ABURADDAHA, RAWASHDEH: FREQKD CROSS-MODAL KD 
+
+Table 10: Cross-architecture distillation on KAIST. FreqKD with a ViT-L teacher transfers to a ResNet-50 student, while same-architecture R50 →R50 KD provides no gain.         
+
+> R-50 student Teacher mAP 50
+> IR-only baseline (ImageNet pre-trained) —54.7 Same-arch KD R-50 54.7
+> FreqKD (ours) DINOv2 ViT-L 55.7 ( +1.0)
+
+Table 11: Ablations on KAIST (mAP 50 ). Baseline 61 .7, default settings shaded.                                                              
+
+> Variant mAP ∆Variant mAP ∆
+> (a) High-band loss (d) LoRA rank
+> MSE (no compression) 60.5 −1.2Full fine-tune 62.0 +0.3
+> η=1.0×logMSE 62.0 +0.3r=16 63.4 +1.7
+> η=0.1×logMSE 64.1 +2.4r=64 64.1 +2.4
+> r=128 64.0 +2.3
+> (b) Centred L 2norm (e) LoRA merge α
+> Without 62.7 +1.0α=0.25 60.4 −1.3With 64.1 +2.4α=0.564.1 +2.4
+> α=0.75 63.8 +2.1
+> α=1.062.8 +1.1
+> (c) Layer set L
+> Final only (23) 62.4 +0.7Early {7,15 }62.9 +1.2Late {19 ,21 ,23 }63.2 +1.5Full {7,15 ,19 ,21 ,23 }64.1 +2.4
+
+# 4.11 Computational Cost 
+
+FreqKD adds modest overhead at training time: the 2D FFT at five layers increases Stage 1 wall-clock from ∼10 to ∼12 hours on four A40 GPUs, and the rank-64 LoRA factors are trained in place of the frozen backbone in Stage 1. Both the distillation losses and the LoRA adapters are dropped after training: the deployed detector is a standard DINO-DETR with a merged backbone, so inference cost matches the baseline. The cut-off radius shows a clear maximum at rc=0.50 (Table 5), and we fix the high-frequency weight at η=0.1 (Table 11a). 
+
+# 5 Conclusion 
+
+We presented FreqKD, a frequency-decoupled knowledge distillation framework for trans-ferring RGB foundation models to infrared imagery. Motivated by the observation that the RGB–IR feature gap concentrates in high spatial frequencies (a mean high-to-low divergence ratio of 2 .4×), it applies a strict MSE loss on the shared low band and a relaxed 0 .1× log-MSE loss on the modality-specific high band. FreqKD reaches 64 .1 mAP 50 on KAIST ( +2.4over DINOv2), and the same checkpoint transfers to FLIR detection, MFNet segmentation, and a ResNet-50 student. Our study is limited to long-wave thermal students, a single shared cut-off rc, and a single DINOv2 teacher. These point to natural extensions: applying the framework to other non-visible modalities (NIR, SAR, X-ray), learning per-layer cut-offs, and exploring multi-THAKER, NARAYANAN, ABURADDAHA, RAWASHDEH: FREQKD CROSS-MODAL KD 15 
+
+teacher distillation. 
+
+# References 
+
+[1] Yi-Ting Chen, Jinghao Shi, Zelin Ye, Christoph Mertz, Deva Ramanan, and Shu Kong. Multimodal object detection via probabilistic ensembling. In ECCV , 2022. [2] Qingyun Fang, Dapeng Han, and Zhaokui Wang. Cross-modality fusion transformer for multispectral object detection. arXiv:2111.00273 , 2021. [3] Roger Ferrod, Cássio F. Dantas, Luigi Di Caro, and Dino Ienco. Revisiting cross-modal knowledge distillation: A disentanglement approach for RGBD semantic segmentation. In ECML-PKDD , 2025. [4] Yaroslav Ganin, Evgeniya Ustinova, Hana Ajakan, Pascal Germain, Hugo Larochelle, François Laviolette, Mario Marchand, and Victor Lempitsky. Domain-adversarial train-ing of neural networks. In JMLR , volume 17, pages 1–35, 2016. [5] Xiangyi Gao, Danpei Zhao, Bo Yuan, and Wentao Li. Dual-stream spectral decoupling distillation for remote sensing object detection. IEEE Trans. Geosci. Remote Sens. ,2025. [6] Rohit Girdhar, Alaaeldin El-Nouby, Zhuang Liu, Mannat Singh, Kalyan Vasudev Al-wala, Armand Joulin, and Ishan Misra. ImageBind: One embedding space to bind them all. In CVPR , 2023. [7] Arthur Gretton, Karsten M Borgwardt, Malte J Rasch, Bernhard Schölkopf, and Alexander Smola. A kernel two-sample test. JMLR , 13:723–773, 2012. [8] Qishen Ha, Kohei Watanabe, Takumi Karasawa, Yoshitaka Ushiku, and Tatsuya Harada. MFNet: Towards real-time semantic segmentation for autonomous vehicles with multi-spectral scenes. In IROS , 2017. [9] Geoffrey Hinton, Oriol Vinyals, and Jeff Dean. Distilling the knowledge in a neural network. arXiv:1503.02531 , 2015. [10] Edward J Hu, Shen Yelong, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. LoRA: Low-rank adaptation of large language models. In ICLR , 2022. [11] Fushuo Huo, Wenchao Xu, Jingcai Guo, Haozhao Wang, and Song Guo. C 2KD: Bridg-ing the modality gap for cross-modal knowledge distillation. In CVPR , 2024. [12] Soonmin Hwang, Jaesik Park, Namil Kim, Yukyung Choi, and In So Kweon. KAIST multispectral pedestrian dataset. IEEE Trans. Intell. Transp. Syst. , 19(3), 2018. [13] Xinyu Jia, Chuang Zhu, Minzhen Li, Wenqi Tang, and Wenli Zhou. LLVIP: A visible-infrared paired dataset for low-light vision. In ICCV Workshops , 2021. [14] SiWoo Kim and JhongHyun An. Contrast-guided cross-modal distillation for thermal object detection. arXiv:2511.01435 , 2025. 16 THAKER, NARAYANAN, ABURADDAHA, RAWASHDEH: FREQKD CROSS-MODAL KD 
+
+[15] Alexander Kirillov, Eric Mintun, Nikhila Ravi, Hanzi Mao, Chloe Rolland, Laura Gustafson, Tete Xiao, Spencer Whitehead, Alexander C Berg, Wan-Yen Lo, et al. Seg-ment anything. In ICCV , 2023. [16] Simon Kornblith, Mohammad Norouzi, Honglak Lee, and Geoffrey Hinton. Similarity of neural network representations revisited. In ICML , 2019. [17] Chengyang Li, Dan Song, Ruofeng Tong, and Min Tang. Multispectral pedestrian detection via simultaneous detection and segmentation. In BMVC , 2018. [18] Yi Li, Lei Liu, Mengya Zhang, and Chenglong Li. Multi-teacher knowledge distillation with triplet loss for cross-modal object tracking. In Int. Conf. Brain Inspired Cognitive Systems (BICS) , 2024. [19] Junhong Liu, Yuan Zhang, Tao Huang, Wenchao Xu, and Renyu Yang. Distilling cross-modal knowledge via feature disentanglement. In AAAI , 2026. [20] Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization. In ICLR ,2019. [21] Heitor Rapela Medeiros, Fidel A. Guerrero Pena, Masih Aminbeidokhti, Thomas Dubail, Eric Granger, and Marco Pedersoli. HalluciDet: Hallucinating RGB modal-ity for person detection through privileged information. In WACV , 2024. [22] Maxime Oquab, Timothée Darcet, Théo Moutakanni, Huy Vo, Marc Szafraniec, Vasil Khalidov, Pierre Fernandez, Daniel Haziza, Francisco Massa, Alaaeldin El-Nouby, et al. DINOv2: Learning robust visual features without supervision. Transactions on Machine Learning Research , 2024. [23] Namuk Park and Songkuk Kim. How do vision transformers work? In ICLR , 2022. [24] Cuong Pham, Van-Anh Nguyen, Trung Le, Dinh Phung, Gustavo Carneiro, and Thanh-Toan Do. Frequency attention for knowledge distillation. In WACV , 2024. [25] Zequn Qin, Pengyi Zhang, Fei Wu, and Xi Li. FcaNet: Frequency channel attention networks. In ICCV , 2021. [26] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning transferable visual models from natural language supervision. In ICML , 2021. [27] Mike Ranzinger, Jon Barker, Greg Heinrich, Pavlo Molchanov, Bryan Catanzaro, and Andrew Tao. PHI-S: Distribution balancing for label-free multi-teacher distillation. 
+
+arXiv:2410.01680 , 2024. [28] Mike Ranzinger, Greg Heinrich, Jan Kautz, and Pavlo Molchanov. AM-RADIO: Ag-glomerative vision foundation model reduce all domains into one. In CVPR , pages 12490–12500, 2024. [29] Yongming Rao, Wenliang Zhao, Zheng Zhu, Jiwen Lu, and Jie Zhou. Global filter networks for image classification. In NeurIPS , 2021. THAKER, NARAYANAN, ABURADDAHA, RAWASHDEH: FREQKD CROSS-MODAL KD 17 
+
+[30] Nikhila Ravi, Valentin Gabeur, Yuan-Ting Hu, Ronghang Hu, Chaitanya Ryali, Tengyu Ma, Haitham Khedr, Roman Rädle, Chloe Rolland, Laura Gustafson, et al. SAM 2: Segment anything in images and videos. In ICLR , 2025. [31] Shaoqing Ren, Kaiming He, Ross Girshick, and Jian Sun. Faster R-CNN: Towards real-time object detection with region proposal networks. In NeurIPS , 2015. [32] Adriana Romero, Nicolas Ballas, Samira Ebrahimi Kahou, Antoine Chassang, Carlo Gatta, and Yoshua Bengio. FitNets: Hints for thin deep nets. In ICLR , 2015. [33] Baochen Sun and Kate Saenko. Return of frustratingly easy domain adaptation. In 
+
+AAAI , 2016. [34] Glenn J Tattersall. Infrared Thermography: A Complete Laboratory and Field Manual .CRC Press, 2016. [35] Teledyne FLIR. FLIR thermal dataset for algorithm training. https://oem.flir. com/solutions/automotive/adas-dataset-form/ , 2018. [36] Michael Tschannen et al. SigLIP 2: Multilingual vision-language encoders with im-proved semantic understanding, localization, and dense features. arXiv:2502.14786 ,2025. [37] Wenhao Xu, Shuchen Zheng, Changwei Wang, Zherui Zhang, Chuan Ren, Rongtao Xu, and Shibiao Xu. SAMamba: Adaptive state space modeling with hierarchical vision for infrared small target detection. Information Fusion , 124, 2025. [38] Meng Yang, Fan Fan, Zizhuo Li, Songchu Deng, Yong Ma, and Jiayi Ma. DistillMatch: Leveraging knowledge distillation from vision foundation model for multimodal image matching. arXiv:2509.16017 , 2025. [39] Zhendong Yang, Zhe Li, Xiaohu Jiang, Yuan Gong, Zehuan Yuan, Danpei Zhao, and Chun Yuan. Focal and global knowledge distillation for detectors. In CVPR , 2022. [40] Zhendong Yang, Zhe Li, Mingqi Shao, Dachuan Shi, Zehuan Yuan, and Chun Yuan. Masked generative distillation. In ECCV , 2022. [41] Xiaohua Zhai, Basil Mustafa, Alexander Kolesnikov, and Lucas Beyer. Sigmoid loss for language image pre-training. In ICCV , 2023. [42] Hao Zhang, Feng Li, Shilong Liu, Lei Zhang, Hang Su, Jun Zhu, Lionel M Ni, and Heung-Yeung Shum. DINO: DETR with improved denoising anchor boxes for end-to-end object detection. In ICLR , 2023. [43] Linfeng Zhang, Xin Chen, Xiaobing Tu, Pengfei Wan, Ning Xu, and Kaisheng Ma. Wavelet knowledge distillation: Towards efficient image-to-image translation. In 
+
+CVPR , 2022. [44] Tianlu Zhang, Hongyuan Guo, Qiang Jiao, Qiang Zhang, and Jungong Han. Efficient RGB-T tracking via cross-modality distillation. In CVPR , pages 5404–5413, 2023. [45] Xiwei Zhang, Chunjin Yang, Yiming Xiao, Runtong Zhang, and Fanman Meng. SS-DC: Spatial-spectral decoupling and coupling across visible-infrared gap for domain adaptive object detection. arXiv:2507.12017 , 2025. 18 THAKER, NARAYANAN, ABURADDAHA, RAWASHDEH: FREQKD CROSS-MODAL KD 
+
+[46] Yuan Zhang, Tao Huang, Jiaming Liu, Tao Jiang, Kuan Cheng, and Shanghang Zhang. FreeKD: Knowledge distillation via semantic frequency prompt. In CVPR , 2024. [47] Jiayi Zhao, Fei Teng, Kai Luo, Guoqiang Zhao, Zhiyong Li, Xu Zheng, and Kailun Yang. Unveiling the potential of segment anything model 2 for RGB-thermal semantic segmentation with language guidance. In IROS , 2025. [48] Kailai Zhou, Linsen Chen, and Xun Cao. Improving multispectral pedestrian detection by addressing modality imbalance problems. In ECCV , 2020.

@@ -1,0 +1,201 @@
+Title: Eddy-VL 1.9B: Structural Pruning and Layered Distillation for Edge-Deployable Multimodal Embedding
+
+URL Source: https://arxiv.org/pdf/2607.16316v1
+
+Published Time: Tue, 21 Jul 2026 00:05:06 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+# Eddy-VL 1.9B: Structural Pruning and Layered Distillation for Edge-Deployable Multimodal Embedding 
+
+Hanyeong Cho 1 Changwoo Kim 1 Taeuk Chu 1
+
+Jimin Park 11Urock-AI Lab, Republic of Korea 
+
+https://huggingface.co/Urock-AI https://urock.kr 
+
+Abstract 
+
+In this report, we introduce Eddy-VL 1.9B , a compressed multimodal embedding model built on Qwen3-VL-Embedding-2B [18, 12] for offline, edge-deployable vision–language retrieval. Eddy-VL targets air-gapped forensic and investigative settings where cloud APIs are unavailable and latency matters. Compression combines (i) probe-driven structural pruning that removes four redundant text-decoder layers (28 →24) ranked by adjacent-layer linear CKA [10], and (ii) layered knowledge distillation [6] with hole-covering teacher–student mappings, mid-layer attention-map 1 −CKA, and final-layer MSE+cosine with Matryoshka dims [11] {128 , . . . , 2048 }. The release model contains 1,926,188,032 parameters (3.85 GB bf16), a ∼9.5% reduction from the 2.13B teacher. 1 Empirical evaluations on MMEB-V2 [14] (78 tasks, VLM2Vec [8]) show that Eddy-VL scores 63.2 overall vs. 68.9 for the teacher under our protocol (91.7% retained), recovering 6.4 of 12.1 points lost by pruning alone (56.8). Compositional probes remain near teacher quality on SugarCrepe [7] ( 86.1 vs. 86.4 ), MR 2-Bench [22] ( 24.5 vs. 24.7 ), and ARO [21] ( 59.5 vs. 60.4 ); Winoground [19] group score is the main weakness ( 6.8 vs. 8.5 ). Depth pruning also reduces forward latency by 
+
+∼10% (150.0 →136.4 ms/image on NVIDIA DGX Spark; FlashAttention-2 [3]). This report presents the architecture, compression methodology, training procedures, and evaluation results, demonstrating effectiveness for multimodal retrieval under constrained edge deploy-ment. Weights and inference code are released on Hugging Face [2]. 
+
+# 1 Introduction 
+
+Multimodal embedders map images, text, video, and documents into a shared vector space for nearest-neighbor retrieval. Recent VLM-based embedders [8, 12] achieve strong MMEB-V2 [14] scores via contrastive pre-training and reranker distillation on Qwen3-VL backbones [1]. Qwen3-VL-Embedding-2B is a leading open teacher, but its 28-layer text decoder and 4.26 GB checkpoint remain heavy for forensic edge settings: air-gapped networks, seized-media process-ing, and strict no-cloud policies. We study depth compression of an existing strong teacher—preserving retrieval behavior, not only parameter count—through probe-driven pruning and layered distillation. Unlike training a new foundation embedder from scratch, Eddy-VL removes four decoder blocks and recovers quality with teacher-aligned mid- and final-layer objectives on an explicit teacher–student layer map that brackets each removed block. All reported scores use the official MMEB-V2 benchmark via VLM2Vec (78 tasks) and standard compositional probes. We report relative compression gains under a fixed evaluation protocol rather than claiming parity with every published leaderboard configuration ( §6.1). 
+
+> 1
+> “Eddy-VL 1.9B” is a release name; the exact parameter count is 1.93B.
+
+1arXiv:2607.16316v1 [cs.CV] 15 Jul 2026 Table 1: Model specifications (teacher vs. Eddy-VL 1.9B release).                
+
+> Teacher Eddy-VL 1.9B Parameters 2,127,532,032 1,926,188,032 Checkpoint (bf16) 4.26 GB 3.85 GB Vision encoder blocks 24 24 (frozen) Text decoder layers 28 24 Embedding dimension 2048 2048 MRL dims {128 , . . . , 2048 }{128 , . . . , 2048 }
+
+In the following sections, we describe the model ( §2), the training data ( §3), training strategy (§4), training objectives ( §5), evaluation ( §6), analysis ( §7), and conclude with limitations and deployment guidance ( §8). 
+
+# 2 Model 
+
+Eddy-VL and its teacher follow the bi-encoder embedding paradigm introduced in Qwen3-VL-Embedding [12]. Each multimodal instance is encoded independently; relevance is cosine similarity in a shared 2048-dimensional space. Eddy-VL 1.9B is derived from Qwen3-VL-Embedding-2B [18] by probe-driven structural pruning of the text decoder (28 →24 layers), followed by layered knowledge distillation from the unchanged teacher checkpoint. 
+
+2.1 Architecture 
+
+Qwen3-VL-Embedding-2B [18, 12] uses a 24-block vision encoder ( d=1024, patch 16, merge 2, proj 2048) and a 28-layer text decoder ( d=2048, 16 Q-heads / 8 KV-heads GQA, FFN 6144). Eddy-VL removes four decoder blocks ( D = {3, 22 , 24 , 25 }, 0-based HuggingFace layers.* 
+
+indices), yielding a 24-layer student with remapped indices. The vision encoder is frozen dur-ing distillation; only the compressed text decoder is trained. Table 1 summarizes the release checkpoint. 
+
+2.2 Embedding method 
+
+The input format follows the Qwen3-VL-Embedding chat template: a system message carries the retrieval instruction (default: “Represent the user’s input.” ), and the multimodal instance is passed as a user message (text, image, video, or mixed modalities). A final <|endoftext|> 
+
+token is appended; the last hidden state at this token is L2-normalized to produce the retrieval vector. The released embedder exposes this pipeline through a self-contained API on Hugging Face. 
+
+> <|im start|>system [Instruction] <|im end|> <|im start|>user [Instance] <|im end|> <|im start|>assistant <|endoftext|>
+
+Figure 1: Input template for embedding. A system message carries the retrieval instruction, and the user message contains the multimodal instance (text/image/video). We pool the last hidden state at <|endoftext|> and L2-normalize it. 2Unless otherwise stated, we use the full 2048-dimensional embedding for retrieval and evalua-tion (MRL enables computing lower-dimensional prefixes with the same encoder when needed). 
+
+# 3 Data 
+
+Distillation uses two proprietary corpora with complementary supervision (Table 2): Korean COCO supplies image–caption pairs—each sample includes a Korean text caption alongside the image ( §3.1); OurDataset is image-only—roughly 45k RGB images with no accompanying text ( §3.2). Both streams share the default retrieval instruction and last-token pooling; only Korean COCO instances pass caption tokens through the text decoder. Ablation and release checkpoints train on the combined mixture. Table 2: Distillation corpora (approximate instance counts). Korean COCO = AI Hub Korean Image Captioning Dataset [9] (image + Korean caption); OurDataset = image only (no text).                  
+
+> Corpus Supervision Sample format Text? Approx. N
+> Korean COCO Caption image + Korean caption yes ∼410k OurDataset None image only no ∼45k Combined Mixed both formats above —∼455k
+
+3.1 Korean COCO captions 
+
+Korean COCO denotes the Korean Image Captioning Dataset released on AI Hub [9, 15] (dataset no. 261): MS COCO [13] images paired with Korean text captions obtained by machine-translating the original English COCO captions, followed by AI Hub quality correction. Each record provides one or more caption ko strings per image (JSON metadata with UTF-8 text, as distributed by AI Hub). We use a processed training split with on the order of 80k 
+
+unique images; with multiple captions per image this expands to roughly 410k distillation instances. Every instance is a multimodal forward pass: image tokens plus a Korean caption under the default retrieval instruction. The corpus is licensed through AI Hub and is not 
+
+redistributed with Eddy-VL. 
+
+3.2 OurDataset 
+
+OurDataset is a proprietary synthesized image corpus for forensic and investigative retrieval, built by merging curated subsets from multiple sources: licensed AI Hub resources [15] (office-document generation, Korean visual understanding, multimodal information retrieval, and aca-demic/paper understanding), public benchmarks (MS COCO [13], Korean COCO [9], SUN [20], RVL-CDIP [5], CORD v2 [16]), and internally collected or synthetically generated media. Un-like Korean COCO, no text captions are provided : each sample is a single image with the default retrieval instruction only (image-only distillation). The corpus spans forensic-relevant domains including scenes and places, people and animals, email, academic papers, presentations and slides, handwriting, screenshots, administrative and financial documents, road imagery, device and PC/phone screens, identity documents, technical drawings, logistics, receipts, GPS/geolocation imagery, and whiteboard captures. Overall vol-ume is roughly 45k images. Neither OurDataset nor AI Hub–derived subsets (including Korean COCO [9]) are publicly redistributed. Source-level attributions (AI Hub, Korean COCO, MS COCO, SUN, RVL-CDIP, CORD) appear in the prose above; Table 2 reports only corpus scale and supervision type. 34 Training strategy 
+
+Training proceeds in two stages: probe-driven structural pruning ( §4.1), then distillation from the unchanged teacher checkpoint on Korean COCO + OurDataset. Figure 3 shows the training loss curve; the best checkpoint is used for all reported Eddy-VL results. 
+
+4.1 Probe-driven structural pruning 
+
+On N calibration image–caption pairs, extract last-token hiddens after each of the 28 teacher de-coder blocks. We use 0-based block indices ℓ ∈ { 0, . . . , 27 } (HuggingFace language model.layers[ ℓ]), form Xℓ ∈ RN ×H , and score adjacent-layer redundancy with linear CKA [10]: s(ℓ) = CKA( Xℓ−1, X ℓ)+ CKA( Xℓ, X ℓ+1 ) (middle blocks only). We rank blocks on N =1 ,000 calibration pairs (Ko-rean COCO + OurDataset mix). Greedy top-4 CKA would remove {21 , 22 , 23 , 24 }; we use 
+
+D = {3, 22 , 24 , 25 } instead (block 3 replaces block 23 for early-depth coverage). Figure 2 plots 
+
+s(ℓ) across all decoder blocks. 
+
+Figure 2: Teacher layer probe: s(ℓ) vs. 0-based decoder block index ℓ ∈ { 0, . . . , 27 }. Red bars: removed blocks D = {3, 22 , 24 , 25 }.
+
+Beyond the s(ℓ) sum. Ranking only by s(ℓ) also suggests an alternative four-block set 
+
+{2, 21 , 22 , 24 } (blocks 2, 21, 22, and 24 rank 7th, 3rd, 1st, and 4th among middle blocks). We therefore inspect the decomposition s(ℓ) = CKA( Xℓ−1, X ℓ) + CKA( Xℓ, X ℓ+1 ) rather than the sum alone (Table 3). Table 3: Adjacent CKA decomposition for candidate blocks ( N =1 ,000 calibration pairs). Bal-ance = 1 − | CKA ℓ−1,ℓ − CKA ℓ,ℓ +1 |/s (ℓ); higher is more symmetric.                                       
+
+> Block CKA ℓ−1,ℓ CKA ℓ,ℓ +1 s(ℓ)Balance 20.746 0.668 1.414 0.944 3∗0.668 0.702 1.370 0.975 21 0.803 0.825 1.629 0.986 22 ∗0.825 0.865 1.691 0.976 23 0.865 0.786 1.652 0.952 24 ∗0.786 0.792 1.579 0.996 25 ∗0.792 0.735 1.528 0.963
+> ∗Removed in D={3,22 ,24 ,25 }.
+
+Block 2 has a high s(ℓ) because both adjacent CKAs are elevated (0 .746 below, 0 .668 above), not because one side dominates; its balance score (1 − | CKA ℓ−1,ℓ − CKA ℓ,ℓ +1 |/s (ℓ) = 0 .944) 4is only moderately asymmetric. However, block 2 is more similar to block 1 than to block 3 (CKA 1,2 > CKA 2,3), whereas block 3 is more balanced (balance 0 .975) and better preserves the early-depth transition. The neighbor block 1 shows the largest local imbalance in the stack (0 .368 vs. 0 .746), indicating a sharp early representation ramp that makes shallow-layer removal risky even when s(ℓ) is high. We validate the layer choice with a structural-pruning ablation (weight remapping only, no distillation): export a 24-layer student with {2, 21 , 22 , 24 } removed and score it on MMEB-Image (batch size 128; Table 4). Table 4: Preliminary MMEB-Image structural-pruning ablation (8 tasks completed; no distilla-tion, batch size 128). Alternative set {2, 21 , 22 , 24 } vs. release pruned {3, 22 , 24 , 25 }.                                    
+
+> Task {2,21 ,22 ,24 }{3,22 ,24 ,25 }∆HatefulMemes 49.2 59.2 -10.0 ImageNet-1K 0.1 44.3 -44.2 ImageNet-A 1.6 30.3 -28.7 ImageNet-R 0.9 69.7 -68.8 N24News 4.5 25.3 -20.8 Place365 0.3 28.1 -27.8 SUN397 0.3 52.1 -51.8 VOC2007 3.0 80.0 -77.0 Macro-avg (8 tasks) 7.5 48.6 -41.1
+
+The alternative set collapses on classification-heavy tasks (e.g., ImageNet-1K 0 .1 vs. 44 .3hit@1), confirming that probe sum alone is insufficient and supporting D = {3, 22 , 24 , 25 } for the release pruned student. 
+
+4.2 Pipeline summary 
+
+1. Rank teacher layers by s(ℓ) on N =1 ,000 calibration pairs. 2. Export a 24-layer pruned student by weight remapping (no fine-tuning). 3. Distill the pruned student from the frozen-vision teacher on Korean COCO + OurDataset. 4. Select the best checkpoint and release it as Eddy-VL 1.9B. Table 5: Release distillation hyperparameters.                
+
+> Setting Value Distillation Layered (attention-map mid, MRL final) Mid / final loss 1−CKA / MSE+cosine (0.3/0.7) MRL dims 128, 256, 512, 1024, 2048 Layer mapping 3:4 ,21:23 ,22:26 ,23:27 ,24:28 Batch / LR / warmup 32 / 3 .63 ×10 −5/ 0.05 Max length / image pixels 8192 / 1024–921600 Vision encoder Frozen (no LoRA) Steps / best checkpoint 15068 / 12366 Best total loss 0.889
+
+5Figure 3: Release distillation loss curve (best checkpoint highlighted). 
+
+# 5 Training objective 
+
+All distillation runs start from the same 24-layer pruned student with a frozen vision encoder and a hole-covering teacher–student mapping M = {(3 , 4) , (21 , 23) , (22 , 26) , (23 , 27) , (24 , 28) }
+
+(student indices 0-based; teacher indices use the probe hidden-state numbering, teacher block 
+
+b ↔ index b+1) that pairs each removed teacher block with neighboring survivor layers. We compare two distillation families: hidden distillation and layered distillation. 
+
+Hidden distillation (final hidden only). Hidden distillation aligns only the final hidden states : teacher and student last-token embeddings are matched with MSE+cosine. No losses are applied on intermediate layers in M.
+
+Layered distillation (mid + final). Layered distillation adds mid-layer losses on each mapped pair in M, aligning intermediate teacher and student activations (default: 1 −CKA [10] on flattened attention maps), plus a final-layer loss on (24 , 28) using MSE+cosine with Ma-tryoshka Representation Learning [11]. Dynamic loss scaling targets a 40/60 mid:final ratio. The release model uses attention-map CKA mid-losses. Alternative mid-layer objectives in-clude RCKA [23], STRUCTURE [4], and mutual-kNN [17]. 
+
+Mid-layer objective variants. All variants below replace only the mid term under layered distillation (the final-layer MRL MSE+cosine term is kept the same). RCKA [23] matches relation-centered similarity by comparing centered Gram matrices of teacher vs. student rep-resentations. STRUCTURE [4] aligns neighborhood structure by applying a row-softmax to Gram similarities and minimizing a Jensen–Shannon divergence over the resulting transition distributions. Mutual-kNN [17] builds a mutual k-nearest-neighbor graph on teacher features within the batch and minimizes MSE over student vs. teacher pairwise cosine similarities on the mutual edges. 
+
+# 6 Evaluation 
+
+6.1 Setup 
+
+We evaluate on the official MMEB-V2 benchmark [14] with the public VLM2Vec harness [8] (78 tasks), following the framework of Qwen3-VL-Embedding [12]. MMEB-V2 overall is the 6Table 6: MMEB-V2 headline results. Model Overall Image Video VisDoc Teacher (public leaderboard) 73.2 — — —Teacher (our eval.) 68.9 71.0 55.2 76.1 Pruned baseline 56.8 55.7 46.2 66.4 
+
+Eddy-VL 1.9B 63.2 63.4 50.0 72.7 
+
+Table 7: Fine-grained benchmarks (headline metrics).                     
+
+> Benchmark Metric Teacher Pruned baseline Eddy SugarCrepe Overall (%) 86.4 75.7 86.1 ARO Overall (%) 60.4 61.7 59.5 Winoground Group (%) 8.5 5.0 6.8 MR 2nDCG@10 24.7 20.3 24.5
+
+unweighted mean of 78 per-task metrics (36 image + 18 video Hit@1; 24 VisDoc nDCG@5). Fine-grained probes (SugarCrepe, ARO, Winoground, MR 2) are a separate compositional suite with cosine retrieval accuracy or nDCG@10; they do not overlap with MMEB-V2 task defini-tions. 
+
+Hardware. Unless noted otherwise, all benchmark scores, fine-grained probes, and forward-pass latency measurements in this report were run on a single NVIDIA DGX Spark GPU (bf16, FlashAttention-2 where applicable). 
+
+Protocol caveats. Our VLM2Vec evaluation uses a fixed generic instruction ( “Represent the user’s input.” ) and 8 video frames per clip. Qwen’s published MMEB numbers use task-tuned prompts and up to 64 frames. Our teacher re-evaluation scores 68.9 overall vs. 73.2 on the Qwen model card [18, 12]. We therefore report relative gains (68.9 →56.8 →63.2), not parity with the public leaderboard. 
+
+6.2 MMEB-V2 results 
+
+Pruning costs 12.1 points; layered CKA distillation recovers 6.4 (68.9 → 56.8 → 63.2). Table 6 lists headline scores; the 73.2 teacher figure is the public Qwen3-VL-Embedding-2B leaderboard entry [18, 12]. Eddy retains 91.7% of teacher MMEB under our protocol while removing 4 decoder layers. Eddy recovers a substantial portion of the prune-only gap, with especially strong retention on fine-grained compositional probes ( §7). 
+
+6.3 Fine-grained probes 
+
+Eddy is within 0.3 points of teacher on SugarCrepe and within 0.2 on MR 2 (Table 7), indicating near-full recovery on key compositional probes. 
+
+6.4 Efficiency 
+
+Forward latency (Table 8) was measured on NVIDIA DGX Spark with FlashAttention-2 [3] on a held-out internal image set ( ∼44k images; batch size 24; single GPU). Eddy-VL matches the pruned baseline architecture; depth pruning yields ∼10% lower forward time vs. the teacher. 7Table 8: Forward-pass latency on NVIDIA DGX Spark (held-out internal image set, ∼44k images; FlashAttention-2; batch size 24; single GPU). Depth pruning yields ∼10% lower forward time. 
+
+Model Decoder layers Forward mean (ms/image) Qwen3-VL-Embedding-2B (teacher) 28 150.0 Pruned baseline 24 136.4 Speedup (pruned vs. teacher) 1.10 × (∼10% faster) 
+
+# 7 Analysis 
+
+7.1 Compression and distillation ablations 
+
+Figure 4: MMEB-V2 overall for the main compression path: teacher → pruned → hidden distill 
+
+→ Eddy (layered / attention-map CKA). Table 9: MMEB-V2 distillation ablation (one row per training recipe). Overall = unweighted mean of per-task primary metrics (image/video: Hit@1; VisDoc: nDCG@5). ‡Hidden : final hidden loss only—no mid-layer mapping losses. ⋆Layered / attention CKA : Eddy-VL 1.9B release (mid losses on M + MRL final; best checkpoint). †Layered variants: same recipe as release but a different mid-layer objective ( §5). 
+
+Training recipe Overall Image Video VisDoc Qwen3-VL-Embedding-2B (teacher) 68.9 71.0 55.2 76.1 
+
+Layered / attention CKA (Eddy release) ⋆ 63.2 63.4 50.0 72.7 Pruned baseline 56.8 55.7 46.2 66.4 Hidden distill (final hidden only) ‡ 60.8 60.8 48.6 69.9 Layered / RCKA † 61.7 62.1 48.9 70.8 Layered / STRUCTURE † 60.6 60.6 48.1 70.0 Layered / mutual-kNN † 58.9 58.8 45.2 68.2 
+
+87.2 Compositional retention 
+
+Figure 5: Capability retention vs. teacher on compositional benchmarks. SugarCrepe and MR 2 recover to within ∼1 point of teacher; Winoground group score is the lowest among the listed probes (6.8 vs. 8.5). 
+
+Interpretation. Fine-grained probes highlight how pruning and distillation affect composi-tional alignment separately from MMEB-V2 task mixtures: Eddy recovers to near-teacher on SugarCrepe and MR 2, while Winoground leaves the most headroom for improvement. 
+
+# 8 Conclusion 
+
+Eddy-VL 1.9B combines probe-driven depth pruning and layered CKA distillation to deliver a 1.93B multimodal embedder retaining ∼92% of teacher MMEB score under our evaluation protocol, with near-parity on compositional probes and ∼10% lower forward latency. Layered attention-map CKA outperformed hidden-only distillation and other mid-loss variants in abla-tions on the combined Korean COCO + OurDataset mixture, yielding the release score of 63.2. Eddy-VL is an embedder for candidate surfacing—pair with a reranker for final ordering. 
+
+Limitations. 
+
+• ∼8.3% relative MMEB gap vs. teacher under our protocol ( −5.7 absolute). 
+
+• Our MMEB re-evaluation ̸ = Qwen leaderboard 73.2 ( §6.1). 
+
+• Training corpora are proprietary and not publicly released (AI Hub–licensed and in-house subsets; see §3.2). 
+
+• Winoground remains the most challenging probe under our compression recipe. 
+
+# References 
+
+[1] Shuai Bai, Yuxuan Cai, Ruizhe Chen, Keqin Chen, Xionghui Chen, Zesen Cheng, Liang-hao Deng, Wei Ding, Chang Gao, Chunjiang Ge, Wenbin Ge, Zhifang Guo, Qidong Huang, Jie Huang, Fei Huang, Binyuan Hui, Shutong Jiang, Zhaohai Li, Mingsheng Li, Mei Li, Kaixin Li, Zicheng Lin, Junyang Lin, Xuejing Liu, Jiawei Liu, Chenglong Liu, Yang Liu, 9Dayiheng Liu, Shixuan Liu, Dunjie Lu, Ruilin Luo, Chenxu Lv, Rui Men, Lingchen Meng, Xuancheng Ren, Xingzhang Ren, Sibo Song, Yuchong Sun, Jun Tang, Jianhong Tu, Jian-qiang Wan, Peng Wang, Pengfei Wang, Qiuyue Wang, Yuxuan Wang, Tianbao Xie, Yiheng Xu, Haiyang Xu, Jin Xu, Zhibo Yang, Mingkun Yang, Jianxin Yang, An Yang, Bowen Yu, Fei Zhang, Hang Zhang, Xi Zhang, Bo Zheng, Humen Zhong, Jingren Zhou, Fan Zhou, Jing Zhou, Yuanzhi Zhu, and Ke Zhu. Qwen3-VL technical report. arXiv preprint arXiv:2511.21631 , 2025. [2] Hanyeong Cho, Changwoo Kim, Taeuk Chu, and Jimin Park. Eddy-VL Embedding 1.9B. 
+
+https://huggingface.co/Urock-AI/Eddy-vl_embedding_1.9B_v1 , 2026. [3] Tri Dao, Dan Fu, Stefano Ermon, Atri Rudra, and Christopher R´ e. FlashAttention: Fast and memory-efficient exact attention with IO-awareness. In NeurIPS , 2022. [4] Fabian Gr¨ oger, Shuo Wen, Huyen Le, and Maria Brbi´ c. With limited data for multimodal alignment, let the STRUCTURE guide you. In NeurIPS , 2025. arXiv:2506.16895. [5] Adam W Harley, Alex Ufkes, and Konstantinos G Derpanis. Evaluation of deep convolu-tional nets for document image classification and retrieval. In ICDAR , 2015. [6] Geoffrey Hinton, Oriol Vinyals, and Jeff Dean. Distilling the knowledge in a neural network. 
+
+arXiv preprint arXiv:1503.02531 , 2015. [7] Cheng-Yu Hsieh, Zixian Zhang, Zixiang Ma, Aniruddha Kembhavi, and Ranjay Krishna. SugarCrepe: Fixing hackable benchmarks for vision-language compositionality. In NeurIPS ,2023. [8] Ziyan Jiang, Rui Meng, Xinyi Yang, Semih Yavuz, Yingbo Zhou, and Wenhu Chen. VLM2Vec: Training vision-language models for massive multimodal embedding tasks. In 
+
+ICLR , 2025. arXiv:2410.05160. [9] Korea Electronics Technology Institute. Korean Image Captioning Dataset (ai hub dataset no. 261). https://aihub.or.kr/aihubdata/data/view.do?dataSetSn=261 , 2022. Ko-rean captions for MS COCO images; machine translation from English with error correc-tion. [10] Simon Kornblith, Mohammad Norouzi, Honglak Lee, and Geoffrey Hinton. Similarity of neural network representations revisited. In ICML , 2019. [11] Aditya Kusupati, Gantavya Bhatt, Aniruddha Rege, Karthik Narasimhan, Kaushik Jataval-labhula, Manish Khaitan, Bommasani Pramanick, Aniruddha Kembhavi, and Ali Farhadi. Matryoshka representation learning. In NeurIPS , 2022. [12] Mingxin Li, Yanzhao Zhang, Dingkun Long, Keqin Chen, Sibo Song, Shuai Bai, Zhibo Yang, Pengjun Xie, An Yang, Dayiheng Liu, Jingren Zhou, and Junyang Lin. Qwen3-VL-Embedding and Qwen3-VL-Reranker: A unified framework for state-of-the-art multimodal retrieval and ranking. arXiv preprint arXiv:2601.04720 , 2026. [13] Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Doll´ ar, and C. Lawrence Zitnick. Microsoft COCO: Common objects in context. In 
+
+ECCV , pages 740–755, 2014. [14] Rui Meng, Ziyan Jiang, Ye Liu, Mingyi Su, Xinyi Yang, Yuepeng Fu, Can Qin, Zeyuan Chen, Ran Xu, Caiming Xiong, Yingbo Zhou, Wenhu Chen, and Semih Yavuz. VLM2Vec-V2: Advancing multimodal embedding for videos, images, and visual documents. Transac-tions on Machine Learning Research , 2026. Also arXiv:2507.04590. 10 [15] National Information Society Agency. AI Hub (korean public ai training data portal). 
+
+https://www.aihub.or.kr , 2024. Licensed training datasets; redistributable subsets not included in our release. [16] Seunghyun Park, Seung Shin, Bado Lee, Junyeop Lee, Jaeheung Surh, Minjoon Seo, and Hwalsuk Lee. CORD: A consolidated receipt dataset for post-OCR parsing. In NeurIPS Document Intelligence Workshop , 2019. [17] Wonpyo Park, Dongju Kim, Yan Lu, and Minsu Cho. Relational knowledge distillation. In 
+
+CVPR , 2019. [18] Qwen Team. Qwen3-VL-Embedding-2B. https://huggingface.co/Qwen/ Qwen3-VL-Embedding-2B , 2025. [19] Tristan Thrush, Ryan Jiang, Max Bartolo, Amanpreet Singh, Adina Williams, Douwe Kiela, and Candace Ross. Winoground: Probing vision and language models for visio-linguistic compositionality. In CVPR , pages 5238–5248, 2022. [20] Jianxiong Xiao, James Hays, Krista A Ehinger, Antonio Oliva, and Antonio Torralba. SUN database: Large-scale scene recognition from abbey to zoo. In CVPR , pages 3485–3492, 2010. [21] Mert Yuksekgonul, Federico Bianchi, Pratyusha Kalluri, Dan Jurafsky, and James Zou. When and why vision-language models behave like bags-of-words, and what to do about it? In ICLR , 2023. [22] Junjie Zhou, Ze Liu, Lei Xiong, Jin-Ge Yao, Yueze Wang, Shitao Xiao, Fenfen Lin, Miguel Hu Chen, Zhicheng Dou, Siqi Bao, Defu Lian, Yongping Xiong, and Zheng Liu. MR 2-bench: Going beyond matching to reasoning in multimodal retrieval. arXiv preprint arXiv:2509.26378 , 2025. [23] Zikai Zhou, Yunhang Shen, Shitong Shao, Linrui Gong, and Shaohui Lin. Rethinking centered kernel alignment in knowledge distillation. In IJCAI , 2024. arXiv:2401.11824. 11

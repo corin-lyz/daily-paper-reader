@@ -1,0 +1,377 @@
+Title: SeeGroup: Multi-Layer Depth Estimation of Transparent Surfaces via Self-Determined Grouping
+
+URL Source: https://arxiv.org/pdf/2605.28735v1
+
+Published Time: Thu, 28 May 2026 01:47:32 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+# SeeGroup: Multi-Layer Depth Estimation of Transparent Surfaces via Self-Determined Grouping 
+
+## Hongyu Wen Jia Deng Department of Computer Science, Princeton University 
+
+> {hongyu.wen,jiadeng }@princeton.edu
+
+## Abstract 
+
+Transparent objects are common in daily life, and it is important to understand their multilayer depth, including the transparent surface and the objects behind it. Existing methods for multilayer depth typically extend single-layer prediction. They define layers by the front-to-back order-ing of 3D points and predict the layers sequentially. How-ever, as layered geometry can admit multiple valid group-ings of 3D points into layers, a predefined grouping strat-egy is inherently restrictive. In this work, we propose See-Group, a multi-layer depth estimation method that avoids imposing a predefined grouping and allows the model it-self to adaptively assign surfaces to depth maps. We for-mulate per-pixel multi-layer depth as a point process, treat-ing depth layers as unordered events along each camera ray. This induces a permutation-invariant likelihood over the observed depth layers, yielding a loss that naturally supports arbitrary layer groupings. Experiments demon-strate that our method significantly advances the state of the art of multi-layer depth estimation, improving quadru-plet relative depth accuracy on LayeredDepth benchmark from 61.34% to 70.09%. Code is available at https: //github.com/princeton-vl/SeeGroup .
+
+## 1. Introduction 
+
+Transparent objects are common in daily life, and accu-rate depth estimation for these objects is important for au-tonomous navigation, 3D reconstruction, and dexterous ma-nipulation. Although depth estimation has been studied for many years and current methods [6, 17, 45, 53] achieve strong results on standard benchmarks, they still struggle with transparent objects. One major challenge is that multi-ple surfaces at different depth can be visible simultaneously, such as a transparent surface and the background objects behind it. As a result, one pixel can correspond to multiple depth values along the same camera ray. Existing approaches handle this challenge in two main ways. A common choice is to treat transparent objects as if they were opaque and to take only the first depth layer (the transparent surface) as the target geometry [8, 13, 23, 37, 43, 49]. Another line of work intentionally ignores the transparent surface and focuses solely on predicting the ge-ometry in the background [35, 41]. Both ways are limited. In practice, perception systems often need to see both the transparent surface and the background simultaneously. For example, a robot retrieving an item from a plastic container must detect the geometry of the container to avoid colli-sions while also seeing the target object inside it; similarly, a robot navigating a space with glass doors and walls must localize the glass for safe motion and perceive the scene be-yond it to plan a path. These use cases motivate the study of the multi-layer depth estimation task [47], where the goal is to predict the depth of all visible surfaces, including possibly multiple transparent surfaces. Given a single RGB image as input, the model should output a sequence of increasing depth val-ues for each pixel, where the length of the sequence is the number of layers and varies by scene and by pixel. To this end, a natural approach is to try to transfer the capabilities of existing single-layer depth estimators to the multi-layer setting, enabling them to predict multiple depth maps. This immediately raises a design question: How should the model group the sequences of depth values across pixels into a sequence of depth maps? A simple approach pro-posed by [47] adopts a depth-ordered strategy, in which the i-th map collects the i-th depth value at every pixel (Fig. 2, middle). This has been shown to work well in many cases, for example, a foreground glass window with a natural background, but it may not be universally opti-mal and can often produce irregular structures in more com-plex cases. Consider two partially overlapping transparent planes. Under depth-ordered grouping, the first map com-bines the entire front plane with the non-overlapping region of the rear plane, and the second map contains only the over-lapping region of the rear plane. This causes abrupt changes in both geometry and semantics within each map. In this scenario, an object-centric grouping strategy (Fig. 2, right),   
+
+> arXiv:2605.28735v1 [cs.CV] 27 May 2026 Layer 1
+> Camera ray
+> Diffuse Bottle
+> Layer 1
+> Layer 2
+> Layer 3
+> Layer 4
+> Camera ray
+> Glass Bottle
+> Camera ray
+> Layer 1
+> Layer 2
+> Layer 3
+> Layer 4
+> Glass Bottle
+> Water
+> Camera ray
+> Layer 3
+> Layer 2
+> Layer 1
+> Glass Bottle
+> Water (a) Camera
+> Layer 1 Depth
+> Layer 2Depth
+> Layer 3 Depth
+> Layer 4 Depth
+> (b)
+
+Figure 1. Definition of multi-layer depth. Figure reproduced from [47]. (a) Each transition in medium along the camera ray defines a distinct layer. (b) Depth on i-th layer is the distance along the z-axis from the i-th layer to the camera. 
+
+which assigns the depth values of different objects to differ-ent depth maps, yields a more coherent structure and aligns better with human perception. Intuitively, the best way to group the depth values ap-pears highly scene-dependent and may vary by regions of the image, which means the grouping strategy should not be pre-defined and should be adapted on the fly to the in-put. Based on this intuition, we propose a novel method, SeeGroup, which allows the model to se lf-d etermine the 
+
+group ing of the scene across multiple depth layers. In other words, for each pixel, the model predicts a sequence of depth values that are not required to be sorted from low to high; instead, the depth values can be predicted under an arbitrary order decided by the model at inference time. For evaluation, the predicted values can still be sorted into an increasing sequence as needed. The key to enabling this self-determined grouping is a novel loss function that is in-variant to the permutation of depth values of each pixel. To achieve this, we model the per-pixel multi-layer depths as a point process on the depth axis, where multi-ple layers along the ray are treated as random events along the depth axis. The point process is characterized by an in-tensity function, and its value represents the expected rate of surface occurrences at certain depth. Under this formu-lation, the likelihood of a set of ground-truth depths is pro-portional to the product of the intensity evaluated at those depths. This product is commutative and permutation in-variant with the order of the depths. We parameterize this intensity function as a max-mixture of Laplace components. The Laplace components of the intensity function are predicted by a recurrent decomposition module. Starting from a feature map extracted by a backbone encoder, this module iteratively separates a sequence of feature compo-nents from the feature map, where each component captures a dominant group of depth layers. These components are then mapped to the center and scale parameters of Laplace distributions, which define pixel-wise intensity functions over depth. The final depth output at each pixel is obtained from the local maximum of these intensity functions. Image Depth -ordered grouping Object -centric grouping 
+
+Figure 2. Two example grouping strategies to group multi-layer depth into several depth maps. The best grouping strategy is highly scene-dependent and may very by regions of the image. 
+
+In summary, we introduce a novel recurrent decompo-sition module design and an point process formulation for multi-layer depth. To our knowledge, we are the first to for-mulate the problem of multi-layer depth grouping and ad-dress it with self-determined strategy. Experiments demon-strate that this design significantly improves the state of the art of multi-layer depth estimation. On the LayeredDepth benchmark [47], our method achieves the overall best per-formance across all metrics, improving quadruplet relative depth accuracy from 61.34% to 70.09%. 
+
+## 2. Related Work 
+
+2.1. Monocular Depth Estimation 
+
+Monocular depth estimation has advanced rapidly along-side the development of deep learning. Early work [10, 11] demonstrated that convolutional neural networks can be used to predict dense depth from a single image. Sub-sequent research introduced a range of optimization tech-niques and structural priors, such as ordinal regression [14], geometric constraints [54], planar guidance maps [19], adaptive bins [4], and conditional random fields [56]. Ar-chitecturally, progress has been driven by stronger back-bones, such as transformer [1, 21, 22, 51] and diffusion-based approaches [15, 16, 18, 42]. Data-wise, MiDaS [38] showed that training on a mixture of heterogeneous datasets yielded cross-domain robustness. Following this, recent depth estimation methods [5, 6, 16, 17, 33, 34, 44, 45, 52, 53, 55] often leverage strong pre-trained backbones and large-scale multi-dataset training to achieve impressive zero-shot generalization. However, despite their strong performance on opaque objects, existing depth estimation methods often struggle with transparent objects, both because transparent regions are visually challenging and the lack of training data. 
+
+2.2. Transparent Objects Perception 
+
+Because of the challenging nature of transparent objects, they have been studied specifically for different tasks, such as segmentation [24, 29, 48, 50], image matting [7], optical flow estimation [46], and pose estimation [8, 25, 26, 32, 43]. One major challenge is the lack of reliable real-world depth ground truth for transparent objects. Existing real-world depth benchmarks [8, 13, 23, 37, 43, 49] typically paint transparent surfaces with a Lambertian coating to cre-ate a diffuse twin, then acquire depth using standard sen-sors. This procedure is labor-intensive and hard to scale, insufficient for model training. To mitigate the data bottle-neck, many work trained with synthetic data. A common approach is to construct 3D scenes with transparent objects and render ground-truth depth [27, 39, 57–59]. This ap-proach is hard to scale because it requires intensive manual labor, and often cannot offer sufficient data for model train-ing. To address this, one common paradigm is to use syn-thetic data to train depth models. Most build a synthetic scene and render images [27, 39, 47, 57–59]. Diffusion models have also been used to generate RGB-depth pairs for transparent objects [42]. [9] preprocesses inputs by mask-ing transparent regions and replacing them with a uniform color before depth estimation. [40] leverage pretrained gen-erative models to inpaint depth in transparent regions. An-other line of work [35, 41] focuses on predicting the geome-try behind glass, which is typically a simple planar surface. While these works make progress on depth estimation for transparent objects, they remain limited to single-layer depth prediction. As a result, transparent surfaces, where a single pixel may correspond to multiple depths along the ray, remain inherently ambiguous for these models. In contrast, our method predicts multi-layer depth, enabling a more comprehensive understanding of transparent objects. 
+
+## 3. Method 
+
+In this section, we first formalize the multi-layer depth es-timation task, then present our method, SeeGroup, summa-rized in Fig. 3. Our method first uses a recurrent decomposi-tion module to generate a sequence of self-determined fea-ture components, then maps these components to an inten-sity function over depth, parameterized as a max mixture of Laplace functions. The intensity function will be optimized over permutation invariant loss to keep it order-agnostic. 
+
+3.1. Multi-Layer Depth 
+
+We follow the definition of multi-layer depth estimation task from LayeredDepth [47]. In images with transparent objects, a single camera ray can intersect several transpar-ent surfaces at different depths, and each intersection con-tributes to the pixel’s intensity. For example, in an image with a glass pane in front of a natural background, a pixel on the pane mixes the texture of the glass pane itself and the background behind it. Humans naturally perceive these sur-faces and separate them into multiple depth layers . Specif-ically, each pixel corresponds to a camera ray, and every transition between physical media along that ray (for in-stance, air to glass or air to water) defines a distinct layer .Some examples are shown in Fig. 1a. Given an image I of resolution H × W and a query pixel p = (x, y ), the goal of multi-layer depth estima-tion is to predict an ordered sequence of per-layer depths 
+
+D(p) = {d1, d 2, . . . , d m}, where the number of layers m
+
+may vary by pixel. Here di is the distance from the cam-era to the i-th layer measured along the optical axis (the 
+
+z-direction), as shown in Fig. 1b. 
+
+3.2. Recurrent Decomposition Module 
+
+In this section, we introduce our model architecture design. As discussed in Sec. 3.1, a single pixel in a region con-taining transparent objects receives contributions from mul-tiple depth layers, which means F0 is a mixture of features from multiple surfaces on different depth layers. To pre-dict depth for each surface, we aim to separate this mix-ture into several components, where each component corre-sponds to a distinct source of contribution. To this end, we propose a recurrent decomposition module that iteratively extract components {C1, C2, . . . , Cn} from the initial fea-ture map F0, with each Ci representing a salient component of the feature map. The way the mixture is separated is fully learned and self-determined by the model, and the order of these components is irrelevant, since our loss function is permutation invariant. The recurrent decomposition module consists of two parts: a decomposer D and a remapper R. At step i, the de-composer takes the current residual feature map Fi−1 from the previous step and extracts a component Ci = D(Fi−1).Intuitively, Ci isolates information of the most dominant group of depth layers in current feature map. This compo-nent is later used to predict the depth map. After that, information already explained by Ci should be removed from the feature map. The remapper projects the component Ci back to the feature space, producing 
+
+F′ 
+
+> i−1
+
+= R(Ci), which represents the portion of Fi−1 ac-counted in the current step. We update Fi by subtracting Enc 𝐹 ! 𝐹 " 𝐹 #    
+
+> PP
+> Per -pixel multi -layer
+> geometry is modeled
+> as an intensity function
+> D
+> R
+> Recurrent decomposition module
+> separate a component feature at each
+> step, form a self -determined group
+> Recurrent
+> Decomposition
+> Module
+> Recurrent
+> Decomposition
+> Module
+> Input Image
+> Multi -Layer
+> Depth Estimation
+
+Figure 3. The overall pipeline of SeeGroup. Starting from a feature map extracted by a backbone encoder, a recurrent decomposition module generate a sequence of self-determined feature components. Then these components are mapped to an intensity function over depth, which is parameterized as a max mixture of Laplace functions. 
+
+the remapped features F′ 
+
+> i−1
+
+to directly remove its contribu-tion from the feature map and encourage the model to focus on the remaining parts. Putting it all together, the overall pipeline is as follows: 
+
+Ci = D(Fi−1)
+
+Fi = Fi−1 − ηi · R(Ci)
+
+where ηi is a rescaling factor η = ∥Fi−1∥2 
+
+> ∥F′
+> i−1∥2
+
+to ensure the scale of Fi remains comparable to Fi−1.
+
+3.3. Intensity Function Parameterization 
+
+Suppose we have a sequence of component feature maps 
+
+{C1, . . . , Cn}, each capturing a distinct source of contri-bution. Directly regressing multi-layer depths from these components remains challenging, because the contribution of transparent surfaces to the visual features can be weak and noisy. In such regions, solely using an L1 loss may push the model to resolve the ambiguity by overfitting dataset priors rather than relying on actual visual evidence. To mitigate this, we propose to predict a depth inten-sity function instead of the depth values. Rather than out-putting a sequence of { ˆd1, ˆd2, . . . , ˆdm}, we model the per-pixel multi-layer geometry as a point process on the depth axis, where multiple layers of depth along the ray are treated as random events along the ray. The point process is char-acterized by an intensity function Λ : R+ → R≥0 defined over the depth axis, which represents the expected rate of surface occurrences. For a small depth interval [x, x + d x],
+
+Λ(x)d x approximates the expected number of depth layers in that interval. Larger values therefore indicate a higher ex-pected number of surfaces near depth x, while values near zero indicate negligible expected occurrence at that depth. This representation explicitly encodes uncertainty: ambigu-ous regions are represented by low or broad intensity pro-files rather than forcing a single discrete depth prediction. We parameterize Λ as a max-mixture of Laplace compo-nents. A predictor P maps each component feature map Ci
+
+to the parameters di ∈ R+H×W and bi ∈ R+H×W , where 
+
+di is the center and bi is the scale of a Laplace component: 
+
+Li(x) = 12bi
+
+exp 
+
+
+
+− |x − di|
+
+bi
+
+
+
+We then define the overall intensity as 
+
+Λ = n
+
+max  
+
+> i=1
+
+Li
+
+Compare to the standard weighted mixture of Laplace Pni=1 wiLi, Pni=1 wi = 1 , the max-mixture max ni=1 Li is better suited to the multi-layer depth estimation task. At each depth x, only the dominant component contributes to Λ(x). This locally suppresses secondary components, encourages different components to specialize in separate depth ranges and reduces the tendency for them to collapse into a single broad mode. Method All Mixed Layer 1 Layer 3 Layer 5 Q T P Q T P Q T P Q T P Q T PMulti-head (NeWCRFs) 25.32 41.65 63.95 25.44 46.22 74.91 24.16 39.85 65.59 27.60 38.39 54.22 27.11 34.28 47.33 Index Concat (NeWCRFs) 26.90 45.25 66.35 28.67 52.45 80.74 24.05 41.42 66.72 30.01 41.61 55.66 29.86 40.34 52.26 Recurrent (NeWCRFs) 23.77 40.70 62.26 22.97 42.01 69.40 25.91 44.64 68.13 20.50 30.42 48.59 20.34 27.73 42.41 Multi-head (DA v2) 61.34 70.57 82.56 60.23 71.91 90.41 65.62 74.41 85.81 54.36 60.75 72.87 51.99 56.42 63.99 SeeGroup (Ours) 70.09 74.88 82.62 70.84 76.94 92.56 72.73 77.64 87.04 63.75 66.19 69.14 60.21 62.32 64.32 
+
+Table 1. Multi-layer depth estimation methods evaluated on LayeredDepth benchmark test set via tuple-wise accuracy. Best scores are in 
+
+bold . Second best underlined. 
+
+Visually, the per-pixel predicted depth distribution P
+
+forms a curve with multiple peaks, where each peak cor-responds to a distinct depth layer. This distributional repre-sentation explicitly captures uncertainty over multiple plau-sible layers, naturally accommodates weak or noisy image evidence, and provides an order-agnostic training target. At inference time, we obtain the multi-layer depth predictions by extracting the peaks of this distribution. 
+
+3.4. Permutation Invariant Loss Function 
+
+Note that the intensity function Λ can be viewed as a gener-alization of a probability density: its integral over the depth axis equals the expected number of layers, rather than 1. Under this view, the likelihood of observing ground-truth depths {d1, . . . , d m} at pixel (x, y ) is, up to a normaliza-tion constant [2], 
+
+L(x,y ) ({di}) ∝
+
+> m
+
+Y
+
+> i=1
+
+Λ(x,y ) (di)
+
+As multiplication of probabilities is commutative, this objective is inherently permutation invariant. As a result, maximizing this likelihood does not impose any fixed or-dering of depth layers: the model is free to determine the order of depths at each pixel and to learn its own grouping of depths into the output maps. For the numerical stability, the objective is in log space. The training objective of intensity function is given by: 
+
+Lint (x,y )({d1, d 2, . . . , d m})= − log Λ(x,y )({d1, d 2, . . . , d m})= − log 
+
+> m
+
+Y
+
+> i=1
+
+Λ(x,y )(di)= −
+
+> m
+
+X
+
+> i=1
+
+log Λ(x,y )(di)= −
+
+> m
+
+X
+
+> i=1
+
+log n
+
+max  
+
+> j=1
+
+Lj (di)
+
+However, this objective is one-sided: it encourages the intensity to be high at every ground-truth depth, but it does not penalize the network for predicting extra components that do not correspond to any ground-truth layer. To dis-courage such over-prediction, we introduce a component-coverage loss that enforces the complementary constraint that each predicted component should be supported by at least one ground-truth depth. This loss is defined as: 
+
+Lcov (x,y )({d1, d 2, . . . , d m}) = −
+
+> n
+
+X
+
+> j=1
+
+log m
+
+max  
+
+> i=1
+
+Lj (di)
+
+For each component Lj , we evaluate its intensity at all ground-truth depths and keep only the best match via 
+
+max i Lj (di). If Lj is well aligned with at least one ground-truth depth, this maximum is large and the resulting penalty is small. Conversely, if Lj is far from all ground-truth depths, − log (max i Lj (di)) becomes large, penalizing this spurious component. Combined with the original intensity function term, this loss yields a bidirectional matching objective that reduces over-prediction while remaining permutation invariant. In addition, we also found that the gradient-matching loss Lgm [20] is helpful to improve the fine details of the predicted depths. The overall training objective is given by: 
+
+L = λint Lint + λcov Lcov + λgm Lgm 
+
+## 4. Experiments 
+
+4.1. Implementation Details 
+
+SeeGroup is implemented in PyTorch [31] and optimized using AdamW [28] optimizer with an initial learning rate of 
+
+1 × 10 −5. Following [47], we initialize the feature extractor from the metric-depth checkpoints of Depth Anything V2 [53], which are based on DINOv2-ViT-L [30]. The iteration of recurrent decomposition is set to n = 4 .We train SeeGroup on the LayeredDepth-Syn dataset [47]. LayeredDepth-Syn is a procedurally generated syn-thetic dataset, built on infinigen-indoors [36], specifically designed for transparent objects with multi-layer depth an-notations. It contains 14,800 training images and 500 vali-dation images. Our full model is trained for 250k steps on 
+
+4× L40 GPUs with a batch size of 4. During training, the model is trained in scale-invariant manner following [38] and λint , λ cov , λ gm are set to 1.0, 0.1, 1.0, respectively. Layer 1 Layer 3 Layer 5 Image Layer 1 Layer 3 Layer 5 Image 
+
+> Multihead  (DA V2) Ours Multihead  (DA V2) Ours Multihead  (DA V2) Ours
+
+Figure 4. Qualitative results on LayeredDepth benchmark. Our method produce sharper results with less artifacts. 
+
+At inference time, we extract multi-layer depths from the predicted intensity by detecting peaks along the depth axis. To avoid double-counting, we suppress peaks whose depths differ by less than 0.02. 
+
+4.2. Evaluation on Real Benchmark 
+
+We zero-shot evaluate our method on LayeredDepth [47], a real-world multi-layer depth benchmark consisting of 1,500 images of diverse scenes and 14.2M relative depth tuples. To the best of our knowledge, it is the only real-world benchmark with multi-layer depth annotations. The eval-uation metric is tuple-wise accuracy: the percentage of rel-ative depth tuples for which the model predicts the correct ordering, reported separately for pairs (P), triplets (T), and quadruplets (Q). Among these, quadruplet accuracy is the most informative metric, because the chance of being cor-rect by random guessing is smallest. We report results on six subsets: (i) All: all tuples; (ii) Mixed: tuples whose points lie on different layers; and (iii) Layer i: tuples whose points all lie on the same layer i. Fol-lowing [47], we report results only for odd-numbered lay-ers ( i ∈ 1, 3, 5), because in most cases even-numbered lay-ers have depths very close to the preceding odd-numbered layer. We compare against four models proposed in [47]: Multi-head (NeWCRFs), Index Concat (NeWCRFs), Re-current (NeWCRFs), and Multi-head (DA v2). Among these, our method shares the same pre-trained single-layer depth backbone as Multi-head (DA v2). Method All Mixed Layer 1 Layer 3 Layer 5 Q T P Q T P Q T P Q T P Q T PModel Architecture Multi-head 73.04 75.72 82.39 70.69 73.08 88.41 78.36 81.62 89.60 66.64 68.31 67.06 39.64 41.26 51.05 GRU 67.82 72.77 81.70 66.18 70.74 88.44 71.03 77.49 88.15 64.63 66.14 66.45 44.44 47.48 55.89 RD (Ours) 71.50 76.54 83.21 71.73 78.52 92.47 73.60 78.71 87.56 66.84 68.94 70.06 66.14 67.65 67.77                                                                                                                         
+
+> Intensity Parameterization Weighted Mixture 56.12 62.02 73.56 61.76 70.14 83.24 52.02 57.21 74.25 59.21 62.41 66.21 45.40 50.49 58.06 Sorted Mixture 52.68 61.00 74.43 53.59 63.46 82.53 50.81 60.18 76.84 57.94 60.75 65.21 45.54 47.97 55.85 Max-Mixture (Ours) 69.03 72.80 79.52 69.56 74.42 86.26 70.30 74.34 83.87 66.55 67.70 67.74 55.28 56.65 60.37
+> Loss Functions SiLog 48.20 60.85 74.64 46.84 62.64 83.73 50.99 63.81 79.16 44.26 50.81 60.84 32.27 39.30 51.09 L1 42.49 54.65 71.45 44.77 59.28 81.53 40.83 53.36 73.30 44.04 51.03 61.20 36.74 44.12 56.42 L1 + GM 57.00 64.26 75.60 57.98 67.80 85.81 56.48 63.75 78.34 57.50 59.95 63.83 49.95 53.62 56.39 Int + GM 68.36 72.00 78.90 66.58 72.34 85.77 71.22 74.26 82.87 66.71 68.23 68.29 47.91 49.38 55.92 Int + Cov + GM (Ours) 69.03 72.80 79.52 69.56 74.42 86.26 70.30 74.34 83.87 66.55 67.70 67.74 55.28 56.65 60.37
+
+Table 2. Ablation results on LayeredDepth validation set via tuple-wise accuracy. Best scores are in bold . Second best underlined. 
+
+Method Layer 1 Layer 3 Layer 5 AbsRel ↓ RMS ↓ δ1↑ δ2↑ AbsRel ↓ RMS ↓ δ1↑ δ2↑ AbsRel ↓ RMS ↓ δ1↑ δ2↑
+
+Multi-head (NeWCRFs) 17.97 23.41 83.08 93.14 15.90 47.39 80.15 93.89 14.58 47.51 81.48 94.12 Index Concat (NeWCRFs) 17.26 23.70 83.02 93.27 16.25 48.19 79.63 93.72 15.03 48.11 80.61 93.97 Recurrent (NeWCRFs) 17.23 25.53 81.89 93.37 17.61 51.79 76.39 92.53 17.25 52.53 76.54 92.20 Multi-head (DA v2) 8.24 15.21 93.43 97.73 10.68 37.97 88.76 96.83 11.15 40.67 87.51 96.40 
+
+SeeGroup (Ours) 9.82 17.00 90.72 97.09 11.70 24.42 88.92 96.15 13.29 28.37 87.92 95.30 
+
+Table 3. Multi-layer depth estimation methods evaluated on our LayeredDepth-Syn validation set. Values are scaled by 100 for clearer comparison. Best scores are in bold . Second best underlined. 
+
+The results on test set are shown in Tab. 1. SeeGroup out-performs all baselines on 14 of the 15 evaluation metrics. In particular, it improves quadruplet accuracy over the Multi-head (DA v2) baseline from 61.34% to 70.09%, a 14.26% relative gain. Notably, SeeGroup achieves these improve-ments with fewer parameters, demonstrating the effective-ness and efficiency of our design. Qualitative results are shown in Fig. 4. Our method pro-duces noticeably sharper predictions with fewer artifacts, and succeeds to recover multiple layers when the base-line model fails. The right panel of the first row particu-larly highlights the benefit of self-determined grouping: the background food bag is likely treated as a single coherent layer, allowing the model to predict a smooth depth map, even though most of it is occluded by the foreground bottle. However, as multi-layer depth estimation remains an ex-tremely challenging task and the available data are quite limited, there is considerable room for improvement. Acommon failure mode is over-prediction, as illustrated in the left panel of the first row, where the back side of the glass bottle is incorrectly split into two depth layers. An-other failure mode occurs on highly out-of-distribution ex-amples, as shown in the right panel of the second row. We hope this work will inspire further research in this direction. 
+
+4.3. Ablation Study 
+
+We conduct ablation studies along three axes: (a) model ar-chitecture, (b) intensity parameterization, and (c) loss func-Method #Param #Param w/o enc CPU time (s) GPU time (s) FLOPs (T) Multi-head 428M 124M 24.31 10.02 1.13 GRU 731M 427M 23.84 15.59 2.44 RD (ours) 356M 51M 16.29 9.41 1.23 
+
+Table 4. We report the total number of parameters (#Param), the number of parameters excluding the pretrained encoder (#Param w/o enc), CPU time and GPU time per forward pass, and FLOPs for all three architectures. Our Recurrent Decomposition Module (RD) uses the fewest parameters among them. 
+
+tions. The results are summarized in Tab. 2. For the model architecture variants, all models use the same encoder as the full model, and we report results on the LayeredDepth validation split. For the intensity parameterization and loss function variants, we use DINOv2-ViT-S as the feature en-coder and evaluate on the LayeredDepth validation split, due to computational constraints. 
+
+Model Architecture. To evaluate the effectiveness of our recurrent decomposition module (RD), we compare it against two baseline architectures: • Multi-head : We replicate the Depth Anything V2 depth head n times, with each head responsible for predicting one Laplace component. • GRU : We use a GRU [3] to iteratively update the image feature map Fi, and at each step a shared depth head pre-Layer 1 Layer 3 Layer 5 Image Layer 1 Layer 3 Layer 5 Image 
+
+> Multihead  (DA V2) Ours Ground -truth Figure 5. Qualitative results on LayeredDepth-Syn validation set. Our model produces smooth, coherent background layers.
+
+dicts one Laplace component. We also compare the total number of parameters, overall runtime, and FLOPs of all three models, as shown in Tab. 4. Our model achieves the best overall performance while us-ing the fewest parameters, with the only exception being Layer 1, where it is outperformed by the Multi-head vari-ant. However, likely because it lacks information exchange across layers, the Multi-head design degrades catastrophi-cally on deeper layers. 
+
+Intensity Parameterization. We evaluate the effective-ness of different intensity parameterization design. • Weighted Mixture. We model the intensity as auniformly weighted mixture of Laplace components 
+
+> 1
+> n
+
+Pni=1 wiLi.• Ordered Distribution. Instead of modeling an order-agnostic intensity over depths, we assign a single Laplace probability distribution to each layer. This corresponds to depth-ordered grouping and is not permutation invariant. The max-mixture parameterization achieves the best per-formance on most subsets. It is slightly worse than the sorted-mixture baseline on the first layer, but substantially better on the remaining layers, which confirms the effec-tiveness of our self-determined grouping and permutation-invariant loss design. 
+
+Loss Functions. We also evaluate the effectiveness of our loss design by comparing it with SiLog [12] and L1 loss. Our design achieves the best overall performance. 
+
+4.4. Evaluation on Synthetic Data 
+
+To further quantify performance, we also evaluate on the LayeredDepth-Syn validation set. However, this evaluation is less informative than the real-world benchmark, because (1) all existing multi-layer depth estimation models are trained on LayeredDepth-Syn, so this is an in-domain eval-uation rather than a zero-shot setting, and (2) the dataset has limited diversity, making it more susceptible to overfitting. We use the relative point error (AbsRel), root mean square error (RMS) and the percentage of inlier δi, i ∈ { 1, 2} with threshold 1.25 i as metrics. The prediction is aligned with the ground truth using an estimated global shift and scale. The results are shown in Tab. 3. Our method shows slightly worse results than Multi-head (DAv2) but still sig-nificantly better than NeWCRFs-based results. Our method achieves better results on the real-world benchmark but slightly worse results on the synthetic dataset, possibly for two reasons. First, our model has fewer parameters, which may make it harder to fit a limited syn-thetic data distribution. Second, the training data contain noise: the LayeredDepth-Syn ground truth is ray-tracer-based and often produces noisy boundaries around trans-parent objects. Since our method decomposes the feature representation and assigns each component to a different depth range, it tends to learn smooth, consistent background layers rather than overfitting to these noisy boundaries, as illustrated in Fig. 5. 
+
+## 5. Conclusion 
+
+We introduce SeeGroup, a new method for multi-layer depth estimation that combines a recurrent decomposition module with an point process formulation of multi-layer depth. SeeGroup significantly advances the state of the art in multi-layer depth estimation and is broadly useful for transparent object understanding. Acknowledgments 
+
+This work was partially supported by the National Science Foundation. 
+
+## 6. Appendix 
+
+6.1. Additional Details 
+
+6.1.1. Model Design 
+
+In a forward pass, we first extract features F0 from the in-put RGB image I ∈ RH×W ×3 using a DINOv2 [30] back-bone, following the pipeline of Depth Anything V2 [53]. Specifically, F0 consists of a sequence of feature maps with shape (B, N 0, H 0, W 0), where B is the batch size, N0 is the channel dimension, and H0, W 0 denote the spatial resolu-tion in terms of patch counts along height and width. These feature maps are extracted from intermediate layers of the backbone. As a result, each map corresponds to a different stage of the network and captures information at a distinct scale, ranging from coarse to fine. In our implementation, the sequence length is l = 4 .The architecture of our recurrent decomposition mod-ule follows the overall design of Depth Anything V2 [53]. For the decomposer D, we first apply a 1 × 1 convolu-tion to each backbone feature map, obtaining tensors of shape (B, N 1,i , H 0, W 0), where N1,i depends on the back-bone stage i. These tensors are then passed through ei-ther a ConvTranspose layer or a Conv layer (depending on the desired resolution) to produce feature maps of shape 
+
+(B, N 1,i , H i, W i). Here (Hi, W i) and N1,i vary with i,with coarser stages generally having greater spatial resolu-tion and fewer channels. Each of these feature maps is then mapped by another convolutional layer to a shared channel dimension, resulting in tensors of shape (B, N 2, H i, W i).The resulting sequence of multi-scale feature maps at step 
+
+k forms Ck in the recurrent decomposition. In the predictor P , the sequence Ck is first passed through two convolutional layers that align the spatial res-olutions and channel dimensions of all feature maps. We then fuse these maps in a top-down manner, from the finest to the coarsest level, by combining adjacent pairs. For each pair of adjacent levels, we first upsample the finer-level fea-ture using a convolutional block to match the resolution of the coarser one, sum the two features, and pass the re-sult through another convolutional block. After all levels are fused, we obtain a single aggregated feature map of shape (B, N 2, 2H1, 2W1). This feature map is further pro-cessed by two convolutional layers to produce the parame-ters di, b i ∈ RH×W>0 , where di is the center (depth) and bi is the scale of the Laplace-shaped contribution. The remapper R is essentially the inverse of the decom-poser D. Starting from the aggregated feature map, it first uses a convolutional layer to reconstruct, for each scale i, a                  
+
+> N0{Hi}{Wi}{N1,i }N2
+> 1024 {148 ,74 ,37 ,19 }{148 ,74 ,37 ,19 }{256 ,512 ,1024 ,1024 }256
+> Table 5. The exact values of architectural hyperparameters in re-current decomposition module.
+
+feature map of shape (B, N 1,i , H i, W i). A second convolu-tional layer then maps these features to a common resolu-tion (B, N 1,i , H 0, W 0), followed by a final convolution that projects them back to the original backbone feature space 
+
+(B, N 0, H 0, W 0). The resulting feature map is subtracted from the previous residual feature map Fk−1 to obtain the updated feature map Fk. The exact values of N0, N1,i , N2,and other architectural hyperparameters are listed in Tab. 5. 
+
+6.1.2. Training 
+
+During training, we follow the scale-invariant normalization of [38]. Given a depth map d, we normalize it to ˜d as 
+
+t = median( d),s = mean( |d − t|),
+
+˜d = d − ts .
+
+The scale parameters b of the Laplace distributions are clipped to the range [1 , 10] . We clip the gradient norm to 
+
+0.1 to stabilize training. We use the AdamW [28] optimizer with an initial learning rate of 1 × 10 −5 for the main net-work and 1 × 10 −6 for pretrained the DINOv2 backbone. The momentum parameters are set to (0 .9, 0.99) , and the weight decay is set to 0.01 . The learning rate multiplier at training step k is given by 
+
+
+
+1 − k
+
+> total steps
+
+0.9
+
+. All images are resized to 518 × 518 during training. For the gradient matching loss, all layers are weighted by (1 .2, 1.0, 1.0, 1.0) .During inference, we first resize the image so that its shorter side is 518 pixels while preserving the aspect ratio, and then round the longer side to the nearest multiple of 14. The pre-dicted depth maps are finally bilinearly upsampled back to the original image resolution. 
+
+6.2. Additional Results 
+
+To help readers better visually assess the effectiveness of our datasets, we provide additional qualitative results on real world benchmark LayeredDepth [47], as shown in Fig. 6. Our method produces noticeably sharper predictions with fewer artifacts. 
+
+## References       
+
+> [1] Shubhra Aich, Jean Marie Uwabeza Vianney, Md Amirul Is-lam, and Mannat Kaur Bingbing Liu. Bidirectional attention network for monocular depth estimation. In 2021 IEEE In-ternational Conference on Robotics and Automation (ICRA) ,pages 11746–11752. IEEE, 2021. 2 Layer 1 Layer 3 Layer 5 Image Layer 1 Layer 3 Layer 5 Image
+> Multihead  (DA V2) Ours Multihead  (DA V2) Ours Multihead  (DA V2) Ours Multihead  (DA V2)
+
+Figure 6. Additional qualitative results on LayeredDepth. [2] Adrian Baddeley, Ege Rubak, Rolf Turner, et al. Spatial point patterns: methodology and applications with R . CRC press Boca Raton, 2016. 5 [3] Dzmitry Bahdanau, Kyunghyun Cho, and Yoshua Bengio. Neural machine translation by jointly learning to align and translate. arXiv preprint arXiv:1409.0473 , 2014. 7 [4] Shariq Farooq Bhat, Ibraheem Alhashim, and Peter Wonka. Adabins: Depth estimation using adaptive bins. In Proceed-ings of the IEEE/CVF conference on computer vision and pattern recognition , pages 4009–4018, 2021. 2 [5] Shariq Farooq Bhat, Reiner Birkl, Diana Wofk, Peter Wonka, and Matthias M¨ uller. Zoedepth: Zero-shot trans-fer by combining relative and metric depth. arXiv preprint arXiv:2302.12288 , 2023. 3 [6] Alexey Bochkovskiy, Ama¨ el Delaunoy, Hugo Germain, Marcel Santos, Yichao Zhou, Stephan Richter, and Vladlen Koltun. Depth pro: Sharp monocular metric depth in less than a second. In The Thirteenth International Conference on Learning Representations , 2024. 1, 3 [7] Guanying Chen, Kai Han, and Kwan-Yee K Wong. Tom-net: Learning transparent object matting from a single image. In 
+
+Proceedings of the IEEE conference on computer vision and pattern recognition , pages 9233–9241, 2018. 3 [8] Xiaotong Chen, Huijie Zhang, Zeren Yu, Anthony Opipari, and Odest Chadwicke Jenkins. Clearpose: Large-scale trans-parent object dataset and benchmark. In European Confer-ence on Computer Vision , pages 381–396, 2022. 1, 3 [9] Alex Costanzino, Pierluigi Zama Ramirez, Matteo Poggi, Fabio Tosi, Stefano Mattoccia, and Luigi Di Stefano. Learn-ing depth estimation for transparent and mirror surfaces. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 9244–9255, 2023. 3 [10] David Eigen and Rob Fergus. Predicting depth, surface nor-mals and semantic labels with a common multi-scale con-volutional architecture. In Proceedings of the IEEE inter-national conference on computer vision , pages 2650–2658, 2015. 2 [11] David Eigen, Christian Puhrsch, and Rob Fergus. Depth map prediction from a single image using a multi-scale deep net-work. Advances in neural information processing systems ,27, 2014. 2 [12] David Eigen, Christian Puhrsch, and Rob Fergus. Depth map prediction from a single image using a multi-scale deep net-work. Advances in neural information processing systems ,27, 2014. 8 [13] Hongjie Fang, Hao-Shu Fang, Sheng Xu, and Cewu Lu. Transcg: A large-scale real-world dataset for transparent object depth completion and a grasping baseline. IEEE Robotics and Automation Letters , 7(3):7383–7390, 2022. 1, 3[14] Huan Fu, Mingming Gong, Chaohui Wang, Kayhan Bat-manghelich, and Dacheng Tao. Deep ordinal regression net-work for monocular depth estimation. In Proceedings of the IEEE conference on computer vision and pattern recogni-tion , pages 2002–2011, 2018. 2 [15] Xiao Fu, Wei Yin, Mu Hu, Kaixuan Wang, Yuexin Ma, Ping Tan, Shaojie Shen, Dahua Lin, and Xiaoxiao Long. Geowiz-ard: Unleashing the diffusion priors for 3d geometry esti-mation from a single image. In European Conference on Computer Vision , pages 241–258. Springer, 2024. 2 [16] Ming Gui, Johannes Schusterbauer, Ulrich Prestel, Pingchuan Ma, Dmytro Kotovenko, Olga Grebenkova, Stefan Andreas Baumann, Vincent Tao Hu, and Bj¨ orn Om-mer. Depthfm: Fast generative monocular depth estimation with flow matching. In Proceedings of the AAAI Conference on Artificial Intelligence , pages 3203–3211, 2025. 2, 3 [17] Mu Hu, Wei Yin, Chi Zhang, Zhipeng Cai, Xiaoxiao Long, Hao Chen, Kaixuan Wang, Gang Yu, Chunhua Shen, and Shaojie Shen. Metric3d v2: A versatile monocular geomet-ric foundation model for zero-shot metric depth and surface normal estimation. IEEE Transactions on Pattern Analysis and Machine Intelligence , 2024. 1, 3 [18] Bingxin Ke, Anton Obukhov, Shengyu Huang, Nando Met-zger, Rodrigo Caye Daudt, and Konrad Schindler. Repurpos-ing diffusion-based image generators for monocular depth estimation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 9492– 9502, 2024. 2 [19] Jin Han Lee, Myung-Kyu Han, Dong Wook Ko, and Il Hong Suh. From big to small: Multi-scale local planar guidance for monocular depth estimation. arXiv preprint arXiv:1907.10326 , 2019. 2 [20] Zhengqi Li and Noah Snavely. Megadepth: Learning single-view depth prediction from internet photos. In Proceed-ings of the IEEE conference on computer vision and pattern recognition , pages 2041–2050, 2018. 5 [21] Zhenyu Li, Zehui Chen, Xianming Liu, and Junjun Jiang. Depthformer: Exploiting long-range correlation and local in-formation for accurate monocular depth estimation. Machine Intelligence Research , 20(6):837–854, 2023. 2 [22] Zhenyu Li, Xuyang Wang, Xianming Liu, and Junjun Jiang. Binsformer: Revisiting adaptive bins for monocular depth estimation. IEEE Transactions on Image Processing , 33: 3964–3976, 2024. 2 [23] Yuan Liang, Bailin Deng, Wenxi Liu, Jing Qin, and Shengfeng He. Monocular depth estimation for glass walls with context: a new dataset and method. IEEE Transactions on Pattern Analysis and Machine Intelligence , 2023. 1, 3 [24] Jiaying Lin, Zebang He, and Rynson WH Lau. Rich context aggregation with reflection prior for glass surface detection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 13415–13424, 2021. 3[25] Xingyu Liu, Rico Jonschkowski, Anelia Angelova, and Kurt Konolige. Keypose: Multi-view 3d labeling and key-point estimation for transparent objects. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 11602–11610, 2020. 3 [26] Xingyu Liu, Shun Iwase, and Kris M Kitani. Stereobj-1m: Large-scale stereo image dataset for 6d object pose estima-tion. In Proceedings of the IEEE/CVF International Confer-ence on Computer Vision , pages 10870–10879, 2021. 3 [27] Zhidan Liu, Chengtang Yao, Jiaxi Zeng, Yuwei Wu, and Yunde Jia. Multi-label stereo matching for transparent scene depth estimation. arXiv preprint arXiv:2505.14008 , 2025. 3 [28] Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization. arXiv preprint arXiv:1711.05101 , 2017. 5, 9 [29] Haiyang Mei, Xin Yang, Yang Wang, Yuanyuan Liu, Shengfeng He, Qiang Zhang, Xiaopeng Wei, and Ryn-son WH Lau. Don’t hit me! glass detection in real-world scenes. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 3687– 3696, 2020. 3 [30] Maxime Oquab, Timoth´ ee Darcet, Th´ eo Moutakanni, Huy Vo, Marc Szafraniec, Vasil Khalidov, Pierre Fernandez, Daniel Haziza, Francisco Massa, Alaaeldin El-Nouby, et al. Dinov2: Learning robust visual features without supervision. 
+
+arXiv preprint arXiv:2304.07193 , 2023. 5, 9 [31] Adam Paszke, Sam Gross, Francisco Massa, Adam Lerer, James Bradbury, Gregory Chanan, Trevor Killeen, Zem-ing Lin, Natalia Gimelshein, Luca Antiga, Alban Desmai-son, Andreas Kopf, Edward Yang, Zachary DeVito, Mar-tin Raison, Alykhan Tejani, Sasank Chilamkurthy, Benoit Steiner, Lu Fang, Junjie Bai, and Soumith Chintala. Pytorch: An imperative style, high-performance deep learning library. In Advances in Neural Information Processing Systems 32 ,pages 8024–8035. Curran Associates, Inc., 2019. 5 [32] Cody J Phillips, Matthieu Lecce, and Kostas Daniilidis. See-ing glassware: from edge detection to pose estimation and shape recovery. In Robotics: Science and Systems , page 3. Michigan, USA, 2016. 3 [33] Luigi Piccinelli, Yung-Hsu Yang, Christos Sakaridis, Mattia Segu, Siyuan Li, Luc Van Gool, and Fisher Yu. Unidepth: Universal monocular metric depth estimation. In Proceed-ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 10106–10116, 2024. 3 [34] Luigi Piccinelli, Christos Sakaridis, Yung-Hsu Yang, Mat-tia Segu, Siyuan Li, Wim Abbeloos, and Luc Van Gool. Unidepthv2: Universal monocular metric depth estimation made simpler. arXiv preprint arXiv:2502.20110 , 2025. 3 [35] Jiaxiong Qiu, Peng-Tao Jiang, Yifan Zhu, Ze-Xin Yin, Ming-Ming Cheng, and Bo Ren. Looking through the glass: Neu-ral surface reconstruction against high specular reflections. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 20823–20833, 2023. 1, 3 [36] Alexander Raistrick, Lingjie Mei, Karhan Kayan, David Yan, Yiming Zuo, Beining Han, Hongyu Wen, Meenal Parakh, Stamatis Alexandropoulos, Lahav Lipson, Zeyu Ma, and Jia Deng. Infinigen indoors: Photorealistic in-door scenes using procedural generation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 21783–21794, 2024. 5 [37] Pierluigi Zama Ramirez, Fabio Tosi, Matteo Poggi, Samuele Salti, Stefano Mattoccia, and Luigi Di Stefano. Open chal-lenges in deep stereo: the booster dataset. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 21168–21178, 2022. 1, 3 [38] Ren´ e Ranftl, Katrin Lasinger, David Hafner, Konrad Schindler, and Vladlen Koltun. Towards robust monocular depth estimation: Mixing datasets for zero-shot cross-dataset transfer, 2020. 2, 5, 9 [39] Shreeyak Sajjan, Matthew Moore, Mike Pan, Ganesh Na-garaja, Johnny Lee, Andy Zeng, and Shuran Song. Clear grasp: 3d shape estimation of transparent objects for manip-ulation. In 2020 IEEE International Conference on Robotics and Automation (ICRA) , pages 3634–3642. IEEE, 2020. 3 [40] Tianyu Sun, Dingchang Hu, Yixiang Dai, and Guijin Wang. Diffusion-based depth inpainting for transparent and reflec-tive objects. IEEE Transactions on Circuits and Systems for Video Technology , 2024. 3 [41] Jinguang Tong, Sundaram Muthu, Fahira Afzal Maken, Chuong Nguyen, and Hongdong Li. Seeing through the glass: Neural 3d reconstruction of object inside a transpar-ent container. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 12555– 12564, 2023. 1, 3 [42] Fabio Tosi, Pierluigi Zama Ramirez, and Matteo Poggi. Dif-fusion models for monocular depth estimation: Overcoming challenging conditions. In European Conference on Com-puter Vision (ECCV) , 2024. 2, 3 [43] Pengyuan Wang, HyunJun Jung, Yitong Li, Siyuan Shen, Rahul Parthasarathy Srikanth, Lorenzo Garattoni, Sven Meier, Nassir Navab, and Benjamin Busam. Phocal: Amulti-modal dataset for category-level object pose estima-tion with photometrically challenging objects. In Proceed-ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 21222–21231, 2022. 1, 3 [44] Ruicheng Wang, Sicheng Xu, Cassie Dai, Jianfeng Xiang, Yu Deng, Xin Tong, and Jiaolong Yang. Moge: Unlocking accurate monocular geometry estimation for open-domain images with optimal training supervision. arXiv preprint arXiv:2410.19115 , 2024. 3 [45] Ruicheng Wang, Sicheng Xu, Yue Dong, Yu Deng, Jianfeng Xiang, Zelong Lv, Guangzhong Sun, Xin Tong, and Jiaolong Yang. Moge-2: Accurate monocular geometry with metric scale and sharp details. arXiv preprint arXiv:2507.02546 ,2025. 1, 3 [46] Hongyu Wen, Erich Liang, and Jia Deng. Layeredflow: A real-world benchmark for non-lambertian multi-layer optical flow. In European Conference on Computer Vision , pages 477–495. Springer, 2024. 3 [47] Hongyu Wen, Yiming Zuo, Venkat Subramanian, Patrick Chen, and Jia Deng. Seeing and seeing through the glass: Real and synthetic data for multi-layer depth estimation. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 6715–6725, 2025. 1, 2, 3, 5, 6, 9 [48] Enze Xie, Wenjia Wang, Wenhai Wang, Mingyu Ding, Chunhua Shen, and Ping Luo. Segmenting transparent ob-jects in the wild. In European Conference on Computer Vi-sion , pages 696–711, 2020. 3 [49] Haoping Xu, Yi Ru Wang, Sagi Eppel, Alan Aspuru-Guzik, Florian Shkurti, and Animesh Garg. Seeing glass: Joint point-cloud and depth completion for transparent objects. In Conference on Robot Learning , pages 827–838. PMLR, 2022. 1, 3 [50] Yichao Xu, Hajime Nagahara, Atsushi Shimada, and Rin-ichiro Taniguchi. Transcut: Transparent object segmentation from a light-field image. In Proceedings of the IEEE Inter-national Conference on Computer Vision , pages 3442–3450, 2015. 3 [51] Guanglei Yang, Hao Tang, Mingli Ding, Nicu Sebe, and Elisa Ricci. Transformer-based attention networks for continuous pixel-wise prediction. In Proceedings of the IEEE/CVF International Conference on Computer vision ,pages 16269–16279, 2021. 2 [52] Lihe Yang, Bingyi Kang, Zilong Huang, Xiaogang Xu, Jiashi Feng, and Hengshuang Zhao. Depth anything: Unleashing the power of large-scale unlabeled data. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 10371–10381, 2024. 3 [53] Lihe Yang, Bingyi Kang, Zilong Huang, Zhen Zhao, Xiao-gang Xu, Jiashi Feng, and Hengshuang Zhao. Depth any-thing v2. Advances in Neural Information Processing Sys-tems , 37:21875–21911, 2025. 1, 3, 5, 9 [54] Wei Yin, Yifan Liu, Chunhua Shen, and Youliang Yan. En-forcing geometric constraints of virtual normal for depth pre-diction. In Proceedings of the IEEE/CVF international con-ference on computer vision , pages 5684–5693, 2019. 2 [55] Wei Yin, Chi Zhang, Hao Chen, Zhipeng Cai, Gang Yu, Kaixuan Wang, Xiaozhi Chen, and Chunhua Shen. Metric3d: Towards zero-shot metric 3d prediction from a single image. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 9043–9053, 2023. 3 [56] Weihao Yuan, Xiaodong Gu, Zuozhuo Dai, Siyu Zhu, and Ping Tan. Neural window fully-connected crfs for monocu-lar depth estimation. In Proceedings of the IEEE/CVF con-ference on computer vision and pattern recognition , pages 3916–3925, 2022. 2 [57] Junrui Zhang, Jiaqi Li, Yachuan Huang, Yiran Wang, Jinghong Zheng, Liao Shen, and Zhiguo Cao. Towards ro-bust monocular depth estimation in non-lambertian surfaces. In European Conference on Computer Vision , pages 175– 189. Springer, 2024. 3 [58] Zheming Zhou, Xiaotong Chen, and Odest Chadwicke Jenk-ins. Lit: Light-field inference of transparency for refractive object localization. IEEE Robotics and Automation Letters ,5(3):4548–4555, 2020. [59] Luyang Zhu, Arsalan Mousavian, Yu Xiang, Hammad Mazhar, Jozef van Eenbergen, Shoubhik Debnath, and Di-eter Fox. Rgb-d local implicit function for depth completion of transparent objects. In Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition , pages 4649–4658, 2021. 3

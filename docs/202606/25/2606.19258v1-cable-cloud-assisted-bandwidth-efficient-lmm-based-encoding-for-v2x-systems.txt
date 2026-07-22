@@ -1,0 +1,350 @@
+Title: CABLE: Cloud-Assisted Bandwidth-efficient LMM-based Encoding for V2X Systems
+
+URL Source: https://arxiv.org/pdf/2606.19258v1
+
+Published Time: Thu, 18 Jun 2026 01:14:47 GMT
+
+Number of Pages: 7
+
+Markdown Content:
+# CABLE: Cloud-Assisted Bandwidth-efficient LMM-based Encoding for V2X Systems 
+
+Haohua Que, Zhipeng Bao, Qianyi Wu, and Handong Yao 
+
+Abstract — Cloud-hosted large multimodal models (LMMs) can provide strong open-vocabulary perception for Vehicle-to-Everything systems, but naively transmitting full-resolution frames from edge to cloud causes severe communication over-head and high cloud-side prefill latency. We present CA-BLE, a cloud-assisted bandwidth-efficient LMM-based encod-ing framework for edge-cloud perception. CABLE propagates the previous cloud segmentation mask on the edge using ego-motion compensation, refines it with residual-motion cues, and consolidates disconnected regions via a corridor envelope to form a robust region of interest (ROI). Only ROI-masked images are uploaded, while the cloud segmentation output is fed back as the prior for the next frame, forming a mask-to-ROI-to-LMM feedback loop. Experiments on five datasets (nuScenes, WOD-ZB, Waymo, KITTI, and CADC) show consis-tent communication savings while largely preserving perception, achieving 73 –87% ROI pixel-coverage reduction with 5–8×
+
+estimated LMM prefill speedup at a modest detection-quality trade-off relative to full-frame inference. 
+
+I. I NTRODUCTION 
+
+Vehicle-to-Everything (V2X) communication enables co-operative perception by offloading compute-intensive tasks from resource-constrained edge devices to powerful cloud servers [1], [2]. Recent Large Multimodal Models (LMMs) such as GPT-4V [3], LLaVA [4], and LISA [5], [6] demon-strate remarkable scene understanding for autonomous driv-ing, including open-vocabulary recognition, reasoning-based segmentation, and natural-language situational awareness [7]. Deploying them in V2X architectures offers a promising path toward intelligent transportation systems that understand complex traffic beyond conventional perception pipelines [8]. Despite this potential, naively streaming full camera frames from edge to cloud creates a dual bottleneck. In 
+
+communication , high-resolution driving images (e.g., 1600 ×
+
+900 in nuScenes [9]) quickly saturate bandwidth-limited V2X links [10], [11]; in computation , LMMs convert images into long visual-token sequences whose transformer prefill scales quadratically with input length, so full-frame trans-mission is inefficient for both network usage and cloud-side latency [12], [13]. Our key observation is spatial– temporal sparsity: safety-critical dynamic objects (vehicles, pedestrians, cyclists) occupy only a small image region while most pixels are slowly varying background, so isolating and transmitting only Regions of Interest (ROIs) can reduce pay-load size and LMM token load without materially degrading perception [14].               
+
+> All authors are with the College of Engineering, University of Georgia, Athens, GA 30602, USA.
+
+Haohua.Que@uga.edu, Zhipeng.Bao@uga.edu, Qianyi.Wu@uga.edu, Handong.Yao@uga.edu 
+
+Existing ROI selection strategies are mainly detection-or motion-based, and both leave a gap. Detection-based methods (e.g., YOLO, RT-DETR [15]) are efficient but output coarse boxes with substantial background, limiting compres-sion, and rely on closed-set labels that are less robust to novel or context-dependent traffic entities [16], [17]. Motion-based methods (frame differencing or optical flow) are category-agnostic but easily corrupted by ego-motion, often confusing irrelevant motion (trees, shadows) with safety-critical actors and producing high false-positive ROI coverage [18], [19]. To address these limitations, we propose CABLE (Cloud-
+
+Assisted Bandwidth-efficient LMM-based Encoding), an edge-cloud perception framework with cross-frame feedback for bandwidth-constrained V2X, as illustrated in Fig. 1. At each frame, the edge predicts the ROI using only lightweight operations (ego-motion compensation, frame-difference en-ergy, ROI fusion, and a corridor envelope that links discrete regions into a continuous band), then uploads an ROI-only image with background zeroed. The cloud runs LISA++ [6] on this compact ROI image to produce semantic masks with reduced visual tokens and lower inference latency. The predicted mask is sent back to the edge as the prior for the next frame, forming a perception feedback loop: mask →
+
+ROI → LMM → mask. We use “feedback” to denote cross-frame information propagation in a tracking-by-segmentation sense, not closed-loop control in the control-theoretic sense: there is no reference signal or error term minimized over time. The main contributions of this work are as follows: 1) We propose CABLE, a cloud–edge perception frame-work that couples cloud-side LMM segmentation with edge-side ego-motion mask propagation, residual-motion refinement, and corridor envelope fusion, form-ing a cross-frame feedback loop where the cloud seg-mentation mask drives the next-frame ROI generation on the edge. 2) We introduce a lightweight refresh-control rule using ROI-coverage and mask-consistency triggers to switch between ROI-only upload and keyframe refresh, im-proving robustness under cold start and drift. 3) We design an adaptive background-skip scheme that transmits only the ROI-masked image, jointly reducing uplink bandwidth, LMM input tokens, and prefill la-tency while preserving fidelity for safety-critical actors. 4) We validate CABLE on five benchmarks (nuScenes [9], WOD-ZB, Waymo [20], KITTI [21], CADC [22]), achieving 73–87% ROI pixel-coverage reduction and 5–8 × estimated prefill speedup while 
+
+> arXiv:2606.19258v1 [cs.CV] 17 Jun 2026
+
+largely preserving detection performance (modest, bounded trade-off) across diverse geographies and weather. II. R ELATED WORK 
+
+A. Cooperative Perception in V2X Systems 
+
+V2X cooperative perception overcomes single-vehicle lim-itations (e.g., occlusion) by sharing sensory data. While early methods transmit costly raw data [23], intermediate fusion reduces bandwidth by sharing learned features. For instance, V2VNet [24] and DiscoNet [25] employ graph-based feature aggregation, while When2com [26], Who2com [27], and Where2comm [28] optimize communication scheduling and spatial confidence to minimize bandwidth. A complemen-tary line of work reduces communication by selecting only the most informative content to share, e.g., infrastructure-side critical feature extraction [29], supply–demand-driven information selection [30], and lifetime-aware feature col-lection for target coverage in heterogeneous visual sensor networks [31]. Recent advances further explore vision trans-formers [32], adversarial robustness [33], and heterogeneous sensors [34], evaluated on benchmarks like OPV2V [35], V2X-Sim [36], and DAIR-V2X [37]. These methods assume edge devices can extract local features; CABLE instead addresses the unexplored case where a cloud-hosted LMM is the sole perception backbone, optimizing transmission purely via semantic ROI selection. 
+
+B. Bandwidth-Efficient Edge–Cloud Inference 
+
+Edge-cloud DNN deployment faces severe communication bottlenecks. Early split computing [38] partitioned layers based on latency constraints, while subsequent methods compress intermediate features at the split point using au-toencoders [39], joint optimization [40], knowledge distil-lation [41], and saliency-guided bottlenecks [42]. System-level solutions also explore dynamic split points [43] and edge architectures for autonomous driving [44], while image-level approaches optimize raw transmission via ROI-aware encoding [45], task-driven semantic coding [46], or tiled processing [47], with related constraints studied in feder-ated learning [48]. Compared with these (and ROI-aware encoding [45] in particular), CABLE differs in that it (i) acts in the raw-image domain rather than inside the codec/feature pipeline, requiring no model internals and supporting closed-source cloud LMMs; (ii) drives its ROI from open-vocabulary semantic masks rather than a detector-or saliency-defined box; (iii) feeds the cloud mask back as the next-frame prior instead of a one-shot or fixed ROI; and (iv) jointly targets uplink bandwidth and LMM visual-token/prefill cost rather than bandwidth alone. 
+
+C. Large Multimodal Models for Visual Perception 
+
+LMMs merge visual encoders with language models for open-vocabulary understanding. LLaVA [4] and LLaVA-1.5 [49] pioneered visual instruction tuning, while prompt-able foundation models such as SAM [50] and SAM2 [51] advanced zero-shot segmentation and tracking. Bridging these, LISA [5] and LISA++ [6] introduced reasoning seg-mentation, generating multi-target masks from implicit text queries without category-specific training. As their quadratic prefill cost restricts such 7B-scale models to the cloud, CABLE harnesses LISA++ [6] while transmitting only the tracked ROI, and pairs it with RT-DETR [15] for high-speed downstream detection; each cloud inference yields both perception results and the prior for the next frame’s transmission. III. P ROPOSED METHOD 
+
+CABLE operates a continuous feedback loop between a lightweight edge device and a cloud-hosted large multimodal model (LMM): the cloud segmentation mask from frame k
+
+is propagated on the edge to generate the ROI for frame 
+
+k+1, and only the ROI-masked image is transmitted to the cloud for the next segmentation. This section describes each component of the pipeline. 
+
+A. Problem Formulation 
+
+Consider a monocular camera stream {Ik}Nk=0 at an edge device (vehicle or roadside unit) that has ego-motion es-timates (velocity vx, vy and yaw rate) but cannot run an LMM locally; a cloud server hosts an LMM F for open-vocabulary segmentation over a limited uplink. For each frame Ik, the edge constructs a binary ROI mask Rk ∈{0, 1}H×W and transmits only the masked image ˜ Ik = Ik ⊙ Rk
+
+(background zeroed); the cloud runs F on ˜ Ik and returns a segmentation mask Mk used as the prior for the next frame. Formally, CABLE seeks a frame-wise policy that minimizes communication load while keeping semantic coverage above a task-required level: min 
+
+> {Rk}
+> N
+
+# ∑
+
+> k=1
+
+|Rk|
+
+H·W s.t. Q(Mk, Gk) ≥ γ, (1) where |Rk|/(H·W ) is ROI coverage ratio, Gk denotes ground-truth object regions (available only for evaluation), Q(·) is a perception-quality metric (e.g., recognition rate / detection retention), and γ is a minimum acceptable quality threshold. 
+
+B. Cloud Keyframe Initialization and Refresh 
+
+For the first frame I0 of each sequence, no prior mask is available. The full image is transmitted to the cloud, where the LMM performs open-vocabulary segmentation: 
+
+M0 = F (I0, p), (2) where p is a text prompt specifying safety-critical road actors (vehicles, pedestrians, cyclists), and M0 serves as the initial prior. During normal operation CABLE transmits ROI-only images; when the propagated mask confidence drops (severe drift or near-empty valid ROI) the edge triggers a full-frame refresh via a lightweight trigger ck ∈ { 0, 1}:
+
+ck+1 = 1
+
+ |Rk|
+
+H·W < τmin ∨ | ˆMk−1 ∩ Mk|| ˆMk−1 ∪ Mk| < τiou 
+
+
+
+, (3) where τmin avoids degenerate near-empty ROI and τiou 
+
+detects mask inconsistency. If ck+1 = 1, the next upload Fig. 1. Overview of the proposed CABLE framework, a feedback-driven edge–cloud perception pipeline for bandwidth-efficient autonomous driving. The cloud server uses an LMM-based segmentation module to extract safety-critical object masks from the current frame, while the edge device reuses the returned mask together with ego-motion estimation and frame-difference energy to construct a corridor envelope for the next frame. This feedback design enables ROI-focused transmission and perception, reducing redundant background communication and cloud-side visual token processing. 
+
+uses a full frame; otherwise, CABLE continues ROI-only transmission. 
+
+C. Edge-Side Geometric Mask Propagation 
+
+For subsequent frames k > 0, the edge propagates the previous cloud mask Mk−1 to the current viewpoint using ego-motion compensation. 
+
+1) Ego-Motion Homography: Given the ego velocity 
+
+(vx, vy) and camera intrinsics ( fx, fy), we approximate the inter-frame geometric transformation as a planar homography under a pure-translation assumption: 
+
+Hk =
+
+
+
+1 0 − fx·vy·∆t 
+
+> max (|vx·∆t|,ε)
+
+0 1 00 0 1
+
+ , (4) where ∆t = 1/ ffps is the inter-frame interval and ε is a small constant to prevent division by zero. The warped mask and warped previous frame are obtained via perspective transformation: ˆMk−1 = W (Mk−1, Hk), ˆIk−1 = W (Ik−1, Hk). (5) This step provides a motion-aligned semantic prior before appearance-based refinement. The pure-translation approxi-mation is justified by the short inter-frame interval ∆t, over which the yaw increment is small and apparent motion is translation-dominated. CABLE does not require it to be exact: residual rotational misalignment during turns, lane changes, or intersections is absorbed by the residual-motion energy term, the yaw-aware buffer dilation β |∆ψk|, and the corridor envelope, while persistent drift triggers a full-frame keyframe refresh. 
+
+2) Residual-Motion Energy Detection: The geometric warp handles ego-motion but not independently moving objects entering the field of view; we detect such changes via a frame-difference energy map: 
+
+Ek = gray (Ik) − gray ( ˆIk−1) , Dk = 1[Ek > τe], (6) where τe is an energy threshold, so Dk captures significant appearance change after ego-motion compensation (newly appeared or fast-moving objects). We use a fixed τe on the 
+
+[0, 255 ] grayscale difference (value in Sec. IV-A); since Dk is later gated by the dilated mask buffer, a single global value generalizes across all five datasets, and an adaptive noise-driven variant is left to future work. 
+
+3) Adaptive Buffer Dilation: To prevent the propagated mask from shrinking over time due to accumulated warp errors, we dilate it with an ego-adaptive buffer: ˆM+ 
+
+> k−1
+
+= dilate ( ˆMk−1, bk), bk = b0 + α∥∆dk∥ + β |∆ψk|,
+
+(7) where b0 is a base size, ∥∆dk∥ and |∆ψk| are inter-frame translation and yaw displacement, and α, β are gains, so the buffer grows with speed to prevent erosion during fast driving. 
+
+4) ROI Fusion: The raw ROI combines the warped mask with the motion-gated energy residual: 
+
+Rraw  
+
+> k
+
+= ˆMk−1 ∪   ˆM+ 
+
+> k−1
+
+∩ Dk
+
+. (8) Gating Dk by the dilated buffer ˆM+ 
+
+> k−1
+
+suppresses false trig-gers from global illumination changes or sensor noise while still capturing genuinely new objects near existing detections. 
+
+D. Corridor Envelope Consolidation 
+
+The fused ROI Rraw  
+
+> k
+
+may consist of disconnected blobs, and transmitting scattered ROI patches fragments the spatial context available to the LMM. We thus consolidate the ROI into a contiguous corridor envelope that preserves inter-object spatial relationships. For each column x in the active region, we extract the topmost and bottommost ROI pixels as boundary curves t(x) and b(x), smoothed via a moving-average filter of window ws and extended by fractional margins ηt , ηb:
+
+t′(x) = smooth (t(x), ws) − ηt · t(x),
+
+b′(x) = smooth (b(x), ws) + ηb · (H − b(x)) . (9) A minimum corridor height hmin is enforced to guarantee sufficient vertical extent. The final ROI mask Rk is the filled polygon bounded by t′(x) and b′(x), unioned with Rraw  
+
+> k
+
+.Numerical values for ws, ηt , ηb, and hmin are reported in Sec. IV-A. 
+
+E. Background-Skip Transmission and Cloud Inference 
+
+The edge constructs a background-skipped image by ze-roing all pixels outside the ROI: ˜Ik(u, v) = 
+
+(
+
+Ik(u, v) if Rk(u, v) = 1
+
+0 otherwise (10) and transmits ˜Ik to the cloud. Since the ROI typically covers only 10–25% of the image area, this yields a 73– 87% reduction in transmitted pixels. We report this ROI pixel-coverage reduction as a proxy for bandwidth savings; the actual on-the-wire bitrate depends on the entropy coder applied to the sparse image and is discussed as a limitation rather than measured on a live link. On the cloud, the LMM segments ˜ Ik with the same prompt 
+
+p:
+
+Mk = F ( ˜Ik, p) ∩ Rk. (11) The intersection with Rk keeps the mask within the transmit-ted region. Assuming image tokens scale linearly with the ROI ratio ρk = |Rk|/(H ·W ), the input token count becomes 
+
+nin = np + ⌊nv · ρk⌋ (np, nv the prompt and full-image token counts), so the quadratic prefill cost is reduced by a factor of approximately (nin /(np + nv)) −2.
+
+F. Cross-Frame Mask Feedback 
+
+The cloud mask Mk is transmitted back to the edge (a lightweight binary mask requiring minimal downlink band-width) and replaces the previous mask state: 
+
+Mk−1 ← Mk. (12) This completes the feedback loop: the cloud segmentation continuously refines the edge’s scene prior, which governs the next-frame ROI. Unlike open-loop approaches relying on a one-time detection, this lets the system adapt to evolving scenes, recover from transient segmentation failures, and track objects across frames without a dedicated edge tracker. Algorithm 1 summarizes the per-frame online pipeline. 
+
+Algorithm 1 CABLE Online Feedback Inference 
+
+Require: Stream {Ik}Nk=0, prompt p, thresholds τmin , τe, τiou 
+
+Ensure: ROI-masked uploads ˜ Ik and cloud masks Mk 
+
+> 1:
+
+Upload full frame I0 to cloud and get M0 ← F (I0, p) 
+
+> 2:
+
+Initialize refresh flag c1 ← 0 
+
+> 3:
+
+for k = 1 to N do  
+
+> 4:
+
+Warp prior mask: ˆMk−1 ← W (Mk−1, Hk) 
+
+> 5:
+
+Warp previous frame: ˆ Ik−1 ← W (Ik−1, Hk) 
+
+> 6:
+
+Compute residual motion: Dk ← 1[|gray (Ik) −
+
+gray ( ˆIk−1)| > τe] 
+
+> 7:
+
+Compute adaptive dilation: ˆM+ 
+
+> k−1
+
+← dilate ( ˆMk−1, bk) 
+
+> 8:
+
+Build raw ROI: Rraw  
+
+> k
+
+← ˆMk−1 ∪ ( ˆM+ 
+
+> k−1
+
+∩ Dk) 
+
+> 9:
+
+Corridor consolidation: Rk ← Corridor (Rraw  
+
+> k
+
+) 
+
+> 10:
+
+if ck = 1 then  
+
+> 11:
+
+Upload full frame Ik and run Mk ← F (Ik, p) 
+
+> 12:
+
+else  
+
+> 13:
+
+Upload ROI image ˜ Ik ← Ik ⊙ Rk and run Mk ←
+
+F ( ˜Ik, p) ∩ Rk 
+
+> 14:
+
+end if  
+
+> 15:
+
+Update next-frame refresh flag: 
+
+ck+1 ← 1[|Rk|/(H ·W ) < τmin ∨ IoU ( ˆMk−1, Mk) <
+
+τiou ] 
+
+> 16:
+
+Feedback update: Mk−1 ← Mk 
+
+> 17:
+
+end for 
+
+IV. E XPERIMENTS 
+
+A. Experimental Setup 1) Datasets: We evaluate CABLE on five datasets span-ning diverse driving scenarios and weather conditions, using front-camera streams unless noted. nuScenes [9] (10 Hz) provides ground truth by projecting 3D vehicle/pedestrian boxes onto the image plane. WOD-ZB is a panoramic benchmark derived from WOD-E2E-R1 (built on WOD-E2E with SAM3-assisted masks/boxes and human-in-the-loop semantic labels), stitched into surround-view frames with dense COCO-format annotations at 10 Hz. Waymo [20] and KITTI Tracking [21] supply ego-motion from vehicle pose differences and oxts records, respectively. CADC [22] captures Canadian winter driving (snow, adverse weather) at 1280 ×1024, 3.3 Hz, with ground truth from projected 3D cuboids (Car, Truck, Bus) via LiDAR–camera extrinsics. 
+
+2) Implementation Details: The cloud-side LMM is LISA++ [6], instantiated as Senqiao/LISA Plus 7b (7B parameters, LLaVA-1.5 [49] backbone with SAM [50] mask decoder). The edge-side processing (homography warp-ing, energy masking, corridor envelope fitting, and back-ground skipping) runs purely on NumPy/OpenCV with no GPU requirement. For detection evaluation, we employ RT-DETR [15], using PekingU/rtdetr r50vd (ResNet-50 backbone) with score threshold 0.4, and evaluate traffic-relevant COCO categories (person, bicycle, car, motorcycle, bus, truck) on both full-frame and ROI-only images. All experiments run on a single NVIDIA RTX Pro 6000 for cloud inference and an Intel Core Ultra 285K with 128 GB RAM for edge processing. Unless otherwise noted, the edge-TABLE I CROSS -DATASET EVALUATION OF CABLE ( FEEDBACK + CORRIDOR ENVELOPE ). L EFT : COMMUNICATION EFFICIENCY METRICS . R IGHT : RT-DETR 
+
+> DETECTION QUALITY COMPARING FULL
+
+-FRAME VS . ROI-ONLY INFERENCE AGAINST DATASET GROUND TRUTH . H IGHER IS BETTER FOR ALL METRICS EXCEPT ROI C OVERAGE .
+
+Communication Efficiency Full-Frame DETR ROI-Only DETR Dataset ROI Cov. BW Save Token Red. Prefill Recog. Recall Prec. F1 Recall Prec. F1 (%) (%) (%) (×) (%) nuScenes 23.7 76.3 55.8 5.2 × 98.4 0.88 0.88 0.86 0.88 0.88 0.86 WOD-ZB 13.9 86.1 62.9 7.5 × 88.1 0.68 0.16 0.15 0.61 0.18 0.16 Waymo 20.3 79.7 58.3 6.2 × 80.9 0.45 0.81 0.54 0.32 0.77 0.40 KITTI 26.4 73.6 53.8 5.3 × 88.6 0.81 0.65 0.66 0.70 0.64 0.59 CADC 19.8 80.2 58.6 6.0 × 85.1 0.16 0.38 0.14 0.15 0.42 0.13 
+
+Average 20.8 79.2 57.9 6.0 × 88.2 0.60 0.58 0.47 0.53 0.58 0.43 
+
+Fig. 2. Qualitative comparison across five datasets. Each row corresponds to one dataset (nuScenes, WOD-ZB, Waymo, KITTI, CADC). From left to right: (a) original frame, (b) full-frame RT-DETR detections (baseline), (c) motion-only background skip with RT-DETR (ROI derived purely from frame differencing, which retains excessive background and introduces noise), (d) CABLE background skip with RT-DETR (ROI generated by LISA++ with corridor envelope, preserving a compact and spatially coherent driving corridor), and (e) the CABLE ROI mask (green indicates transmitted pixels). Compared to motion-only ROI, CABLE achieves substantially smaller ROI regions while retaining all safety-critical objects, demonstrating consistent cross-dataset generalization under varying resolutions, aspect ratios, and weather conditions. TABLE II ROI STRATEGY COMPARISON AND CORRIDOR ENVELOPE ABLATION ON NU SCENES . A LL METHODS IN (A) USE CORRIDOR ENVELOPE POST -PROCESSING . “D ET . R ET .” IS THE FRACTION OF FULL -FRAME 
+
+RT-DETR DETECTIONS PRESERVED IN ROI-ONLY INFERENCE .                                            
+
+> Group Method / Variant ROI Cov. (%) BW Save (%) Token Red. (%) Prefill Recog. (%) Det. Ret. (%) (a) Methods Motion-Only 88.2 11.8 8.6 1.4 ×98.0 96.6 Open-Loop LLM 56.6 43.4 31.8 2.2 ×97.9 96.7
+> CABLE (Ours) 23.7 76.3 55.8 5.2 ×98.4 97.1
+> (b) Ablation w/o Corridor 6.0 94.0 68.7 10.4 ×90.6 42.7
+> w/ Corridor (CABLE) 23.7 76.3 55.8 5.2 ×98.4 97.1
+
+side hyperparameters are fixed across all five datasets (no per-dataset tuning): residual-motion energy threshold τe = 25 on the [0, 255 ] grayscale scale; refresh thresholds τmin = 0.02 (minimum ROI coverage) and τiou = 0.3 (mask-consistency IoU); corridor smoothing window ws = 15 columns, frac-tional top/bottom margins ηt = 0.10 and ηb = 0.15, and minimum corridor height hmin = 0.1 H; and adaptive-dilation parameters b0 = 8 px, α = 1.5, and β = 20. 
+
+3) Evaluation Metrics: We report the following metrics: 
+
+Communication Efficiency. ROI Coverage (%) is the frac-tion of image pixels retained in the transmitted ROI, and 
+
+Bandwidth Saving (%) = 100 − ROI Coverage. Token Re-duction (%) is the estimated reduction in LMM input tokens (assuming token count scales linearly with image area), and Prefill Speedup (×) is the estimated prefill acceleration (assuming quadratic attention cost with input length). 
+
+Perception Fidelity: As LISA++ reasoning masks are costly to score against box-level ground truth and not directly comparable across heterogeneous annotation formats, we quantify the downstream impact of ROI-only transmission with RT-DETR (a fast, reproducible detector applied identi-cally to full-frame and ROI-only images), while the LMM’s open-vocabulary masks are shown qualitatively in Fig. 2. 
+
+Object Recognition Rate is the fraction of ground-truth objects whose box overlaps the ROI by at least 5%, a permissive coverage indicator (an object counts if at least partially transmitted), complemented by the stricter metrics below and discussed in Sec. IV-E. DETR Recall/Precision/F1 
+
+are RT-DETR metrics on ROI-only images against ground truth, and Detection Retention is the fraction of full-frame RT-DETR detections preserved under ROI-only inference. 
+
+B. Main Results 1) Cross-Dataset Evaluation: Table I presents CABLE’s performance across all five annotated datasets, with qual-itative results shown in Fig. 2. The pipeline consistently achieves substantial bandwidth savings while maintaining high object recognition across diverse geographies and weather conditions. On nuScenes, CABLE achieves 76.3% bandwidth saving at 98.4% recognition and an estimated 5.2 × prefill speedup, with ROI-only DETR matching full-frame inference (Recall 0.88/0.88, F1 0.86/0.86), confirming that the corridor enve-lope preserves sufficient spatial context. On WOD-ZB, ROI coverage drops to 13.9% (86.1% saving), exploiting temporal coherence over wide field-of-view panoramic sequences; the low baseline precision (0.16) reflects the domain gap to COCO-trained RT-DETR, while ROI-only precision slightly improves (0.18) as background removal reduces false posi-tives. The pipeline generalizes without retraining to Waymo (79.7% saving, 80.9% recognition) and KITTI (73.6% sav-ing, 88.6% recognition; ROI-only recall 0.81 →0.70 at stable precision). On CADC, despite snow-covered roads, CABLE attains 80.2% saving at 85.1% recognition and 6.0 × speedup, and background removal again raises ROI-only precision (0.38 →0.42) by suppressing snow-induced false positives. ROI-only transmission is not loss-free: averaged over the five datasets, F1 drops from 0.47 to 0.43 (largest on Waymo, 0.54 →0.40, and KITTI, 0.66 →0.59), where aggressive back-ground removal clips object context near the ROI boundary. CABLE thus trades a modest, bounded perception cost for substantial communication and prefill savings. 
+
+C. Comparison with Baselines 
+
+We compare CABLE against two alternative ROI strate-gies on nuScenes, all using the same corridor envelope for fairness: (1) Motion-Only : ROI from frame-difference energy alone (no semantic guidance); (2) Open-Loop LLM :LISA++ segments only the first frame, subsequent frames rely on ego-motion propagation without cloud feedback; (3) CABLE (Feedback) : full pipeline with per-frame cloud feedback. We further ablate the corridor envelope by running CABLE without it (raw disjoint ROI mask); Table II reports both the method comparison and this ablation. As visualized in Fig. 2(c–d), Motion-Only attains near-perfect recognition (98.0%) but negligible bandwidth saving (11.8%), as frame differences cover most of the image; Open-Loop LLM saves 43.4% at 97.9% recognition but degrades over time without feedback. CABLE (feedback) attains the highest detection retention (97.1%) with strong recognition (98.4%) and far higher savings (76.3%), showing the value of the cloud feedback loop. 
+
+D. Ablation Study 
+
+As shown in Table II(b), without the corridor envelope the ROI shrinks to 6.0% coverage (94.0% bandwidth saving, 10.4 × prefill speedup), but the disjoint regions lose spatial context and detection retention collapses to 42.7% as the detector fails to interpret fragmented patches. The corridor restores retention to 97.1% and recognition to 98.4%, con-firming that its gap-filling is critical for preserving spatial reasoning. 
+
+E. Limitations 
+
+Despite strong cross-dataset results, CABLE has limi-tations. (i) Cold start/drift: it relies on full-frame cloud inference to recover the prior, and poor initialization can destabilize early ROI estimation. (ii) Ego-motion model: 
+
+the pure-translation homography degrades under large rota-tion (turns, lane changes, intersections), mitigated but not eliminated by residual-motion energy, yaw-aware dilation, corridor consolidation, and keyframe refresh. (iii) Permissive threshold: the 5% overlap criterion may overstate coverage for safety-critical objects needing full context, only partly offset by Detection Retention/F1. (iv) Baselines: we do not yet benchmark against edge detectors, edge segmentation, or codec-integrated ROI encoding. (v) Deployment: band-width is ROI pixel-coverage and prefill an analytic estimate; post-codec bitrate, an end-to-end latency breakdown (edge, uplink, cloud, downlink) over a real link, and on-vehicle deployment remain future work. V. C ONCLUSION 
+
+This paper presents CABLE, an edge–cloud percep-tion framework with cross-frame feedback for bandwidth-constrained V2X systems. By feeding cloud-side LMM masks back to the edge for next-frame ROI generation, CABLE forms a mask-to-ROI-to-LMM feedback loop, com-bining ego-motion propagation, residual-motion refinement, and corridor consolidation to jointly cut transmission and visual-token load. Across five datasets (nuScenes, WOD-ZB, Waymo, KITTI, CADC), it attains 73–87% ROI pixel-coverage reduction and 5–8 × estimated prefill speedup at a modest, bounded detection trade-off; ablations show feed-back improves robustness over open-loop propagation and the corridor is essential for spatial context. Future work targets adaptive keyframe scheduling, uncertainty-aware ROI expansion, edge-detector and codec baselines, and end-to-end bitrate/latency evaluation over real wireless links. REFERENCES [1] L. Jiang, K. Liu, C. Liu, H. Ren, G. Yan, F. Jin, and S. Guo, “LIDAR based cooperative sensing in vehicular edge computing,” in 2023 19th International Conference on Mobility, Sensing and Networking (MSN) .IEEE Computer Society, 2023, pp. 17–23. [2] F. Hawlader, F. Robinet, G. Elghazaly, and R. Frank, “Cloud-assisted 360-degree 3D perception for autonomous vehicles using V2X com-munication and hybrid computing,” in 2025 20th Wireless On-Demand Network Systems and Services Conference (WONS) . IEEE, 2025, pp. 1–8. [3] A. Hurst, A. Lerer, A. P. Goucher, A. Perelman, A. Ramesh, A. Clark, A. Ostrow, A. Welihinda, A. Hayes, A. Radford et al. , “GPT-4o system card,” arXiv preprint arXiv:2410.21276 , 2024. [4] H. Liu, C. Li, Q. Wu, and Y. J. Lee, “Visual instruction tuning,” in Advances in Neural Information Processing Systems (NeurIPS) ,vol. 36, 2024. [5] X. Lai, Z. Tian, Y. Chen, Y. Li, Y. Yuan, S. Liu, and J. Jia, “LISA: Reasoning segmentation via large language model,” in Proceedings of the IEEE/CVF conference on computer vision and pattern recognition ,2024, pp. 9579–9589. [6] S. Yang, T. Qu, X. Lai, Z. Tian, B. Peng, S. Liu, and J. Jia, “LISA++: An improved baseline for reasoning segmentation with large language model,” arXiv preprint arXiv:2312.17240 , 2023. [7] J. Li, J. Li, G. Yang, L. Yang, H. Chi, and L. Yang, “Applications of large language models and multimodal large models in autonomous driving: A comprehensive review,” Drones , vol. 9, no. 4, p. 238, 2025. [8] C. Liu, G. Liu, Z. Wang, J. Yang, and S. Chen, “CoLMDriver: LLM-based negotiation benefits cooperative autonomous driving,” in                   
+
+> Proceedings of the IEEE/CVF International Conference on Computer Vision , 2025, pp. 25 951–25 960. [9] H. Caesar, V. Bankiti, A. H. Lang, S. Vora, V. E. Liong, Q. Xu, A. Krishnan, Y. Pan, G. Baldan, and O. Beijbom, “nuScenes: A multimodal dataset for autonomous driving,” in Proceedings of the IEEE/CVF conference on computer vision and pattern recognition ,2020, pp. 11 621–11 631. [10] D. Jin, Y. Zeng, and Y. Gong, “Bandwidth-efficient communication modelling for autonomous vehicle collaborative perception,” in 2025 IEEE/CVF Winter Conference on Applications of Computer Vision (WACV) .IEEE, 2025, pp. 6146–6155. [11] T. Huang, J. Liu, X. Zhou, D. C. Nguyen, M. R. Azghadi, Y. Xia, Q.-L. Han, and S. Sun, “V2X cooperative perception for autonomous driving: Recent advances and challenges,” arXiv preprint arXiv:2310.03525 , 2023.
+
+[12] Y. Shang, M. Cai, B. Xu, Y. J. Lee, and Y. Yan, “LLaVA-PruMerge: Adaptive token reduction for efficient large multimodal models,” in 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , 2025, pp. 22 857–22 867. [13] D. Bolya, C.-Y. Fu, X. Dai, P. Zhang, C. Feichtenhofer, and J. Hoffman, “Token merging: Your ViT but faster,” arXiv preprint arXiv:2210.09461 , 2022. [14] Y. Li, H. Jiang, C. Zhang, Q. Wu, X. Luo, S. Ahn, A. H. Abdi, D. Li, J. Gao, Y. Yang et al. , “MMInference: Accelerating pre-filling for long-context VLMs via modality-aware permutation sparse attention,” 
+
+arXiv preprint arXiv:2504.16083 , 2025. [15] Y. Zhao, W. Lv, S. Xu, J. Wei, G. Wang, Q. Dang, Y. Liu, and J. Chen, “DETRs beat YOLOs on real-time object detection,” IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 16 965–16 974, 2024. [16] M. Hatami et al. , “Open-world hazard detection and captioning for autonomous driving with a unified multimodal pipeline,” in Proceed-ings of the IEEE/CVF Winter Conference on Applications of Computer Vision (WACV) , 2025. [17] M.-H. Yang et al. , “Openad: Open-world autonomous driving bench-mark for 3d object detection,” in Advances in Neural Information Processing Systems (NeurIPS) , 2025. [18] C. Villar et al. , “Mcds-vss: Moving camera dynamic scene video semantic segmentation by filtering with self-supervised geometry and motion,” in British Machine Vision Conference (BMVC) , 2024. [19] B. Huang et al. , “Enhanced dynamic obstacle avoidance for uavs using event camera and ego-motion compensation,” Drones , vol. 9, no. 11, p. 745, 2025. [20] P. Sun, H. Kretzschmar, X. Dotiwalla, A. Chouard, V. Patnaik, P. Tsui, J. Guo, Y. Zhou, Y. Chai, B. Caine et al. , “Scalability in perception for autonomous driving: Waymo Open Dataset,” in IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2020, pp. 2443– 2451. [21] A. Geiger, P. Lenz, and R. Urtasun, “Are we ready for autonomous driving? The KITTI vision benchmark suite,” in IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2012, pp. 3354– 3361. [22] M. Pitropov, D. Garcia, S. Aklanoglu, M. Abdelwahab, M. Smart, A. O’Reilly, C. Lu, W. Schwarting, E. Yurtsever, R. Urtasun et al. ,“Canadian adverse driving conditions dataset,” in Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) ,2021, pp. 11 565–11 574. [23] Q. Chen, X. Ma, S. Tang, J. Guo, Q. Yang, and S. Fu, “Cooper: Cooperative perception for connected autonomous vehicles based on 3D point clouds,” IEEE International Conference on Distributed Computing Systems (ICDCS) , pp. 514–524, 2019. [24] T.-H. Wang, S. Manivasagam, M. Liang, B. Yang, W. Zeng, and R. Urtasun, “V2VNet: Vehicle-to-vehicle communication for joint perception and prediction,” in European Conference on Computer Vision (ECCV) , 2020, pp. 605–621. [25] Y. Li, S. Ren, P. Wu, S. Chen, C. Feng, and W. Zhang, “Learning distilled collaboration graph for multi-agent perception,” in Advances in Neural Information Processing Systems (NeurIPS) , vol. 34, 2021, pp. 29 541–29 552. [26] Y.-C. Liu, J. Tian, N. Glaser, and Z. Kira, “When2com: Multi-agent perception via communication graph grouping,” in IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) ,2020, pp. 4106–4115. [27] Y.-C. Liu, J. Tian, C.-Y. Ma, N. Glaser, C.-W. Kuo, and Z. Kira, “Who2com: Collaborative perception via learnable handshake com-munication,” in IEEE International Conference on Robotics and Au-tomation (ICRA) , 2020, pp. 6876–6883. [28] Y. Hu, S. Fang, Z. Lei, Y. Zhong, and S. Chen, “Where2comm: Communication-efficient collaborative perception via spatial confi-dence maps,” in Advances in Neural Information Processing Systems (NeurIPS) , vol. 35, 2022, pp. 4874–4886. [29] A. Author et al. , “A novel communication-efficient cooperative percep-tion framework based on infrastructure-side critical feature extraction,” 
+
+IEEE Transactions on Intelligent Transportation Systems , 2024. [30] B. Author et al. , “Supply-demand-driven information selection algo-rithm for efficient V2X perception,” in Proc. IEEE Int. Conf. , 2024. [31] C. Author et al. , “Lifetime-guaranteed cost-minimized heterogeneous visual sensor networks with feature collection for effective target coverage in 3-D space,” IEEE Internet of Things Journal , 2023. [32] R. Xu, H. Xiang, Z. Tu, X. Xia, M.-H. Yang, and J. Ma, “V2X-ViT: Vehicle-to-everything cooperative perception with vision transformer,” in European Conference on Computer Vision (ECCV) , 2022, pp. 107– 124. [33] Y. Li, Q. Ren, L. Che, S. Chen, C. Feng, and W. Zhang, “Among us: Adversarially robust collaborative perception by consensus,” in 
+
+IEEE/CVF International Conference on Computer Vision (ICCV) ,2023, pp. 186–195. [34] Y. Han, H. Zhang, H. Li, Y. Jin, C. Lang, and Y. Li, “Collaborative perception in autonomous driving: Methods, datasets, and challenges,” 
+
+IEEE Intelligent Transportation Systems Magazine , vol. 15, no. 6, pp. 131–151, 2023. [35] R. Xu, H. Xiang, X. Xia, X. Han, J. Li, and J. Ma, “OPV2V: An open benchmark dataset and fusion pipeline for perception with vehicle-to-vehicle communication,” in IEEE International Conference on Robotics and Automation (ICRA) , 2022, pp. 2583–2589. [36] Y. Li, D. Ma, Z. An, Z. Wang, Y. Zhong, S. Chen, and C. Feng, “V2X-Sim: Multi-agent collaborative perception dataset and benchmark for autonomous driving,” in IEEE Robotics and Automation Letters , vol. 7, no. 4, 2022, pp. 10 914–10 921. [37] H. Yu, Y. Luo, M. Shu, Y. Huo, Z. Yang, Y. Shi, Z. Guo, H. Li, X. Hu, J. Yuan, and Z. Nie, “DAIR-V2X: A large-scale dataset for vehicle-infrastructure cooperative 3D object detection,” in IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) ,2022, pp. 21 361–21 370. [38] Y. Kang, J. Hauswald, C. Gao, A. Rovinski, T. Mudge, J. Mars, and L. Tang, “Neurosurgeon: Collaborative intelligence between the cloud and mobile edge,” in ACM International Conference on Architectural Support for Programming Languages and Operating Systems (ASP-LOS) , 2017, pp. 615–629. [39] J. Shao and J. Zhang, “BottleNet++: An end-to-end approach for feature compression in device-edge co-inference systems,” IEEE Com-munications Letters , vol. 24, no. 8, pp. 1652–1656, 2020. [40] A. E. Eshratifar, M. S. Abrishami, and M. Pedram, “JointDNN: An efficient training and inference engine for intelligent mobile cloud computing services,” IEEE Transactions on Mobile Computing ,vol. 20, no. 2, pp. 565–576, 2019. [41] Y. Matsubara, D. Callegaro, S. Singh, M. Levorato, and F. Restuc-cia, “BottleFit: Learning compressed representations in deep neural networks for effective and efficient split computing,” in IEEE Interna-tional Workshop on Machine Learning for Signal Processing (MLSP) ,2022, pp. 1–6. [42] A. Furutanpey, P. Barco, D. Schinagl, K. Schoeffmann, C. Timmerer, and S. Dustdar, “FrankenSplit: Saliency-guided neural feature com-pression with shallow variational bottleneck injection for mobile edge computing,” in ACM Multimedia , 2023, pp. 5424–5432. [43] E. Li, L. Zeng, Z. Zhou, and X. Chen, “Edge intelligence: On-demand deep learning model co-inference with device-edge synergy,” ACM SIGCOMM Workshop on Mobile Edge Communications (MECOMM) ,pp. 31–36, 2019. [44] S. Liu, L. Liu, J. Tang, B. Yu, Y. Wang, and W. Shi, “Edge computing for autonomous driving: Opportunities and challenges,” Proceedings of the IEEE , vol. 107, no. 8, pp. 1697–1716, 2019. [45] Z. Wang, W. Liu, and H. Li, “ROI-aware video encoding for bandwidth-efficient cloud inference,” in IEEE International Confer-ence on Multimedia and Expo (ICME) , 2024, pp. 1–6. [46] X. Zhang, J. Shao, and J. Zhang, “Task-driven semantic coding via reinforcement learning,” IEEE Transactions on Image Processing ,vol. 32, pp. 6250–6262, 2023. [47] K. Chen et al. , “Efficient large-scale vision model inference with tiling and caching,” in AAAI Conference on Artificial Intelligence , 2024, pp. 1–9. [48] G. Shi et al. , “Communication-efficient edge AI: Federated learning and integrated communication and computation,” IEEE Communica-tions Surveys and Tutorials , vol. 22, no. 4, pp. 2168–2207, 2020. [49] H. Liu, C. Li, Y. Li, and Y. J. Lee, “Improved baselines with visual instruction tuning,” in IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2024, pp. 26 296–26 306. [50] A. Kirillov, E. Mintun, N. Ravi, H. Mao, C. Rolland, L. Gustafson, T. Xiao, S. Whitehead, A. C. Berg, W.-Y. Lo, P. Dollar, and R. Gir-shick, “Segment anything,” in IEEE/CVF International Conference on Computer Vision (ICCV) , 2023, pp. 4015–4026. [51] N. Ravi, V. Gabeur, Y.-T. Hu, R. Hu, C. Ryali, T. Ma, H. Khedr, R. R¨ adle, C. Rolland, L. Gustafson et al. , “SAM 2: Segment anything in images and videos,” arXiv preprint arXiv:2408.00714 , 2024.

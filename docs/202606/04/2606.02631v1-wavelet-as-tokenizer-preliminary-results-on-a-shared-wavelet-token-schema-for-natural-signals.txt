@@ -1,0 +1,318 @@
+Title: Wavelet as Tokenizer: Preliminary Results on a Shared Wavelet Token Schema for Natural Signals
+
+URL Source: https://arxiv.org/pdf/2606.02631v1
+
+Published Time: Wed, 03 Jun 2026 00:01:56 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+# WAVELET AS TOKENIZER : P RELIMINARY RESULTS ON A 
+
+# SHARED WAVELET TOKEN SCHEMA FOR NATURAL SIGNALS 
+
+Shenghao Ding 
+
+Yet Another AI 
+
+shenghao.ding@yetanother.ai 
+
+# ABSTRACT 
+
+This paper studies whether audio, images, and video can share a common wavelet token schema rather than relying on separate modality-specific latent grids. It introduces a continuous-token model built around a one-level Haar DWT/IDWT frontend, a shared coefficient-token layout, optional structural metadata, lightweight modality value adapters, and a shared token-wise encoder-decoder trunk. On Speech Commands, EuroSAT RGB, and DAVIS 2017 data, a dense shared model reaches 39.92 dB audio, 29.37 dB image, and 23.93 dB video PSNR. A matched-rate sweep under contin-uous latent scalar budgets indicates that the visual gains are not explained solely by latent capacity, while also showing that additive metadata embeddings are not a universal source of improvement. Finally, fixed-rate energy selection provides an effective non-parametric baseline: energy global 
+
+improves average PSNR over uniform selection by 16.73 dB for audio, 16.90 dB for images, and 15.86 dB for video under compressed keep ratios. Masked sparse training reaches 34.45 dB video PSNR with 50% of dense tokens. The results support a unified wavelet token schema and sparse token interface, while stopping short of establishing a universal discrete vocabulary. 
+
+# 1 Introduction 
+
+Tokenizers have become the interface between high-dimensional data and modern generative models. For text, tok-enization is largely symbolic: a sequence of characters or words is mapped to a sequence of discrete ids. For natural signals, however, tokenization is closer to lossy compression. An audio codec, an image autoencoder, and a video tokenizer must all decide which parts of a dense signal deserve representation under a limited token budget, while preserving the perceptual and semantic information needed by downstream models. Most existing tokenizers are designed around the geometry of a single modality. Images are often divided into patches or encoded into dense latent grids; audio tokenizers compress one-dimensional waveforms or time-frequency features; video tokenizers extend visual latents over time. These designs have produced strong modality-specific systems, but they leave open whether audio, images, and video can share a common token language rather than merely sharing a neural backbone. This paper studies Wavelet as Tokenizer (WAT), a multi-scale tokenization framework for natural signals. Each modal-ity is viewed as a sampled or parameterized field x : Ω → RC , where Ω may be time for audio, a two-dimensional spatial domain for images, or spacetime for video. A wavelet or learned lifting transform maps the field into localized multi-scale coefficients. Tokens are then formed from coefficient blocks together with their structural metadata: 
+
+(value , modality , rank , scale , location , subband ).
+
+In this view, a token is not only a latent vector. It is a compact statement about what kind of signal variation occurred, at which scale, in which subband, and where in the underlying domain. Discrete code ids can later be added on top of this schema, but this paper deliberately studies the continuous case first. The motivation is not simply to use wavelets as another downsampling layer. Recent visual tokenizers, including joint image-video systems and wavelet-space tokenizers such as Cosmos, show that Haar wavelet front-ends and neural autoencoders can be highly effective for images and videos [1, 2]. The central question is whether wavelet coefficients can serve as a modality-agnostic token substrate for one-dimensional audio, two-dimensional images, and three-dimensional spacetime video, with a future path toward continuous 3D fields. 
+
+> arXiv:2606.02631v1 [eess.AS] 30 May 2026
+
+## Wavelet as Tokenizer 
+
+This framing leads to two design commitments. First, audio is treated as a first-class modality rather than an af-terthought to a visual tokenizer. Second, the scale, subband, and location of each coefficient are exposed to the token model instead of being hidden inside a dense latent grid. These commitments make it possible to compare fixed-rate dense tokenization with adaptive sparse token allocation, where smooth regions can be represented by fewer coarse tokens while edges, transients, textures, and motion receive more fine-scale tokens. The present study reports a dense, one-level Haar formulation with continuous latent tokens and no codebook. The experiments focus on a narrower question than the full long-term agenda: whether a single shared token trunk can reconstruct real 1D audio, 2D images, and 3D video from the same wavelet token grammar. The results answer this question positively for small-scale autoencoding, identify audio coefficient scaling as an important normalization issue, and leave discrete quantization, learned sparse allocation, and downstream generative modeling to future work. 
+
+1.1 Contributions 
+
+This paper makes four contributions. First, it defines a shared wavelet coefficient token schema for audio, images, and video, with explicit modality, rank, scale, subband, and position fields. Second, it evaluates a compact continuous autoencoder that processes the three modalities through a shared token trunk while retaining only lightweight modality-specific value adapters and inverse-wavelet reconstruction paths. Third, it compares shared and separate models under matched continuous latent scalar budgets, showing that the visual advantage of the shared schema is not explained solely by bottleneck size in these controlled experiments. Fourth, it evaluates fixed-rate energy token selection and masked sparse training, providing evidence that wavelet coefficient energy is a useful cross-modal allocation signal. 
+
+# 2 Background and Related Work 
+
+Tokenization as signal compression. Tokenizers for natural signals sit between classical compression and learned representation learning. A tokenizer must reduce a high-rate signal to a compact sequence while preserving the information that matters for reconstruction, generation, or downstream prediction. This differs from text tokenization, where the input is already symbolic. For audio, images, video, and 3D scenes, the tokenizer must learn or choose a sampling basis, allocate bits or tokens across the signal, and expose a representation that can be modeled by neural sequence or latent-variable models. VQ-VAE established vector-quantized latent variables as a useful discrete interface for images, speech, and generation [3], and later visual tokenizers such as VQGAN made discrete image latents practical for high-resolution synthesis [4]. 
+
+Visual tokenizers. Image and video tokenizers usually compress visual data into continuous latents or discrete code grids for downstream generative models. Joint image-video systems such as OmniTokenizer demonstrate that related visual modalities can share a tokenizer while retaining useful reconstruction quality [1]. Video tokenizers such as MAGVIT and MAGVIT-v2 show that spatio-temporal tokenizers and common image-video vocabularies can be effective interfaces for video generation and visual language modeling [5, 6]. Wavelet-based image tokenizers further show that multi-scale transforms can be competitive with purely patch-based visual representations [7]. These systems motivate shared visual token spaces, but they generally keep the token grid dense and remain within the image-video domain. 
+
+Wavelet-space visual tokenization. Cosmos Tokenizer is an especially relevant point of comparison: it combines image/video tokenization, Haar wavelet transforms, autoencoding, and discrete quantization for efficient visual repre-sentations [2]. This validates the practical value of wavelet-space visual tokenizers. The present work takes a different target. Rather than building another image/video wavelet autoencoder, the proposed schema treats wavelet coefficients as structured tokens whose scale, location, and subband are part of the token interface. This framing makes it possible to ask whether the same token schema can cover 1D audio, 2D images, and 3D spacetime video. 
+
+Wavelets and multi-scale signal structure. Wavelet transforms provide localized multi-scale analysis [8]. They decompose a signal into low-frequency structure and higher-frequency detail subbands, making them attractive for natural signals whose information density is uneven across space and time. Classical image compression standards such as JPEG 2000 exploit this structure through wavelet transforms, bit-plane coding, and progressive rate allocation [9]. In WAT, these properties are used not only for compression, but also to define the structure of the token stream. 
+
+Audio codec tokenizers. Neural audio codec tokenizers compress high-rate waveforms into short discrete sequences while retaining perceptual quality. SoundStream and EnCodec combine convolutional encoder-decoder models with residual vector quantization for high-fidelity neural audio compression [10, 11]. Recent systems such as WavTokenizer 
+
+## 2Wavelet as Tokenizer 
+
+show that discrete acoustic tokens can support audio language modeling and generation [12]. These methods are typically specialized for audio and operate on waveform or time-frequency representations. WAT instead uses audio as the 1D case of a broader signal-field formulation, so that audio coefficients can share a schema with image and video coefficients. 
+
+Quantization and discrete vocabularies. The present paper deliberately keeps tokens continuous, but discrete token ids are a central goal for future work. Vector quantization and residual vector quantization are standard choices in visual and audio tokenizers, while finite scalar quantization offers a simpler fixed-code alternative that can reduce codebook collapse and training complexity [13]. These methods will be needed before WAT can report code utilization, entropy, and true reconstruction-per-bit. 
+
+Adaptive token allocation. Dense token grids spend the same number of tokens on smooth regions and complex regions. Classical compression methods avoid this by allocating more bits to informative coefficients and fewer bits to predictable parts of the signal. A wavelet representation makes this allocation explicit: coarse low-frequency tokens can cover broad smooth structure, while fine-scale tokens can be reserved for edges, transients, textures, and motion. This motivates comparing fixed-rate tokenizers against adaptive sparse token selection under matched reconstruction or bitrate budgets. 
+
+Evaluation metrics. PSNR and MSE remain useful for controlled rate-distortion measurements, but learned visual tokenizers are usually evaluated with perceptual and distributional metrics as well. LPIPS measures perceptual simi-larity using deep feature distances [14], FID evaluates image distribution quality [15], and FVD extends distributional evaluation to generated video [16]. These metrics motivate the future benchmark plan in Section 6 and the conclusion. 
+
+3D fields and future extension. 3D Gaussian Splatting and neural fields represent scenes as continuous or renderable fields rather than dense voxel grids [17]. Compression methods for these representations use pruning, quantization, and residual vector quantization to reduce storage while preserving rendering quality [18]. Although the first WAT experiments focus on audio, images, and video, the field view x : Ω → RC is intended to extend naturally to 3D scene attributes, Gaussian parameters, neural fields, tri-planes, or sparse octree-like parameterizations. 
+
+# 3 Comparisons 
+
+The closest existing systems overlap with WAT along different axes, but none of them has the same target: a wavelet-structured token schema that treats audio, images, and spacetime video as different ranks of a common signal field. This section is a conceptual comparison rather than a claim of reconstruction superiority, since the experiments in this paper use a small-scale continuous autoencoding protocol rather than a production-scale bitrate benchmark. Classical transform codecs provide the oldest point of contact. JPEG 2000 [9], for example, already uses wavelet subbands as an efficient representation for images. Its goal, however, is hand-engineered image coding through bit-plane and entropy-coding machinery. WAT instead treats the wavelet coefficient tuple as a neural token interface whose same fields can describe one-dimensional audio, two-dimensional images, and three-dimensional video tensors. Learned visual tokenizers such as VQ-VAE and VQGAN [3, 4] established the practical importance of discrete latent grids for generative modeling. Their codes are learned from data, but the code index usually does not expose an explicit signal-processing grammar such as scale, subband, or normalized position. WAT makes that grammar part of the token itself before adding stronger quantization or generative modeling layers. Modern audio codecs, including SoundStream, EnCodec, and WavTokenizer [10–12], are more mature systems for waveform reconstruction and acoustic tokenization. They typically use audio-specific convolutional encoders and residual vector quantization. In contrast, WAT treats audio as the rank-one instance of the same schema used for images and videos. This is a weaker engineering choice for domain-specialized compression, but it places cross-modal token structure at the center of the analysis. Image-video tokenizers, including OmniTokenizer and the MAGVIT family [1, 5, 6], are closer in their ambition to share tokenization across related modalities. They generally remain inside the visual domain and represent data as learned spatial or spacetime latent grids. WAT differs by starting from an invertible wavelet transform and asking whether images and videos are merely the rank-two and rank-three cases of a broader signal-token grammar that also includes audio. The closest visual reference is Cosmos Tokenizer [2], which also uses a Haar wavelet front-end for image and video tokenization. The main distinction is the research question: Cosmos is a production-oriented visual tokenizer, whereas 
+
+## 3Wavelet as Tokenizer 
+
+WAT studies whether wavelet coefficient metadata can be exposed as a shared schema across signal ranks. In this sense, audio is not an auxiliary downstream modality but a first-class test of the schema. Finally, compression methods for Gaussian splatting and radiance-field representations [17, 18] address a different but relevant frontier: compact 3D scene storage. They operate on scene parameters through pruning, quantization, and residual coding rather than on a unified audio/image/video token language. They are nevertheless important future comparisons if WAT is extended from video tensors to continuous 3D fields. This comparison suggests two useful boundaries. First, WAT should not be read as a replacement for specialized codecs at this stage: audio codecs and visual tokenizers remain more mature production systems within their domains. Second, WAT is not merely another wavelet visual autoencoder. The research question is whether the coefficient tuple 
+
+(value , rank , scale , subband , position )
+
+can become a common token interface for natural signals, with modality adapters, sparse rate allocation, and eventual discrete coding layered on top. 
+
+# 4 Method 
+
+Each modality is formulated as a sampled field x : Ω → RC , where Ω is time for audio, a two-dimensional spatial grid for images, and a spacetime grid for video. The model keeps the transform deliberately simple: each input is mapped through a one-level separable Haar DWT, converted to a shared token sequence, encoded by a shared continuous token model, scattered back to wavelet coefficient tensors, and reconstructed with the corresponding Haar IDWT. 
+
+4.1 Wavelet frontend 
+
+For a modality with rank d ∈ { 1, 2, 3} and channel count C, a one-level Haar transform produces 2d subbands. The coefficient tensor has shape 
+
+B × (C 2d) × g1 × · · · × gd,
+
+where B is the batch size and gj are the downsampled grid dimensions. Audio therefore has two subbands, images have four subbands, and video has eight subbands. The subband order is the low/high channel order produced by the separable Haar implementation and is preserved exactly by the token flattening and unflattening path. 
+
+4.2 Shared token schema 
+
+The DWT coefficients are flattened into a common dense schema. For each subband and grid location, the token value stores the channel coefficients: 
+
+V ∈ RB×N ×C , N = 2 ddY
+
+> j=1
+
+gj .
+
+The same schema is used for all modalities. Each token also carries metadata 
+
+(modality , rank , scale , subband , position ),
+
+where modality ids are audio, image, and video; rank is 1, 2, or 3; scale is fixed to zero in the one-level transform; subband ids run from 0 to 2d − 1; and position is a normalized coordinate in [0 , 1] 3. The coordinate axes are always ordered as (t, y, x ); unused axes are filled with zero, so audio uses (t, 0, 0) and images use (0 , y, x ).This explicit metadata is the main distinction between the proposed schema and a plain dense latent grid. The model receives not only coefficient values, but also the grammar that states what each coefficient means. 
+
+4.3 Shared continuous token model 
+
+The autoencoder has small modality-specific value adapters and a shared token trunk. For modality m, the input coefficient value vi is optionally scaled by a positive scalar sm and projected to a common token width: 
+
+ei = Ain 
+
+> m
+
+(smvi) + Emod (mi) + Erank (ri) + Escale (ai) + Esubband (bi) + P (pi).
+
+Here Ain  
+
+> m
+
+is a linear adapter from the modality channel count to the shared token width, E terms are learned embed-dings for discrete metadata, and P is a linear position projection from three normalized coordinates. The shared trunk is token-wise: 
+
+zi = Fenc (ei), hi = Fdec (zi), ˆvi = Aout  
+
+> m
+
+(hi)/s m.
+
+## 4Wavelet as Tokenizer 
+
+In the present model, Fenc is a LayerNorm-MLP that maps the token width to a continuous latent dimension, and Fdec 
+
+maps the latent token back to the shared token width. No attention, token mixer, or FSQ/RVQ is used. This isolates the question of whether the shared schema itself is trainable. The training loss is signal-space mean squared error, 
+
+L = ∥x − ˆx∥22,
+
+while coefficient MSE is logged as a diagnostic. Since the Haar transform is perfectly invertible in the no-model path, schema round-trip tests verify that tokenization and scattering introduce no numerical error beyond floating-point precision. 
+
+4.4 Audio value scaling 
+
+Initial shared-model experiments showed substantially worse audio reconstruction than image or video reconstruction under the same schema. The failure was traced to coefficient scale imbalance rather than to an inherent modality-specific architectural limitation. The model therefore includes a simple value-scaling parameter before the audio value adapter: 
+
+˜vi = saudio vi.
+
+The best-performing shared run in the reported grid uses saudio = 4 and keeps image and video scales at one. Per-sample RMS normalization was also evaluated as an ablation, but the fixed audio scale was more stable in these experiments. 
+
+4.5 Fixed-rate token selection 
+
+To test whether wavelet coefficients provide a useful allocation signal, the method includes a non-parametric fixed-rate selection path. For token value vi ∈ RC , token energy is 
+
+qi = 1
+
+C
+
+> C
+
+X
+
+> c=1
+
+v2
+
+> i,c
+
+.
+
+Given a keep ratio ρ, a selector constructs a boolean mask M ∈ { 0, 1}B×N and dropped tokens are set to zero: 
+
+vmasked  
+
+> i
+
+= Mivi.
+
+The masked coefficient values are scattered back to the DWT tensor and decoded with the same Haar IDWT. The comparison includes global energy top-k, per-subband energy top-k, uniform stride, random, and a lowpass-first baseline. This path has no learned parameters and directly tests whether coefficient energy is a useful cross-modal token importance signal. 
+
+4.6 Masked shared training 
+
+The masked autoencoder uses the same dense token layout, but the model receives masked token values as input and is trained to reconstruct the full signal. This keeps the schema unchanged while measuring whether the shared trunk can infer missing coefficients from sparse wavelet observations. Results are reported for metadata=none and 
+
+metadata=full because earlier matched-rate experiments showed that additive metadata is not uniformly beneficial. 
+
+# 5 Experiments 
+
+The experiments evaluate whether the shared schema can reconstruct real audio, image, and video data with one shared continuous token trunk. 
+
+5.1 Data and experimental configuration 
+
+The evaluation uses three public datasets: Speech Commands for audio [19], EuroSAT RGB for images [20], and DAVIS 2017 for video [21]. Audio clips are sampled as mono waveforms with 16,384 samples. Images are resized to 
+
+64 × 64 . Video samples use 8 RGB frames at 64 × 64 .All reported results are measurements from a compact shared model trained with round-robin modality updates. The separate baseline uses one small wavelet autoencoder per modality. PSNR is computed from MSE with data range 1.0; image and video tensors are in [0 , 1] , while audio waveforms are int16 samples normalized by 32768. 
+
+## 5Wavelet as Tokenizer 
+
+5.2 Rate proxies and statistical scope 
+
+Because the present model uses continuous latents rather than discrete codes, this paper reports rate proxies rather than true bitrate. The dense token counts per sample are 16,384 for audio, 4,096 for images, and 32,768 for video. For dense autoencoders, continuous latent scalar budgets are compared, defined as token count times latent dimension. For fixed-rate sparse experiments, the reported quantities are kept-token ratio and kept-token count. These quantities measure representation size under the proposed schema, but they do not include codebook entropy, index coding overhead, entropy modeling, or bits-per-pixel/sample. The learned autoencoder results are single-run measurements and should be read as trend evidence rather than final statistical estimates. The non-parametric fixed-rate selection sweep is repeated over selector seeds for stochastic baselines, but the trained dense and masked models do not yet report mean and standard deviation across training seeds. Larger-scale follow-up experiments are needed to replace these proxies with explicit compression ratios and multi-seed rate-distortion curves. 
+
+5.3 Main results 
+
+Table 1 compares a separate modality baseline, a shared schema model with unit value scales, and a shared schema model with saudio = 4 . The unit-scale shared model already improves image and video over the separate baseline, but audio degrades relative to the audio-only model. Scaling audio coefficients before the shared value adapter recovers audio quality while preserving the visual gains. Table 1: Preliminary validation reconstruction quality. Higher PSNR is better and lower MSE is better.                         
+
+> Model A-MSE A-PSNR I-MSE I-PSNR V-MSE V-PSNR Separate baseline 8.34 ×10 −540.79 5.11 ×10 −322.91 8.11 ×10 −320.91 Shared schema, unit scale 2.35 ×10 −326.30 9.65 ×10 −430.15 5.58 ×10 −322.53 Shared schema, audio scale 4 1.02 ×10 −439.92 1.16 ×10 −329.37 4.04 ×10 −323.93
+
+The best-performing shared result in Table 1 is obtained with saudio = 4 . Compared with the separate baseline, this model is within 0.87 dB on audio, improves image PSNR by 6.46 dB, and improves video PSNR by 3.03 dB. These numbers should not be interpreted as final compression quality, because the model remains dense and continuous. They nevertheless indicate that a single shared wavelet token grammar can represent all three modalities in this autoencoding setting. 
+
+5.4 Matched-rate dense sweep 
+
+The primary confound is capacity: the shared dense schema has one latent vector per wavelet coefficient token, while the separate baseline uses latent channels on a coefficient grid. The evaluation therefore compares against a matched separate baseline whose latent channels are set to 2d times the shared latent dimension. Table 2 shows the result at shared latent dimension 16. Table 2: Matched continuous latent scalar budget at shared latent dimension 16. The metadata-free shared model often outperforms additive metadata on visual modalities. Model Audio PSNR Image PSNR Video PSNR Separate matched 43.93 22.47 21.76 Shared full metadata 39.92 29.37 23.93 Shared no metadata 41.29 30.41 29.42 This sweep changes the interpretation of the shared result. The image and video advantage is not simply a larger continuous bottleneck, because the separate baseline is matched by scalar latent count. At the same time, explicit additive metadata is not the source of the gain: removing metadata improves image and video in this dense setting. Figure 1 shows the same trend across the reported rate sweep. 
+
+5.5 Audio scaling ablation 
+
+Table 3 reports the 150-step ablation that motivated the audio scale. Audio improves sharply when moving from unit scale to scale 2 or 4, while image and video remain stable. Increasing the scale to 8 starts to degrade audio, suggesting 
+
+## 6Wavelet as Tokenizer 
+
+Figure 1: Rate-distortion sweep. The shared schema remains favorable on image and video under matched continuous latent scalar budgets, while audio continues to expose a modality-specific normalization and modeling gap. that the relevant factor is not merely coefficient magnitude but a moderate alignment of coefficient ranges before the shared trunk. Per-sample RMS normalization helps audio relative to unit scale but reduces image quality in this setting. Table 3: Validation PSNR for audio value-scaling ablations. Setting Audio PSNR Image PSNR Video PSNR Unit scale 27.56 23.62 21.53 Audio scale 2 30.36 24.96 21.62 Audio scale 4 30.81 24.98 21.62 Audio scale 8 28.95 24.57 21.61 Sample RMS normalization 29.15 22.87 21.71 
+
+5.6 Fixed-rate energy selection 
+
+The next experiment evaluates sparse token allocation without learning. For each batch, DWT token values are masked according to a fixed keep ratio and decoded directly through the Haar IDWT. Table 4 reports average PSNR gains over uniform and random selection, excluding the trivial 100% keep ratio. Table 4: Average PSNR gain of energy global selection over fixed-rate baselines across keep ratios 50%, 25%, 10%, 5%, and 1%. Modality vs. uniform vs. random Minimum gain vs. uniform Audio +16.73 +16.73 +2.17 Image +16.90 +16.92 +0.15 Video +15.86 +15.85 +0.85 Global energy selection outperforms the baselines on all three modalities and every compressed keep ratio. Per-subband energy selection is helpful for audio but much weaker for image and video. A lowpass-first baseline nearly matches global energy for images, is close but weaker for video, and is substantially worse for audio. This suggests that visual reconstruction is dominated by low-frequency structure, while audio requires cross-subband energy allocation. Figure 2 visualizes both reconstruction quality and retained coefficient energy. 
+
+5.7 Masked sparse training 
+
+Given the strength of non-parametric energy selection, the shared autoencoder is also trained with masked token values as input and full reconstruction as the target. Table 5 lists the best masked results from the evaluated grid over metadata mode, latent dimension, and keep ratio. The metadata effect is modality- and rate-dependent. Audio is better with no metadata in every masked setting. Video is much better without metadata at 25% and 50% keep ratios, but full metadata helps at 10%. Images often benefit from full metadata, especially at latent dimension 8. These results indicate that metadata should remain an ablation rather than the default explanation for the value of unified tokenization. Figure 3 summarizes the sparse training curves. 
+
+## 7Wavelet as Tokenizer 
+
+Figure 2: Non-parametric fixed-rate token selection. Top: reconstruction PSNR across keep ratios and selectors. Bottom: retained wavelet energy. Energy-based selection consistently preserves more reconstruction quality than uniform or random fixed-rate token layouts. Table 5: Best masked sparse shared results. The video result uses only 50% of dense tokens and substantially exceeds the dense shared video baseline. Modality Best setting Keep ratio PSNR MSE Audio none, latent 8 0.50 32.60 5.50 ×10 −4
+
+Image full, latent 8 0.50 29.98 1.01 ×10 −3
+
+Video none, latent 16 0.50 34.45 3.59 ×10 −4
+
+Figure 3: Masked sparse shared training. The curves compare metadata modes, latent dimensions, modalities, and fixed keep ratios under the energy-based masking configuration. The best-performing sparse result appears for video at a 50% keep ratio without additive metadata. 
+
+## 8Wavelet as Tokenizer 
+
+5.8 Interpretation 
+
+These results support four conclusions. First, the shared token schema is numerically sound: DWT coefficients can be flattened into a single token grammar and scattered back exactly in unit tests. Second, a small shared token-wise model can learn real audio, image, and video reconstruction without attention or modality-specific trunks. Third, coefficient normalization matters: audio is an equal participant in the dense schema only after its value scale is calibrated. Fourth, wavelet energy is an effective cross-modal sparse allocation signal in the non-parametric selection experiments, and sparse masked training is promising for video in this small-scale setting. These claims remain bounded by the scale and statistical scope of the experiments. Section 6 separates these limitations from the positive evidence. 
+
+# 6 Limitations 
+
+This paper is intentionally framed as an early-stage empirical study. The reported experiments support the feasibility of a shared wavelet token schema, but they do not establish a production-quality tokenizer. 
+
+Prototype scale. The experiments use low-resolution images, short video clips, a compact token-wise MLP trunk, and reconstruction losses centered on MSE. This is useful for isolating the schema question, but it is not comparable to production-scale visual tokenizers trained with larger datasets, higher resolutions, stronger spatio-temporal archi-tectures, perceptual losses, and multi-stage optimization. Absolute PSNR values should therefore be interpreted as small-scale autoencoding measurements, not state-of-the-art reconstruction results. 
+
+Rate proxy rather than bitrate. All reported rates are proxies: dense token count, continuous latent scalar count, or fixed keep ratio. Since the model has no FSQ, VQ, RVQ, entropy model, or learned rate controller, it does not report true bitrate, bits per pixel, bits per audio sample, or reconstruction-per-bit. The matched-rate comparisons are still informative for capacity control, but they do not replace a full rate-distortion benchmark. 
+
+Statistical strength. The learned autoencoder tables and curves are single-run measurements. They reveal consistent qualitative trends, such as the importance of audio coefficient scaling and the strength of energy-based sparse selection, but they do not provide confidence intervals or training-seed variance. The non-parametric selection results are less sensitive because they do not train a model, but future learned results should report mean and variance across seeds. 
+
+Continuous tokens only. The present study uses continuous latent tokens. It has no discrete vocabulary, codebook utilization measurement, entropy estimate, dead-code analysis, or downstream generative model consuming the tokens. The evidence therefore supports a unified schema and sparse token interface, not a universal discrete token vocabulary. 
+
+Metadata is unresolved. Explicit metadata is part of the proposed token grammar, but the additive embedding im-plementation evaluated here is not uniformly beneficial. It helps some image settings while degrading audio and several video settings. This suggests that metadata should be treated as a conditioning design problem, possibly via gating, FiLM-style modulation, routing, or selector-only use, rather than as an already validated source of improvement. 
+
+# 7 Future Work 
+
+Directions for scaling. Several extensions are needed before the proposed schema can be evaluated as a practical tokenizer. First, evaluation should move to comparable rate-distortion protocols: DAVIS and TokenBench for video, MS-COCO or ImageNet for images, explicit spatial-temporal compression ratios such as 4×8×8 and 8×16 ×16 , and metrics including PSNR, SSIM, LPIPS, rFID, and rFVD. Second, the one-level Haar front-end should be extended to a multi-level wavelet pyramid where scale is an active token field, not a fixed placeholder. Third, the token-wise MLP should be replaced or augmented with local convolutional decoders, causal and non-causal spatio-temporal token mixers, and attention or state-space modules that can model context across neighboring coefficients. Fourth, sparse token allocation should move from fixed-rate energy selection to learned rate control, entropy-aware token budgets, and matched sparse separate baselines, so that gains can be measured at a real bitrate rather than only by kept-token count. Fifth, the continuous latent should be discretized only after the sparse setting is better understood. FSQ is a useful first candidate because it tends to train robustly; RVQ or VQ variants should then be compared with code utilization, entropy, dead-code rate, and reconstruction-per-bit as primary diagnostics. Sixth, training should include stronger 
+
+## 9Wavelet as Tokenizer 
+
+reconstruction objectives: L1 and perceptual losses for image detail, temporal or optical-flow losses for video consis-tency, audio-aware spectral or psychoacoustic losses for waveform quality, and adversarial fine-tuning only after the rate-distortion behavior is understood. Finally, the unified-token claim should remain broader than visual reconstruc-tion alone: audio should remain in the benchmark, and the same scale-subband-position grammar should be tested on continuous 3D fields such as Gaussian-splat attributes, neural fields, tri-planes, or sparse scene grids. Together, these directions would test a broader hypothesis: natural signals may share a common multi-scale token grammar, while modality-specific adapters, learned rate allocation, and discrete coding specialize that grammar for audio, image, video, and 3D tokenization tasks. 
+
+# 8 Conclusion 
+
+This paper investigates wavelet-inspired tokenization as a bridge between classical signal compression and modern neural tokenizers. It presents a shared schema for audio, images, and video: all three modalities are converted to the same coefficient-value plus metadata grammar, processed by one shared continuous token trunk, and reconstructed through modality-specific Haar IDWT paths. The experiments support the feasibility of a unified wavelet token schema and sparse token interface in a controlled small-scale autoencoding setting. With a simple audio coefficient scale, the dense shared model is close to the small audio-only baseline and improves over the small visual baselines used here. Matched-rate sweeps suggest that the vi-sual gains are not explained only by bottleneck size. Fixed-rate energy selection is an effective cross-modal allocation signal, and masked sparse training gives encouraging video results. The evidence also narrows the claim. Additive metadata embeddings are not a universal source of improvement: they help some image settings but often degrade audio and video. The results therefore support a unified schema and sparse token interface, not yet a universal discrete vocabulary. Within the limitations described above, the evidence motivates further evaluation of the schema, sparse selection mechanism, and tokenizer architecture. 
+
+# Statements 
+
+The author used AI-assisted writing tools for language editing, organization, and drafting support during preparation of this manuscript. The author reviewed and edited the resulting text and takes full responsibility for the content, claims, experiments, and conclusions. 
+
+## 10 Wavelet as Tokenizer 
+
+# References 
+
+[1] Junke Wang, Yi Jiang, Zehuan Yuan, Binyue Peng, Zuxuan Wu, and Yu-Gang Jiang. Omnitokenizer: A joint image-video tokenizer for visual generation. arXiv preprint arXiv:2406.09399 , 2024. [2] NVIDIA. Cosmos world foundation model platform for physical ai. arXiv preprint arXiv:2501.03575 , 2025. [3] Aaron van den Oord, Oriol Vinyals, and Koray Kavukcuoglu. Neural discrete representation learning. In Ad-vances in Neural Information Processing Systems , volume 30, 2017. [4] Patrick Esser, Robin Rombach, and Bj¨ orn Ommer. Taming transformers for high-resolution image synthesis. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 12873–12883, 2021. [5] Lijun Yu, Yong Cheng, Kihyuk Sohn, Jos´ e Lezama, Han Zhang, Huiwen Chang, Alexander G. Hauptmann, Ming-Hsuan Yang, Yuan Hao, Irfan Essa, and Lu Jiang. Magvit: Masked generative video transformer. arXiv preprint arXiv:2212.05199 , 2022. [6] Lijun Yu, Jos´ e Lezama, Nitesh B. Gundavarapu, Luca Versari, Kihyuk Sohn, David Minnen, Yong Cheng, Vigh-nesh Birodkar, Agrim Gupta, Xiuye Gu, Alexander G. Hauptmann, Boqing Gong, Ming-Hsuan Yang, Irfan Essa, David A. Ross, and Lu Jiang. Language model beats diffusion—tokenizer is key to visual generation. In 
+
+International Conference on Learning Representations , 2024. [7] Zhenhai Zhu and Radu Soricut. Wavelet-based image tokenizer for vision transformers. arXiv preprint arXiv:2405.18616 , 2024. [8] Stephane G. Mallat. A theory for multiresolution signal decomposition: The wavelet representation. IEEE Transactions on Pattern Analysis and Machine Intelligence , 11(7):674–693, 1989. [9] David S. Taubman and Michael W. Marcellin. JPEG2000: Standard for interactive imaging. Proceedings of the IEEE , 90(8):1336–1357, 2002. [10] Neil Zeghidour, Alejandro Luebs, Ahmed Omran, Jan Skoglund, and Marco Tagliasacchi. Soundstream: An end-to-end neural audio codec. arXiv preprint arXiv:2107.03312 , 2021. [11] Alexandre D´ efossez, Jade Copet, Gabriel Synnaeve, and Yossi Adi. High fidelity neural audio compression. 
+
+arXiv preprint arXiv:2210.13438 , 2022. [12] Shengpeng Ji, Ziyue Jiang, Wen Wang, Yifu Chen, Minghui Fang, Jialong Zuo, Qian Yang, Xize Cheng, Zehan Wang, Ruiqi Li, et al. Wavtokenizer: An efficient acoustic discrete codec tokenizer for audio language modeling. 
+
+arXiv preprint arXiv:2408.16532 , 2024. [13] Fabian Mentzer, David Minnen, Eirikur Agustsson, and Michael Tschannen. Finite scalar quantization: Vq-vae made simple. In International Conference on Learning Representations , 2024. [14] Richard Zhang, Phillip Isola, Alexei A. Efros, Eli Shechtman, and Oliver Wang. The unreasonable effectiveness of deep features as a perceptual metric. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , pages 586–595, 2018. [15] Martin Heusel, Hubert Ramsauer, Thomas Unterthiner, Bernhard Nessler, and Sepp Hochreiter. Gans trained by a two time-scale update rule converge to a local nash equilibrium. In Advances in Neural Information Processing Systems , volume 30, 2017. [16] Thomas Unterthiner, Sjoerd van Steenkiste, Karol Kurach, Raphael Marinier, Marcin Michalski, and Syl-vain Gelly. Towards accurate generative models of video: A new metric and challenges. arXiv preprint arXiv:1812.01717 , 2018. [17] Bernhard Kerbl, Georgios Kopanas, Thomas Leimk¨ uhler, and George Drettakis. 3d gaussian splatting for real-time radiance field rendering. ACM Transactions on Graphics , 42(4):139:1–139:14, 2023. [18] Joo Chan Lee, Daniel Rho, Xiangyu Sun, Jong Hwan Ko, and Eunbyung Park. Compact 3d gaussian splatting for static and dynamic radiance fields. arXiv preprint arXiv:2408.03822 , 2024. [19] Pete Warden. Speech commands: A dataset for limited-vocabulary speech recognition. arXiv preprint arXiv:1804.03209 , 2018. [20] Patrick Helber, Benjamin Bischke, Andreas Dengel, and Damian Borth. Eurosat: A novel dataset and deep learning benchmark for land use and land cover classification. IEEE Journal of Selected Topics in Applied Earth Observations and Remote Sensing , 12(7):2217–2226, 2019. [21] Jordi Pont-Tuset, Federico Perazzi, Sergi Caelles, Pablo Arbel´ aez, Alexander Sorkine-Hornung, and Luc Van Gool. The 2017 davis challenge on video object segmentation. arXiv preprint arXiv:1704.00675 , 2017. 
+
+## 11 Wavelet as Tokenizer 
+
+# A Experimental Details 
+
+A.1 Data Preprocessing 
+
+The experiments use Speech Commands v0.02, EuroSAT RGB, and DAVIS 2017 train/validation data. Audio exam-ples are converted to mono waveforms of 16,384 samples and normalized by 32768. Images are resized to 64 ×64 RGB tensors in [0 , 1] . Video examples use 8 RGB frames resized to 64 × 64 . Training batches are sampled independently for each modality, and validation batches are sampled from the corresponding validation split. 
+
+A.2 Shared Autoencoder Configuration 
+
+Unless otherwise stated, the shared model uses token width 32, latent dimension 16, hidden dimension 64, AdamW optimization with learning rate 10 −3, batch size 2, and 300 training steps. The three modalities are trained with round-robin updates. Validation is run every 50 steps, and reported validation values are averaged over two validation batches per modality. The default value scales are saudio = 4 , simage = 1 , and svideo = 1 , with no per-sample RMS normal-ization unless explicitly noted. The default metadata mode for the metadata-free shared model is metadata=none ;the full-metadata ablation uses additive modality, rank, scale, subband, and position embeddings. 
+
+A.3 Separate and Matched-Rate Baselines 
+
+The separate baseline trains one wavelet autoencoder per modality. For matched-rate comparisons, the separate model’s latent channel count is set to 2d times the shared latent dimension for a modality of rank d, matching the number of continuous latent scalars per sample. The rate-distortion sweep uses shared latent dimensions 1, 2, 4, 8, 16 
+
+and seed 0. Reported rates are continuous latent scalar counts rather than entropy-coded bitrates. 
+
+A.4 Fixed-Rate Token Selection 
+
+The non-parametric selection experiment evaluates six keep ratios: full density, 50%, 25%, 10%, 5%, and 1%. The compared selectors are energy global , energy per subband , uniform stride , random , and lowpass first .The selection sweep uses seeds 0, 1, and 2 for stochastic selectors and four validation batches per modality. Token energy is the mean squared coefficient value across channels. Dropped tokens are set to zero before inverse wavelet reconstruction. 
+
+A.5 Masked Sparse Training 
+
+Masked sparse training uses energy global selection, input-zero masking, keep ratios 0.5, 0.25 , 0.1, latent dimen-sions 8 and 16, and metadata modes none and full . Each run uses the same optimizer, training length, value scales, and validation protocol as the dense shared autoencoder unless otherwise stated. 
+
+A.6 Metrics and Scope 
+
+PSNR is computed from signal-space MSE with data range 1.0. Coefficient MSE is logged as a diagnostic but is not used as the training objective. The reported learned-model results are single-seed measurements; they are intended to characterize trends in the proposed schema rather than final compression performance. 
+
+## 12

@@ -1,0 +1,256 @@
+Title: SEMIR: Topology-Preserving Graph Minors for Thin-Structure Segmentation
+
+URL Source: https://arxiv.org/pdf/2606.24935v1
+
+Published Time: Thu, 25 Jun 2026 00:01:48 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# SEMIR: Topology-Preserving Graph Minors for Thin-Structure Segmentation 
+
+Luke James Miller 1 and Yugyung Lee 1
+
+University of Missouri-Kansas City, Kansas City MO 64110, USA 
+
+ljmbm5@umsystem.edu 
+
+Accepted to the European Conference on Computer Vision (ECCV) 2026 
+
+Abstract. Thin-structure segmentation—power lines, cracks, lane mark-ings at 1–3 pixel width—requires preserving connectivity that standard representations preclude: patching severs continuous structures and con-ventional superpixels merge thin targets into background before classi-fication. Topology-aware losses penalize connectivity breaks at the ob-jective level but cannot recover what the representation has already de-stroyed. We propose SEMIR, a framework that replaces the pixel lat-tice with a parameterized graph minor whose contraction map preserves thin-structure connectivity under the contraction criterion. The minor collapses millions of pixels into tens or hundreds of boundary-aligned supernodes, enabling full-resolution inference without patching at scales demonstrated up to 21 MP in this paper; a lightweight GNN classifies the reduced graph and an exact map lifts predictions to pixel resolution. One pipeline—identical architecture, features, loss, and GNN hyperparame-ters across all datasets—matches or exceeds domain-specific baselines on TTPLA (power lines), CrackSeg9k (pavement cracks), and SkyScapes Lane (aerial markings) on Dice, IoU, and Boundary F1 while reducing mask fragmentation by at least 4.6 × relative to SLIC at matched infer-ence. 
+
+Keywords: Thin-structure segmentation · Graph minors · Topology preservation · Graph neural networks 
+
+# 1 Introduction 
+
+Thin structures—power lines, pavement cracks, lane markings—pervade visual scenes across imaging domains, spanning one to three pixels in width yet car-rying connectivity as their primary semantic signal: a fragmented power line is a missed hazard, a disconnected crack network mischaracterizes structural integrity, a broken lane marking disrupts route topology. Standard segmenta-tion pipelines process these targets on the native pixel grid or on task-agnostic superpixel decompositions (SLIC [2], Felzenszwalb–Huttenlocher [11]) that ag-glomerate without regard to target geometry, fragmenting thin structures before any classifier operates. Once a two-pixel conductor is split across adjacent su-perpixels, no downstream refinement recovers the discarded connectivity.  
+
+> arXiv:2606.24935v1 [cs.CV] 22 Jun 2026 2L. Miller and Y. Lee
+
+Recent work addresses this failure through the training objective. Topology-aware losses—clDice [27], Skeleton Recall Loss [14], and Topograph [23]—penalize connectivity breaks via skeleton- or persistence-based differentiable surrogates. These methods target the correct failure mode but operate on a representation with no structural obligation to preserve connectivity: the pixel grid encodes spatial adjacency uniformly without distinguishing thin targets from bulk re-gions, and superpixel methods actively merge across thin-structure boundaries. Topology preservation in such pipelines is an emergent property of optimization, not a formulation of the representation. We attack the complementary axis. SEMIR constructs a parameterized graph minor from the pixel lattice via edge contraction, node deletion, and edge dele-tion, replacing the grid with a compact, boundary-aligned graph on which a GNN performs node-level classification. The critical property is graph-theoretic: edge contraction defines a surjective map from the parent graph G to the minor 
+
+H such that any connected subgraph of G whose edges are all contracted—rather than deleted—maps to a connected subgraph of H [10, 24]. For thin structures, this surjection has a direct consequence: a power line or crack whose pixels are intensity-homogeneous will have every internal edge contracted into a single supernode chain, preserving the structure’s connectivity in H regardless of its width or orientation. The constraint is structural, not statistical—it holds for any input satisfying the contraction criterion, independent of training data or loss landscape. Minor parameters are set via few-shot boundary-alignment optimization on 5–20 labeled images; a GINE classifier [12] operates on the reduced graph; an exact lifting map, defined by the partition induced during contraction, recov-ers pixel-level predictions without interpolation. The entire pipeline is domain-agnostic: the same architecture, features, loss, and hyperparameters are applied to every dataset without modification. This work extends our earlier graph-minor representation framework [22] to thin-structure segmentation domains. We evaluate SEMIR on three benchmarks spanning distinct thin-structure domains: TTPLA [1] (power lines, 1100 UAV images, 3840 × 2160 ), Crack-Seg9k [17] (pavement cracks, 9255 images, 400 × 400 ), and SkyScapes [3] (aerial lane markings, 16 images, 5616 × 3744 , 13 cm/pixel GSD). These datasets span two orders of magnitude in image resolution, three orders in dataset size, and cover thin-structure morphologies from near-linear to irregularly branching to discrete and periodic. Our contributions: 1. We show that graph-minor regionization provides a formal connectivity con-straint for thin structures: any connected foreground region whose internal edges satisfy the contraction criterion is preserved as a connected subgraph in the minor, independent of topology-aware losses or task-specific architec-ture. 2. We evaluate SEMIR across three thin-structure domains with a single pipeline, matching or exceeding domain-specific baselines on Dice, IoU, and Boundary F1 while achieving consistently lower mask fragmentation. SEMIR: Graph Minors for Thin-Structure Segmentation 3
+
+3. We isolate the source of improvement via controlled ablation replacing the minor with SLIC superpixels at matched region count, confirming that the topological advantage originates in the representation, not in region-level inference alone. 
+
+# 2 Related Work 
+
+Thin-structure segmentation. Domain-specific architectures dominate thin-structure benchmarks. For power-line detection, dedicated encoder–decoder designs [1] and line-prior networks [32, 34] exploit geometric regularity in aerial imagery. Crack segmentation methods [18, 19] integrate multi-scale fusion and boundary-aware attention to resolve hairline fractures against cluttered backgrounds. Aerial lane-marking extraction [3] adapts general-purpose backbones—Swin [21], SegFormer [35], DeepLabV3+ [7]—to overhead imagery, relying on high-resolution input and class-balanced sampling to compensate for extreme foreground–background im-balance. In every case the representation is the pixel grid or a fixed multi-scale hierarchy derived from it; none incorporates a structural constraint against thin-structure fragmentation. SEMIR replaces the grid with a topology-preserving graph minor, making it orthogonal to these architectural choices and applicable across all three domains with a single pipeline. 
+
+Topology-aware losses. clDice [27] differentiates through soft skeletonization to penalize connectivity breaks in tubular structures. Skeleton Recall Loss [14] im-proves computational efficiency by restricting the topological penalty to recall on skeletonized ground truth. Topograph [23] constructs a graph from the prediction and penalizes discrepancies in connected-component counts via a differentiable Betti-number surrogate. Stucki et al . [28] propose a topologically faithful loss using persistent homology; Lux et al . [4] extend this to multi-class settings. Mor-phological post-processing (dilation, erosion, skeletonization) provides a comple-mentary family of deterministic topology repair operators [26]. All operate on the pixel grid: they modify the training objective but leave the representation unchanged. SEMIR is complementary—it constrains connectivity at the repre-sentation level and could in principle be combined with any topology-aware loss, though we do not test such combinations in this work. 
+
+Superpixels and GNN pooling. SLIC [2] and Felzenszwalb–Huttenlocher [11] re-duce inference units via task-agnostic agglomeration with manually tuned pa-rameters. Learned superpixel networks (SSN [16], SEAL [30]) improve bound-ary adherence but remain grid-bound and provide no formal relationship be-tween induced regions and the original image. Differentiable graph pooling— DiffPool [36], MinCutPool [5], DMoN [29]—learns soft cluster assignments for graph coarsening but couples pooling to the task-specific loss, lacks exact lift-ing, and offers no topology guarantees. SEMIR differs on three axes: graph minor construction is governed by parameterized graph operations with formal connec-tivity preservation [9, 10, 24]; parameters are optimized for boundary alignment 4 L. Miller and Y. Lee 
+
+via few-shot black-box optimization rather than end-to-end gradient flow; and the lifting map from minor predictions to pixel labels is exact by construction. 
+
+# 3 Method 
+
+Fig. 1: Overview of the SEMIR pipeline. An input image is first encoded as a pixel adjacency graph. A parameterized graph minor is then constructed through three op-erations—edge contraction, node deletion , and edge deletion—producing a compact, boundary-aligned representation. The surjective structure of contraction enforces that thin-structure connectivity present in the original graph is preserved in the minor. A GINE network performs node classification on the reduced graph using supernode and edge features, and supernode predictions are lifted to pixel resolution via the exact partition encoded during contraction, requiring no interpolation. Minor parameters 
+
+Θ = {ψ, α, β } are set once per dataset through few-shot SMBO on 5–20 labeled im-ages; all other components remain identical across domains. 
+
+SEMIR takes an RGB image I ∈ RH×W ×C and produces a pixel-level seg-mentation ˆY ∈ { 0, ..., k }H×W for a specified thin-structure target. The pipeline comprises four stages: (i) construction of a pixel-adjacency graph G from I; (ii) derivation of a graph minor H ⪯ G via parameterized edge contraction, node deletion, and edge deletion; (iii) node-level classification on H by a graph neural network; and (iv) exact lifting of supernode predictions to pixel resolution. Mi-nor parameters are set once per dataset through few-shot boundary-alignment optimization. Figure 1 illustrates the pipeline end to end. 
+
+3.1 Pixel Graph Construction 
+
+The image I is encoded as an 8-connected grid graph G = ( V (G), E (G)) with one node per pixel and edges between all horizontally, vertically, and diagonally SEMIR: Graph Minors for Thin-Structure Segmentation 5
+
+adjacent pairs: 
+
+V (G) = {(j, k ) : 1 ≤ j ≤ H, 1 ≤ k ≤ W }, (1) 
+
+E(G) = {(u, v ) ∈ V (G)2 : u̸ = v, ∥u − v∥∞ = 1 }. (2) Rather than maintaining explicit coordinate lists or adjacency structures for 
+
+G—which would require O(|V (G)| + |E(G)|) storage, roughly 9HW entries for an 8-connected grid—we represent the graph via an expanded binary tensor 
+
+T ∈ { 0, 1}(2 H−1) ×(2 W −1) that interleaves node and edge states: positions with both indices even encode nodes; positions with at least one odd index encode edges. This representation costs (2 H−1)(2 W −1) bits, a fraction of the memory required by a sparse adjacency list, while encoding the full graph topology in a structure that supports O(|E(G)| − | E(H)|) flood-fill construction of the minor via simple array writes. Because T also encodes node/edge states; supernode membership is recovered implicitly from contraction using tensor indices dur-ing lifting (no stored adjacency lists). Lifting predictions from H back to pixel resolution reduces to reading T directly—no inverse mapping or interpolation is needed. The modest overhead of the expanded tensor is more than offset by the downstream reduction in data: once the minor is constructed, all subsequent computation operates on |V (H)| supernodes rather than HW pixels. 
+
+3.2 Graph Minor Construction 
+
+A graph minor H ⪯ G is obtained from G by a sequence of edge contractions, node deletions, and edge deletions [10, 24]. SEMIR parameterizes these opera-tions by a compact parameter set Θ = {ψ, α, β } and executes them in a fixed order during a coprime traversal of V (G).The order in which pixels are visited during contraction affects the resulting minor: a raster-scan traversal preferentially merges rightward and downward, producing elongated supernodes aligned with the scan direction. To eliminate this bias, we traverse the N = HW pixels with a fixed step size s satisfying 
+
+gcd( s, N ) = 1 , so the sequence {(k·s) mod N }N −1 
+
+> k=0
+
+visits every pixel exactly once in a deterministic scrambled order. The step s is chosen as the nearest integer to ⌊N/ 2⌋ that is coprime to N . This traversal is deterministic, reproducible, and adds no memory overhead. 
+
+Connectivity guarantee. Edge contraction defines a surjective homomorphism 
+
+ϕ : G → H such that for any connected subgraph S ⊆ G whose edges are all contracted (rather than deleted), ϕ(S) is a connected subgraph of H [10, 24]. For thin structures, this means any foreground region whose pixels are intensity-homogeneous under ψ is preserved as a connected supernode chain in H, regard-less of width or orientation. 
+
+Edge contraction. Two adjacent supernodes vi, v k ∈ V (H) are merged if their canonical intensity vectors satisfy 
+
+∥Ivi − Ivk ∥n ≤ ψ,  (3) 6 L. Miller and Y. Lee 
+
+where ∥ · ∥ n is a configurable Ln norm and ψ ∈ Θ is the contraction threshold. Contraction recurses until no valid merges remain. 
+
+Node deletion. Supernodes violating retention criteria are removed: 
+
+Vdel := {v ∈ V (H) : av < β min ∨ av > β max ∨ Iv /∈ [mmin , mmax ]}, (4) where av = |P v | is the supernode area (pixel count), Iv is the intensity of the canonical pixel of the supernode, and β = ( βmin , β max , mmin , mmax ) ⊂ Θ are retention bounds. “Node deletion” means removal from the active prediction graph, not loss of pixel coverage; filtered supernodes are routed to background before exact lifting. 
+
+Edge deletion. Edges across strong intensity gradients are severed: 
+
+Edel := {(vi, v j ) ∈ E(H) : ∥Ivi − Ivj ∥n > α }, (5) where α ∈ Θ is the deletion threshold. Removed edges partition the minor into components aligned with image boundaries. 
+
+3.3 Few-Shot Parameter Optimization 
+
+Rather than tuning Θ manually, we frame parameter selection as black-box opti-mization over the discrete parameter space. Given a small held-out set Dfew ⊂ D 
+
+of 5–20 labeled images from the training set, we solve 
+
+Θopt = arg min  
+
+> Θ
+
+E(I,Y )∼D few 
+
+ 1 − DSC  SB (T, Θ ), Y B
+
+  , (6) where SB (T, Θ ) extracts the boundary elements of the induced minor and YB
+
+is the ground-truth boundary map derived from the target label map Y . Opti-mization uses sequential model-based optimization (SMBO) with an ExtraTrees surrogate [15]. The resulting Θopt defines a family of boundary-aligned partitions adapted to the target structure. 
+
+3.4 Supernode Features 
+
+Each supernode u ∈ V (H) aggregates statistics from its constituent pixel set 
+
+Pu. We compute: area au = |P u|; mean intensity ¯Iu ∈ R3; per-channel standard deviation σu ∈ R3; boundary length bu = |{ (p, q ) ∈ E(G) : p ∈ P u, q / ∈ P u}| ;compactness cu = 4 πa u/(b2 
+
+> u
+
++ ϵ); elongation eu = p(λu, 1 + ϵ)/(λu, 2 + ϵ) where 
+
+λu, 1 ≥ λu, 2 ≥ 0 are eigenvalues of the 2D spatial covariance of pixel coordinates in Pu; and the dominant axis du ∈ R2 (eigenvector of λu, 1). Edge features for 
+
+(u, v ) ∈ E(H) encode scale-invariant log-ratios of scalar node features, relative displacement, and orientation difference between dominant axes. All edge fea-tures are rotation- and scale-robust by construction, and can be used exclusively to remove bias from predictions based on node scale and orientation. SEMIR: Graph Minors for Thin-Structure Segmentation 7
+
+3.5 GNN Classification and Exact Lifting 
+
+A three-layer GINE network [12] with relational edge features performs node classification on H, producing supernode predictions ˆYH ∈ { 0, · · · , k }|V (H)|.Each graph is processed as a single batch element (batch size one graph per image). The final pixel-level segmentation is obtained by lifting: 
+
+ˆY (j, k ) = ˆYH (u) for all (j, k ) ∈ P u, (7) where the partition {P u}u∈V (H) is encoded in T . This lifting is exact: every pixel inherits its supernode’s prediction with no interpolation, and the partition is surjective by construction of the contraction. All metrics are computed on ˆY
+
+at full pixel resolution. 
+
+# 4 Experiments 
+
+4.1 Datasets 
+
+We evaluate on three benchmarks spanning distinct thin-structure domains, imaging modalities, and resolutions (Table 1). The selection is deliberate: these datasets differ in image scale by two orders of magnitude, in dataset size by three orders, and in thin-structure morphology from near-linear (power lines) to irregularly branching (cracks) to discrete and periodic (dashed lane markings). A method that performs well across all three must generalize over structure ge-ometry, imaging conditions, and foreground–background statistics—the precise claim we make for SEMIR. 
+
+TTPLA [1] contains 1100 UAV images at 3840 × 2160 resolution depicting overhead power lines. Foreground structures span 1–2 pixels in width against cluttered backgrounds of vegetation, roads, and buildings. Power lines are near-linear over local neighborhoods but vary in orientation, sag, and overlap across the image, making them a test case for connectivity preservation over long spa-tial extents. The extreme foreground–background imbalance—power-line pixels constitute well under 1% of the image area—means that even small fragmen-tation errors translate to large relative drops in overlap metrics. We use the official train/test split with 5-class annotations collapsed to binary (power line vs. background). 
+
+CrackSeg9k [17] comprises 9255 pavement images at 400 × 400 , each with binary pixel-level crack annotations. Cracks range from 1–3 pixels wide and ex-hibit branching, irregular curvature, and low contrast against asphalt. Unlike the near-linear geometry of power lines, cracks form tree-like networks with T- and Y-junctions whose topology carries direct engineering significance: the number and connectivity of branches determines a crack network’s severity classification. CrackSeg9k aggregates images from multiple sources and surface types, intro-ducing variation in texture, lighting, and crack morphology that stress-tests a method’s boundary-alignment assumptions. Its comparatively small image res-olution makes it the least demanding dataset in terms of computational scale, isolating the representation question from the scalability question. 8 L. Miller and Y. Lee                    
+
+> Table 1: Dataset characteristics. Dataset Domain Images Resolution Width (px) Split TTPLA Power lines 1100 3840 ×2160 1–2 official CrackSeg9k Cracks 9255 400 ×400 1–3 official SkyScapes Lane markings 16 5616 ×3744 1–3 official
+
+SkyScapes [3] provides 16 aerial images at 5616 × 3744 (13 cm/pixel GSD) with dense multi-class annotations over urban scenes. Lane markings span 1– 3 pixels at this GSD and include both continuous and dashed patterns, the latter presenting a distinct challenge: each dash is a disconnected foreground component by design, so correct segmentation requires preserving many small isolated regions rather than a single connected structure. We evaluate on both the full 20-class dense task (SkyScapes Dense) and the 13-class lane-marking subtask (SkyScapes Lane). The dense task includes large-area classes—buildings, roads, vegetation—where pixel-level encoders with broad receptive fields hold an inherent advantage; including it provides an honest assessment of where a region-level representation loses ground. The small dataset size (16 images total) also tests whether SEMIR’s few-shot parameter optimization and lightweight GNN generalize from minimal training data. 
+
+4.2 Implementation Details 
+
+All experiments use an NVIDIA T4 GPU (16 GB) with PyTorch. Minor param-eters Θ are optimized via SMBO with an ExtraTrees surrogate on a few-shot subset ( |D few | = 10 ); optimized parameters are fixed for all subsequent train-ing and evaluation. The GNN is a 3-layer GINE (hidden dimension 128, ReLU activation, batch normalization) trained with Adam ( lr = 10 −3) for up to 200 epochs with early stopping on validation Dice (patience 10). All SEMIR scores report mean ± std over 5 independent runs. No dataset-specific architecture modifications, loss functions, or post-processing are applied: the same pipeline and GNN hyperparameters are used across all three benchmarks. 
+
+4.3 Metrics 
+
+We evaluate segmentation quality with four complementary metrics. Dice co-efficient (F 1) and Intersection-over-Union (IoU) measure region overlap between prediction and ground truth; both range from 0 to 1, with Dice =2 IoU /(1 + IoU ). To assess boundary fidelity we report Boundary F 1 (BF1) [8], which computes precision and recall over predicted boundary pixels within a tolerance of 2 px of the ground-truth boundary. Finally, we report component fragmentation ∆C = |C( ˆY ) − C(Y )|, where C(·) counts the number of con-nected components in the foreground mask. A prediction that fragments a single crack into several disjoint segments, or merges two distinct power lines, incurs a SEMIR: Graph Minors for Thin-Structure Segmentation 9
+
+large ∆C even if its pixel-level overlap is high. Dice and IoU are reported for all experiments; BF1 and ∆C are reported in the ablation study (Sec. 4.6), where we control both sides of the comparison and can compute them directly. 
+
+4.4 Baselines 
+
+We compare against two groups of methods. The first consists of four widely adopted general-purpose segmentation architectures: UNet [25], an encoder– decoder with skip connections that remains a standard reference across do-mains; DeepLabV3+ [7], which combines atrous spatial pyramid pooling with a lightweight decoder for multi-scale context; PSPNet [38], which aggregates global context through pyramid pooling; and SegFormer [35], a hierarchical vi-sion transformer with an MLP decode head. These four span the CNN-only, dilated-convolution, pooling-based, and transformer design families, providing broad coverage of mainstream encoder–decoder paradigms. The second group comprises domain-specific architectures included because they hold leading published performance on individual benchmarks: PL-Deeplab [6] and PL-UNet [39] for power-line segmentation on TTPLA; CrackScopeNet [37] and BBCNet [13] for crack segmentation on CrackSeg9k; and SkyScapesNet [3] for aerial scene parsing on SkyScapes. Each incorporates task-specific modules— edge-detection branches, frequency-domain enhancement, or multi-scale atten-tion designed for thin structures—and is trained and evaluated on its target dataset only. All baseline values are cited from their respective publications on official splits. We report published numbers as-is; evaluation protocols may differ; our goal is cross-domain positioning rather than perfectly controlled reimplementation. 
+
+4.5 Main Results 
+
+Table 2 compares SEMIR against published baselines on four benchmarks span-ning three application domains. All baseline values are cited from published sources; SEMIR numbers report the mean over five runs on official dataset splits. The largest standard deviation across all reported metrics was ±.008 ; per-run breakdowns are provided in the supplementary material but omitted here for space. On TTPLA , SEMIR achieves .894 Dice and .808 IoU, surpassing PL-UNet (.889/.800), the previous best published result, as well as domain-specific PL-Deeplab (.877/.782) and general-purpose baselines including SegFormer (.873/.776). Notably, SEMIR uses a single pipeline with no power-line-specific design choices, whereas PL-UNet and PL-Deeplab both incorporate domain-tailored modules. On CrackSeg9k , SEMIR attains .911 Dice and .837 IoU, exceeding BBC-Net (.909/.833) and CrackScopeNet (.893/.822). The general-purpose baselines cluster tightly between .884 and .890 Dice, suggesting that standard encoder– decoder architectures plateau on this dataset; SEMIR’s graph-minor represen-tation breaks through this ceiling. 10 L. Miller and Y. Lee 
+
+Table 2: Cross-domain positioning against published baselines on three thin-structure benchmarks. All baseline values cited from their respective source; SEMIR reports mean 
+
+± std over 5 runs on official splits. Best in bold , second best underlined. †Domain-specific method. TTPLA CrackSeg9k SkyScapes SkyScapes Lane Method Dice IoU Dice IoU Dice IoU Dice IoU UNet .841 [33] .726 [33] .888 [37] .814 [37] .248 [3] .142 [3] .165 [3] .090 [3] 
+
+DeepLabV3+ .833 [6] .715 [6] .884 [37] .810 [37] .553 [3] .382 [3] .542 [3] .371 [3] 
+
+PSPNet .807 [39] .676 [39] .890 [37] .817 [37] .467 [3] .304 [3] .528 [3] .359 [3] 
+
+SegFormer .873 [31] .776 [31] .889 [37] .816 [37] — — .503 [20] .336 [20] 
+
+PL-Deeplab † .877 [6] .782 [6] — — — — — —PL-UNet .889 [39] .800 [39] — — — — — —CrackScopeNet † — — .893 [37] .822 [37] — — — —BBCNet — — .909 [13] .833 [13] — — — —SkyScapesNet † — — — — .573 [3] .401 [3] .683 [3] .519 [3] 
+
+SEMIR .894 .808 .911 .837 .562 .391 .713 .554 
+
+On SkyScapes Dense , SkyScapesNet retains the top position (.573/.401) with SEMIR close behind (.562/.391). This 20-class task includes large-area classes (buildings, roads, vegetation) where pixel-level encoders benefit from broad spatial context that a region-level GNN does not exploit. The gap narrows considerably on SkyScapes Lane , the 13-class lane-marking subtask where all foreground classes are thin structures: SEMIR leads with .713 Dice and .554 IoU versus SkyScapesNet’s .683/.519. This confirms that the minor representa-tion is most advantageous when the structures of interest are fine-grained and boundary-sensitive. Across all four benchmarks, SEMIR achieves the best or second-best result using an identical pipeline—same GINE architecture, same few-shot SMBO tun-ing, same feature set—with no dataset-specific modifications. The only method that outperforms SEMIR on any benchmark (SkyScapesNet on SkyScapes Dense) is a purpose-built multi-task architecture with edge-detection branches designed for that specific dataset. 
+
+4.6 Ablation: Minor vs. SLIC 
+
+To isolate whether improvements derive from the topology-preserving minor or from region-level GNN inference generally, we replace the minor with SLIC superpixels [2] and retrain the same GINE classifier on the resulting region-adjacency graph. All other components—features, architecture, training protocol— remain identical. Rather than constraining SLIC to match the minor’s region count (which would unfairly limit its operating regime), we sweep the number of segments across a wide range and report each configuration independently. SLIC uses default compactness c=10 and no pre-smoothing ( σ=0 ); the minor’s SEMIR: Graph Minors for Thin-Structure Segmentation 11                                           
+
+> Table 3: Ablation: graph-minor partition vs. SLIC superpixels on CrackSeg9k. SLIC run at varying region counts with c=10 ,σ=0 . The minor averages ¯nregions per image (not constrained to match SLIC). ∗SEMIR dynamically allocates regions per image. Partition ¯nDice IoU BF1 ∆C ↓
+> SLIC 25 .414 .261 .190 23.512 SLIC 100 .696 .534 .387 42.911 SLIC 500 .819 .693 .512 59.001 SLIC 2000 .851 .741 .696 73.122 SLIC 10,000 .791 .654 .578 80.090 Minor (SEMIR) 37.35 ∗.907 .829 .736 5.103
+
+region count is a per-image byproduct of the contraction process and averages 
+
+¯n ≈ 37 on CrackSeg9k. Table 3 reports results. 
+
+Pixel overlap. SLIC’s best Dice (.851 at ¯n=2 ,000 ) falls short of the minor’s .907 by over five points, despite using roughly 50 × more regions. Performance degrades at both extremes: too few superpixels under-segment the image, col-lapsing crack and background into shared regions (.414 Dice at ¯n=25 ), while too many superpixels fragment predictions and introduce classification noise (.791 at ¯n=10 ,000 ). The minor avoids this trade-off entirely because the contraction process adapts region count to image content. 
+
+Boundary fidelity. The gap widens on BF1. SLIC peaks at .696 ( ¯n=2 ,000 ), while the minor reaches .736. SLIC boundaries follow local color gradients, which cor-relate only loosely with thin-structure edges; the minor’s boundaries are, by construction, aligned with the edges that survive contraction. 
+
+Topological consistency. The most striking contrast appears in ∆C . The minor achieves a component fragmentation of 5.1, meaning its predictions differ from the ground truth by roughly five connected components per image on average. SLIC configurations range from 23.5 ( ¯n=25 , where heavy under-segmentation merges components) to 80.1 ( ¯n=10 ,000 , where over-segmentation shatters them). Even the best SLIC operating point incurs nearly five times the fragmentation error of the minor. This confirms that the minor’s contraction-based construction preserves the connected-component structure of thin foreground regions in a way that color-based superpixels fundamentally cannot. 
+
+Parameter sensitivity. We sweep each minor parameter independently on Crack-Seg9k while holding the remaining parameters at Θopt . Dice is relatively stable across a broad range of the contraction threshold ψ but degrades sharply at both extremes: under-contraction ( ψ ≪ ψopt ) leaves the graph nearly unpruned, producing thousands of single-pixel supernodes that overwhelm the GNN, while over-contraction ( ψ ≫ ψopt ) merges crack and background into shared supern-odes, collapsing foreground structure. ∆C is most sensitive to ψ, confirming that 12 L. Miller and Y. Lee 
+
+the contraction threshold is the primary lever for topology preservation. The edge deletion threshold α exhibits a gentler influence: values near αopt produce com-parable Dice, with degradation only when α is set so low that nearly all edges are severed (isolating supernodes) or so high that no edges are removed (pre-venting boundary formation). Area bounds β have the narrowest effect, filtering only extreme-size supernodes whose removal has limited impact on overlap or topology. Across all three parameters, the few-shot SMBO consistently recovers values near the Pareto front of the Dice– ∆C trade-off, indicating that ten labeled images suffice for reliable parameter selection without manual intervention. 
+
+4.7 Qualitative Results 
+
+Figure 2 presents representative predictions from SEMIR alongside UNet on one image from each dataset. On TTPLA, UNet fragments continuous power lines where they cross cluttered background (green arrows); SEMIR preserves them as connected structures, consistent with its Dice advantage over general-purpose baselines reported in Table 2. On CrackSeg9k, UNet fragments cracks and intro-duces spurious branches near intersections, while SEMIR tracks the ground-truth topology more closely—producing fewer disconnected segments and fewer false positives at branch points. On SkyScapes, UNet misses faded parking mark-ings that occupy only a few pixels in width; SEMIR recovers these, consistent with its IoU advantage on the lane-marking subtask. Across all three domains the primary distinction is topological rather than pixel-level: SEMIR produces fewer disconnected fragments and fewer false branches, matching the lower mask fragmentation reported in the ablation (Table 3). 
+
+4.8 Computational Complexity 
+
+Minor construction. Each pixel is visited exactly once during the coprime traver-sal, and each edge is examined at most twice (once from each endpoint). Con-struction is therefore O(Nc · HW ) where Nc = 8 is the grid connectivity—linear in pixel count regardless of the induced minor size. On TTPLA ( 3840 × 2160 ,
+
+∼8.3 × 10 6 pixels), minor construction completes on CPU; no GPU is required for this stage. 
+
+GNN inference. Message passing operates on the minor H, with cost O(L(|V (H)|+
+
+|E(H)|)) for L layers. The critical quantity is |V (H)|, which depends on im-age content rather than resolution: |V (H)| reflects the number of intensity-homogeneous regions satisfying the contraction threshold ψ. Table 4 reports empirical supernode counts. TTPLA images ( ∼8.3 × 10 6 pixels) reduce to ∼50 
+
+supernodes on average—a reduction factor exceeding 10 5. CrackSeg9k ( 1.6 × 10 5
+
+pixels) yields ∼37 supernodes; SkyScapes ( ∼2.1×10 7 pixels) yields ∼90 . In every case the GNN operates on a graph small enough to classify in a single forward pass with negligible memory, and the reduction grows with image resolution— precisely the regime where dense methods become most expensive. SEMIR: Graph Minors for Thin-Structure Segmentation 13  
+
+> Fig. 2: Qualitative comparison on one image per dataset. Foreground masks are over-laid in yellow with width dilated for visibility; green arrows highlight regions of inter-est. Columns: original image, UNet prediction, ground truth, SEMIR prediction. Rows: TTPLA (power lines), CrackSeg9k (pavement cracks), SkyScapes (lane markings).
+
+Structure–complexity duality. Dense segmentation methods—UNet, DeepLabV3+, SegFormer—perform per-pixel inference, scaling directly with image resolution regardless of structural complexity. Patch-based inference reduces peak memory but not total computation, as overlapping windows collectively cover all pix-els. SEMIR inverts this relationship: inference cost scales with the topological complexity of semantic boundaries rather than the resolution of the underlying lattice. This property is what enables full-resolution inference on images up to 21 megapixel scale without patching, as noted in the abstract. The duality becomes increasingly advantageous as acquisition resolution grows—exactly the trend in aerial, satellite, and infrastructure imaging where thin-structure segmentation is most needed. 
+
+# 5 Limitations 
+
+SEMIR’s region-level representation trades spatial context breadth for boundary precision. On tasks dominated by large-area classes, such as SkyScapes Dense, pixel-level encoders that aggregate features over wide receptive fields retain an advantage—SEMIR places second behind the purpose-built SkyScapesNet on this benchmark. The minor contraction process also introduces a dependency on the quality of the initial oversegmentation: if early contraction steps merge 14 L. Miller and Y. Lee                                               
+
+> Table 4: Empirical supernode counts |V(H)|and reduction factors across benchmarks. Supernode count depends on image content, not resolution: larger images with more homogeneous background yield greater reduction.
+> TTPLA CrackSeg9k SkyScapes
+> Resolution 3840 ×2160 400 ×400 5616 ×3744
+> Pixels |V(G)|∼8.3×10 61.6×10 5∼2.1×10 7
+> Supernodes |V(H)|49 .7±12 .337 .4±8.191 .2±18 .6
+> Reduction ∼1.7×10 5×∼4.3×10 3×∼2.3×10 5×
+
+a thin structure with its background, no downstream classification can recover it. Finally, the current framework treats topology preservation purely at the representation level. Combining the minor with loss functions that explicitly penalise topological errors—such as clDice [27] or skeleton-recall loss—could yield complementary gains, as these approaches target the optimisation objective rather than the input representation. We leave this combination, along with extension to 3D volumetric structures, as future work. 
+
+# 6 Conclusion 
+
+We presented SEMIR, a segmentation framework that replaces pixel-level in-ference with classification over a compact graph minor. By contracting homo-geneous image regions into supernodes whose boundaries align with structural edges, SEMIR reduces the inference domain from millions of pixels to tens or hundreds of boundary-aligned regions while preserving the connected-component topology of thin foreground structures—this follows from the surjective structure of edge contraction, not from the training objective. A lightweight GINE clas-sifier on the resulting region-adjacency graph, tuned via few-shot optimization on as few as ten images, achieves state-of-the-art results on TTPLA, Crack-Seg9k, and SkyScapes Lane using an identical pipeline with no dataset-specific modifications to the GNN model. The controlled ablation against SLIC confirms that these gains originate in the topology-preserving representation itself, not in region-level inference generally. More broadly, SEMIR demonstrates that the choice of inference representation— not only the architecture or loss—is a first-class design decision for structured prediction. The graph minor provides a principled middle ground between the pixel lattice (exact but redundant) and learned pooling (compact but lossy): it is compact, boundary-aligned, and equipped with a formal connectivity constraints and an exact lifting map. These properties are not specific to thin structures or to 2D images; extending the framework to 3D volumetric data, combining it with topology-aware losses that operate on the objective rather than the representa-tion, and applying the minor to tasks beyond segmentation—such as structure-aware retrieval or graph-based active learning—are natural directions for future work. SEMIR: Graph Minors for Thin-Structure Segmentation 15 
+
+# Acknowledgements 
+
+Luke Miller and Yugyung Lee acknowledge support from the National Science Foundation (NSF) under Award No. 2152057. 
+
+# References 
+
+1. Abdelfattah, R., Wang, X., Wang, S.: TTPLA: An aerial-image dataset for detec-tion and segmentation of transmission towers and power lines. In: Asian Conference on Computer Vision (ACCV). pp. 512–528. Springer (2022) 2. Achanta, R., Shaji, A., Smith, K., et al: Slic superpixels compared to state-of-the-art superpixel methods. IEEE transactions on pattern analysis and machine intelligence 34 (11), 2274–2282 (2012) 3. Azimi, S.M., Henry, C., Sommer, L., Schumann, A., Vig, E.: Skyscapes fine-grained semantic understanding of aerial scenes. In: Proceedings of the IEEE/CVF Inter-national Conference on Computer Vision (ICCV) (October 2019) 4. Berger, A.H., Stucki, N., Lux, L., Bürgin, V., Shit, S., Banaszak, A., Rueckert, D., Bauer, U., Paetzold, J.C.: Topologically faithful multi-class segmentation in medical images. In: Medical Image Computing and Computer Assisted Intervention – MICCAI 2024. pp. 721–731. Springer (2024). https://doi.org/10.1007/978-3-031-72111-3_68 
+
+5. Bianchi, F.M., Grattarola, D., Alippi, C.: Spectral clustering with graph neural networks for graph pooling. In: International Conference on Machine Learning (ICML). pp. 874–883. PMLR (2020) 6. Chen, G., Hao, K., Wang, B., Li, Z., Zhao, X.: A power line segmentation model in aerial images based on an efficient multibranch concatenation network. Expert Systems with Applications 228 , 120359 (2023) 7. Chen, L.C., Zhu, Y., Papandreou, G., Schroff, F., Adam, H.: Encoder-decoder with atrous separable convolution for semantic image segmentation. In: European Conference on Computer Vision (ECCV). pp. 801–818. Springer (2018) 8. Csurka, G., Larlus, D., Perronnin, F.: What is a good evaluation measure for semantic segmentation? In: British Machine Vision Conference (BMVC). BMVA Press (2013) 9. Demaine, E.D., Hajiaghayi, M.T., Kawarabayashi, K.i.: Algorithmic graph minor theory: Decomposition, approximation, and coloring. In: 46th Annual IEEE Sym-posium on Foundations of Computer Science (FOCS’05). pp. 637–646. IEEE (2005) 10. Diestel, R.: Graph Theory, Graduate Texts in Mathematics, vol. 173. Springer, 5 edn. (2017) 11. Felzenszwalb, P.F., Huttenlocher, D.P.: Efficient graph-based image segmentation. International journal of computer vision 59 (2), 167–181 (2004) 12. Hu, W., Liu, B., Gomes, J., et al: Strategies for pre-training graph neural networks. In: International Conference on Learning Representations (2020) 13. Hu, X., Liu, K., Xv, Z.: Bbcnet: Boundary-body coherence network with adap-tive self-attention distillation for enhanced crack segmentation. Digital Signal Processing 162 , 105148 (2025). https://doi.org/https://doi.org/10.1016/ j.dsp.2025.105148 , https://www.sciencedirect.com/science/article/pii/ S1051200425001708 
+
+14. Huck, A., Paetzold, J.C., Shit, S., Menze, B.H.: Skeleton recall loss for connectiv-ity conserving and resource efficient segmentation of thin tubular structures. In: European Conference on Computer Vision (ECCV). Springer (2024) 16 L. Miller and Y. Lee 15. Hutter, F., Hoos, H.H., Leyton-Brown, K.: Sequential model-based optimization for general algorithm configuration. In: International Conference on Learning and Intelligent Optimization (LION). pp. 507–523. Springer (2011) 16. Jampani, V., Sun, D., Liu, M.Y., Yang, M.H., Kautz, J.: Superpixel sampling networks. In: European Conference on Computer Vision (ECCV). pp. 352–368. Springer (2018) 17. Kulkarni, S., Singh, S., Balaji, D., Balasubramanian, S., Sharma, P.: CrackSeg9k: A collection and benchmark for crack segmentation datasets and frameworks. arXiv preprint arXiv:2208.13054 (2022) 18. Li, Y., Ma, R., Liu, H., Cheng, G.: Real-time high-resolution neural network with semantic guidance for crack segmentation. Automation in Construction 156 ,105112 (2023) 19. Liu, H., Yang, J., Miao, X., Mertz, C., Kong, H.: CrackFormer network for pave-ment crack segmentation. IEEE Transactions on Intelligent Transportation Sys-tems 24 (9), 9240–9252 (2023) 20. Liu, X.W.: Advancements in Road Lane Mapping: Comparative Analysis of Deep Learning-based Semantic Segmentation Methods Using Aerial Imagery. Ph.D. the-sis, University of Waterloo (2024) 21. Liu, Z., Lin, Y., Cao, Y., Hu, H., Wei, Y., Zhang, Z., Lin, S., Guo, B.: Swin Transformer: Hierarchical vision transformer using shifted windows. In: IEEE/CVF International Conference on Computer Vision (ICCV). pp. 10012–10022 (2021) 22. Miller, L.J., Lee, Y.: Semir: Semantic minor-induced representation learning on graphs for visual segmentation. In: Proceedings of the 43rd International Confer-ence on Machine Learning (2026), https://arxiv.org/abs/2605.12389 , accepted at ICML 2026 23. Nauert, L., Fauser, M., Chen, T.D., Maier-Hein, L., Bjoern, M.: Topograph: An ef-ficient graph-based framework for strictly topology preserving image segmentation. In: International Conference on Medical Image Computing and Computer-Assisted Intervention (MICCAI). Springer (2024) 24. Robertson, N., Seymour, P.D.: Graph minors. xx. wagner’s conjecture. Journal of Combinatorial Theory, Series B 92 (2), 325–357 (2004) 25. Ronneberger, O., Fischer, P., Brox, T.: U-Net: Convolutional networks for biomed-ical image segmentation. In: Medical Image Computing and Computer-Assisted Intervention (MICCAI). pp. 234–241. Springer (2015) 26. Serra, J.: Image Analysis and Mathematical Morphology. Academic Press, London (1983) 27. Shit, S., Paetzold, J.C., Sekuboyina, A., Ezhov, I., Unber, A., Zhylka, A., Pluim, J.P., Bauer, U., Menze, B.H.: clDice – a novel topology-preserving loss function for tubular structure segmentation. In: IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 16560–16569 (2021) 28. Stucki, N., Paetzold, J.C., Shit, S., Menze, B., Bauer, U.: Topologically faithful im-age segmentation via induced matching of persistence barcodes. In: Proceedings of the 40th International Conference on Machine Learning. pp. 32698–32727. PMLR (2023) 29. Tsitsulin, A., Palowitch, J., Perozzi, B., Müller, E.: Graph clustering with graph neural networks. Journal of Machine Learning Research 24 , 1–21 (2023) 30. Tu, W.C., Liu, M.Y., Jampani, V., Sun, D., Chien, S.Y., Yang, M.H., Kautz, J.: Learning superpixels with segmentation-aware affinity loss. In: IEEE/CVF Con-ference on Computer Vision and Pattern Recognition (CVPR). pp. 568–576 (2018) 31. Wei, N., Chen, J., Sun, S.: Mit-unet: Mixed transformer unet for transmission line segmentation in uav images. IEEE Transactions on Power Delivery (2025) SEMIR: Graph Minors for Thin-Structure Segmentation 17 32. Wei, N., Jin, Y., Dan, Z., Liu, N., Peng, F., Sun, S.: DUFormer: Solving power line detection task in aerial images using semantic segmentation. arXiv preprint arXiv:2304.05821 (2023) 33. Wei, N., Jin, Y., Dan, Z., Liu, N., Peng, F., Sun, S.: Power line segmentation by multi-level attention from hough domain. IEEE Transactions on Instrumentation and Measurement (2024) 34. Wei, N., et al.: PLRefiner: Discrete diffusion model for power line segmentation refinement. IEEE Transactions on Geoscience and Remote Sensing (2025) 35. Xie, E., Wang, W., Yu, Z., Anandkumar, A., Alvarez, J.M., Luo, P.: SegFormer: Simple and efficient design for semantic segmentation with transformers. In: Ad-vances in Neural Information Processing Systems (NeurIPS). vol. 34, pp. 12077– 12090 (2021) 36. Ying, R., You, J., Morris, C., et al.: Hierarchical graph representation learning with differentiable pooling. In: NeurIPS (2018) 37. Zhang, T., Qin, L., Zou, Q., Zhang, L., Wang, R., Zhang, H.: Crackscopenet: A lightweight neural network for rapid crack detection on resource-constrained drone platforms. Drones 8(9), 417 (2024). https://doi.org/10.3390/drones8090417 
+
+38. Zhao, H., Shi, J., Qi, X., Wang, X., Jia, J.: Pyramid scene parsing network. In: IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 2881–2890 (2017) 39. Zhao, Q., Fang, H., Pang, Y., Zhu, G., Qian, Z.: Pl-unet: a real-time power line segmentation model for aerial images based on adaptive fusion and cross-stage multi-scale analysis. Journal of Real-Time Image Processing 22 (1), 39 (2025)

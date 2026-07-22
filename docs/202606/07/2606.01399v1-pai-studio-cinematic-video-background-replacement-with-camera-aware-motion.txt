@@ -1,0 +1,658 @@
+Title: PAI-Studio: Cinematic Video Background Replacement with Camera-Aware Motion
+
+URL Source: https://arxiv.org/pdf/2606.01399v1
+
+Published Time: Tue, 02 Jun 2026 02:11:49 GMT
+
+Number of Pages: 26
+
+Markdown Content:
+# PAI-Studio: Cinematic Video Background Replacement with Camera-Aware Motion 
+
+## Heyuan Gao 1,2,* Bangxun Tang 1,3,* Yiren Song 1,4,*, ‡ Guian Fang 1,4 
+
+## Zijian He 1 Jie Yang 1 Mike Zheng Shou 4, †
+
+> 1
+
+## Utopai Studios 2Nanyang Technological University 
+
+> 3
+
+## University of California, Irvine 4Show Lab, National University of Singapore 
+
+Figure 1. Given a foreground video and background reference images, our method synthesizes a complete video with camera-aware background motion, foreground consistency, and scene-consistent relighting at 1080P resolution. Readers can click and play the video clips in this figure using Adobe Acrobat .
+
+## Abstract 
+
+We present PAI-Studio, a new reference-conditioned video synthesis task that addresses a long-standing challenge in cinematic background replacement: generating dynamic backgrounds aligned with foreground motion while pre-  
+
+> *Equal contribution. ‡Project leader. †Corresponding author.
+
+serving foreground identity, matching reference scene ap-pearance, and achieving globally consistent illumination with realistic foreground relighting. Existing open-source systems and commercial APIs cannot simultaneously en-sure motion-consistent background generation, high-fidelity foreground relighting and foreground identity preservation, often resulting in static backgrounds, inconsistent bound-
+
+> arXiv:2606.01399v1 [cs.CV] 31 May 2026
+
+aries, and noticeable compositing artifacts. To bridge this gap, we build upon a Diffusion Transformer video back-bone and reformulate the problem as an in-context con-ditional generation task. Through bidirectional attention, our model jointly captures foreground dynamics and back-ground reference information within a unified architecture. We further construct a 30K-scale dataset sourced from high-quality films and online videos to support this task. Extensive evaluations demonstrate that our method signif-icantly outperforms existing open-source and commercial API solutions. Project page: https://github.com/ showlab/PAI-Studio 
+
+## 1. Introduction 
+
+Recent advances in video generation and editing have sig-nificantly expanded the possibilities of content creation. However, a critical gap remains in cinematic background replacement: existing systems often fail to generate back-grounds that move consistently with the foreground’s cin-ematographic motion. In practice, when the foreground involves professional camera movements (e.g., push, pan, tracking shots), synthesized backgrounds frequently appear static, misaligned, or visibly composited. Crucially, most existing methods implicitly rely on the unrealistic assump-tion of perfect, pixel-accurate foreground mattes. In real-world inference, handling imperfect segmentation is in-evitable; flickering edges and broken contours amplify ar-tifacts and reduce realism. Furthermore, methods attempt-ing global harmonization often struggle to maintain the sub-ject’s identity. Through systematic analysis, we identify that high-quality cinematic background synthesis requires four key properties: motion consistency (explicitly modeling im-plied camera movement and dynamic trajectory), illu-mination consistency (scene-adaptive foreground relight-ing), boundary robustness (tolerating imperfect masks and maintaining coherent transitions), and foreground consis-tency (preserving subject identity and fine textures). To achieve this, we introduce PAI-Studio , a novel video synthesis framework for multi-condition cinematic back-ground replacement. Given a foreground video and one to three background reference images, PAI-Studio gener-ates a complete video satisfying all four properties. We ex-plicitly support multi-frame background control to han-dle significant background content variations under large camera motion, aligning reference images with designated output frames through positional encoding cloning. At the model level, we build upon an in-context Diffusion Transformer [27, 33, 42, 44–46, 63] backbone with native bidirectional self-attention. Unlike existing pipelines that stack complex cascaded modules (e.g., dedicated matting networks or relighting adapters), our approach is remark-ably elegant and globally reasons over multi-modal condi-tions without architectural bloat. This global video genera-tion strategy rather than local background inpainting natu-rally reconstructs plausible transitions even with incomplete mask edges, thereby achieving boundary robustness .To empower this framework, we construct CineStudio ,a 30K-scale dataset explicitly reverse-engineered from real-world user inference scenarios. Crucially, we observe that large-scale film and online video data inherently exhibit causal consistency between foreground motion and back-ground evolution under real camera movements, providing natural supervision for learning motion-aligned background synthesis. Therefore, derived from high-quality films and online videos, we perform shot segmentation and optical-flow-based filtering to retain sequences with significant camera and background motion, which explicitly enhances the motion consistency of the synthesized results. Further-more, to enforce illumination consistency , our data cura-tion augments foreground videos with controlled relighting perturbations. The resulting dataset contains diverse cine-matographic movements, scene layouts, and lighting condi-tions, providing a realistic foundation for studying motion-aware background synthesis. Compared to existing methods (Table 1), our approach provides a more comprehensive solution. Our main contri-butions are threefold: • We introduce PAI-Studio , a comprehensive video syn-thesis framework for cinematic background replacement that explicitly requires motion consistency, illumination consistency, and boundary robustness, while supporting multi-frame background control. • We propose an in-context Diffusion Transformer ar-chitecture with bidirectional attention and temporally aligned positional encoding, combining data-driven learning and structured video understanding to achieve motion-aligned background generation and coherent re-lighting without complex cascaded modules. • We construct CineStudio , a 30K-scale dataset from films and online videos, whose construction is reverse-engineered from inference challenges to support the sys-tematic evaluation of motion-aware background genera-tion. 
+
+## 2. Related Works 
+
+2.1. Video Diffusion Models 
+
+Video diffusion models have rapidly evolved from 2D U-Nets augmented with temporal layers [4, 8, 12] to native spatiotemporal Diffusion Transformers (DiTs) [9, 33]. DiTs treat video data as patch sequences to capture long-range dependencies, and recent large-scale models [5, 14, 22, 49, 60] have demonstrated exceptional scalability and high-fidelity generation. This unified architecture provides the Table 1. Feature comparison between our method and existing approaches. VACE* denotes our reproduction trained on the same dataset.                                            
+
+> Method 1080P Multi-frame BG Control Moving Background Foreground Consistency Illumination Harmony Edge Harmony Background Consistency
+> VACE* ✓✗✓✗✓✓✗
+> Kling O1 ✓✓✓✗✓✓✓
+> Runway Gen-4 Aleph ✓✗✗✗✗✗✗
+> Kling 3.0 Omni ✗✓✓✗✓✓✗
+> Beeble AI Switchx ✓✗✗✓✗✓✓
+> Ours ✓✓✓✓✓✓✓
+
+structural foundation for our framework, enabling scalable integration of diverse latent representations. 
+
+2.2. Controllable Video Generation 
+
+Controllable video generation aims to synthesize tempo-rally coherent videos under various conditionings, progress-ing from text-to-video [8, 14, 16, 17] to richer spatial con-trols [6, 19, 29–32]. For appearance and motion guidance, image-conditioned approaches [4, 54, 55] often struggle with large camera motions, while video-conditioned meth-ods [12, 37, 39, 50] require full reference videos, limiting flexibility. Recent advances also explore process-level su-pervision [40, 41, 43]. Despite these efforts, existing meth-ods typically treat backgrounds as static or weakly dynamic and fail to explicitly model camera-aware background mo-tion conditioned on foreground dynamics. In contrast, our work focuses on reference-conditioned background synthe-sis with explicit temporal alignment and multi-frame back-ground control. 
+
+2.3. Video Editing and Background Replacement 
+
+Classical video background replacement relies on matting and compositing [10, 25, 26, 47], which requires prepared backgrounds and struggles with moving cameras. Re-cent diffusion-based video editing methods excel at inpaint-ing [24, 64] and text-driven modifications [2, 15, 35, 38, 53, 58, 59], but typically assume static backgrounds or lack global camera motion modeling. While some works com-bine matting with generative models [57, 61], they often synthesize backgrounds independently of foreground mo-tion, causing temporal inconsistencies. Our method directly addresses this by enforcing temporal alignment via bidirec-tional attention and position-aware conditioning, enabling camera-aware motion and scene-consistent illumination. 
+
+## 3. Method 
+
+3.1. Problem Formulation and Inputs 
+
+We study cinematic background replacement as a multi-condition video synthesis task. Given a foreground video 
+
+V f g = {vf g t }Tt=1 and a small set of background reference images {Ibg k }Kk=1 with K ∈ { 1, 2, 3}, the goal is to syn-thesize an output video V out = {vout t }Tt=1 that satisfies the following requirements: 
+
+(1) Background appearance consistency. The syn-thesized background should match the reference scene ap-pearance indicated by {Ibg k }. We explicitly support multi-frame background control since under large camera mo-tion, the visible background content can vary substantially over time, making single-frame reference insufficient. 
+
+(2) Motion consistency. The background dynamics in 
+
+V out should be consistent with the cinematographic motion implied by the foreground video V f g , producing coherent camera-aware background motion rather than static or drift-ing backgrounds. 
+
+(3) Foreground fidelity with scene-adaptive relight-ing. The foreground content in V out should preserve the identity and fine details of V f g , while its appearance (e.g., shading, color tone) should be adaptively adjusted to better match the target scene implied by {Ibg k }, i.e., realistic fore-ground relighting and global illumination harmonization. 
+
+(4) Robustness to imperfect foreground boundaries. 
+
+In practice, foreground masks from video segmentation of-ten exhibit temporal instability (e.g., flickering, missing parts that reappear in later frames). V out should remain visually coherent under such imperfections, with plausible boundary completion and temporal consistency enabled by spatiotemporal context. Optionally, a text prompt ctxt can be provided to de-scribe the target scene. We denote all conditions as C = V f g , {Ibg k }Kk=1 , c txt .
+
+3.2. Overall Architecture 
+
+Our approach builds upon a Diffusion Transformer (DiT) video generation backbone (WAN 2.2-5B) [49], adapted to a conditional video-to-video synthesis setting with multiple heterogeneous conditions. All videos and images are first encoded into a shared latent space using a pretrained video VAE, producing latent tokens for the foreground video, background reference images, and text. An overview of the proposed architecture is illustrated in Fig. 2. At each diffusion step, we form a unified token se-quence and process it with a single-stream Transformer us-Text 
+
+Encoder 
+
+Structured json Denoise video Input video 
+
+> Text Tokens
+> Noised Latent Tokens
+> Video Condi ;on Tokens
+> Learnable
+> Frozen
+
+Legends 
+
+DiT Block 
+
+Background images 
+
+…
+
+> Image Tokens
+> Posi ;onal Encodings
+
+Temporal Posi ;onal Encoding Cloning 
+
+DiT Block 
+
+> begin frame
+> middle frame
+> end frame
+
+Figure 2. Overview of the PAI-Studio architecture. Multi-condition inputs—including multiple background reference images, the illumination-perturbed foreground video, a structured prompt JSON, and the denoising video—are encoded into tokens and concate-nated. A multi-modal attention model leverages bidirectional attention to model their global correlations. In addition, Temporal Positional Encoding (PE) Cloning is introduced to precisely control the temporal placement of multiple background images in the generated video. 
+
+ing bidirectional self-attention , enabling joint reasoning over foreground dynamics, reference scene appearance, and the evolving denoising state. The denoised latent is decoded back into V out by the VAE decoder. Coupled with our tai-lored dataset, this native bidirectional attention mechanism efficiently resolves multi-modal consistency and global har-monization challenges. 
+
+Full bidirectional self-attention. Let Ztxt denote the text tokens (optional), Zf g the foreground video tokens, 
+
+{Zbg k }Kk=1 the background reference tokens, and Zs the noisy output video tokens at diffusion step s. We concate-nate them into a single sequence: 
+
+X =  Ztxt ∥ Zf g ∥ Zbg  
+
+> 1
+
+∥ · · · ∥ Zbg K ∥ Zs
+
+ ∈ RN ×d, (1) where N is the total number of tokens and d is the token dimension. We apply full (bidirectional) self-attention on 
+
+X. For the h-th head, 
+
+Qh = XW Qh , Kh = XW Kh , Vh = XW Vh , (2) 
+
+Attn h(X) = softmax 
+
+ QhK⊤
+
+> h
+
+√dh
+
+
+
+Vh, (3) and the multi-head output is 
+
+MHSA( X) = Concat  Attn 1(X), . . . , Attn H (X)W O ,
+
+(4) where H is the number of heads and dh = d/H .
+
+Structured motion understanding. To strengthen mo-tion and camera-awareness, we leverage a strong video understanding model (Gemini-3) [48] to extract structured cues from videos, including foreground/background motion summaries, camera movement descriptions, and semantic layer descriptions. These structured signals are used for dataset curation and can also be provided at inference time as high-level guidance derived from the input foreground video, improving the stability of motion-aligned synthesis. 
+
+3.3. Multi-Frame Background Control via Tempo-ral Positional Encoding Cloning 
+
+Single-frame background conditioning is often insufficient under large cinematographic motion, since the visible back-ground content can change substantially across time. We therefore support multi-frame background control with 
+
+K ∈ { 1, 2, 3} reference images sampled from designated temporal locations {tk}Kk=1 ⊂ { 1, . . . , T } (e.g., first/mid-dle/last). A key challenge is to establish explicit temporal corre-spondence between each background reference Ibg k and a specific output time tk. We address this with temporal po-sitional encoding cloning . Let p(t) denote the temporal positional encoding used by the DiT for time index t. For each background reference token Zbg k , we clone the tempo-ral positional encoding from the denoising tokens at time 
+
+tk:
+
+p Zbg k
+
+ ← p(tk), k = 1 , . . . , K. (5) This design anchors each reference image to a designated output frame and enables controllable, time-aware condi-tioning. Moreover, to enforce motion consistency between the in-put foreground and the synthesized video, we align the tem-poral positional encodings of corresponding foreground and caption: In a warmly lit, elegant interior at night, a young..    
+
+> Gemini-3 Pro Image inpaint
+> (a) Dat aset Construction Flow
+> Qwen
+> Foreground
+> Recognition
+> Lumination
+> Perturbation
+> Perturbed Video
+> Denoise Video
+> SAM3 Segmentation
+> Gemini-3 Flash Structured Annotation
+> Foreground Video
+> Caption
+> Foreground
+> Tags
+
+# + 
+
+> Reference Images
+> Mask
+> (b)Caption Structure
+
+Structured Annotation        
+
+> foreground_content: A young man with light brown,....
+> background_content: An elegantly furnished indoor.....
+> foreground_motion: The man initially stands with his...
+> background_motion: The background is mostly static,..
+> camera_motion_analysis: A smooth medium shot.......
+> camera_angle: Eye-level
+> focal_length: 50mm
+> Optical-flow
+> filter
+> movies
+> online videos
+> DaVinci
+> Resolve
+
+Figure 3. Overview of the CineStudio data construction pipeline. 
+
+denoising frames: 
+
+p Zf g t
+
+ ≡ p Zs(t), t = 1 , . . . , T, (6) where Zs(t) denotes the denoising tokens associated with output time t. Together, Eqs. (5)–(6) provide a simple yet effective mechanism for temporal controllability and motion-aligned background synthesis under multi-frame conditioning. 
+
+3.4. Illumination Perturbation for Scene-Consistent Relighting 
+
+Achieving illumination consistency requires the model to infer foreground lighting from the target scene rather than copying the input foreground illumination. We adopt a sim-ple but effective strategy during data construction: we in-tentionally apply relighting and color perturbations to the foreground video to form ˜V f g . This breaks the direct illu-mination correspondence between the input foreground and the target video, and forces the model to recover appropriate foreground lighting from background/environment cues. Concretely, the perturbation operator R(·) applies global photometric augmentations, including HSV-channel jitter-ing, contrast adjustment, color temperature shifts, and gamma correction: 
+
+˜V f g = R V f g  . (7) We then train the model with ˜V f g as the conditioning fore-ground while keeping V out as the target. As a result, the model learns to produce foreground appearances that are consistent with the reference scene illumination, enabling coherent relighting at inference time. 
+
+3.5. Dataset Construction 
+
+The core philosophy of our data construction pipeline is to explicitly reverse-engineer the training data based on the challenges encountered in real-world user inference. In practical virtual studio scenarios, users consistently struggle with mismatched lighting, imperfect green-screen matting, and the need for temporal coherence. Therefore, rather than collecting ideal synthetic data, we construct our 30K-scale dataset, CineStudio , to directly reflect these difficulties: we purposefully inject controlled relighting perturbations, and leverage the natural cinematographic motion of real-world videos. Derived from high-quality films and online videos, each sample contains ( ˜V f g , {Ibg k }Kk=1 , c txt , V out ), where 
+
+V out is the original video clip. The overall data construc-tion process is illustrated in Fig. 3. 
+
+Shot segmentation and motion filtering. We first per-form shot segmentation and compute optical-flow statistics to filter out clips with weak camera/background motion, re-taining sequences with clear cinematographic dynamics. 
+
+Foreground–background separation and alignment. 
+
+We perform foreground recognition using Qwen3-VL [1] to obtain a short tag describing the dominant foreground concept. This tag is fed to an advanced video segmentation model (SAM3) [7] to segment and track the foreground over time, producing temporally aligned masks. These masks are then used to extract the foreground onto a green screen, yielding the final foreground video. The resulting masks may still contain realistic imperfections such as boundary flickering, small holes, or missing regions. Figure 4. Generation results of PAI-Studio. Readers can click and play the video clips in this figure using Adobe Acrobat .
+
+Multi-frame background references. We sample K ∈{1, 2, 3} background reference frames from different tem-poral locations (e.g., begin/middle/end), remove the fore-ground content, and employ Gemini-3 Pro Image [48] to inpaint the missing regions, yielding clean background ref-erences {Ibg k }.
+
+Foreground relighting augmentation. We generate relit variants ˜V f g using the perturbation operator R(·) (Eq. (7)) to encourage scene-consistent relighting. This augmenta-tion explicitly simulates the inference-time challenge where foreground subjects must dynamically adapt to entirely novel and unpredictable background lighting conditions. 
+
+Structured annotation with Gemini-3. Finally, we use Gemini-3 [48] to generate structured JSON annotations for each clip, including foreground/background semantic de-scriptions, foreground/background motion, camera motion analysis, as well as camera angle and focal length. We also produce a concise caption that summarizes and unifies these fields into a single natural-language description. These an-notations are used for dataset curation and for providing high-level motion/camera guidance at inference time. 
+
+## 4. Experiments 
+
+4.1. Experimental Setup 
+
+Setting. We evaluate on the proposed CineStudio dataset (approximately 30K clips with diverse motions, layouts, and lighting). Each clip contains a foreground video, a tar-get video, and 1-3 background references (defaulting to the 
+
+begin, middle, and end source frames). Videos are gener-ated at 1080P ( 1920 × 1056 ), 24 FPS, and 97 frames ( ∼4s). We finetune via LoRA [18] (rank 80) and AdamW [28] (LR 
+
+5 × 10 −5) in BF16. Training takes approximately 6,000 steps on 8 H200 GPUs (batch size 1/GPU). Baselines use optimal settings. 
+
+Baseline Methods. We compare our method with both open-source and commercial video editing systems that support background replacement or scene synthesis. (1) Video-editing Baseline. To ensure fair comparison under the same setting, we first exclude models lacking IV2V support. While we surveyed numerous IV2V models, most focus on style transfer or foreground object editing and perform poorly on green-screen background replace-ment, making them unsuitable as direct baselines (due to space limits, visual results of these baselines are provided in the supplementary material ). Therefore, we solely adopt VACE [20] as our open-source baseline. We finetune the VACE-1.3B model on our CineStudio dataset using the same training data and resolution settings as our method. (2) Commercial APIs. We evaluate Kling O1, Kling 3.0 Omni, Runway Gen-4 Aleph (denoted as Runway Aleph), and Beeble AI Switchx (denoted as Switchx), which pro-vide background replacement or generative scene synthesis functionality. These systems are evaluated under their de-fault API configurations. 
+
+Benchmark. To rigorously evaluate the proposed method, we introduce a comprehensive benchmark, 
+
+Cine-Benchmark , structured into two distinct sub-sets to decouple the evaluation of context fidelity and out-of-distribution generalization: (1) Cine-Restore Subset focuses on Existing-Frame Background Replacement . It consists of 150 videos ran-Figure 5. Comparison results show that our method consistently outperforms baseline approaches in structural fidelity, illumination har-mony, and temporal coherence. Readers can click and play the video clips in this figure using Adobe Acrobat .
+
+domly sampled from our CineStudio dataset (disjoint from training). In this subset, the background reference frames are clean plates extracted and inpainted from the original source video. This simulates a closed-loop background completion task where the model must faithfully restore the original cinematic context under new lighting conditions. For this subset, we compute quantitative metrics by directly comparing the generated results against the paired ground-truth videos. (2) Cine-NBG (Novel Background Generation) Subset evaluates the model’s synthesis and generalization capabil-ities in entirely new environments. This Novel Background Replacement subset comprises 50 videos curated from pub-lic sources (DAVIS 2017 [34] and IVEBench [11]). Unlike Cine-Restore, the background reference frames in Cine-NBG are synthesized by modifying the original background using Gemini to create diverse, out-of-distribution styles and layouts. This subset tests the model’s robustness un-der real-world camera motions and its ability to generate plausible new backgrounds. Since no ground-truth exists for these newly generated scenes, we evaluate performance using Gemini-based perceptual scores. 
+
+Evaluation Metrics. Following the objectives in Sec. 3.1, we evaluate our model across four dimensions (see the sup-plementary material for Gemini scoring details): (1) Background Appearance Consistency, evaluated by the average per-frame Mean Squared Error (MSE) ,
+
+Structural Similarity (SSIM) [52], and Learned Percep-tual Image Patch Similarity (LPIPS) [62] between ground truth and output videos to assess restored scene fidelity; (2) Motion Consistency ( Motion Cons. ), evaluated via CoTracker3 [21] through motion trajectory comparison be-tween ground truth and output videos for the Cine-Restore subset, and via Gemini-based perceptual scoring for the Cine-NBG subset, ensuring background dynamics strictly follow foreground camera motion; (3) Foreground Fidelity and Relighting, evaluated via Gemini-based perceptual scoring, using Foreground Preservation (Fg. Pres.) to quantify foreground identity preservation, and Illumination Harmony (Illum. Har-mony) to assess the effectiveness of scene-adaptive relight-ing; (4) Seamless Integration, also evaluated via Gemini-based perceptual scoring, using Edge Quality to assess the model’s ability to handle boundary imperfections, and 
+
+Foreground–Background Fusion (FG-BG Fusion) to quantify the global geometric, photometric, and temporal coherence at the foreground–background interface, ensur-ing a visually seamless composition. 
+
+4.2. Results 
+
+The generation results are shown in Figure 4. A key ad-vantage of our approach is its strong temporal stability Table 2. Quantitative comparison on the Cine-Restore subset under both single-frame and multi-frame settings. The last three metrics are evaluated via Gemini-based perceptual scoring (scale 1-10) , whereas the rest are standard algorithmic metrics. Multi-frame results are reported only for methods that support multi-frame control.                                                                                                                
+
+> MSE ↓SSIM ↑LPIPS ↓Motion Cons. ↑Edge Quality ↑FG-BG Fusion ↑Illum. Harmony ↑
+> Method Single Multi Single Multi Single Multi Single Multi Single Multi Single Multi Single Multi
+> VACE (Open-source) 0.0270 –0.595 –0.393 –0.792 –7.19 –7.33 –7.67 –Kling O1 (Commercial) 0.0282 0.0190 0.646 0.682 0.402 0.341 0.706 0.721 8.44 9.04 7.88 8.20 7.62 7.44 Kling 3.0 Omni (Commercial) 0.0288 0.0210 0.592 0.622 0.414 0.370 0.787 0.715 8.12 8.40 7.68 7.96 7.92 7.44 Runway Aleph (Commercial) 0.0692 –0.413 –0.657 –0.323 –5.54 –4.38 –5.88 –Switchx (Commercial) 0.0320 –0.668 –0.415 –0.676 –7.08 –6.36 –7.00 –
+> Ours 0.0164 0.00645 0.717 0.789 0.303 0.197 0.872 0.894 9.17 9.62 8.46 9.33 9.11 9.61
+
+Table 3. Gemini-based perceptual evaluation on the Cine-NBG subset. Only Gemini-based scores (scale 1-10) are reported as no ground-truth video is available. 
+
+Method Motion Cons. ↑ Edge Quality ↑ Fg. Pres. ↑ FG-BG Fusion ↑ Illum. Harmony ↑
+
+VACE (Open-source) 6.92 7.82 2.44 7.04 8.38 Kling O1 (Commercial) 7.12 8.04 6.48 7.36 7.72 Runway Aleph (Commercial) 6.21 7.21 6.38 6.29 7.29 Kling 3.0 Omni (Commercial) 7.32 7.80 5.96 6.76 8.52 Switchx (Commercial) 7.12 7.40 8.88 6.16 7.88 
+
+Ours 8.16 8.86 9.58 8.40 9.22 
+
+across long sequences. Unlike existing editing-based meth-ods that suffer from flickering or static background arti-facts, our model produces camera-aware background mo-tion that closely follows foreground cinematographic dy-namics, significantly reducing compositing artifacts even under minor matting imperfections. Furthermore, our framework achieves scene-consistent foreground relight-ing. When background references exhibit distinct light-ing conditions—such as strong directional illumination or low-light environments—the synthesized videos maintain globally coherent shading and color adaptation on fore-ground subjects, preventing visual detachment between lay-ers. Crucially, despite the global generative formulation, foreground identity and fine-grained textures are rigorously preserved across frames, avoiding the structural distortions and identity drift commonly observed in diffusion-based baselines. Finally, multi-reference background condition-ing proves essential in large-motion scenarios. By aligning references from different temporal locations via positional encoding cloning, the model maintains appearance consis-tency under substantial viewpoint changes. Overall, explic-itly modeling camera-aware motion and scene-consistent il-lumination enables high-quality cinematic background syn-thesis beyond existing approaches. More video results on edge quality and robustness to imperfect foregrounds are in the supplementary material .
+
+4.3. Comparison and Evaluation 
+
+Quantitative Evaluation. Tables 2 and 3 report quan-titative comparisons on the Cine-Restore and Cine-NBG subsets. Our method consistently outperforms both open-source baselines and commercial APIs across all evaluation metrics. Specifically, our leading scores in Motion Con-sistency, alongside reconstruction metrics (MSE, SSIM, and LPIPS), demonstrate that our model generates camera-aware background dynamics while maintaining strict ap-pearance consistency with the reference scene. Notably, multi-frame conditioning via positional encoding cloning (Table 2) further improves these results, validating its effec-tiveness for handling large camera motions. Furthermore, our approach effectively addresses scene-adaptive relight-ing and imperfect foreground boundaries, as evidenced by top performance in Foreground Preservation (Fg. Pres.), Illumination Harmony, Edge Quality, and FG-BG Fusion. These results confirm that our model can naturally integrate actors into the target scene for both existing background reconstruction (Table 2) and new background replacement tasks (Table 3). 
+
+Qualitative Evaluation. Figure 5 presents qualitative comparisons. Existing video editing methods often gener-ate static or weakly dynamic backgrounds, leading to no-ticeable inconsistencies when the camera moves. Baseline results typically exhibit misalignment artifacts, inconsis-tent lighting and noticeable foreground identity distortion, as highlighted in the red boxes in Figure 5. In contrast, our method produces backgrounds that evolve coherently over time and exhibit illumination consistent with the target scene. Crucially, our approach maintains strict foreground consistency, faithfully preserving the actors’ identities and structural details without degradation. The foreground ac-tors appear naturally integrated into the synthesized envi-Figure 6. Ablation study results. The full model achieves the best or near-best performance, validating the importance of position encoding for motion consistency, illumination adaptation for realistic integration, and structured annotation for detailed guidance. Readers can click and play the videos in this figure using Adobe Acrobat .Table 4. Ablation study on the Cine-Restore subset. We evaluate each component under both single-frame and multi-frame control protocols.                                                                                    
+
+> MSE ↓SSIM ↑LPIPS ↓Motion Cons. ↑Edge Quality ↑FG-BG Fusion ↑Illum. Harmony ↑
+> Method Single Multi Single Multi Single Multi Single Multi Single Multi Single Multi Single Multi
+> w/o Position Encoding Control 0.0300 0.0160 0.608 0.681 0.399 0.287 0.824 0.843 6.67 8.38 6.85 8.41 7.63 8.88 w/o Illumination Adaptation 0.0270 0.0130 0.607 0.681 0.381 0.279 0.850 0.879 6.40 7.25 6.39 7.24 6.44 7.31 w/o Structured Annotation 0.0177 0.00695 0.715 0.787 0.307 0.198 0.873 0.902 9.10 9.52 8.39 9.21 8.88 9.57 Full Model 0.0164 0.00645 0.717 0.789 0.303 0.197 0.872 0.894 9.17 9.62 8.46 9.33 9.11 9.61
+
+ronment, with reduced compositing artifacts and strong ro-bustness across various scenarios. 
+
+4.4. Ablation Study 
+
+We conduct ablation experiments on the Cine-Restore sub-set to verify our core designs. Qualitative results are il-lustrated in Fig. 6. As shown in Table 4, the Full Model achieves the best or near-best performance across all met-rics. Without Illumination Adaptation, the model fails to automatically adjust foreground lighting to match the tar-get environment, resulting in poor foreground–background integration and notably lower scores in illumination har-mony, visually evident from the foreground lighting mis-match with the ground truth in Fig. 6(a). Without Position Encoding Control, although the model produces normal-looking frames, it loses the ability to map background refer-ences to precise temporal locations, leading to a significant drop in motion consistency and temporally controllable syn-thesis, visually evident from the inaccurate camera tilt and road shifting in the top example of Fig. 6(b). Furthermore, relying on simple text prompts rather than our structured annotations degrades quantitative performance: the model misses critical illumination and semantic cues, manifesting as mismatched lighting or background collapse in Fig. 6(c). Notably, the richer fine-grained captions in our annotations improve robustness even with incomplete keyframe cues, yielding results closer to the ground truth. These results confirm that precise temporal alignment, active relighting, and detailed textual guidance are essential for realistic video synthesis. 
+
+4.5. User Study 
+
+We conduct a user study to evaluate perceptual quality and realism from a human perspective, which is particularly im-portant for virtual studio and film production scenarios. We randomly sample 50 videos from both the Cine-Restore and Cine-NBG subsets, and compare our method with represen-tative open-source methods and commercial APIs. A total of 25 participants with prior experience in video editing or visual content creation took part in the study. Each test case is evaluated by multiple independent participants, and the final scores are reported as the percentage of times each method is voted as the best result. As shown in Figure 7, our method is consistently preferred across all five evalua-tion criteria, aligning with our quantitative evaluations and confirming that our model comprehensively better matches human judgments across all dimensions of the cinematic background replacement task. Figure 7. User study results comparing our method with open-source methods and commercial APIs. Values indicate the per-centage of votes received by each method. Our method is consis-tently preferred across all five evaluation criteria. 
+
+## 5. Conclusion 
+
+We introduced PAI-Studio, a multi-condition video synthe-sis task for cinematic background replacement that jointly requires motion-aligned background generation, scene-consistent foreground relighting, and robustness to imper-fect segmentation boundaries. We presented an in-context Diffusion Transformer framework that concatenates fore-ground video, multi-frame background references, and de-noising tokens into a unified sequence and models them with full bidirectional attention for coherent cross-condition reasoning. Temporal positional encoding cloning enables precise multi-frame temporal control, while foreground re-lighting and color perturbations during training encourage illumination recovery from scene cues. We further curated a 30K-scale dataset from films and online videos with struc-tured motion annotations. Extensive quantitative and qual-itative results demonstrate significant improvements over open-source and commercial API baselines, and user stud-ies confirm a strong preference for our outputs. We be-lieve this work provides a practical foundation toward film-quality controllable video generation and virtual produc-tion. 
+
+## References 
+
+[1] Shuai Bai, Yuxuan Cai, Ruizhe Chen, Keqin Chen, Xionghui Chen, Zesen Cheng, Lianghao Deng, Wei Ding, Chang Gao, Chunjiang Ge, et al. Qwen3-vl technical report. arXiv preprint arXiv:2511.21631 , 2025. 5 [2] Omer Bar-Tal, Dolev Ofri-Amar, Rafail Fridman, Yoni Kas-ten, and Tali Dekel. Text2live: Text-driven layered image and video editing. In European conference on computer vi-sion , pages 707–723. Springer, 2022. 3 [3] Yuxuan Bian, Zhaoyang Zhang, Xuan Ju, Mingdeng Cao, Liangbin Xie, Ying Shan, and Qiang Xu. Videopainter: Any-length video inpainting and editing with plug-and-play con-text control. In Proceedings of the Special Interest Group on Computer Graphics and Interactive Techniques Conference Conference Papers , pages 1–12, 2025. 8 [4] Andreas Blattmann, Robin Rombach, Huan Ling, Tim Dock-horn, Seung Wook Kim, Sanja Fidler, and Karsten Kreis. Align your latents: High-resolution video synthesis with la-tent diffusion models. In Proceedings of the IEEE/CVF con-ference on computer vision and pattern recognition , pages 22563–22575, 2023. 2, 3 [5] Tim Brooks, Bill Peebles, Connor Holmes, Will DePue, Yufei Guo, Leo Jing, David Schnurr, Joe Taylor, Troy Luh-man, Eric Luhman, et al. Video generation models as world simulators. OpenAI Blog , 1(8):1, 2024. 2 [6] Minghong Cai, Xiaodong Cun, Xiaoyu Li, Wenze Liu, Zhaoyang Zhang, Yong Zhang, Ying Shan, and Xiangyu Yue. Ditctrl: Exploring attention control in multi-modal dif-fusion transformer for tuning-free multi-prompt longer video generation. In Proceedings of the Computer Vision and Pat-tern Recognition Conference , pages 7763–7772, 2025. 3 [7] Nicolas Carion, Laura Gustafson, Yuan-Ting Hu, Shoub-hik Debnath, Ronghang Hu, Didac Suris, Chaitanya Ryali, Kalyan Vasudev Alwala, Haitham Khedr, Andrew Huang, et al. Sam 3: Segment anything with concepts. arXiv preprint arXiv:2511.16719 , 2025. 5 [8] Haoxin Chen, Menghan Xia, Yingqing He, Yong Zhang, Xiaodong Cun, Shaoshu Yang, Jinbo Xing, Yaofang Liu, Qifeng Chen, Xintao Wang, et al. Videocrafter1: Open diffusion models for high-quality video generation. arXiv preprint arXiv:2310.19512 , 2023. 2, 3 [9] Pengtao Chen, Xianfang Zeng, Maosen Zhao, Peng Ye, Mingzhu Shen, Wei Cheng, Gang Yu, and Tao Chen. Sparse-vdit: Unleashing the power of sparse attention to accelerate video diffusion transformers. arXiv preprint arXiv:2506.03065 , 2025. 2 [10] Xuewei Chen, Zhimin Chen, and Yiren Song. Transanimate: Taming layer diffusion to generate rgba video. arXiv preprint arXiv:2503.17934 , 2025. 3 [11] Yinan Chen, Jiangning Zhang, Teng Hu, Yuxiang Zeng, Zhu-cun Xue, Qingdong He, Chengjie Wang, Yong Liu, Xiaobin Hu, and Shuicheng Yan. Ivebench: Modern benchmark suite for instruction-guided video editing assessment. arXiv preprint arXiv:2510.11647 , 2025. 7 [12] Patrick Esser, Johnathan Chiu, Parmida Atighehchian, Jonathan Granskog, and Anastasis Germanidis. Structure and content-guided video synthesis with diffusion models. In Proceedings of the IEEE/CVF international conference on computer vision , pages 7346–7356, 2023. 2, 3 [13] Chenjian Gao, Lihe Ding, Xin Cai, Zhanpeng Huang, Zibin Wang, and Tianfan Xue. Lora-edit: Controllable first-frame-guided video editing via mask-aware lora fine-tuning. arXiv preprint arXiv:2506.10082 , 2025. 8 [14] Peng Gao, Le Zhuo, Dongyang Liu, Ruoyi Du, Xu Luo, Longtian Qiu, Yuhang Zhang, Chen Lin, Rongjie Huang, Shijie Geng, et al. Lumina-t2x: Transforming text into any modality, resolution, and duration via flow-based large diffu-sion transformers. arXiv preprint arXiv:2405.05945 , 2024. 2, 3 [15] Michal Geyer, Omer Bar-Tal, Shai Bagon, and Tali Dekel. Tokenflow: Consistent diffusion features for consistent video editing. arXiv preprint arXiv:2307.10373 , 2023. 3 [16] Jonathan Ho, William Chan, Chitwan Saharia, Jay Whang, Ruiqi Gao, Alexey Gritsenko, Diederik P Kingma, Ben Poole, Mohammad Norouzi, David J Fleet, et al. Imagen video: High definition video generation with diffusion mod-els. arXiv preprint arXiv:2210.02303 , 2022. 3 [17] Wenyi Hong, Ming Ding, Wendi Zheng, Xinghan Liu, and Jie Tang. Cogvideo: Large-scale pretraining for text-to-video generation via transformers. arXiv preprint arXiv:2205.15868 , 2022. 3 [18] Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Liang Wang, Weizhu Chen, et al. Lora: Low-rank adaptation of large language models. 
+
+Iclr , 1(2):3, 2022. 6 [19] Zhihao Hu and Dong Xu. Videocontrolnet: A motion-guided video-to-video translation framework by using diffusion model with controlnet. arXiv preprint arXiv:2307.14073 ,2023. 3 [20] Zeyinzi Jiang, Zhen Han, Chaojie Mao, Jingfeng Zhang, Yulin Pan, and Yu Liu. Vace: All-in-one video creation and editing. In Proceedings of the IEEE/CVF International Con-ference on Computer Vision , pages 17191–17202, 2025. 6 [21] Nikita Karaev, Yuri Makarov, Jianyuan Wang, Natalia Neverova, Andrea Vedaldi, and Christian Rupprecht. Co-tracker3: Simpler and better point tracking by pseudo-labelling real videos. In Proceedings of the IEEE/CVF Inter-national Conference on Computer Vision , pages 6013–6022, 2025. 7, 3 [22] Weijie Kong, Qi Tian, Zijian Zhang, Rox Min, Zuozhuo Dai, Jin Zhou, Jiangfeng Xiong, Xin Li, Bo Wu, Jianwei Zhang, et al. Hunyuanvideo: A systematic framework for large video generative models. arXiv preprint arXiv:2412.03603 , 2024. 2[23] Max Ku, Cong Wei, Weiming Ren, Harry Yang, and Wenhu Chen. Anyv2v: A tuning-free framework for any video-to-video editing tasks. arXiv preprint arXiv:2403.14468 , 2024. 8[24] Zhen Li, Cheng-Ze Lu, Jianhua Qin, Chun-Le Guo, and Ming-Ming Cheng. Towards an end-to-end framework for flow-guided video inpainting. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 17562–17571, 2022. 3 [25] Shanchuan Lin, Andrey Ryabtsev, Soumyadip Sengupta, Brian L Curless, Steven M Seitz, and Ira Kemelmacher-Shlizerman. Real-time high-resolution background matting. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 8762–8771, 2021. 3 [26] Shanchuan Lin, Linjie Yang, Imran Saleemi, and Soumyadip Sengupta. Robust high-resolution video matting with tempo-ral guidance. In Proceedings of the IEEE/CVF Winter Con-ference on Applications of Computer Vision , pages 238–247, 2022. 3 [27] Cheng Liu, Yiren Song, Haofan Wang, and Mike Zheng Shou. Omnipsd: Layered psd generation with diffusion transformer. arXiv preprint arXiv:2512.09247 , 2025. 2 [28] Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization. arXiv preprint arXiv:1711.05101 , 2017. 6 [29] Yue Ma, Yingqing He, Xiaodong Cun, Xintao Wang, Siran Chen, Xiu Li, and Qifeng Chen. Follow your pose: Pose-guided text-to-video generation using pose-free videos. In 
+
+Proceedings of the AAAI Conference on Artificial Intelli-gence , pages 4117–4125, 2024. 3 [30] Yue Ma, Hongyu Liu, Hongfa Wang, Heng Pan, Yingqing He, Junkun Yuan, Ailing Zeng, Chengfei Cai, Heung-Yeung Shum, Wei Liu, et al. Follow-your-emoji: Fine-controllable and expressive freestyle portrait animation. In SIGGRAPH Asia 2024 Conference Papers , pages 1–12, 2024. [31] Yue Ma, Yingqing He, Hongfa Wang, Andong Wang, Leqi Shen, Chenyang Qi, Jixuan Ying, Chengfei Cai, Zhifeng Li, Heung-Yeung Shum, et al. Follow-your-click: Open-domain regional image animation via motion prompts. In Proceed-ings of the AAAI Conference on Artificial Intelligence , pages 6018–6026, 2025. [32] Yue Ma, Yulong Liu, Qiyuan Zhu, Ayden Yang, Kunyu Feng, Xinhua Zhang, Zhifeng Li, Sirui Han, Chenyang Qi, and Qifeng Chen. Follow-your-motion: Video motion transfer via efficient spatial-temporal decoupled finetuning. arXiv preprint arXiv:2506.05207 , 2025. 3 [33] William Peebles and Saining Xie. Scalable diffusion models with transformers. In Proceedings of the IEEE/CVF inter-national conference on computer vision , pages 4195–4205, 2023. 2 [34] Jordi Pont-Tuset, Federico Perazzi, Sergi Caelles, Pablo Ar-bel´ aez, Alex Sorkine-Hornung, and Luc Van Gool. The 2017 davis challenge on video object segmentation. arXiv preprint arXiv:1704.00675 , 2017. 7 [35] Chenyang Qi, Xiaodong Cun, Yong Zhang, Chenyang Lei, Xintao Wang, Ying Shan, and Qifeng Chen. Fatezero: Fus-ing attentions for zero-shot text-based video editing. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 15932–15942, 2023. 3 [36] R Rombach. High-resolution image synthesis with latent dif-fusion models [internet]. arXiv [cs. CV]. , 2021. 8 [37] Uriel Singer, Adam Polyak, Thomas Hayes, Xi Yin, Jie An, Songyang Zhang, Qiyuan Hu, Harry Yang, Oron Ashual, Oran Gafni, et al. Make-a-video: Text-to-video genera-tion without text-video data. In International Conference on Learning Representations , 2023. 3 [38] Uriel Singer, Amit Zohar, Yuval Kirstain, Shelly Sheynin, Adam Polyak, Devi Parikh, and Yaniv Taigman. Video edit-ing via factorized diffusion distillation. In European Con-ference on Computer Vision , pages 450–466. Springer, 2024. 3[39] Quanjian Song, Yiren Song, Kelly Peng, Yuan Gao, and Mike Zheng Shou. Worldwander: Bridging egocentric and exocentric worlds in video generation. arXiv preprint arXiv:2511.22098 , 2025. 3 [40] Yiren Song, Shijie Huang, Chen Yao, Xiaojun Ye, Hai Ci, Jiaming Liu, Yuxuan Zhang, and Mike Zheng Shou. Proces-spainter: Learn painting process from sequence data. arXiv preprint arXiv:2406.06062 , 2024. 3 [41] Yiren Song, Danze Chen, and Mike Zheng Shou. Layer-tracer: Cognitive-aligned layered svg synthesis via diffusion transformer. arXiv preprint arXiv:2502.01105 , 2025. 3 [42] Yiren Song, Cheng Liu, Weijia Mao, and Mike Zheng Shou. Mitty: Diffusion-based human-to-robot video generation. 
+
+arXiv preprint arXiv:2512.17253 , 2025. 2 [43] Yiren Song, Cheng Liu, and Mike Zheng Shou. Makeany-thing: Harnessing diffusion transformers for multi-domain procedural sequence generation. arXiv preprint arXiv:2502.01572 , 2025. 3 [44] Yiren Song, Cheng Liu, and Mike Zheng Shou. Omniconsis-tency: Learning style-agnostic consistency from paired styl-ization data. arXiv preprint arXiv:2505.18445 , 2025. 2 [45] Yiren Song, Xiyao Deng, Pei Yang, Yihan Wang, and Mike Zheng Shou. Omnihumanoid: Streaming cross-embodiment video generation with paired-free adaptation. 
+
+arXiv preprint arXiv:2605.12038 , 2026. [46] Yiren Song, Wangzi Yao, Haofan Wang, and Mike Zheng Shou. Vista: Triplet-supervised video style transfer with dif-fusion transformers. arXiv preprint arXiv:2605.17312 , 2026. 2[47] Yanan Sun, Guanzhi Wang, Qiao Gu, Chi-Keung Tang, and Yu-Wing Tai. Deep video matting via spatio-temporal align-ment and aggregation. In Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition , pages 6975–6984, 2021. 3 [48] Gemini Team, Rohan Anil, Sebastian Borgeaud, Jean-Baptiste Alayrac, Jiahui Yu, Radu Soricut, Johan Schalkwyk, Andrew M Dai, Anja Hauth, Katie Millican, et al. Gemini: a family of highly capable multimodal models. arXiv preprint arXiv:2312.11805 , 2023. 4, 6, 3, 12 [49] Team Wan, Ang Wang, Baole Ai, Bin Wen, Chaojie Mao, Chen-Wei Xie, Di Chen, Feiwu Yu, Haiming Zhao, Jianxiao Yang, et al. Wan: Open and advanced large-scale video gen-erative models. arXiv preprint arXiv:2503.20314 , 2025. 2, 3, 15 [50] Ting-Chun Wang, Ming-Yu Liu, Jun-Yan Zhu, Guilin Liu, Andrew Tao, Jan Kautz, and Bryan Catanzaro. Video-to-video synthesis. In Advances in Neural Information Pro-cessing Systems , 2018. 3 [51] Xiang Wang, Hangjie Yuan, Shiwei Zhang, Dayou Chen, Ji-uniu Wang, Yingya Zhang, Yujun Shen, Deli Zhao, and Jin-gren Zhou. Videocomposer: Compositional video synthesis with motion controllability. Advances in Neural Information Processing Systems , 36:7594–7611, 2023. 8 [52] Zhou Wang, Alan C Bovik, Hamid R Sheikh, and Eero P Si-moncelli. Image quality assessment: from error visibility to structural similarity. IEEE transactions on image processing ,13(4):600–612, 2004. 7 [53] Jay Zhangjie Wu, Yixiao Ge, Xintao Wang, Stan Weixian Lei, Yuchao Gu, Yufei Shi, Wynne Hsu, Ying Shan, Xiaohu Qie, and Mike Zheng Shou. Tune-a-video: One-shot tuning of image diffusion models for text-to-video generation. In 
+
+Proceedings of the IEEE/CVF international conference on computer vision , pages 7623–7633, 2023. 3 [54] Jinbo Xing, Menghan Xia, Yong Zhang, Haoxin Chen, Wangbo Yu, Hanyuan Liu, Gongye Liu, Xintao Wang, Ying Shan, and Tien-Tsin Wong. Dynamicrafter: Animating open-domain images with video diffusion priors. In Eu-ropean Conference on Computer Vision , pages 399–417. Springer, 2024. 3 [55] Jinbo Xing, Long Mai, Cusuh Ham, Jiahui Huang, Anirud-dha Mahapatra, Chi-Wing Fu, Tien-Tsin Wong, and Feng Liu. Motioncanvas: Cinematic shot design with controllable image-to-video generation. In Proceedings of the Special Interest Group on Computer Graphics and Interactive Tech-niques Conference Conference Papers , pages 1–11, 2025. 3 [56] Zhongcong Xu, Jianfeng Zhang, Jun Hao Liew, Hanshu Yan, Jia-Wei Liu, Chenxu Zhang, Jiashi Feng, and Mike Zheng Shou. Magicanimate: Temporally consistent human im-age animation using diffusion model. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 1481–1490, 2024. 8 [57] Han Yan, Xibin Song, Yifu Wang, Hongdong Li, Pan Ji, and Chao Ma. Bachvid: Training-free video generation with consistent background and character. arXiv preprint arXiv:2510.21696 , 2025. 3 [58] Wilson Yan, Andrew Brown, Pieter Abbeel, Rohit Girdhar, and Samaneh Azadi. Motion-conditioned image animation for video editing. arXiv preprint arXiv:2311.18827 , 2023. 3 [59] Shuai Yang, Yifan Zhou, Ziwei Liu, and Chen Change Loy. Rerender a video: Zero-shot text-guided video-to-video translation. In SIGGRAPH Asia 2023 Conference Papers ,pages 1–11, 2023. 3 [60] Zhuoyi Yang, Jiayan Teng, Wendi Zheng, Ming Ding, Shiyu Huang, Jiazheng Xu, Yuanming Yang, Wenyi Hong, Xiao-han Zhang, Guanyu Feng, et al. Cogvideox: Text-to-video diffusion models with an expert transformer. arXiv preprint arXiv:2408.06072 , 2024. 2 [61] Lvmin Zhang and Maneesh Agrawala. Transparent image layer diffusion using latent transparency. arXiv preprint arXiv:2402.17113 , 2024. 3 [62] Richard Zhang, Phillip Isola, Alexei A Efros, Eli Shecht-man, and Oliver Wang. The unreasonable effectiveness of deep features as a perceptual metric. In Proceedings of the IEEE conference on computer vision and pattern recogni-tion , pages 586–595, 2018. 7 [63] Yuxuan Zhang, Yirui Yuan, Yiren Song, Haofan Wang, and Jiaming Liu. Easycontrol: Adding efficient and flexible control for diffusion transformer. arXiv preprint arXiv:2503.07027 , 2025. 2 [64] Shangchen Zhou, Chongyi Li, Kelvin CK Chan, and Chen Change Loy. Propainter: Improving propagation and transformer for video inpainting. In Proceedings of the IEEE/CVF international conference on computer vision ,pages 10477–10486, 2023. 3 PAI-Studio: Cinematic Video Background Replacement with Camera-Aware Motion 
+
+## Supplementary Material 
+
+The supplementary material is organized as follows: 1. We provide comprehensive details regarding the user study, including the interface, evaluation criteria, and statistical significance analysis in Sec. A. 2. We detail the prompts and metrics used for our Gemini-based automated semantic evaluation in Sec. B, and the methodology for evaluating motion fidelity using Co-Tracker3 in Sec. C. 3. We present the statistical correlation between our auto-mated evaluation and human preference in Sec. D. 4. We analyze the failure modes of the excluded open-source baselines in Sec. E. 5. We provide additional qualitative results, demonstrat-ing superior edge harmonization (Sec. F), robustness to imperfect masks (Sec. G), implicit scene-adaptive re-lighting (Sec. H), and the effect of multi-frame control (Sec. J). 6. We discuss our explorations into efficient conditioning strategies in Sec. K. 7. We provide the prompt templates used for generating structured video annotations in Sec. I. 8. We report the computational cost and resources for train-ing and inference in Sec. L. 9. We present an analysis of typical failure cases in Sec. M. 
+
+## A. User Study Details 
+
+The interface and workflow of our user study are illustrated in Fig. 8. We designed a comprehensive evaluation pipeline to compare the perceptual quality of our method against five representative baselines. 
+
+Experimental Protocol. As shown in the study in-structions (Fig. 8a), participants are required to evaluate 50 groups of videos. For each group, the interface (Fig. 8b) presents the Background Reference (First Frame) and the 
+
+Foreground Video as references at the top. Below these, six anonymized results (A–F) generated under identical inputs are displayed side-by-side. To ensure a fair and thorough assessment, the interface provides synchronized playback controls (Play All, Pause All, and Replay All), allowing participants to scrutinize temporal consistency and motion alignment. 
+
+Evaluation Criteria. For each test case, participants must answer five questions by selecting the single best video for each metric (Fig. 8c): 1. Overall Preference : Overall, which video looks the most realistic and natural? (Please refer to the fore-ground video and background reference image.) 2. Background Consistency : Which video’s background   
+
+> Figure 8. User study interface and workflow. (a) Study instruc-tions, (b) side-by-side presentation of a test case with input refer-ences and anonymized results, and (c) the questionnaire with five evaluation criteria (Overall Preference, Background Consistency, Background Motion Rationality, Illumination Harmony, and Edge Harmony).
+
+is most consistent with the reference image? 3. Background Motion Rationality : Which video has the most natural and reasonable background motion? 4. Illumination Harmony : Which video has the best light-ing harmony between the foreground and background? 5. Edge Harmony : Which video has the most harmonious edges between the foreground and background? 
+
+Participants and Scoring. The study involved 25 in-dependent participants with prior experience in video edit-ing or visual content creation. Participants were instructed to watch all candidate videos carefully before making their choices. The final scores are reported as the percentage of votes each method received for each criterion across all 50 test cases. 
+
+Randomization and Position Bias. To completely elim-inate potential position bias, the display order of the six methods was independently and uniformly randomized for each participant and video combination across all 1,250 evaluation trials (25 participants × 50 videos). A chi-square goodness-of-fit test mathematically confirms that ev-ery method appeared at each display position with approxi-mately equal frequency (all p > 0.1), indicating the absence of any systematic position bias. 
+
+Statistical Significance. To rigorously validate the re-liability of our preference results, we conducted pairwise binomial tests between our method and each baseline. For each comparison, we evaluated the null hypothesis that the preference win rate is merely 50%. As illustrated in Fig. 9, Figure 9. Statistical significance of user study results. (a) Heatmap of our method’s win rate (%) in pairwise comparisons against each baseline across five evaluation dimensions. All cells demonstrate statistical significance ( p < 0.01 , denoted by ** or ***). (b) Significance level ( − log 10 p) for the Overall Prefer-ence dimension; all comparisons safely exceed the p = 0 .001 
+
+threshold. 
+
+our method achieves a decisive win rate exceeding 56% against all baselines across all five evaluation dimensions. Statistical significance is strictly confirmed for every sin-gle comparison ( p < 0.01 , with the vast majority reach-ing p < 0.001 ). Notably, we observe the strongest ad-vantages against Runway Gen-4 and Beeble Switchx (win rates > 75% ). Furthermore, our method significantly out-performs even the most competitive baseline, Kling O1, se-curing win rates between 56.3% and 63.6%. 
+
+## B. Gemini-based Evaluation Details 
+
+We employ Gemini-3-Pro [48] as an automated percep-tual judge for semantic-level evaluation. Two comple-mentary protocols are designed: (1) Cine-Restore Sub-set , where the generated video is directly compared against the ground-truth (GT) video to evaluate reconstruction fi-delity; and (2) Cine-NBG Subset , where the model as-sesses the generated video alone (with optional background keyframes). Each metric is queried 3 times and the median score is taken to reduce variance. The full prompt templates are shown in Fig. 10, Fig. 11, and Fig. 12. 
+
+## C. Details on Motion Fidelity Evaluation 
+
+To rigorously evaluate the temporal motion consistency be-tween the generated videos and the ground truth (GT) in the Cine-Restore subset, we employ CoTracker3 [21] to estab-lish dense, long-term point correspondences. 
+
+Point Sampling and Tracking. Instead of relying on sparse keypoint detectors, which may fail in unstructured regions, we initialize a uniform 20 × 20 point grid on the first frame of both videos. To ensure exact spatial align-ment before tracking, both the generated and GT videos are spatially resized to a consistent resolution (short side scaled to 384 pixels) and temporally synchronized. We track these points across all frames to obtain trajectory coor-dinates and visibility confidences. To prevent occlusion or 
+
+Gemini Evaluation Prompts — Cine-Restore Subset                                                            
+
+> Common Setup. Input: (1) Generated composited video; (2) Ground Truth (GT) video as reference. Output: JSON {‘‘score’’: <1--10>, ‘‘reason’’: ‘‘<sentence>’’ }.
+> Edge Quality (Edge Cons )Role: Expert evaluator for matte/edge quality. Task: Evaluate edge consistency around the foreground subject, using GT as the reference.
+> Criteria:
+> •Halo/fringing, color spill (green/blue edges), jagged edges •Temporal edge stability: no crawl/shimmer frame-to-frame (vs. GT) •Fine structures: hair, fingers, thin objects, semi-transparent re-gions •Holes/missing parts: accidental cut-outs, broken silhouettes •Motion blur handling: edges during fast motion should look natural
+> Scoring: 10: Clean stable edges matching GT |8–9: Minor noise
+> |6–7: Noticeable artifacts |4–5: Strong issues |1–3: Unusable
+> FG–BG Fusion Role: Expert evaluator for compositing realism. Task: Evaluate foreground–background integration realism, using GT as reference.
+> Criteria:
+> •Scale & perspective: subject fits the scene geometry (vs. GT) •Contact & depth cues: feet contact ground; occlusion bound-aries correct •Shadows/reflections: consistent with background and subject placement •Color & tone match: foreground grading matches background •Temporal integration: no floating, jitter, or background leak-ing
+> Scoring: 10: Seamless, as natural as GT |8–9: Minor mismatch
+> |6–7: Moderate artifacts |4–5: Strong composite feel |1–3: Clearly fake
+> Illumination Harmony (Illum Harmony )Role: Expert evaluator for lighting consistency. Task: Evaluate illumination harmony, using GT as the reference for correct lighting.
+> Criteria:
+> •Lighting direction: key light on subject matches scene cues (vs. GT) •Color temperature: warm/cool balance matches background •Intensity/exposure: subject brightness matches scene exposure •Shadow plausibility: shadows fit background lighting •Temporal consistency: no flickering or unnatural lighting changes
+> Scoring: 10: Perfect match, as naturally lit as GT |8–9: Minor mismatch |6–7: Noticeable |4–5: Strong contradiction |1–3: Destroys realism
+
+Figure 10. Gemini evaluation prompt templates (Cine-Restore Subset). Three metrics compare the generated composite against the ground truth video. Each prompt instructs Gemini 3 Pro [48] to return a 1–10 score with a brief rationale. 
+
+out-of-bounds points from skewing the evaluation, we apply a strict joint visibility mask . Specifically, a point’s trajectory is only considered valid for comparison if its visibility con-Gemini Evaluation Prompts — Cine-NBG Subset (Part 1/2) 
+
+Common Setup. Input: Generated video only (+ optional back-ground keyframes for Motion). Output: JSON {‘‘score’’: <1--10>, ‘‘reason’’: ‘‘<sentence>’’ }.
+
+Motion Consistency (Motion Cons ) Role: Expert evaluator for temporal realism. Task: Evaluate motion consistency & temporal coherence of the entire video. 
+
+Criteria: 
+
+• Temporal stability: no flicker, texture crawling, or popping elements • Geometry rigidity: static structures remain rigid, no warp-ing/stretching • Consistent perspective: lines/edges should not bend frame-to-frame • Plausible camera motion: coherent pan/tilt/dolly with consis-tent parallax • Foreground motion: natural, smooth, no jitter or sudden jumps 
+
+Scoring: 10: Stable & plausible | 8–9: Minor flicker | 6–7: No-ticeable artifacts | 4–5: Frequent warping | 1–3: Severely unstable 
+
+FG–BG Fusion Role: Expert evaluator for compositing realism. Task: Evaluate foreground–background fusion realism. 
+
+Criteria: 
+
+• Scale & perspective: subject fits the scene geometry and cam-era viewpoint • Contact & depth cues: feet contact ground; occlusion bound-aries correct • Shadows/reflections: consistent with background and subject placement • Color & tone match: foreground grading matches background • Temporal integration: no floating, jitter, or background leak-ing onto subject 
+
+Scoring: 10: Seamless, one real shot | 8–9: Minor artifacts | 6–7: Moderate | 4–5: Strong composite feel | 1–3: Clearly fake 
+
+Illumination Harmony (Illum Harmony ) Role: Expert evaluator for lighting consistency. Task: Evaluate illumination harmony between foreground and background. 
+
+Criteria: 
+
+• Lighting direction: key light direction on subject matches scene cues • Color temperature: warm/cool balance matches the back-ground • Intensity/exposure: subject brightness matches scene exposure • Shadow plausibility: shadows on subject fit background light-ing • Temporal consistency: lighting should not flicker or change unnaturally 
+
+Scoring: 10: Perfect match | 8–9: Minor mismatch | 6–7: Notice-able | 4–5: Strong contradiction | 1–3: Destroys realism 
+
+Figure 11. Gemini evaluation prompt templates (Cine-NBG Subset, part 1/2). Three metrics assess the generated video di-rectly. Motion Cons optionally uses background keyframes. FG– BG Fusion and Illum Harmony evaluate the video alone without any reference. 
+
+Gemini Evaluation Prompts — Cine-NBG Subset (Part 2/2) 
+
+Edge Quality (Edge Cons ) Role: Expert evaluator for matte/edge quality. Task: Evaluate edge consistency around the foreground subject. 
+
+Criteria: 
+
+• Halo/fringing (bright outline), color spill (green/blue edges), jagged edges • Temporal edge stability: edges should not crawl/shimmer frame-to-frame • Fine structures: hair, fingers, thin objects, semi-transparent re-gions • Holes/missing parts: accidental cut-outs, broken silhouettes • Motion blur handling: edges during fast motion should look natural 
+
+Scoring: 10: Clean & stable | 8–9: Minor noise | 6–7: Noticeable 
+
+| 4–5: Strong issues | 1–3: Unusable 
+
+Foreground Preservation (FG Preserve ) Role: Expert evaluator for FG preservation quality. Input: (1) Reference video: original foreground on green screen; (2) Generated video: foreground extracted from background-replaced composite via mask, also on green screen. 
+
+Task: Judge how faithfully the generated video preserves the orig-inal foreground. Color/lighting shifts for background matching are acceptable and should not be penalized. Minor compression artifacts or slight edge differences along the green-screen bound-ary should also be ignored. 
+
+Criteria: 
+
+• Overall identity: clearly the same person(s)/object(s) • Shape & structure: body proportions, limbs, silhouettes, cloth-ing preserved • Motion & pose: poses and movements match across both videos • Texture & detail: face, clothing patterns, accessories preserved • Temporal consistency: no excessive flicker or jitter in the gen-erated foreground 
+
+Scoring: 
+
+10: Virtually identical foreground—same identity, shape, motion, details; only color/lighting differs. 8–9: Very faithful—same person(s), same motion, minor local dif-ferences in fine details. 6–7: Good preservation—clearly same subject(s) and motion, some noticeable texture loss or slight shape changes. 4–5: Moderate changes—recognizable but with visible structural deformations or altered details. 2–3: Major changes—significant alterations: missing/added body parts, wrong poses, severe distortions. 1: Completely different—the foreground is unrecognizable or en-tirely replaced. 
+
+Figure 12. Gemini evaluation prompt templates (Cine-NBG Subset, part 2/2). Edge Cons evaluates matte/edge quality of the generated video. FG Preserve compares the foreground region in the generated composite with the original foreground reference ex-tracted from the green-screen video. 
+
+fidence remains greater than 0.5 in both the generated and GT videos simultaneously. 
+
+Scale-Invariant Trajectory Comparison. A key chal-Figure 13. Visual results of excluded open-source IV2V baselines. When tasked with green-screen background replacement given a reference background (Column 1) and an input foreground video (Column 2), existing models completely fail to synthesize a coherent video. They suffer from severe hallucination, identity loss, semantic misinterpretation of the green screen, or complete conditioning collapse into noise. Readers can click and play the video clips in this figure using Adobe Acrobat .
+
+lenge raised when evaluating motion fidelity across diverse cinematic scenes is the massive variation in object depth, camera focal length, and absolute motion magnitude. To ensure a fair and normalized comparison across completely different scenes, we evaluate the relative displacement tra-jectories (i.e., coordinate offsets relative to the first frame) using Trajectory Cosine Similarity . Formally, let P (i) 
+
+> t
+
+∈
+
+R2 and ˆP (i) 
+
+> t
+
+∈ R2 denote the 2D spatial coordinates of the i-th tracked point at frame t for the GT and generated videos, respectively. The temporal displacement relative to the first frame is defined as ∆P (i) 
+
+> t
+
+= P (i) 
+
+> t
+
+− P (i)0 (and analogously for ∆ ˆP (i) 
+
+> t
+
+). Let V (i) be the set of valid frames for point i,defined by the joint visibility mask. As formulated in Eq. 8, the trajectory cosine similarity for the i-th point is computed by flattening the spatial displacements over time: 
+
+S(i) =
+
+P  
+
+> t∈V(i)
+
+⟨∆P (i) 
+
+> t
+
+, ∆ ˆP (i) 
+
+> t
+
+⟩
+
+qP  
+
+> t∈V(i)
+
+∥∆P (i) 
+
+> t
+
+∥22
+
+qP  
+
+> t∈V(i)
+
+∥∆ ˆP (i) 
+
+> t
+
+∥22
+
+, (8) where ⟨· , ·⟩ denotes the inner product. As shown in Eq. 9, the final motion consistency score is obtained by averaging the similarity across all Nvalid valid points: Motion Cons. = 1
+
+Nvalid Nvalid X
+
+> i=1
+
+S(i). (9) This metric strictly evaluates the directional and structural fidelity of the motion path, making it naturally invariant to the absolute pixel distance traveled. 
+
+## D. Correlation between Human Preference and Automated Evaluation 
+
+To rigorously validate the reliability of our Gemini-based automated evaluation protocol, we compute the statistical correlation between the automated scores and the human user study votes. 
+
+Formulation. In our user study, participants evaluated the methods in a 6-way choice setup. For a specific eval-uation metric, let uv,m denote the number of human votes method m received for video v. We convert these votes into a comparative human preference distribution: 
+
+pv,m = uv,m 
+
+P6 
+
+> j=1
+
+uv,j 
+
+. (10) Similarly, let gv,m ∈ [1 , 10] denote the absolute score as-signed by Gemini for the same method and video. To map these absolute scores into a relative preference distribution that intrinsically aligns with the 6-way user study format, we apply a softmax function: 
+
+qv,m = exp( gv,m )
+
+P6 
+
+> j=1
+
+exp( gv,j ) . (11) For each metric, we flatten these distributions across all evaluated videos and the 6 methods into comprehensive vectors U and G of length N . Let R(U ) and R(G) denote the assigned fractional ranks of the elements in U and G,respectively. The Spearman rank correlation coefficient ( ρ)is then computed as the Pearson correlation between these rank variables: 
+
+ρ =
+
+PNi=1 (R(Ui) − ¯RU )( R(Gi) − ¯RG)
+
+qPNi=1 (R(Ui) − ¯RU )2 PNi=1 (R(Gi) − ¯RG)2
+
+,
+
+(12)      
+
+> Figure 14. Correlation between human preference and Gemini evaluation. The scatter plots illustrate the relationship between the human vote proportion and the Gemini softmax probability for each method. The Spearman rank correlation ( ρ) ranges from 0.503 to 0.682 across all individual dimensions, with an overall combined correlation of 0.595 (all with p < 0.001 ). This indi-cates a robust and statistically significant alignment between the automated judge and human consensus on this highly subjective task.
+
+where ¯RU and ¯RG are the mean ranks. 
+
+Results and Analysis. As illustrated in Fig. 14, we compute the correlation across all key dimensions. It is important to note that for the Background Motion Ratio-nality metric, the correlation is computed over 29 videos (N = 29 × 6 = 174 instances). This is because the re-maining 21 videos in our user study belong to the Cine-Restore subset, which possess ground-truth videos and are strictly evaluated using the dense point-tracking metric (Co-Tracker3, as detailed in Sec. C) for motion fidelity, rather than using Gemini. For all other semantic metrics, the cor-relation is computed across the full set of videos ( N ≈ 300 ). Assessing the perceptual quality of high-resolution cin-ematic video generation is an inherently subjective task, heavily influenced by individual aesthetic preferences, varying sensitivities to specific artifacts, and complex foreground-background dynamics. Given this high degree of subjectivity and the inherently noisy nature of human voting in a 6-way choice setup, achieving a Spearman cor-relation coefficient ( ρ) ranging from 0.503 to 0.682 (with strict statistical significance p < 0.001 ) is considered a strongly robust alignment. These results validate that our Gemini-based automated pipeline reliably reflects aggre-gate human consensus and serves as a trustworthy proxy for large-scale perceptual quality assessment. 
+
+## E. Analysis of Excluded Open-Source Base-lines 
+
+To ensure a fair and rigorous comparison under the exact same conditioning setting, we first strictly exclude text-to-Figure 15. Superior edge harmonization. Compared to baselines that suffer from severe green spill and boundary artifacts (highlighted by red boxes), our model generates clean, natural edges without residual green contamination. 
+
+video (T2V) or purely image-to-video (I2V) models that lack Image-Video-to-Video (IV2V) support. Specifically, these models cannot perform video background replace-ment conditioned on one or more background reference im-Figure 16. Robustness to imperfect foreground segmentation. We highlight four challenging cases where the input green-screen videos (top rows) contain mask defects, as indicated by the red bounding boxes . These include severely corrupted body parts, arbitrary holes, and artificial occlusions. Without any explicit inpainting prompts, our model (bottom rows) robustly reconstructs the missing foreground structures while seamlessly compositing them into the generated backgrounds with global illumination and structural harmony. 
+
+ages. Since their operational setting fundamentally differs from ours, treating them as direct baselines would be intrin-sically unfair. Following this criterion, we extensively surveyed and tested existing open-source models capable of IV2V gen-eration or video editing, including AnyV2V [23], Lo-RAEdit [13], MagicAnimate [56], runway-stable-diffusion-inpainting (SD-Inpaint) [36], VideoComposer [51], and VideoPainter [3]. However, empirical testing reveals that these general-purpose editing models perform exceptionally poorly on the demanding task of green-screen cinematic background replacement. As visually demonstrated in Fig. 13, these models fail to generate temporally coherent or structurally normal videos, exhibiting several critical failure modes: • Conditioning Collapse (e.g., VideoComposer, VideoPainter): These models completely fail to fuse the high-resolution foreground and background conditions, often collapsing into severe color shifts, purple/blue artifacts, or pure chaotic noise, losing all structural information of the input. Figure 17. Implicit scene-adaptive relighting. Our model automatically harmonizes the foreground illumination with the newly synthe-sized backgrounds without requiring any explicit relighting prompts or maps. Figure 18. Effect of multi-frame background control. Comparing inference results conditioned on 1, 2, and 3 background reference images. The 3-reference control effectively anchors the background at the beginning, middle, and end temporal locations, yielding the most temporally coherent results that closely match the ground truth (GT). Fewer reference frames lead to information deficits at unconditioned time steps, causing structural deviations and abrupt disappearance or morphing of background objects. 
+
+• Foreground Identity Loss (e.g., MagicAnimate, AnyV2V, LoRAEdit): Instead of preserving the driving foreground, these models suffer from severe temporal warping and hallucinate entirely incorrect subjects or geometries, completely destroying the identity and motion of the original actor. • Semantic Misinterpretation (e.g., SD-Inpaint): Mask-based or general inpainting approaches fail to physically understand the green-screen compositing task. They often treat the green backdrop as a literal semantic object to be retained or paint erratic artifacts around the foreground boundaries, resulting in severe flickering and green spill. In conclusion, because none of these surveyed IV2V models can successfully generate a basic, visually intelli-gible composite video under our heterogeneous condition-ing setup, including them in the quantitative benchmarks or user studies would be uninformative. Therefore, they are excluded from our main evaluation as unsuitable direct baselines. Figure 19. Visual demonstration of the limitations of efficient conditioning strategies. Both spatial downsampling (a) and temporal downsampling (b) introduce noticeable visual degradation. Key artifacts include severe facial degradation, the emergence of black blotches in the background, and the deformation or disappearance of structural symbols. 
+
+## F. Superior Edge Harmonization and Green Spill Suppression 
+
+A fundamental challenge in cinematic background replace-ment is managing the boundaries of the foreground sub-jects. Baseline video editing models frequently struggle to fully eliminate the original green screen, leading to a phe-nomenon known as “green spill” or boundary color contam-ination. As visually demonstrated in Fig. 15, existing commer-cial APIs— occasionally Kling 3.0 Omni and more consis-tently Runway and Switchx—fail to synthesize clean edges. They either leave noticeable green halos around fine details (e.g., hair, hands, and thin objects), or, in more severe fail-ure cases, hallucinate massive green color blocks that com-pletely obscure the foreground subjects ( highlighted by red boxes ). In contrast, our generative framework intrinsically un-derstands the semantic boundaries and robustly suppresses any residual green screen artifacts. It synthesizes clean, pre-cise, and naturally blended edges, ensuring that the fore-ground seamlessly integrates into the new environments without any structural distortion or color contamination. 
+
+## G. Robustness to Imperfect Foreground Seg-mentation 
+
+In real-world cinematic production and automated video matting, foreground segmentation masks are frequently im-perfect, often suffering from local holes, missing limbs, or artificial occlusions (e.g., tracking markers or rigging equip-ment). Traditional compositing pipelines and naive editing models are highly sensitive to these defects, as they directly transfer the missing regions or mask errors into the final composite. In contrast, our proposed model exhibits remarkable zero-shot robustness against segmentation artifacts. Be-cause our framework operates within a generative latent space and leverages the strong structural priors of the diffu-sion backbone, it does not merely copy-and-paste the fore-ground. Instead, it performs joint background replacement and semantic foreground inpainting, achieving global vi-sual and temporal coherence . By comprehensively cap-turing the global context of the scene, the model ensures that the locally reconstructed foreground details are structurally, temporally, and photometrically consistent with the overall environmental lighting and geometry, rather than appearing as isolated patches. As visually demonstrated in Fig. 16, we deliberately test our model on input foreground videos with some degrada-tion. Even when confronted with prominent masked-out regions—such as the missing head of the swimming duck, the severely corrupted torso of the human actor, truncated animal bodies, or large artificial holes on the astronauts’ space suits ( highlighted by red boxes )—our model accu-rately deduces the underlying semantic geometry and tex-ture. It seamlessly hallucinates the missing foreground el-ements, maintains temporal consistency across frames, and simultaneously harmonizes the illumination with the newly synthesized background. This robust self-correction capa-bility significantly relaxes the strict requirements for flaw-less upstream matting, making our pipeline highly practical for real-world deployment. 
+
+## H. Implicit Visual Relighting and Scene Adap-tation 
+
+As illustrated in Fig. 17, our method implicitly relights foreground subjects to harmonize with newly synthesized environments, achieving scene-adaptive illumination with-out any explicit relighting prompts or maps. Instead of merely pasting the foreground, the model accurately gener-ates context-aware shadows, color hues, and complex rim-lighting that strictly match the lighting conditions of the new backgrounds. This zero-shot relighting capability en-sures the photorealistic integration essential for high-end cinematic compositing. 
+
+## I. Gemini-based Structured Captioning Details 
+
+We use Gemini-3-Flash [48] to generate structured video annotations for dataset curation and training. Two comple-mentary protocols are adopted. (1) GT-guided restoration annotation : the model receives a foreground video together with the original full video (ground truth), and produces a structured description faithful to the original clip. (2) 
+
+Reference-conditioned compositing annotation : in the absence of a ground-truth video, the model receives only a foreground video together with 1–3 background reference images, and must infer a structured caption for the antic-ipated composited result. In both protocols, Gemini out-puts a JSON record containing foreground/background con-tent, foreground/background motion, camera motion analy-sis, camera angle, focal length, and a summary caption. The full prompt templates are shown in Fig. 20 and Fig. 21. 
+
+## J. Effect of Multi-Frame Control 
+
+To further investigate the impact of multi-frame background conditioning, we compare the inference results using 1, 2, and 3 background reference images as control signals. As visually demonstrated in Fig. 18, the 3-frame control achieves the best synthesis quality. By accurately injecting spatial-temporal background information at the beginning, middle, and end locations via temporal positional encod-ing cloning, the model maintains the highest temporal con-sistency and coherence, closely matching the ground truth (GT). Conversely, reducing the number of background ref-erence images leads to a deficit of background information at the unconditioned temporal positions. As a result, the generated videos exhibit noticeable deviations from the GT. Without explicit guidance at these crucial temporal an-chors, the model struggles to reconstruct unseen regions un-der large camera motions, resulting in bizarre background Gemini Captioning Prompt — GT-guided Restoration An-notation 
+
+Common Setup. Input: (1) Foreground video; (2) Original full video (GT) as reference; (3) optional foreground tags. 
+
+Output: JSON with exactly these keys: {foreground content, background content, foreground motion, background motion, camera motion analysis, camera angle, focal length, caption }.
+
+General Rules. 
+
+• Use optional foreground tags only as supportive hints; rely on the video as the source of truth. • Use the foreground video to identify the main subject and its motion, and use the GT video to recover the full scene, back-ground appearance, lighting, and camera behavior. • Do not mention masks, segmentation, green screen, file paths, dataset names, or annotation tools. • Do not hallucinate actor identities, movie titles, character names, or dialogue. • If some details are unclear, stay generic instead of guessing. • Output valid JSON only, with no extra explanation outside the JSON object. 
+
+Field Instructions. 
+
+• foreground content : identify the main foreground sub-jects in one sentence. • background content : describe the full scene, key back-ground elements, atmosphere, and lighting/time of day when clearly visible, in one short sentence. • foreground motion : summarize what the foreground subject does over time in one short sentence. • background motion : summarize background motion over time (e.g., crowd flow, traffic, or parallax); if little changes, state that it is mostly static. • camera motion analysis : describe the shot scale and camera movement in one information-dense sentence, such as pan, tilt, dolly, truck, zoom, orbit, or handheld motion. • camera angle : choose exactly one from [Eye-level, High angle, Low angle, Overhead, Worm’s-eye, Dutch angle, OTS, POV, Unknown] .• focal length : choose exactly one from [16--20mm, 24mm, 35mm, 50mm, 85mm, 135mm, Unknown] .• caption : write one English paragraph (typically 80–115 words) that combines foreground actions, background scene, and camera motion, while remaining faithful to the GT video. 
+
+Prompt Intent. The annotation should faithfully summarize the original clip rather than inventing unseen content. The foreground video anchors subject identity and motion, while the GT video provides the complete reference for scene layout, background se-mantics, illumination, and camera behavior. 
+
+Figure 20. Prompt template for GT-guided structured caption generation. Gemini receives a foreground video together with the original ground truth video as reference, and outputs a structured JSON annotation for the original clip. 
+
+variations—such as background objects suddenly disap-pearing, morphing, or the model hallucinating entirely in-consistent content. 
+
+Gemini Captioning Prompt — Reference-conditioned Compositing Annotation 
+
+Common Setup. Input: (1) Foreground video; (2) 1–3 background reference keyframes in temporal order; (3) optional foreground tags. 
+
+Output: Same JSON schema as Fig. 20: {foreground content, background content, foreground motion, background motion, camera motion analysis, camera angle, focal length, caption }.Unless otherwise noted, the general rules and field definitions follow Fig. 20. 
+
+Task-specific Differences. 
+
+• The foreground subject and its motion are inferred mainly from the foreground video. • The background scene is inferred from the reference keyframes rather than a GT video. • Optional foreground tags are used only as auxiliary hints and should not override visual evidence. • The goal is to describe the target composited result implied by the given inputs, rather than reconstructing an original full video. 
+
+Background Usage Rules. 
+
+• By default, assume the background keyframes are broadly consistent and belong to the same setting; fuse details across them into one coherent scene description. • Minor viewpoint or lighting changes should still be treated as the same place. • Only describe a temporal background change when the setting shift is visually obvious, such as indoor → outdoor, day →
+
+night, or city → desert. • If such a shift is obvious, describe it briefly and coherently as a cinematic transition, without inventing unsupported objects or events. 
+
+Overridden Field Definitions. 
+
+• background content : describe the target background scene, key elements, atmosphere, and lighting/time of day based on the reference keyframes. • background motion : describe the implied background motion in the target composited result, such as parallax or en-vironmental movement; if little changes, state that it is mostly static. • caption : write one English paragraph (typically 80–115 words) describing the target composited result by combining foreground actions, target background scene, and camera mo-tion. 
+
+Figure 21. Prompt template for reference-conditioned struc-tured caption generation without GT. Compared with Fig. 20, this version replaces the GT video with 1–3 background reference images and asks Gemini to describe the target composited result implied by the inputs. 
+
+## K. Explorations on Efficient Conditioning 
+
+Directly conditioning on a high-resolution foreground video 
+
+V f g across all frames (e.g., 1080p, 121 frames) is compu-tationally expensive. Before arriving at our final design, we empirically explored two straightforward efficiency strate-gies to reduce the input condition redundancy: 
+
+(1) Temporal Subsampling (Joint Interpolation): We Figure 22. Failure case examples. We highlight three typical failure modes: (1) artifacts near transparent/refractive boundaries (e.g., glass edges), (2) occasional abnormal foreground relighting (stochastic; alleviated by re-sampling seeds), and (3) unrealistic background details under abrupt scene transitions with weak semantic continuity. Readers can click and play the video clips in this figure using Adobe Acrobat .
+
+temporally subsampled the input foreground video V f g 
+
+with a stride of 2, reducing the condition sequence to 61 frames while maintaining the 1080p resolution. The model was trained to output the full 121-frame video V out at 1080p, essentially forcing the network to perform joint Video Frame Interpolation (VFI) and background replace-ment. 
+
+(2) Spatial Downsampling (Joint Super-Resolution): 
+
+We spatially downsampled the input foreground video V f g 
+
+to 720p while preserving the full temporal density (121 frames). The target output V out remained at 1080p, im-plicitly requiring the model to perform joint Video Super-Resolution (VSR) alongside the core compositing task. 
+
+Analysis of Limitations. Empirically, both naive strate-gies yielded suboptimal results, as visually demonstrated in Fig. 19. Specifically, we observed three critical failure modes: (1) structural distortions and texture degradation in fine-grained foreground regions, most notably resulting in severe facial degradation ; (2) the emergence of noticeable 
+
+black spots and blotchy artifacts in the synthesized back-ground areas; and (3) the disappearance or deformation of symbols and structural markings (e.g., road signs and ground texts). We hypothesize that this degradation stems from a critical information bottleneck: forcing the network to simultaneously hallucinate missing spatial or temporal details (via VFI or VSR) while attempting complex back-ground synthesis and scene-adaptive relighting overloads the model’s capacity. The uniform reduction of spatial or temporal resolution inevitably discards critical identity cues that cannot be perfectly recovered. 
+
+Final Strategy: Full-Resolution Symmetric Process-ing. Due to the degradation in facial details and foreground fidelity, we discarded these asymmetrical input-output com-pression schemes. In our final pipeline, both the fore-ground condition (encoded as Zf g from V f g ) and the de-noising video (represented by Zs and decoded to V out )strictly maintain the exact same high resolution and frame count (i.e., 1080p, 97 frames). Although this symmetri-cal full-resolution processing increases the computational and memory footprint (as detailed in Sec. L), we conclude that it is strictly necessary to preserve identity and achieve cinematic-level synthesis quality. 
+
+## L. Computational Cost and Resources 
+
+Training Details and Cost. Our model was trained directly on high-resolution cinematic sequences (1080p resolution, 97 frames) using 8 NVIDIA H200 GPUs for approximately 5 days, reaching a total of 6,000 training steps. During this phase, the peak VRAM consumption was around 135 GB per GPU. To enhance the model’s robustness and condition flexibility, we employ a stochastic frame dropping strat-egy during training: each background condition frame is independently retained with a probability of 50%. Conse-quently, the network learns a robust generative prior capa-ble of performing high-quality video synthesis conditioned on a variable number of reference frames (typically ranging from 0 to 3). 
+
+Inference Cost. To evaluate the practical deployment of our method, we report the inference latency and memory foot-print. Unlike the stochastic selection used in training, infer-ence is performed by deterministically specifying a fixed number of condition frames to strictly guide the genera-tion. Running our WAN 2.2-5B [49] based model on a sin-gle NVIDIA H200 GPU to generate a high-resolution cin-ematic sequence (1080p resolution, 97 frames) with 50 de-noising steps requires approximately 25 minutes and con-sumes around 100 GB of VRAM. While we acknowledge that this inference process is relatively slow and compu-tationally intensive, our primary objective is to achieve cinematic-level visual quality and strict temporal coher-ence. At the current stage, prioritizing zero-shot high-fidelity visual effects over speed is a deliberate and neces-sary trade-off. To address the runtime and memory con-straints for real-world applications, our immediate future work involves applying progressive distillation techniques to compress the current model into a few-step (e.g., 4-step) generation framework, which will significantly accelerate inference without heavily compromising the synthesis qual-ity. 
+
+## M. Failure Cases Analysis 
+
+Despite strong overall performance, our method still ex-hibits several failure modes, mainly in scenarios that re-quire (i) view-dependent optical effects, (ii) stable illumi-nation reasoning under large foreground–background dis-crepancy, or (iii) robust synthesis under abrupt background transitions. Fig. 22 summarizes three representative exam-ples. 
+
+(1) Complex physical effects. When the camera moves across the boundary of a glass table, the observed appear-ance contains strong transmission/refraction distortions that are highly view-dependent and deviate from standard alpha compositing and Lambertian assumptions. As a result, the model may produce local structural breaks or texture cor-ruption around the glass-edge region, especially when the foreground interacts with thin or transparent boundaries. 
+
+(2) Occasional abnormal relighting artifacts. In a small portion of cases, we observe implausible local high-lights or specular blobs on the foreground. This issue is stochastic and can often be mitigated by re-sampling dif-ferent random seeds and providing multiple candidates to users. We hypothesize that large illumination discrepancy between foreground and background, together with rare challenging training examples, may cause the model to in-correctly transfer strong lighting patterns to the foreground. 
+
+(3) Abrupt background changes with weak semantic continuity. When the background undergoes drastic scene changes and adjacent frames have little perceptual corre-spondence, the model needs to hallucinate large unseen re-gions under heavy disocclusion. This increases synthesis difficulty and may lead to unrealistic background details and degraded temporal coherence. We believe such ex-treme transitions are under-represented in training, where most background variations still preserve a traceable conti-nuity.

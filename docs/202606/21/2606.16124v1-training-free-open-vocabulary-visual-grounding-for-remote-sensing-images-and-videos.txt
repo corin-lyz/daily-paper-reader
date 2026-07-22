@@ -1,0 +1,759 @@
+Title: Training-Free Open-Vocabulary Visual Grounding for Remote Sensing Images and Videos
+
+URL Source: https://arxiv.org/pdf/2606.16124v1
+
+Published Time: Tue, 16 Jun 2026 02:00:54 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+1
+
+# Training-Free Open-Vocabulary Visual Grounding for Remote Sensing Images and Videos 
+
+## Ke Li, Di Wang, Member, IEEE , Yongshan Zhu, Ting Wang, Weiping Ni, Tao Lei, Senior Member, IEEE, 
+
+## Quan Wang, Xinbo Gao, Fellow, IEEE 
+
+Abstract — Remote sensing visual grounding (RSVG) aims to localize a referred target in a remote sensing image or video according to a natural language expression. Existing RSVG methods usually rely on task-specific manual annotations, which are costly to collect and inevitably limited in covering the diversity of real-world geospatial scenarios. As a result, they often struggle to generalize to open-vocabulary queries involving novel objects, fine-grained attributes, complex spatial relationships, and functional semantics. In this paper, we propose RSVG-ZeroOV, a training-free framework that leverages frozen generic foundation models for zero-shot open-vocabulary RSVG. RSVG-ZeroOV follows an Overview-Focus-Evolve paradigm, which exploits the distinct yet complementary attention patterns of vision-language models (VLMs) and diffusion models (DMs) to progressively generate precise grounding results. Specifically, (i) 
+
+Overview utilizes a VLM to extract cross-attention maps that capture semantic correlations between the referring expression and visual regions; (ii) Focus leverages the fine-grained modeling priors of a DM to compensate for object structure and shape information often overlooked by VLM attention; and (iii) Evolve introduces a simple yet effective attention evolution module to suppress irrelevant activations, yielding purified object masks. To handle video inputs, we further present Video RSVG-ZeroOV, which extends image-level grounding to spatio-temporal grounding through a query-relevant key-frame selector and a temporal propagator, enabling efficient and temporally coherent video grounding without video annotations or fine-tuning. Extensive experiments on six image and video grounding benchmarks show that RSVG-ZeroOV consistently outperforms existing zero-shot baselines and achieves competitive or superior performance compared with weakly- and fully-supervised methods. 
+
+Index Terms —Visual grounding, Open-vocabulary, Remote sensing image and video, Vision-language model 
+
+## ✦
+
+## 1 INTRODUCTION 
+
+# GIVEN a remote sensing image or video and a natural language expression, remote sensing visual grounding (RSVG) aims to localize the referred target with a bounding box or a pixel-wise segmentation mask. By allowing users to refer to targets in geospatial scenes through natural language, RSVG provides an intuitive interface for complex remote sensing data and supports a wide range of applications, such as disaster assessment, urban planning, UAV-based surveillance, traffic monitoring, and interactive remote sens-ing image/video analysis [1]–[4]. Despite its practical value, extending RSVG toward real-world scenarios remains challenging. Remote sensing data collection itself is inherently difficult, as images and videos need to cover broad geographic regions, large variations in object scale, complex spatial layouts, and dynamic temporal 
+
+• Ke Li, Di Wang, Ting Wang, and Quan Wang are with the School of Computer Science and Technology, Xidian University, Xi’an 710071, China. Di Wang is also with the Interdisciplinary Institute of Artificial Intelligence, Xidian University, Xi’an, Shaanxi 710126, China. (E-mail: like0413@stu.xidian.edu.cn; wangdi@xidian.edu.cn; wangt-ingt@stu.xidian.edu.cn; qwang@xidian.edu.cn) 
+
+• Yongshan Zhu is with the School of Artificial Intelligence, Xidian University, Xi’an 710071, China. (E-mail: zhu.ys@stu.xidian.edu.cn) 
+
+• Weiping Ni is with the Northwest Institute of Nuclear Technology, Xi’an 710024, China. (E-mail: nihao wpni@163.com) 
+
+• Tao Lei is with the School of Physics and Information Engineering, Fuzhou University, Fuzhou 350108, China. (E-mail: leitao@sust.edu.cn) 
+
+• Xinbo Gao is with the Interdisciplinary Institute of Artificial Intel-ligence, Xidian University, Xi’an, Shaanxi 710126, China. (E-mail: xbgao@mail.xidian.edu.cn) 
+
+• Di Wang is the corresponding author. 
+
+contexts. The annotation burden is further amplified in RSVG, where each sample requires not only accurate localization labels ( e.g. , bounding boxes or segmentation masks) but also natural language expressions aligned with the referred target. More importantly, existing RSVG annotations can only cover a limited range of object categories, visual concepts, and expression patterns. Open-vocabulary RSVG goes beyond this constrained setting by allowing users to refer to targets from unseen categories with more flexible and diverse expressions, such as visual attributes, spatial relationships, functional roles, and task-specific intentions [5]. As a result, models trained on such limited annotations may struggle to generalize to novel targets and diverse user queries, making them less effective in open-vocabulary RSVG. Recent generic foundation models have demonstrated remarkable open-vocabulary perception capabilities [6]–[9]. Benefiting from large-scale image-text pre-training, vision-language models (VLMs) can effectively capture semantic re-lationships between textual descriptions and visual elements, thereby achieving impressive vision-language alignment. Such capabilities make frozen VLMs promising for reducing the dependence on exhaustive task-specific annotations and extending RSVG toward open-vocabulary scenarios. However, directly applying generic VLMs to open-vocabulary RSVG in a zero-shot manner remains unreliable. As shown in Figure 1 (a), when prompted to localize the referred target with coordinates, a VLM may produce inac-curate bounding boxes. Nevertheless, the same model can generate a detailed caption that correctly mentions the target and its surrounding context, suggesting that useful semantic information has already been perceived. To inspect this 
+
+> arXiv:2606.16124v1 [cs.CV] 15 Jun 2026 2
+> Fig. 1. Motivation of the proposed training-free open-vocabulary RSVG framework. (a) Directly prompting a generic VLM to output target coordinates may lead to inaccurate localization, while the same model can correctly describe the referred target and its surrounding context through image captioning. (b) The VLM cross-attention map highlights regions related to the referred target, indicating that VLMs contain useful open-vocabulary semantic cues but lack reliable coordinate-level grounding ability. This motivates us to convert the internal attention cues of frozen foundation models into accurate grounding masks.
+
+behavior, we visualize the VLM cross-attention maps 1 during coordinate prediction. As shown in Figure 1 (b), although the predicted coordinates are inaccurate, the attention maps still respond to target-related regions. These cues, however, are insufficient for precise grounding: they often focus on object boundaries, corners, or discriminative parts rather than the complete target extent, and may include scattered activations from irrelevant regions. Therefore, the key challenge is how to transform useful yet imperfect attention cues into accurate and complete grounding results. These observations naturally lead to a question: Can frozen generic foundation models be effectively leveraged for zero-shot open-vocabulary grounding in remote sensing images and videos, without task-specific training? To answer this, we conduct a series of exploratory experiments to progressively analyze the impact of different foundation models and architec-tural components on performance, as detailed in Section 3. Through these explorations, we summarize three empirical guidelines: 1) Generic vision-language models exhibit strong generalization ability, which is critical for object localization in remote sensing. 2) Compared with other visual foundation models, diffusion models (DMs) provide stronger cues for object structure and spatial extent. 3) Attention maps from VLMs and DMs are complementary, and their integration consistently improves grounding performance. Based on these guidelines, we propose RSVG-ZeroOV ,a training-free framework for zero-shot open-vocabulary RSVG. Our framework follows an Overview-Focus-Evolve 
+
+strategy that leverages the distinct yet complementary attention patterns of frozen VLM and DM to form the basis of our grounding results. Specifically, RSVG-ZeroOV first aggregates cross-attention maps from all transformer heads in the VLM to obtain an initial overview of regions related to the referred target. It then introduces an attention interaction module to integrate the cross-attention maps with self-attention maps, allowing the initial activation to better expand from sparse discriminative regions to the complete target extent. Finally, an attention evolution module pro-gressively suppresses irrelevant activations and refines the  
+
+> 1. For decoder-only VLMs, we refer to the image-text interaction within self-attention as cross-attention to distinguish it from pure visual self-attention.
+
+grounding result into an accurate and purified segmentation mask. To extend RSVG-ZeroOV from images to videos, we further develop Video RSVG-ZeroOV , which introduces a query-relevant key-frame selector and a temporal propagator based on SAM3 [10]. The key-frame selector identifies a representative frame according to its semantic similarity with the expression, on which RSVG-ZeroOV provides an initial query-aware mask. The temporal propagator then extends the key-frame mask to the whole video, enabling training-free spatio-temporal grounding without video-level annotations or task-specific fine-tuning. To evaluate the effectiveness and generalization ability of the proposed framework, we conduct extensive experiments across diverse grounding settings, including remote sensing image grounding on RRSIS-D [11] and RISBench [12], remote sensing video grounding on UAV-SAVG [13], and general-domain spatio-temporal grounding on HC-STVG-v1/-v2 [14] and VidSTG [15]. As summarized in Figure 2, RSVG-ZeroOV consistently outperforms existing zero-shot baselines across diverse grounding tasks and even achieves superior results compared with weakly supervised methods. In summary, our contributions are as follows:  
+
+> •
+
+We propose RSVG-ZeroOV, a training-free framework for zero-shot open-vocabulary RSVG, which localizes user-intended targets from free-form language expres-sions without task-specific annotations or fine-tuning.  
+
+> •
+
+We introduce an Overview-Focus-Evolve strategy that exploits frozen generic foundation models by inte-grating VLM and DM attention maps to enhance the semantic and structural perception of referred objects.  
+
+> •
+
+We extend RSVG-ZeroOV from image-level ground-ing to video-level grounding by introducing two simple yet effective components, i.e., a key-frame selector and a temporal propagator.  
+
+> •
+
+We obtain promisingly competitive results on two benchmark datasets for image grounding and four benchmark datasets for video grounding, which demonstrates the effectiveness and generality of the proposed methods. It is worth noting that a preliminary conference version of this work appeared in [5]. This journal extension sub-3RISBench RSRES 
+
+> UAV-SAVG
+> HC-STVG-v1
+> HC-STVG-v2
+> VidSTG
+> RISBench RSREC
+> RRSIS-D RSREC RRSIS-D RSRES
+> Ours Z-S W-S
+> Fig. 2. Overall comparison between weakly-supervised (W-S) models, zero-shot (Z-S) models, and our RSVG-ZeroOV across different tasks. For each task, we report the best result among all W-S and Z-S models, respectively.
+
+stantially broadens the original scope from image-based grounding to video-based spatio-temporal grounding by introducing Video RSVG-ZeroOV. Specifically, Video RSVG-ZeroOV extends RSVG-ZeroOV to remote sensing videos through a query-relevant key-frame selector and a SAM3-based temporal propagator, without requiring video-level annotations or task-specific fine-tuning. To the best of our knowledge, this is among the first attempts to investigate training-free zero-shot open-vocabulary visual grounding for remote sensing in both image and video domains using frozen generic foundation models. Beyond remote sensing scenarios, we further evaluate the proposed framework on general-domain spatio-temporal grounding benchmarks to examine its cross-domain generalization ability. Com-pared with the conference version, this extension provides substantial new materials, including the video grounding framework, additional remote sensing and general-domain video experiments, more comprehensive ablation studies, visualization results, and in-depth analyses. 
+
+## 2 RELATED WORK 
+
+We review the literature most relevant to our work, including generic foundation models, remote sensing visual grounding, and open-vocabulary visual perception. 
+
+2.1 Generic Foundation Models. 
+
+The emergence of large-scale pretraining has fueled the rapid advancement of multimodal foundation models. Among them, vision-language models (VLMs) are designed for cross-modal understanding by aligning visual and textual representations. Early attempts, represented by CLIP [16], demonstrated impressive zero-shot generalization by con-trastively pretraining on massive image-text pairs. LLaVA [6] builds upon CLIP by adding a language decoder Vicuna [17] to support multimodal instruction-following. More recent approaches, such as CogVLM [18], InternVL [19], and Qwen-VL [20], further enhance this paradigm and demonstrate outstanding performance in open-world visual understand-ing. However, due to their emphasis on high-level semantic reasoning and lack of pixel-level supervision, these models often struggle with fine-grained spatial perception. Another important branch is diffusion models (DMs) [21], which focus on visual content generation from text prompts. Recent studies [22], [23] reveal that the hierarchical attention maps in DMs encode strong structural priors, making them useful for downstream tasks such as classification, detection, and segmentation. In addition, segmentation foundation models, represented by SAM [7] and its video extensions such as SAM2 [24] and SAM3 [10], provide promptable mask generation and temporal propagation capabilities. In this study, we focus on exploiting the complementary roles of VLMs and DMs for query-aware grounding, while using SAM-based models as plug-and-play tools for optional mask refinement and temporal propagation. 
+
+2.2 Remote Sensing Visual Grounding. 
+
+2.2.1 Image-Based RSVG 
+
+Image-based RSVG aims to localize target objects in static remote sensing imagery based on natural language de-scriptions. Compared with natural scene images, remote sensing images often exhibit large-scale variations, complex backgrounds, dense small objects, and diverse imaging con-ditions. Remote sensing referring expression comprehension (RSREC) and segmentation (RSRES) are two typical image-based RSVG tasks. RSREC aims to predict a bounding box corresponding to the given referring expression, while RSRES requires a pixel-wise binary mask of the referred object. The pioneering work [25] explores RSREC with a one-stage dense prediction framework. Recently, transformer-based methods [26]–[30] have been introduced to better capture cross-modal context and improve localization accuracy. For RSRES, recent works [11], [12], [31], [32] improve segmenta-tion quality by enhancing multi-scale visual-text interactions. Despite these advances, existing image-based RSVG methods still heavily rely on task-specific annotations and have limited generalization to open-vocabulary expressions. 
+
+2.2.2 Video-Based RSVG 
+
+Video-based RSVG extends visual grounding from static images to temporal sequences, requiring consistent localiza-tion of the referred target across frames. Compared with image-based settings, it introduces additional challenges such as object motion, camera motion, occlusion, scale variation, and temporal changes in object appearance or spatial relations. Due to the limited availability of remote sensing video grounding datasets, this task remains relatively underexplored. Existing studies are mainly developed in the general video domain, including video referring expression comprehension and spatio-temporal video grounding. Early works often follow tracking- or proposal-based pipelines to generate phrase-relevant candidate regions and associate them across frames [33], [34]. Recent fully-supervised meth-ods adopt detection-based or transformer-based architectures to better model temporal dependencies and cross-modal in-teractions [35]–[42]. Beyond fully-supervised learning, some 4(a) (b) 
+
+SAM DM VLM Input The baseball field on the lower left. The large and black slender small ship. The vehicle is on the lower left of the vehicle in the middle. 
+
+GT 
+
+> Fig. 3. (a) Visualization of receptive fields derived from self-attention maps in DM. (b) Comparison of attention embedding results using self-attention maps from different models.
+
+recent works explore weakly-supervised [43]–[46] or zero-shot video grounding [47]–[49] to reduce the dependence on dense video annotations. Inspired by these advances, SAVG-DETR [13] makes an initial attempt to address aerial video grounding in remote sensing scenarios. Nevertheless, exist-ing remote sensing video grounding methods still rely on task-specific video annotations and provide limited support for zero-shot open-vocabulary grounding. This motivates us to explore a training-free framework that extends image-level open-vocabulary RSVG to spatio-temporal grounding in remote sensing videos. 
+
+2.3 Open-Vocabulary Visual Perception 
+
+With the rapid development of multimodal foundation models, open-vocabulary learning has achieved remarkable success in natural image domains [50]–[52]. Inspired by this progress, recent studies have extended these paradigms to the remote sensing field [53]–[55]. For instance, Remote-CLIP [56] improves transferability in downstream tasks by pretraining on extensive remote sensing image-text pairs. Similarly, VisGT [57] and GSNet [58] construct large-scale open-vocabulary detection and segmentation datasets, re-spectively, enabling models to recognize a broader range of object categories. However, building high-quality anno-tated datasets for remote sensing remains costly and labor-intensive. To alleviate the reliance on manual annotations, several efforts [59] have explored training-free approaches. For example, SegEarth-OV [60], [61] adapts existing generic models by modifying or removing task-specific components, allowing seamless application to high-resolution remote sensing segmentation. Nevertheless, these methods still rely on predefined category labels during inference stage and lack the flexibility to understand user-intended objects described in free-form language. As discussed in the introduction, users in practical applications often prefer to locate objects by describing visual attributes, spatial relationships, or functional roles using natural language expressions. To the best of our knowledge, this work is the first to investigate zero-shot open-vocabulary RSVG, which requires models to flexibly interpret free-form expressions and localize the referred objects without task-specific training. To achieve this goal, we propose RSVG-ZeroOV, a training-free framework                              
+
+> TABLE 1 Comparison of generic VLMs and remote sensing VLM on RRSIS-D test set, all using 7B-scale LLMs.
+> RSREC RSRES Method (Zero-Shot) Pr@0.5 mIoU Pr@0.5 mIoU GeoChat (CVPR’24) 23.93 30.12 --LLaVA-1.5 (CVPR’24) 13.21 20.59 --Qwen2.5-VL (arXiv’25) 28.66 30.90 --GeoChat + SAM 27.61 32.53 18.85 24.92 LLaVA-1.5 + SAM 16.26 21.97 10.86 16.86 Qwen2.5-VL + SAM 30.35 31.93 24.68 25.72
+
+that enables frozen foundation models to perform expression-driven open-vocabulary grounding beyond predefined cate-gory labels. 
+
+## 3 GUIDELINES OF EXPLORING GENERIC FOUNDA - 
+
+> TION
+
+## MODELS 
+
+Naively transferring generic foundation models to open-vocabulary remote sensing visual perception tasks does not yield satisfactory results. In this section, we summarize three guidelines for the effective use of foundation models. 
+
+Guideline 1: generic VLMs exhibit strong generalization ability on unseen remote sensing scenes. To demonstrate this, we conduct zero-shot experiments on RRSIS-D test set. Specifically, we compare three 7B-scale models, including LLaVA-1.5 [62], Qwen2.5-VL [63], and GeoChat [64]. For RSREC task, we generate bounding box predictions of referred objects using a unified prompt format: [Locate the object referred to by ‘ {referring expression }’ and return its box coordinates (x1, y1, x2, y2)]. Notably, GeoChat has been finetuned on 318k image-instruction pairs collected from remote sensing datasets, enabling it to learn more domain-specific priors. However, as shown in Table 1, GeoChat achieves 23.93% Pr@0.5 on RSREC task, noticeably lower than Qwen2.5-VL’s 28.66% . This result suggests that VLMs pretrained on large-scale generic datasets can exhibit strong cross-domain generalization even without access to remote sensing data. For RSRES task, we utilize outputs of VLMs as 5                      
+
+> TABLE 2 Evaluation of different self-attention maps on RRSIS-D test set.
+> RSREC RSRES Self-Attention Maps Pr@0.5 mIoU Pr@0.5 mIoU
+> w/o Cross-Attention Map 21.49 26.26 1.18 6.15 ViT in VLM 12.53 21.02 2.13 7.40 ViT in SAM 18.85 23.56 4.77 10.23 U-Net in DM (Ours) 30.15 32.92 12.84 21.85
+
+box prompts for SAM to get pixel-level masks. As we can see, Qwen2.5-VL still outperforms GeoChat by 0.8% in mIoU. These findings highlight the potential of generic VLMs as a solid foundation for zero-shot open-vocabulary RSVG, even without any domain-specific training. 
+
+Guideline 2: self-attention maps in DM encode superior structural priors of objects. Theoretically, self-attention mechanisms are inherently suited for modeling object struc-ture, as they compute pairwise similarities across visual elements, enabling the network to capture spatial depen-dencies and shape layouts. As shown in Figure 3 (a), we visualize the receptive fields of self-attention maps anchored at different query points. The results demonstrate that self-attention can effectively distinguish foreground objects from the background, reflecting a strong ability for structural perception. To further investigate this, we compare the spatial distributions of self-attention extracted from three representative architectures: the visual encoder of VLM, the image backbone of SAM, and the U-Net of DM, as illustrated in Figure 3 (b). Specifically, the VLM attention maps tend to be broadly distributed and spatially scattered, consistent with its objective of capturing global semantic context. While SAM produces sharper boundaries, its purely visual design lacks semantic understanding, which often leads to over-attention on surrounding background areas. For instance, in the second row, SAM simultaneously highlights both the ship and port. In contrast, the self-attention maps from DM display the most coherent structural representations, i.e., attention is evenly and densely distributed across the entire object extent, revealing a more precise and holistic understanding of object shapes. To quantitatively validate these observations, we integrate the different types of self-attention maps into our visual grounding pipeline and evaluate their performance. As reported in Table 2, the use of self-attention maps from DM (the last row) achieves the highest Pr@0.5 and mIoU on both RSREC and RSRES benchmarks. These results confirm the superiority of DM’s self-attention in capturing object-centric structural cues for visual grounding tasks. 
+
+Guideline 3: combining cross- and self-attention maps is vital especially for pixel-level perception tasks. To validate this, we first evaluate the grounding performance using only the cross-attention maps from the VLM, as shown in Table 2 (the first row). Removing the self-attention maps from DM leads to significant performance drops of 8.66% Pr@0.5 and 
+
+6.66% mIoU on RSREC, and 11.66% and 15.70% on RSRES, respectively. Such a phenomenon indicates the necessity of combining cross- and self-attention maps, especially for pixel-level perception tasks like RSRES. These findings naturally lead to a question: which interaction strategy best integrates 
+
+> TABLE 3 Comparison of different interaction strategies between cross- and self-attention maps on RRSIS-D test set.
+
+RSREC RSRES Interaction Strategy Pr@0.5 mIoU Pr@0.5 mIoU Anchor-based 23.18 26.94 6.58 16.69 + Evolve stage 28.73 31.48 7.61 16.58 Multiplication 21.94 26.32 10.03 19.78 + Evolve stage 29.26 31.54 11.52 20.75 Exponentiation 24.07 28.61 5.37 15.30 + Evolve stage 27.38 31.02 5.31 14.00 
+
+Similarity (Ours) 22.63 26.65 10.26 20.56 + Evolve stage 30.15 32.92 12.84 21.85 
+
+cross- and self-attention maps for optimal grounding performance? 
+
+We try four strategies: 1) Anchor-based: selecting high-response pixels from the cross-attention map to represent the object, followed by aggregating their corresponding self-attention regions. 2) Multiplication: performing element-wise multiplication on cross- and self-attention maps, denoted as AS · A C . 3) Exponentiation: enhancing the self-attention map by raising it to a power γ, i.e. , AγS · A C . 4) Similarity: computing cosine similarity between the cross- and self-attention maps at each spatial location (details in the next section). As summarized in Table 3, although the anchor-based and exponentiation strategies achieve reasonable performance on RSREC, they suffer on RSRES. The former tends to oversimplify by omitting many regions, while the latter tends to overamplify high activations. In contrast, the proposed similarity strategy yields more semantically consistent initial masks, which allows the evolve stage to further improve segmentation quality, ultimately achieving a better performance on both benchmarks. 
+
+## 4 METHODOLOGY 
+
+In this section, we start with the introduction of the proposed RSVG-ZeroOV framework for image-based RSVG (illustrated in Figure 4) in Section 4.1. Then, we describe how to extend the framework to video-based RSVG (illustrated in Figure 6) in Section 4.2. 
+
+4.1 RSVG-ZeroOV for Image Grounding 
+
+Following our proposed guidelines, we present a straight-forward training-free framework named RSVG-ZeroOV 
+
+for zero-shot open-vocabulary RSVG. As illustrated in Fig-ure 4, the framework comprises three sequential stages: (i) Overview: we prompt a VLM with a referring expression to identify the referred object and extract its corresponding cross-attention map, which highlights regions most relevant to the given textual query. (ii) Focus: we cache the self-attention maps from the U-Net of a DM to obtain structural priors of objects, and then propose an effective interaction strategy to embed these priors into the cross-attention distribution. (iii) Evolve: to generate a high-quality attention map, we introduce an attention evolution module to filter 6Prompt Generator 
+
+DM 
+
+VLM  
+
+> 1
+> 23
+> DFS
+> Attention Interaction
+
+SAM            
+
+> "A basketball court in the middle."
+> Visual Prompt Output Input
+> Fig. 4. The overall pipeline of the proposed RSVG-ZeroOV for image-based RSVG. The VLM branch extracts language-aware cross-attention maps
+> ACfor coarse target localization, while the DM branch provides self-attention maps ASas object-structure priors. Then, ACand ASare interacted to generate the structurally enhanced attention map ACS , from which top-Kconfident seeds are selected and isolated noisy responses are removed by depth-first search (DFS)-based connected-region filtering. Finally, the denoised connected regions are converted into visual prompts and fed into SAM to produce the final segmentation mask and bounding box.
+
+out irrelevant activations, thus improving the quality of the segmentation mask. 
+
+Overview Stage. Referring to Guideline 1 , we utilize the attention map from a frozen VLM to capture the coarse-level localization cues of the referred object. Given a remote sensing image I and a referring expression T , we first hook into the attention weights W(t) ∈ RH×1×N from VLM, where N is the token length, H is the number of attention heads, and t ∈ { 1, . . . , T } indexes the T autoregressive forward passes. To obtain cross-attention parts, we extract the image-text-related segment W(t) 
+
+> p:p′
+
+, where p and p′ indicate the span of visual tokens in the input sequence. After that, we aggregate information from the transformer heads with mean weights, and form a sentence-level cross-attention map by averaging all t as: 
+
+AC = 1 /T PTt=1 (1 /H PHh=1 W(t) 
+
+> p:p′
+
+). (1) As shown in Figure 5, cross-attention maps establish the relationship between textual queries and visual pixels. However, it exhibits two key limitations: (i) Attention tends to focus on object boundaries or corners rather than the full extent of the object. This behavior stems from the high-level semantic concentration of VLMs, which encourages attention to concentrate on key features of objects. (ii) Attention is often scattered and includes irrelevant regions. This dispersion arises because VLMs need to aggregate contextual cues from multiple visual regions to understand complex referring expressions. 
+
+Focus Stage. To mitigate the first issue (i) , referring to the aforementioned Guidelines 2&3 , we propose an atten-tion interaction module that integrates cross-attention with structural priors derived from self-attention. Considering the diverse scales of objects in remote sensing images, we first extract multi-scale self-attention maps from the U-Net in DM, and fuse them to form a unified structural prior 
+
+AS ∈ RH×W ×H×W , which is denoted as: 
+
+AS = 1 /L P
+
+> l∈L
+
+(AlS ), (2) where AlS denotes the self-attention map from l-th layer. Next, we calculate the correlation score 3 between AC and          
+
+> 3. In fact, ACdoes not match the spatial resolution of AS, hence we interpolate ACto the same size as ASbefore interaction.
+
+A baseball field is on the right of  the large oval ground track field on the left. A basketball court is on the right of the tennis court  on the left. The green tiny dam. The  gray slender train station in the middle. 
+
+> Fig. 5. Visualization of some cross-attention maps from VLM on RRSIS-D.
+
+AS through cosine similarity: 
+
+ACS = AC · A S
+
+∥A C ∥2∥A S ∥2
+
+, (3) where ∥ · ∥ 2 denotes the L2 norm. This interaction introduces object-centric structural guidance into the original cross-attention map, allowing the model to shift focus from incomplete boundaries to semantically coherent regions. 
+
+Evolve Stage. Although this interaction strategy remark-ably fills the gaps within the object area, it also exacerbates the impact of issue (ii) . To address this, we introduce an attention evolution module based on recursive region expansion to suppress scattered activation signals that are outside the referred object area. Specifically, we first select the top-K pixels from the interaction map AC with the highest response values: 
+
+S = TopK( AC , K ), (4) where S = {(ik, j k)}Kk=1 denotes the set of starting seed posi-tions. For each seed (ik, j k), we define a local neighborhood kernel N (i, j ) of size 3 ×3, and iteratively expand the region by selecting the neighbor with the highest response: 
+
+(i∗, j ∗) = arg max  
+
+> (u,v )∈N (i,j )
+
+ACS [u, v ]. (5) 7Input Video 
+
+> Similarity Calculation
+> Sec IV-B-1
+> Similarity Time
+
+RSVG-ZeroOV 
+
+> BBox &Mask
+> Sec IV-A
+
+SAM3     
+
+> Tube Proposals Sec IV-B-2 Strategy 1
+> Tube Filter
+> Query
+> The container ship sailing towards the top on the river.
+> Video Sampling Entity Selector
+> Output
+
+SAM3  
+
+> Temporal Boundary Trimming
+> Temporal Boundary Expansion
+> Temporal Propagation
+> Sec IV-B-2 Strategy 2
+
+VLM Query     
+
+> 'yes' 'no' ...
+> 'yes' 'no' ...
+> Key Frame
+
+Fig. 6. The overall pipeline of the proposed Video RSVG-ZeroOV for video-based RSVG. A key frame is first selected from uniformly sampled frames by measuring the similarity between each frame and the referring expression. The image-level RSVG-ZeroOV produces the key-frame grounding result, including a bounding box and mask, which is used as the query-aware spatial anchor. In Strategy 1, SAM3 generates tube proposals with the extracted entity prompt, and a tube filter selects the proposal that best matches the key-frame result, followed by VLM-based temporal boundary trimming. In Strategy 2, SAM3 takes the key-frame mask as a visual prompt and performs bidirectional temporal propagation, followed by VLM-based temporal boundary expansion and verification. 
+
+We then perform a depth-first search (DFS) starting from each seed to recursively grow the region. A pixel (u, v ) is included in the evolved attention map AE if it satisfies: 
+
+ACS [u, v ] ≥ τ, && (u, v ) ∈ DFS( S), (6) where τ is a response threshold that controls the expansion boundary, and the process continues until no further quali-fied neighbors can be added. Finally, we perform binarization on the evolved attention map AE to obtain the segmentation mask M ∈ { 0, 1}H×W , which is defined as: 
+
+M (i, j ) = 
+
+(
+
+1, if AE (i, j ) ≥ α
+
+0, otherwise , (7) where α ∈ (0 , 1] is a predefined binarization threshold. 
+
+Refine Stage (Optional). Following prior works [11], [12], we additionally introduce an optional refinement stage to further improve the segmentation mask M . We evaluate the effectiveness of several refinement methods, including DenseCRF and various prompt types for SAM. Our results show that box prompts yield the best performance, whereas point prompts are less effective. 
+
+4.2 RSVG-ZeroOV for Video Grounding 
+
+Given a remote sensing video V = {I t}Lt=1 and a refer-ring expression T describing the target object, video-based RSVG aims to localize the referred object across frames by predicting a sequence of pixel-wise masks M = {M t}Lt=1 .A naive solution is to apply image-based RSVG-ZeroOV independently to each frame. However, such a frame-by-frame manner is computationally inefficient and overlooks the temporal continuity of video data, which may lead to unstable predictions across adjacent frames. To address these issues, we propose Video RSVG-ZeroOV, a training-free extension of RSVG-ZeroOV for video grounding, as illustrated in Figure 6. Specifically, our framework first selects a query-relevant key frame and applies image-based RSVG-ZeroOV only to this frame to obtain an initial mask of the referred object. The key-frame mask is then used as a query-aware spatial anchor for video-level grounding. Based on this anchor, we consider two training-free strategies: a proposal-based strategy that selects the target object tube from SAM3-generated candidates, and a prompt-based strategy that directly uses the key-frame mask as a visual prompt for bidirectional mask propagation with SAM3. 
+
+4.2.1 Key-Frame Selector 
+
+To avoid processing all video frames independently, we first select a query-relevant key frame as the spatial anchor for video-level grounding. Specifically, we uniformly sample N
+
+frames from the input video: 
+
+S = {I ti }Ni=1 , ti =
+
+
+
+1 + (i − 1)( L − 1) 
+
+N − 1
+
+
+
+, (8) where L is the total number of frames and N is the number of sampled frames. For each sampled frame Iti , we compute its semantic similarity with the referring expression T using a frozen BLIP model [65]. Let ϕv (·) and ϕl(·) denote the visual and textual encoders, respectively. The query-frame similarity score is computed as: 
+
+sti = ϕv (Iti )⊤ϕl(T )
+
+∥ϕv (Iti )∥2∥ϕl(T )∥2
+
+. (9) The key frame is then selected as the sampled frame with the highest semantic relevance: 
+
+t∗ = arg max  
+
+> ti∈S
+
+sti . (10) After obtaining the key frame It∗ , we apply the image-based RSVG-ZeroOV pipeline to segment the referred object: 
+
+M t∗ = RSVG -ZeroOV( It∗ , T ), (11) 8
+
+where M t∗ denotes the predicted segmentation mask on the key frame, which serves as a query-aware spatial initialization for subsequent video-level grounding. 
+
+4.2.2 Temporal Propagator 
+
+Given the key-frame grounding result M t∗ , the remaining task is to obtain temporally coherent grounding results for the referred object across the video. This is non-trivial for remote sensing videos, where dense small objects, large background regions, and frequent scale variations caused by UAV motion or viewpoint changes can easily introduce drift or ambiguous object associations. To handle these challenges without additional training, we explore two SAM3-based strategies: proposal-based tube filtering and prompt-based temporal propagation. 
+
+Strategy 1: Proposal-based tube filtering. The proposal-based strategy first generates a set of candidate object tubes with SAM3 and then selects the tube that best matches the query-aware key-frame grounding result produced by RSVG-ZeroOV. Specifically, we parse the referring expression 
+
+T to extract the target noun phrase, denoted as E, which indicates the semantic category of the referred object. We then use E as a text prompt for SAM3 to segment potential target instances in the video. Since the extracted noun phrase usually provides category-level semantics rather than instance-level disambiguation, SAM3 may produce multiple candidate tubes corresponding to visually or semantically similar objects. Given the video V and the text prompt E,SAM3 generates K candidate tube proposals: 
+
+P = {τk}Kk=1 = SAM3( V, E), (12) where each tube proposal τk consists of a sequence of masks: 
+
+τk = {M kt }tke
+
+> t=tks
+
+. (13) To identify the tube corresponding to the referred object, we use the key-frame mask M t∗ predicted by RSVG-ZeroOV as a query-aware spatial reference. For each candidate tube τk
+
+that covers the key frame t∗, we compute the mask overlap between its key-frame mask M kt∗ and the RSVG-ZeroOV prediction M t∗ :
+
+ok = |M kt∗ ∩ M t∗ ||M kt∗ ∪ M t∗ | . (14) The tube with the largest overlap is selected as the target tube: 
+
+k∗ = arg max  
+
+> k:τk∈P t∗
+
+ok, τ ∗ = τk∗ . (15) where Pt∗ = {τk | t∗ ∈ [tks , t ke ]} denotes the set of tube proposals that contain the key frame. This matching step transfers the instance-level grounding ability of RSVG-ZeroOV to the SAM3-generated category-level tube pro-posals, thereby reducing ambiguity among visually similar objects. Although the selected tube is temporally coherent, the tracked object may not satisfy the referring expression throughout the entire tube, especially when the expression involves transient attributes or spatial relations. We therefore trim expression-inconsistent frames using a VLM-based yes/no scoring function. For a frame-mask pair (It, M t)
+
+and the referring expression T , we feed them into the frozen VLM with a binary question and extract the next-token logits of the answer tokens “yes” and “no”, denoted as ℓt 
+
+> 1
+
+and 
+
+ℓt
+
+> 0
+
+, respectively. The normalized confidence of the positive answer is defined as: 
+
+ψ(It, M t, T ) = exp( ℓt
+
+> 1
+
+)exp( ℓt
+
+> 1
+
+) + exp( ℓt
+
+> 0
+
+) . (16) For the selected tube τ ∗, the frame-level validity indicator is: 
+
+yt = I (ψ(It, M ∗ 
+
+> t
+
+, T ) > δ ) , (17) where M ∗ 
+
+> t
+
+is the mask of τ ∗ at frame t, and δ is the verification threshold. The final temporal interval is obtained by retaining the longest continuous positive segment: 
+
+[ˆ ts, ˆte] = LongestContinuousSegment( {yt}t∗ 
+
+> e
+> t=t∗
+> s
+
+). (18) The final grounding result is: 
+
+M = {M ∗ 
+
+> t
+
+}ˆte
+
+> t=ˆ ts
+
+. (19) 
+
+Strategy 2: Prompt-based temporal propagation. The second strategy directly uses the key-frame grounding result pro-duced by RSVG-ZeroOV as a visual prompt for SAM3. Unlike the proposal-based strategy, it does not rely on category-level tube proposals or target selection among multiple candidates. Instead, it starts from the query-aware key-frame mask and propagates the referred object along the temporal dimension. Given the key-frame prediction M t∗ , we feed the pre-dicted mask into SAM3 as a visual prompt: 
+
+{M t}Lt=1 = SAM3( V, M t∗ , t ∗). (20) Starting from the key frame t∗, SAM3 propagates the prompted target both forward and backward in time, pro-ducing an initial spatio-temporal grounding sequence. However, propagation from a single key frame may suffer from temporal over-expansion, where masks are propagated to frames in which the referred object is absent, occluded, or too ambiguous to be reliably identified. To suppress such errors, we reuse the scoring function in Eq. 16 to determine the valid temporal extent of the propagated sequence. For each propagated mask M t, the frame-level validity indicator is: 
+
+ct = I (ψ(It, M t, T ) > δ ) . (21) The expansion stops once an invalid frame is encountered in the corresponding direction. The left and right temporal boundaries are determined as: 
+
+ˆts = min {t ≤ t∗ | cj = 1 , ∀j ∈ [t, t ∗]}. (22) 
+
+ˆte = max {t ≥ t∗ | cj = 1 , ∀j ∈ [t∗, t ]}. (23) The final verified mask sequence is: 
+
+M = {M t}ˆte
+
+> t=ˆ ts
+
+. (24) The proposal-based and prompt-based strategies are com-plementary. The former benefits from global tube proposal generation, while the latter can be used independently and also provides a direct alternative when reliable tube pro-posals are unavailable. Both strategies preserve the training-free nature of RSVG-ZeroOV and enable zero-shot open-vocabulary grounding in remote sensing videos. 9
+
+## 5 EXPERIMENTS 
+
+5.1 Datasets 
+
+To thoroughly evaluate the effectiveness and generalization ability of our method, we consider both remote sensing image grounding benchmarks and video grounding datasets. 
+
+Remote Sensing Image Grounding. We evaluate our method on two widely used benchmarks for remote sensing visual grounding (RSVG), namely RRSIS-D [11] and RISBench [12]. Each sample in these datasets consists of a remote sensing im-age, a referring expression, and the corresponding annotation, which can be either a bounding box or a segmentation mask. Both datasets are extended from the RSREC dataset, enabling comprehensive evaluation under two settings: referring expression-based object detection (RSREC) and referring expression-based segmentation (RSRES). These benchmarks cover diverse scene types and object categories, providing a solid testbed for evaluating open-vocabulary grounding performance in remote sensing imagery. 
+
+Remote Sensing Video Grounding. To evaluate the spatio-temporal grounding capability of our framework in remote sensing scenarios, we conduct experiments on the UAV-SAVG dataset [13], which is specifically designed for spatial aerial video grounding. This dataset contains low-altitude aerial videos with natural language queries, requiring models to localize target objects consistently across frames. It pro-vides a realistic and challenging benchmark for video-based remote sensing grounding. 
+
+General Video Grounding. Given the limited availability of large-scale remote sensing video grounding datasets, we further evaluate our method on three widely used general-domain video grounding benchmarks, including HC-STVGv1, HC-STVGv2 [14] and VidSTG [15]. These datasets contain diverse dynamic scenes and complex referring ex-pressions, enabling us to assess the generalization capability of our method beyond remote sensing domains. This cross-domain evaluation further demonstrates the robustness and scalability of our training-free framework for spatio-temporal grounding. 
+
+5.2 Experimental Settings 
+
+Evaluation Metrics. We adopt different evaluation metrics for image-level and video-level grounding. For remote sens-ing image grounding, we follow prior works [11], [27] and re-port three widely used metrics, including mean Intersection-over-Union (mIoU), overall Intersection-over-Union (oIoU), and Precision@X (P@X) with X ∈ { 0.3, 0.5, 0.7}. Specifically, 
+
+mIoU computes the average IoU between the prediction and ground truth over all samples, reflecting the average ground-ing quality at the instance level. oIoU is computed as the ratio between the total intersection area and the total union area over the entire dataset, which emphasizes the overall localization performance at the dataset level. P@X measures the proportion of samples whose IoU exceeds a predefined threshold X, thereby evaluating the reliability of predictions under different precision requirements. Following standard practice, in the RSREC task, the predicted bounding box is obtained from the minimum bounding rectangle of the predicted RSRES mask. For video grounding, following prior work [13], [38], we define the video Intersection-over-Union (vIoU) as vIoU = 1 /N f
+
+PNf 
+
+> t=1
+
+IoU( ˆbt, b t), where Nf denotes the total number of frames in a video, and ˆbt and bt represent the predicted and ground-truth bounding boxes at frame 
+
+t, respectively. Based on vIoU, we report two metrics for evaluating overall video grounding performance: m vIoU 
+
+and vIoU@R . Here, m vIoU denotes the average vIoU over all video samples, while vIoU@R measures the proportion of videos whose vIoU exceeds a threshold R. These metrics primarily assess the global spatio-temporal localization accuracy of a model over an entire video. To further evaluate frame-level localization stability, we additionally adopt frame accuracy ( fAcc ). A frame is considered correctly localized if its frame-level IoU is greater than 0.5. Based on this criterion, 
+
+fAcc is defined as the proportion of correctly localized frames in a video. We further report m fAcc , which averages fAcc over all videos, and fAcc@R , which measures the proportion of videos whose fAcc exceeds a threshold R. Following common practice, we set R to 0.3 and 0.5 in our experiments. 
+
+Comparison with State-of-the-Art Methods. We compare RSVG-ZeroOV with a diverse set of state-of-the-art methods for both image and video grounding. For image grounding, we include representative weakly-supervised and zero-shot methods, including TRIS [66], SAG [67], QueryMatch [68], DiffSegmenter [69], DiffPNG [70], OV-VG [71], and Ground-VLP [72]. For a fair comparison, we further implement two adapted variants of DiffSegmenter and DiffPNG by replacing their original cross-attention maps with those extracted from our adopted VLM and applying the same refinement strategy as in our framework. In addition, we compare with several strong generic pixel-level vision-language models, including GeoChat [64], Qwen2.5-VL [63], LISA [73], and NExT-Chat [74], to evaluate the grounding capability of generic multimodal models in remote sensing scenarios. For video grounding, we conduct comprehensive comparisons with state-of-the-art methods from both general-domain and remote sensing scenarios. Specifically, we compare with fully supervised spatio-temporal video grounding methods, including Co-grounding [35], DCNet [36], TubeDETR [38], STCAT [39], SGFDN [40], CG-STVG [41], VideoGrounding-DINO [42], and the recent remote sensing video ground-ing method SAVG-DETR [13]. We also include weakly-supervised methods, including WINNER [43], VEM [44], CoPAL [45], and STPro [46], as well as zero-shot methods, including ReCLIP [47], RedCircle [48], and E3M [49]. These comparisons cover fully supervised, weakly-supervised, and zero-shot settings, enabling a comprehensive evaluation of the proposed Video RSVG-ZeroOV across different ground-ing paradigms. 
+
+Implementation Details. Our RSVG-ZeroOV offers a zero-shot solution, requiring only inference without the need for any training images or annotations. We employ the pre-trained Qwen2.5-VL [63] and Stable Diffusion V1.4 [21] as our VLM and DM, respectively. For Stable Diffusion, we use a guidance scale of 7.5 with 1,000 total diffusion steps, and perform DDIM-based sampling with 20 steps. The DDIM noise schedule follows a scaled linear progression from 0.00085 to 0.012. We set K = 7 for seed selection, τ = 0 .3 for response thresholding, α = 0 .4 for binarization, and δ = 0 .05 
+
+for VLM-based temporal verification. All experiments are implemented with PyTorch on a DELL EMC DSS8440 server equipped with a Xeon Silver 4210R CPU, 128 GB RAM, and four NVIDIA GeForce RTX 4090 GPUs with 24 GB of VRAM. 10   
+
+> TABLE 4 Comparisons with SOTA methods on RRSIS-D test set. ‘ W-S ’ and ‘ Z-S ’ denote the weakly-supervised and zero-shot settings, respectively. ‘ w/ VLM ’indicates that the cross-attention from the VLM is used to replace the original cross-attention. ‘ w/ Refine ’ indicates that post-processing operations are applied to further refine the segmentation results.
+
+RSREC RSRES Method Pr@0.3 Pr@0.5 Pr@0.7 mIoU oIoU Pr@0.3 Pr@0.5 Pr@0.7 mIoU oIoU 
+
+W-S 
+
+TRIS (ICCV’23) 14.62 3.79 0.37 13.20 13.14 15.02 4.91 1.26 13.11 15.40 SAG (ICCV’23) 9.39 2.10 0.29 9.22 9.21 11.63 4.02 0.60 11.10 11.13 QueryMatch (MM’24) 22.04 16.22 12.10 17.21 15.26 20.97 15.54 10.62 15.73 10.73 
+
+Z-S 
+
+VLM (Baseline) 43.35 28.66 14.27 30.90 29.53 - - - - -DiffSegmenter (TIP’25) 8.22 1.69 0.20 8.70 8.63 2.18 0.23 0.00 4.47 4.35 DiffSegmenter ( w/ VLM ) 39.80 24.29 13.01 28.47 26.92 24.99 9.48 1.61 19.03 15.19 DiffPNG (ECCV’24) 18.93 8.45 3.30 14.84 12.54 17.70 8.27 3.02 14.86 14.71 DiffPNG ( w/ VLM ) 37.92 23.18 11.35 26.93 25.65 19.25 6.78 0.95 15.49 10.55 OV-VG (arXiv’24) 27.78 19.16 12.96 22.07 18.34 - - - - -GroundVLP (AAAI’24) 21.66 16.83 12.27 17.14 17.51 - - - - -
+
+RSVG-ZeroOV (Ours) 45.71 30.15 16.74 32.92 32.94 30.97 12.84 2.36 21.85 18.85 
+
+Z-S 
+
+VLM (Baseline) 43.60 30.35 16.76 31.93 28.38 38.18 24.68 11.00 25.72 20.46 DiffSegmenter (TIP’25) 8.16 1.55 0.17 8.60 8.58 3.02 0.32 0.03 4.60 4.70 DiffSegmenter ( w/ VLM ) 38.41 25.11 13.96 28.50 24.57 32.92 19.42 9.14 23.73 18.00 
+
+w/ Refine 
+
+DiffPNG (ECCV’24) 19.59 10.31 5.03 15.71 13.11 19.65 11.32 6.23 16.22 13.77 DiffPNG ( w/ VLM ) 32.43 21.29 13.04 24.89 20.79 27.03 17.64 11.00 20.99 13.53 OV-VG (arXiv’24) 27.23 16.20 13.27 21.62 17.18 20.68 15.51 9.05 16.17 9.71 GroundVLP (AAAI’24) 21.26 16.20 11.32 16.51 16.88 18.07 13.33 7.24 13.14 11.23 
+
+RSVG-ZeroOV (Ours) 45.70 31.39 17.63 34.49 31.28 40.01 27.39 13.38 28.35 22.83                            
+
+> TABLE 5 Comparisons with SOTA generic pixel-level VLMs and a remote sensing VLM on RRSIS-D test set.
+> RSREC RSRES Method Pr@0.5 mIoU Pr@0.5 mIoU GeoChat (CVPR’24) + SAM 27.61 32.53 18.85 24.92 Qwen2.5-VL (arXiv’25) + SAM 30.35 31.93 24.68 20.46 LISA (CVPR’24) 25.80 27.78 24.51 26.78 NExT-Chat (ICML’24) --26.37 24.98
+> RSVG-ZeroOV (Ours) 31.39 34.49 27.39 28.35
+
+5.3 Comparison With Others. 
+
+5.3.1 Performance on Remote Sensing Image Grounding 
+
+Comparison Results on RRSIS-D. As shown in Tab. 4, RSVG-ZeroOV ( w/ Refine ) achieves SOTA performance under the zero-shot setting, surpassing all weakly-supervised and zero-shot methods. Compared with the strongest weakly-supervised baseline QueryMatch, RSVG-ZeroOV improves mIoU by 17.28 points on RSREC and 12.62 points on RSRES, despite using no task-specific training data. Compared with other zero-shot approaches, i.e. , DiffSegmenter ( w/ VLM ) and DiffPNG ( w/ VLM ), our method also improves mIoU by 5.99–9.60 points on RSREC and 4.62–7.36 points on RSRES. This highlights the effectiveness of our framework and its related components beyond VLM alone. Furthermore, we compare our method against several SOTA generic VLMs and a remote sensing VLM, as shown in Table 5. RSVG-ZeroOV achieves the best performance across all metrics on both RSREC and RSRES, demonstrating superior grounding ability even compared to models tailored for pixel-level reasoning or remote sensing tasks. 
+
+Comparison Results on RISBench. We further evaluate RSVG-ZeroOV on RISBench, which contains longer and more semantically complex referring expressions than RRSIS-D. As shown in Table 6, RSVG-ZeroOV maintains strong zero-shot performance and achieves the best results on most RSREC and RSRES metrics after refinement. Compared with the strongest weakly-supervised baseline QueryMatch, our method improves RSREC mIoU by 12.15 points and RSRES mIoU by 7.25 points. It also substantially improves oIoU over zero-shot grounding baselines. Compared with OV-VG and GroundVLP, RSVG-ZeroOV improves RSREC oIoU by 18.80 and 18.13 points, respectively, and improves RSRES oIoU by 17.15 and 16.27 points, respectively. These results show that RSVG-ZeroOV remains effective when referring expressions involve more complex semantic constraints. The improvements on oIoU are particularly important, as this metric reflects whether the predicted mask can preserve complete object regions rather than only covering highly discriminative parts. This property is also beneficial for the subsequent video extension, where a complete and query-consistent key-frame mask provides a more reliable spatial anchor for temporal propagation. 
+
+Visualization Results. We present qualitative results of the proposed RSVG-ZeroOV in Figure 7, comparing with representative zero-shot baselines, including DiffSegmenter and DiffPNG. Our method consistently produces more accurate and complete grounding results across diverse remote sensing scenes. In contrast, existing methods often suffer from incomplete localization or semantic ambiguity. For example, in Figure 7 (a) and (c), DiffSegmenter and DiffPNG tend to focus only on partial regions of the target objects or exhibit fragmented predictions, while our method successfully captures the full spatial extent of the referred objects, demonstrating stronger structural awareness. More-over, our approach shows improved robustness in complex 11   
+
+> TABLE 6 Comparisons with SOTA methods on RISBench test set. ‘ W-S ’ and ‘ Z-S ’ denote the weakly-supervised and zero-shot settings, respectively. ‘ w/ VLM ’indicates that the cross-attention from the VLM is used to replace the original cross-attention. ‘ w/ Refine ’ indicates that post-processing operations are applied to further refine the segmentation results.
+
+RSREC RSRES Method Pr@0.3 Pr@0.5 Pr@0.7 mIoU oIoU Pr@0.3 Pr@0.5 Pr@0.7 mIoU oIoU 
+
+W-S 
+
+TRIS (ICCV’23) 19.27 8.89 2.86 14.63 15.74 14.23 4.40 0.92 11.46 16.06 SAG (ICCV’23) 5.83 1.78 0.33 7.12 7.10 8.79 2.55 0.35 9.31 9.36 QueryMatch (MM’24) 31.79 27.74 23.32 26.72 15.86 31.06 26.68 20.27 24.59 10.77 
+
+Z-S 
+
+VLM (Baseline) 48.62 35.08 20.26 34.60 30.15 - - - - -DiffSegmenter (TIP’25) 6.03 1.87 0.40 7.14 7.00 2.44 0.46 0.06 4.00 3.74 DiffSegmenter ( w/ VLM ) 27.17 15.93 7.98 21.61 19.03 28.65 11.04 2.50 21.37 21.87 DiffPNG (ECCV’24) 12.14 6.03 2.72 11.10 9.01 13.44 5.79 1.93 11.85 11.79 DiffPNG ( w/ VLM ) 34.60 21.54 11.62 26.18 23.58 23.50 8.73 1.76 18.49 14.45 OV-VG (arXiv’24) 26.83 22.16 18.31 22.65 15.64 - - - - -GroundVLP (AAAI’24) 23.13 19.90 17.15 19.76 16.46 - - - - -
+
+RSVG-ZeroOV (Ours) 50.17 35.08 19.03 36.20 34.37 32.71 14.74 3.73 22.69 21.75 
+
+Z-S 
+
+VLM (Baseline) 49.07 38.09 26.57 37.74 30.68 43.03 30.38 18.04 30.45 21.30 DiffSegmenter (TIP’25) 6.05 1.99 0.45 7.11 6.96 2.65 0.73 0.17 3.88 3.79 DiffSegmenter ( w/ VLM ) 26.74 16.74 9.47 22.01 17.91 21.39 12.02 6.40 17.65 12.87 
+
+w/ Refine 
+
+DiffPNG (ECCV’24) 9.34 3.76 1.38 8.43 8.66 3.99 1.73 0.76 4.53 5.81 DiffPNG ( w/ VLM ) 22.07 12.19 6.00 17.16 17.40 14.74 5.65 1.60 12.19 8.44 OV-VG (arXiv’24) 26.90 22.40 18.50 22.85 15.50 23.67 17.75 12.25 18.16 9.20 GroundVLP (AAAI’24) 23.13 19.91 16.37 19.19 16.17 20.78 15.82 10.95 15.58 10.08 
+
+RSVG-ZeroOV (Ours) 50.77 38.90 24.93 38.87 34.30 44.30 31.03 18.61 31.84 26.35 
+
+> Fig. 7. Qualitative results of different methods for image-based RSVG.
+
+scenarios involving small objects and cluttered backgrounds. In Figure 7 (b) and (d), baseline methods either miss the target or produce scattered activations, whereas our method can precisely localize the referred objects with clearer boundaries. This indicates the effectiveness of our attention refinement strategy in suppressing irrelevant regions. In addition, our method demonstrates superior capability in understanding spatial relations described in natural language. As illustrated in Figure 7 (e) and (f), our model accurately identifies targets specified by relative positions (e.g., “on the left” or “on the lower right”), while competing methods often fail to align such spatial cues with visual regions. Overall, these visualizations validate that RSVG-ZeroOV not only improves localization accuracy but also enhances structural completeness and semantic consistency, highlighting its effectiveness for open-vocabulary remote sensing visual grounding. 
+
+5.3.2 Performance on Remote Sensing Video Grounding 
+
+Comparison Results on UAV-SAVG. Table 7 reports the comparison results on the UAV-SAVG test set. All variants of Video RSVG-ZeroOV are evaluated under the zero-shot setting, without using task-specific video grounding annotations. Despite this challenging setting, Video RSVG-ZeroOV with Strategy 1 achieves the best performance on five out of six metrics among all compared methods, including fully-supervised approaches. Compared with the strongest fully-supervised baseline SAVG-DETR, our method obtains 12   
+
+> TABLE 7 Comparisons with SOTA methods on UAV-SAVG test set. ‘ F-S ’ and ‘ Z-S ’ denote the fully-supervised and zero-shot settings, respectively. ‘ w/ Strategy 1’ and ‘ w/ Strategy 2 ’ indicate the two proposed temporal strategies for video grounding, respectively.
+
+Method m vIoU vIoU@0.3 vIoU@0.5 m fAcc fAcc@0.3 fAcc@0.5 
+
+F-S 
+
+Co-grounding (CVPR’21) 10.24 21.66 6.11 11.17 16.29 8.40 DCNet (ACMMM’22) 11.65 23.58 8.79 13.10 17.64 9.21 TubeDETR (CVPR’22) 22.60 32.91 20.49 23.84 29.69 22.00 STCAT (NeurIPS’22) 24.14 35.51 22.48 27.17 33.39 25.36 SGFDN (ACMMM’23) 20.13 28.16 15.47 19.13 22.71 17.39 CG-STVG (CVPR’24) 21.23 28.82 19.04 22.32 26.24 20.41 VideoGrounding-DINO (CVPR’24) 23.83 33.84 19.92 25.80 31.72 23.00 SAVG-DETR (NeurIPS’25) 27.15 38.18 22.85 28.82 35.85 26.55 
+
+Z-S 
+
+ReCLIP (ACL’22) 4.52 0.00 0.00 – – –RedCircle (CVPR’23) 5.31 0.00 0.00 – – –
+
+w/ Strategy 1 :
+
+Qwen-2.5-VL (arXiv’25) 17.71 24.50 17.65 21.14 25.08 22.47 
+
+Video RSVG-ZeroOV (Ours) 27.19 ↑9.48 35.62 ↑11.12 29.28 ↑11.63 33.77 ↑12.63 37.87 ↑12.79 34.61 ↑12.14 
+
+w/ Strategy 2 :
+
+Qwen-2.5-VL (arXiv’25) 13.14 18.31 14.71 16.43 18.66 17.21 
+
+Video RSVG-ZeroOV (Ours) 21.96 ↑8.82 27.91 ↑9.60 20.80 ↑6.09 24.57 ↑8.14 28.78 ↑10.12 24.84 ↑7.63 (c) Query:  The white yacht on the left side of the harbor. 
+
+(a) Query:  The red container truck driving on the leftmost lane of the highway on the far right side of the video. (b) Query:  The freight train running on the rails on the left side of the highway. (e) Query:  The woman in the white hat who is climbing on the left side. (d) Query:  The white single-decker bus driving on the bridge, which is smaller than the ships in the water. 
+
+Ground Truth Ours CG-STVG SGFDN STCAT Qwen2.5-VL 
+
+> Fig. 8. Qualitative results of different methods for video-based RSVG.
+
+comparable m vIoU and clearly improves several stricter and frame-sensitive metrics, including vIoU@0.5, m fAcc, fAcc@0.3, and fAcc@0.5, with gains of 6.43, 4.95, 2.02, and 8.06 points, respectively. This indicates that the proposed training-free framework can produce accurate frame-wise localization of the referred object, rather than only recovering coarse spatio-temporal regions. Compared with zero-shot baselines, Video RSVG-ZeroOV also shows consistent advantages under both temporal strategies. With Strategy 1, our method improves over Qwen-2.5-VL by 9.48 points in m vIoU, 11.63 points in vIoU@0.5, 12.63 points in m fAcc, and 12.14 points in fAcc@0.5. Strategy 2 also brings clear improvements over its corresponding Qwen-2.5-VL baseline, demonstrating that the key-frame grounding result produced by RSVG-ZeroOV provides an effective spatial initialization for video-level propagation. 
+
+Visualization Results. Figure 8 presents qualitative com-parisons under challenging UAV-view scenarios. Overall, 13     
+
+> TABLE 8 Comparisons with SOTA methods on the HC-STVGv1 and HC-STVGv2 test sets. ‘ F-S ’, ‘ W-S ’ and ‘ Z-S ’ denote the fully-supervised, weakly-supervised and zero-shot settings, respectively. ‘ w/ Strategy 1 ’ and ‘ w/ Strategy 2 ’ indicate the two proposed temporal strategies for video grounding, respectively.
+
+HCSTVG-v1 HCSTVG-v2 Method m vIoU vIoU@0.3 vIoU@0.5 m vIoU vIoU@0.3 vIoU@0.5 
+
+F-S 
+
+TubeDETR (CVPR’22) 32.40 49.80 23.50 36.40 58.80 30.60 STCAT (NeurIPS’22) 35.09 57.67 30.09 - - -CSDVL (CVPR’23) 36.90 62.20 34.80 38.70 65.50 33.80 CG-STVG (CVPR’24) 38.40 61.50 36.30 39.50 64.50 36.30 VideoGrounding-DINO (CVPR’24) 38.25 62.47 36.14 39.88 67.13 34.49 
+
+W-S 
+
+WINNER (CVPR’23) 14.20 17.24 6.12 – – –VEM (ECCV’24) 14.64 18.60 5.75 – – –CosPaL (ICLR’25) 22.10 31.80 19.60 22.20 31.40 18.90 
+
+STPro (CVPR’25) 17.56 26.98 12.93 19.99 31.70 14.55 
+
+Z-S 
+
+ReCLIP (ACL’22) 14.36 18.28 4.91 – – –RedCircle (CVPR’23) 9.15 7.76 1.55 – – –E3M (ECCV’24) 19.11 29.40 10.60 – – –
+
+w/ Strategy 1 :
+
+Qwen-2.5-VL (arXiv’25) 11.42 21.83 8.76 14.91 23.44 11.35 
+
+Video RSVG-ZeroOV (Ours) 22.67 ↑11.25 34.41 ↑12.58 16.58 ↑7.82 25.12 ↑10.21 36.26 ↑12.82 18.64 ↑7.29 
+
+w/ Strategy 2 :
+
+Qwen-2.5-VL (arXiv’25) 10.86 15.82 7.92 12.13 17.20 9.47 
+
+Video RSVG-ZeroOV (Ours) 18.34 ↑7.48 26.09 ↑10.27 12.84 ↑4.92 23.45 ↑11.32 27.41 ↑10.21 13.28 ↑3.81 
+
+Video RSVG-ZeroOV achieves more accurate localization than competing methods. In Figure 8 (a)–(c), our method reliably localizes the referred truck, train, and yacht, whereas Qwen2.5-VL often fails to identify the target and fully-supervised methods such as CG-STVG, SGFDN, and STCAT produce inaccurate results. These examples suggest that generic VLMs alone are insufficient for precise grounding, while supervised video grounding models may still struggle with small targets, elongated objects, and complex aerial scenes. Figure 8 (d) further highlights the importance of relational reasoning: the ships in the water serve only as reference objects for identifying the smaller white single-decker bus, but CG-STVG and STCAT are distracted by these contextual references. In contrast, our method correctly localizes the target and can further produce pixel-wise masks, providing finer-grained grounding results than box-only localization. These qualitative results demonstrate the effectiveness of our query-aware key-frame grounding and temporal propagation design under complex expressions and challenging aerial-view conditions. 
+
+5.3.3 Performance on General Video Grounding 
+
+Comparison Results on HC-STVG. To evaluate the gen-eralization ability of Video RSVG-ZeroOV beyond remote sensing videos, we further conduct experiments on the general-domain HC-STVGv1 and HC-STVGv2 benchmarks. As shown in Table 8, our method consistently outperforms existing zero-shot baselines on both datasets, demonstrating that the proposed framework is not limited to aerial videos but can generalize to broader spatio-temporal grounding scenarios. With Strategy 1, Video RSVG-ZeroOV achieves the best zero-shot performance on HC-STVGv1 in terms of m vIoU and vIoU@0.3, improving the strongest existing                                                                          
+
+> TABLE 9 Comparisons with SOTA methods on the VidSTG test set. ‘ F-S ’, ‘ W-S ’and ‘ Z-S ’ denote the fully-supervised, weakly-supervised and zero-shot settings, respectively. ‘ w/ Strategy 1 ’ and ‘ w/ Strategy 2 ’ indicate the two proposed temporal strategies for video grounding, respectively.
+> VidSTG Method m tIoU m vIoU vIoU@0.3 vIoU@0.5
+> F-S :
+> TubeDETR (CVPR’22) 48.10 30.40 42.50 28.20 STCAT (NeurIPS’22) 50.82 33.14 46.20 32.58 CSDVL (CVPR’23) -33.70 47.20 32.80 CG-STVG (CVPR’24) 51.40 34.00 47.70 33.10 VideoG-DINO (CVPR’24) 51.97 34.67 48.11 33.96
+> W-S :
+> WINNER (CVPR’23) -11.61 14.12 7.40 VEM (ECCV’24) -14.45 18.57 8.76 CosPaL (ICLR’25) -16.00 20.10 13.10 STPro (CVPR’25) -15.52 19.39 12.69
+> Z-S :
+> ReCLIP (ACL’22) -14.21 17.54 7.86 RedCircle (CVPR’23) -8.56 7.61 0.93 E3M (ECCV’24) -16.21 20.47 11.91
+> Z-S w/ Strategy 1 :
+> Qwen-2.5-VL (arXiv’25) 12.43 8.79 10.20 7.67
+> Video RSVG-ZeroOV (Ours) 30.16 17.71 21.12 15.26
+> ↑17.73 ↑8.92 ↑10.92 ↑7.59
+> Z-S w/ Strategy 2 :
+> Qwen-2.5-VL (arXiv’25) 12.91 6.08 7.07 4.58
+> Video RSVG-ZeroOV (Ours) 28.35 11.29 12.98 7.60
+> ↑15.44 ↑5.21 ↑5.91 ↑3.02
+
+zero-shot baseline by 3.56 and 5.01 points, respectively. On HC-STVGv2, Strategy 1 obtains the best zero-shot results 14 
+
+across all reported metrics, improving Qwen-2.5-VL by 10.21 points in m vIoU, 12.82 points in vIoU@0.3, and 7.29 points in vIoU@0.5. Compared with weakly-supervised methods, Video RSVG-ZeroOV also achieves competitive or superior results. On HC-STVGv1, Strategy 1 surpasses all weakly-supervised baselines in m vIoU and vIoU@0.3, and achieves the second-best result on vIoU@0.5. On HC-STVGv2, it obtains the best results in m vIoU and vIoU@0.3 among weakly-supervised and zero-shot methods, while remaining close to the strongest weakly-supervised result on vIoU@0.5. This is notable because weakly-supervised methods still rely on task-related training data, whereas our method performs zero-shot inference using frozen foundation models. 
+
+Comparison Results on VidSTG. Table 9 reports the com-parison results on the VidSTG test set. Video RSVG-ZeroOV with Strategy 1 achieves the best zero-shot performance across all reported metrics, including temporal localization, video-level overlap, and high-threshold vIoU. Compared with the strongest existing zero-shot baseline, our method improves m vIoU by 1.50 points, vIoU@0.3 by 0.65 points, and vIoU@0.5 by 3.35 points. For temporal localization, Video RSVG-ZeroOV substantially outperforms Qwen-2.5-VL, im-proving m tIoU by 17.25 points over the stronger Qwen-2.5-VL variant. These results demonstrate that query-aware key-frame grounding and SAM3-based temporal propagation can generalize to diverse general-domain videos. Video RSVG-ZeroOV also surpasses weakly-supervised methods on the main vIoU metrics. Specifically, Strategy 1 improves over the strongest weakly-supervised results by 1.71 points in m vIoU, 1.02 points in vIoU@0.3, and 2.16 points in vIoU@0.5. Although fully-supervised methods remain stronger on VidSTG due to task-specific video annotations, the strong zero-shot performance of Video RSVG-ZeroOV shows that training-free video grounding can achieve competitive spatial-temporal localization when reliable key-frame grounding and temporal propagation are combined. 
+
+5.4 Ablation Study and Analysis 
+
+5.4.1 Component Analysis of RSVG-ZeroOV. 
+
+As shown in Table 10, removing VLM (replaced by a cross-attention map in DM) leads to significant drops of 14.10% and 
+
+6.04% in mIoU on both tasks. Excluding DM results in failure on RSRES, as the model loses structural priors necessary for segment object regions. Exp.( w/o Evolve) highlight the benefit of attention evolve module, increasing the Pr@0.5 and mIoU of 7.52% and 6.27% on RSREC. The improved performance of O-F-E over O-E-F indicates that embedding the DM’s self-attention into the VLM’s cross-attention better preserves structural and shape information of objects, which facilitates more accurate region aggregation via DFS and suppresses noisy activations. 
+
+5.4.2 Effect of Self-Attention Resolution. 
+
+As shown in Table 11, we investigate the impact of vary-ing resolutions of self-attention maps. We find that using multiple resolutions [32, 64] leads to the best performance, suggesting that multi-scale self-attention maps not only preserve high-resolution details but also effectively capture contextual semantics. 
+
+> TABLE 10 Component ablation of RSVG-ZeroOV on RRSIS-D.
+
+RSREC RSRES Method Pr@0.5 mIoU Pr@0.5 mIoU RSVG-ZeroOV (Ours) 30.15 32.92 12.84 21.85 
+
+w/o VLM 16.22 18.82 11.43 15.81 
+
+w/o DM 21.49 26.26 1.18 6.15 
+
+w/o Evolve 22.63 26.65 10.26 20.56 
+
+O-F-E Stage 30.15 32.92 12.84 21.85 
+
+O-E-F Stage 27.34 29.51 7.18 15.89 
+
+> TABLE 11 Effect of self-attention map resolution on RRSIS-D.
+
+RSREC RSRES Resolution Pr@0.5 mIoU Pr@0.5 mIoU 16 26.16 28.39 12.01 19.98 32 29.84 31.97 12.53 21.11 64 27.70 30.76 10.55 20.13 16, 32 28.23 29.86 12.70 20.41 32, 64 30.15 32.92 12.84 21.85 
+
+16, 32, 64 27.86 30.51 11.98 20.36 0.20 0.25 0.30 0.35 0.40           
+
+> Response threshold
+> 20
+> 22
+> 24
+> 26
+> 28
+> oIoU (%)
+> 23.08
+> 25.81
+> 26.76
+> 25.62
+> 22.62
+> Effect of
+> 56789
+> Number of seeds K
+> 31.5
+> 32.0
+> 32.5
+> 33.0
+> 32.18
+> 32.37
+> 32.94
+> 32.37
+> 32.06
+> Effect of K
+> Fig. 9. Effect of τand Kin the Evolve stage on RRSIS-D.
+
+5.4.3 Hyperparameter Analysis of the Evolve Stage. 
+
+We conducted ablation studies on two key hyperparameters in the Evolve stage: the number of top-K seeds and the response threshold τ . First, with K fixed at 1, we evaluated the impact of different τ values. As shown in Figure 9, the oIoU for the RSRES task reaches its peak value of 26.76% when τ is set to 0.3. Then, keeping τ fixed at 0.3, we explored the effect of varying K. As shown, the oIoU reaches its maximum of 32.94% when K is set to 7. These results confirm that well-chosen seed quantities and response thresholds can significantly enhance the performance of the Evolve stage. 
+
+5.4.4 Effect of Mask Binarization Threshold. 
+
+As shown in Table 12, as the threshold increases from 0.2 to 0.5, the performance on both RSREC and RSRES tasks exhibits a ”rise-then-fall” pattern. This is primarily because a low threshold introduces excessive background noise, leading to overgeneralization in the predicted regions. In contrast, a high threshold may exclude partial boundary areas, thereby reducing recall and spatial coverage. To balance performance between the RSREC (mIoU 32.92%) and RSRES (mIoU 21.85%) tasks, we select α= 0.4 as the default 15 
+
+TABLE 12 Ablation study on mask binarization thresholds and refinement strategies on RRSIS-D. 
+
+RSREC RSRES Method Pr@0.5 mIoU Pr@0.5 mIoU RSVG-ZeroOV (Ours) 30.15 32.92 12.84 21.85 Mask Threshold α
+
+0.2 26.10 29.24 10.69 21.35 0.3 28.23 29.86 12.70 22.41 0.4 30.15 32.92 12.84 21.85 0.5 32.22 33.79 10.92 19.46 0.6 29.59 31.28 7.70 15.87 Refinement Methods + DenseCRF 30.44 34.17 15.36 23.00 + SAM (SMR) 28.95 31.37 26.62 27.68 + SAM (Point) 3.58 8.86 3.58 6.23 + SAM (Box) 31.39 34.49 27.39 28.35 
+
++ SAM (Box+Point) 28.26 32.04 23.26 26.78 Query: The ship on the lower right.  
+
+> (b.2) attention map (c) fused attention (b.1) VLM attention (a) input image
+
+Fig. 10. Analysis of VLM attention selection. (a) Input image and query. (b.1) Overall VLM attention response. (b.2) Layer-wise image-text-related attention maps extracted from the VLM, showing distinct localization behaviors across layers. (c) Fused attention map obtained by weighted aggregation of selected middle-to-late layers in (b.2). 
+
+threshold, as it achieves balanced performance across both tasks, ensuring segmentation consistency while improving model robustness. 
+
+5.4.5 Analysis of Optional Mask Refinement. 
+
+We evaluate several representative refinement strategies, including the traditional DenseCRF post-processing method and different prompt mechanisms based on SAM. Table 12 shows that the SAM (Box) refinement strategy achieves the best performance on both tasks, with mIoU scores of 34.49% for RSREC and 28.35% for RSRES, significantly outperforming other methods. 
+
+5.4.6 Analysis of VLM Attention Selection. 
+
+We further analyze how to extract reliable localization cues from the frozen VLM in the Overview stage. For decoder-only VLMs, the attention matrix contains interactions among visual tokens, textual tokens, and generated output tokens. As shown in Fig. 10 (b.1), directly visualizing the overall attention response does not explicitly reveal which visual re-gions are responsible for grounding the referring expression. Therefore, we extract the image-text-related attention maps 0.01 0.03 0.05 0.07 0.10 0.20 0.30            
+
+> Verification threshold
+> 18
+> 21
+> 24
+> 27
+> 30
+> Performance (%)
+> 29.63 29.91 30.16 30.19 30.22 29.71
+> 28.69
+> 17.48 17.62 17.71 17.69 17.63 17.36 16.85
+> m_tIoU
+> m_vIoU
+
+Fig. 11. Ablation study on the verification threshold δ on VidSTG. TABLE 13 Comparison of different SAM variants for video-level temporal propagation on UAV-SVG. 
+
+Metric Strategy 1 Strategy 2 SAM2 SAM3 SAM2 SAM3 m vIoU 24.93 27.19 ↑2.26 19.29 21.96 ↑2.26 
+
+vIoU@0.3 33.96 35.62 ↑1.66 25.93 27.91 ↑1.98 
+
+vIoU@0.5 26.85 29.28 ↑2.43 17.65 20.80 ↑3.15 
+
+m fAcc 29.18 33.77 ↑4.59 21.15 24.57 ↑3.42 
+
+fAcc@0.3 35.34 37.87 ↑2.53 25.61 28.78 ↑3.17 
+
+fAcc@0.5 30.52 34.61 ↑4.09 22.08 24.84 ↑2.76 
+
+associated with visual tokens during language generation, and visualize their layer-wise responses in Fig. 10 (b.2). As shown in Fig. 10 (b.2), different layers exhibit distinct localization behaviors. Early layers tend to produce broad or scattered responses, indicating limited language-conditioned selectivity. Middle layers begin to highlight object-level re-gions, while later layers provide stronger semantic responses to the referred target but may focus on only part of the object. This layer-dependent behavior is consistent with recent findings that reliable grounding cues in large vision-language models are concentrated in only a subset of layers [75]. Based on this observation, we obtain the final VLM attention prior by fusing selected middle-to-late layer maps from Fig. 10 (b.2). Specifically, we aggregate the visual-token attention maps from layers 16, 17, 18, and 19 with weights of 0.1, 0.1, 0.3, and 0.5, respectively. The resulting fused attention map, shown in Fig. 10 (c), better highlights the referred object and provides a stable coarse localization prior for the subsequent 
+
+Focus and Evolve stages. 
+
+5.4.7 Effect of VLM-Guided Temporal Verification. 
+
+We analyze the effect of the verification threshold δ in the VLM-guided temporal verification module on VidSTG. As shown in Figure 11, both m tIoU and m vIoU remain stable within a small threshold range around δ = 0 .05 , indicating that the proposed verification mechanism is not sensitive to minor threshold variations. When δ becomes too large, the verification process tends to reject valid frames, leading to degraded temporal grounding performance. Therefore, we set δ = 0 .05 as the default threshold in all experiments. 16 
+
+5.4.8 Analysis of SAM Variants for Video Propagation. 
+
+As shown in Table 13, replacing SAM2 with SAM3 consis-tently improves all metrics under both strategies, confirming the stronger temporal propagation ability of SAM3. More importantly, even when using SAM2, Video RSVG-ZeroOV with Strategy 1 still achieves 24.93 m vIoU and 26.85 vIoU@0.5, outperforming most fully-supervised methods in Table 7. This indicates that the effectiveness of our framework does not solely come from SAM3, but also from the query-aware key-frame grounding and tube selection design. 
+
+## 6 CONCLUSION 
+
+In this paper, we presented RSVG-ZeroOV, a training-free framework for zero-shot open-vocabulary remote sensing visual grounding in both images and videos. The design of RSVG-ZeroOV is motivated by the complementary strengths of frozen generic foundation models: VLMs provide strong semantic alignment between free-form language expressions and visual regions, while DMs encode object-centric struc-tural priors that are useful for recovering complete object ex-tents. Based on this observation, we introduced an Overview– Focus–Evolve strategy to progressively refine attention maps for accurate localization of referred objects. To extend RSVG-ZeroOV from images to videos, we further developed Video RSVG-ZeroOV, which combines a query-relevant key-frame selector with a SAM3-based temporal propagator for training-free spatio-temporal grounding. Extensive experiments on six image and video grounding benchmarks demonstrate that the proposed framework consistently outperforms existing zero-shot baselines and achieves competitive or superior performance compared with weakly- or fully-supervised methods in several settings. These results demonstrate the feasibility and potential of using frozen generic foundation models for open-world remote sensing visual grounding, and we hope this work will inspire further research on more capable remote sensing vision-language models and more general open-world geospatial perception systems. 
+
+## REFERENCES 
+
+[1] S. Ke, Y. Mei, C. Wu, Y. Zheng, J. Ji, L. Cao, and R. Ji, “Pixdlm: A dual-path multimodal language model for uav reasoning segmen-tation,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2026, pp. 26 165–26 175. [2] D. C. Schedl, I. Kurmi, and O. Bimber, “An autonomous drone for search and rescue in forests using airborne optical sectioning,” 
+
+Science Robotics , vol. 6, no. 55, p. eabg1188, 2021. [3] L. Yao, F. Liu, H. Lu, C. Zhang, R. Min, S. Xu, S. Di, and P. Peng, “Remotereasoner: Towards unifying geospatial reasoning workflow,” in Proceedings of the AAAI Conference on Artificial Intelligence , vol. 40, no. 14, 2026, pp. 11 883–11 891. [4] W. Diao, H. Yu, K. Kang, T. Ling, D. Liu, Y. Feng, H. Bi, L. Ren, X. Li, Y. Mao et al. , “Ringmo-aerial: An aerial remote sensing foundation model with affine transformation contrastive learning,” 
+
+IEEE Transactions on Pattern Analysis and Machine Intelligence , 2025. [5] K. Li, D. Wang, T. Wang, F. Dong, Y. Zhang, L. Zhang, X. Wang, S. Li, and Q. Wang, “Rsvg-zeroov: Exploring a training-free framework for zero-shot open-vocabulary visual grounding in remote sensing images,” in Proceedings of the AAAI Conference on Artificial Intelligence , vol. 40, no. 8, 2026, pp. 6288–6296. [6] H. Liu, C. Li, Q. Wu, and Y. J. Lee, “Visual instruction tuning,” 
+
+Advances in Neural Information Processing Systems , vol. 36, pp. 34 892– 34 916, 2023. [7] A. Kirillov, E. Mintun, N. Ravi, H. Mao, C. Rolland, L. Gustafson, T. Xiao, S. Whitehead, A. C. Berg, W.-Y. Lo et al. , “Segment anything,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , 2023, pp. 4015–4026. [8] S. Liu, Z. Zeng, T. Ren, F. Li, H. Zhang, J. Yang, Q. Jiang, C. Li, J. Yang, H. Su et al. , “Grounding dino: Marrying dino with grounded pre-training for open-set object detection,” in European Conference on Computer Vision . Springer, 2024, pp. 38–55. [9] Z. Lin, Y. Wang, and Z. Tang, “Training-free open-ended object detection and segmentation via attention as prompts,” Advances in Neural Information Processing Systems , vol. 37, pp. 69 588–69 606, 2024. [10] N. Carion, L. Gustafson, Y.-T. Hu, S. Debnath, R. Hu, D. Suris, C. Ryali, K. V. Alwala, H. Khedr, A. Huang et al. , “Sam 3: Segment anything with concepts,” arXiv preprint arXiv:2511.16719 , 2025. [11] S. Liu, Y. Ma, X. Zhang, H. Wang, J. Ji, X. Sun, and R. Ji, “Rotated multi-scale interaction network for referring remote sensing im-age segmentation,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024, pp. 26 658–26 668. [12] Z. Dong, Y. Sun, T. Liu, W. Zuo, and Y. Gu, “Cross-modal bidirectional interaction model for referring remote sensing image segmentation,” arXiv preprint arXiv:2410.08613 , 2024. [13] Y. Zhan and Y. Yuan, “Where does it exist from the low-altitude: Spatial aerial video grounding,” in The Thirty-ninth Annual Confer-ence on Neural Information Processing Systems , 2025. [14] Z. Tang, Y. Liao, S. Liu, G. Li, X. Jin, H. Jiang, Q. Yu, and D. Xu, “Human-centric spatio-temporal video grounding with visual transformers,” IEEE Transactions on Circuits and Systems for Video Technology , vol. 32, no. 12, pp. 8238–8249, 2021. [15] Z. Zhang, Z. Zhao, Y. Zhao, Q. Wang, H. Liu, and L. Gao, “Where does it exist: Spatio-temporal video grounding for multi-form sentences,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2020, pp. 10 668–10 677. [16] A. Radford, J. W. Kim, C. Hallacy, A. Ramesh, G. Goh, S. Agarwal, G. Sastry, A. Askell, P. Mishkin, J. Clark et al. , “Learning transferable visual models from natural language supervision,” in International Conference on Machine Learning . PMLR, 2021, pp. 8748–8763. [17] W.-L. Chiang, Z. Li, Z. Lin, Y. Sheng, Z. Wu, H. Zhang, L. Zheng, S. Zhuang, Y. Zhuang, J. E. Gonzalez et al. , “Vicuna: An open-source chatbot impressing gpt-4 with 90%* chatgpt quality,” See https://vicuna. lmsys. org (accessed 14 April 2023) , vol. 2, no. 3, p. 6, 2023. [18] W. Wang, Q. Lv, W. Yu, W. Hong, J. Qi, Y. Wang, J. Ji, Z. Yang, L. Zhao, S. XiXuan et al. , “Cogvlm: Visual expert for pretrained language models,” Advances in Neural Information Processing Systems ,vol. 37, pp. 121 475–121 499, 2024. [19] Z. Chen, J. Wu, W. Wang, W. Su, G. Chen, S. Xing, M. Zhong, Q. Zhang, X. Zhu, L. Lu et al. , “Internvl: Scaling up vision foundation models and aligning for generic visual-linguistic tasks,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024, pp. 24 185–24 198. [20] P. Wang, S. Bai, S. Tan, S. Wang, Z. Fan, J. Bai, K. Chen, X. Liu, J. Wang, W. Ge et al. , “Qwen2-vl: Enhancing vision-language model’s perception of the world at any resolution,” arXiv preprint arXiv:2409.12191 , 2024. [21] R. Rombach, A. Blattmann, D. Lorenz, P. Esser, and B. Ommer, “High-resolution image synthesis with latent diffusion models,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2022, pp. 10 684–10 695. [22] K. Pnvr, B. Singh, P. Ghosh, B. Siddiquie, and D. Jacobs, “Ld-znet: A latent diffusion approach for text-based image segmentation,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , 2023, pp. 4157–4168. [23] J. Xu, S. Liu, A. Vahdat, W. Byeon, X. Wang, and S. De Mello, “Open-vocabulary panoptic segmentation with text-to-image diffusion models,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2023, pp. 2955–2966. [24] N. Ravi, V. Gabeur, Y.-T. Hu, R. Hu, C. Ryali, T. Ma, H. Khedr, R. R ¨adle, C. Rolland, L. Gustafson et al. , “Sam 2: Segment anything in images and videos,” in International Conference on Learning Representations , vol. 2025, 2025, pp. 28 085–28 128. [25] Y. Sun, S. Feng, X. Li, Y. Ye, J. Kang, and X. Huang, “Visual grounding in remote sensing images,” in Proceedings of the 30th ACM International Conference on Multimedia , 2022, pp. 404–412. [26] Y. Zhan, Z. Xiong, and Y. Yuan, “Rsvg: Exploring data and models for visual grounding on remote sensing data,” IEEE Transactions on Geoscience and Remote Sensing , vol. 61, pp. 1–13, 2023. 17 
+
+[27] K. Li, D. Wang, H. Xu, H. Zhong, and C. Wang, “Language-guided progressive attention for visual grounding in remote sensing images,” IEEE Transactions on Geoscience and Remote Sensing , 2024. [28] K. Li, T. Wang, D. Wang, Y. Zhu, Y. Zhang, T. Lei, and Q. Wang, “Provg: Progressive visual grounding via language decoupling for remote sensing imagery,” arXiv preprint arXiv:2604.01893 , 2026. [29] M. Lan, F. Rong, H. Jiao, Z. Gao, and L. Zhang, “Language query-based transformer with multiscale cross-modal alignment for visual grounding on remote sensing images,” IEEE Transactions on Geoscience and Remote Sensing , vol. 62, pp. 1–13, 2024. [30] Y. Ding, H. Xu, D. Wang, K. Li, and Y. Tian, “Visual selection and multistage reasoning for rsvg,” IEEE Geoscience and Remote Sensing Letters , vol. 21, pp. 1–5, 2024. [31] Z. Yuan, L. Mou, Y. Hua, and X. X. Zhu, “Rrsis: Referring remote sensing image segmentation,” arXiv preprint arXiv:2306.08625 , 2023. [32] K. Li, Z. Xin, L. Pang, C. Pang, Y. Deng, J. Yao, G. Xia, D. Meng, Z. Wang, and X. Cao, “Segearth-r1: Geospatial pixel reasoning via large language model,” arXiv preprint arXiv:2504.09644 , 2025. [33] Q. Feng, V. Ablavsky, Q. Bai, G. Li, and S. Sclaroff, “Real-time visual object tracking with natural language description,” in Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision ,2020, pp. 700–709. [34] Q. Feng, V. Ablavsky, Q. Bai, and S. Sclaroff, “Siamese natural language tracker: Tracking by natural language descriptions with siamese trackers,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2021, pp. 5851–5860. [35] S. Song, X. Lin, J. Liu, Z. Guo, and S.-F. Chang, “Co-grounding networks with semantic attention for referring expression compre-hension in videos,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2021, pp. 1346–1355. [36] M. Cao, J. Jiang, L. Chen, and Y. Zou, “Correspondence matters for video referring expression comprehension,” in Proceedings of the 30th ACM International Conference on Multimedia , 2022, pp. 4967– 4976. [37] Z. Yang, J. Wang, X. Ye, Y. Tang, K. Chen, H. Zhao, and P. H. Torr, “Language-aware vision transformer for referring segmentation,” 
+
+IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 47, no. 7, pp. 5238–5255, 2024. [38] A. Yang, A. Miech, J. Sivic, I. Laptev, and C. Schmid, “Tubedetr: Spatio-temporal video grounding with transformers,” in Proceed-ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2022, pp. 16 442–16 453. [39] Y. Jin, Z. Yuan, Y. Mu et al. , “Embracing consistency: A one-stage approach for spatio-temporal video grounding,” Advances in Neural Information Processing Systems , vol. 35, pp. 29 192–29 204, 2022. [40] W. Wang, J. Liu, Y. Su, and W. Nie, “Efficient spatio-temporal video grounding with semantic-guided feature decomposition,” in 
+
+Proceedings of the 31st ACM International Conference on Multimedia ,2023, pp. 4867–4876. [41] X. Gu, H. Fan, Y. Huang, T. Luo, and L. Zhang, “Context-guided spatio-temporal video grounding,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024, pp. 18 330–18 339. [42] S. T. Wasim, M. Naseer, S. Khan, M.-H. Yang, and F. S. Khan, “Videogrounding-dino: Towards open-vocabulary spatio-temporal video grounding,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024, pp. 18 909–18 918. [43] M. Li, H. Wang, W. Zhang, J. Miao, Z. Zhao, S. Zhang, W. Ji, and F. Wu, “Winner: Weakly-supervised hierarchical decomposition and alignment for spatio-temporal video grounding,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,2023, pp. 23 090–23 099. [44] Y. Jin and Y. Mu, “Weakly-supervised spatio-temporal video grounding with variational cross-modal alignment,” in European Conference on Computer Vision . Springer, 2024, pp. 412–429. [45] A. Kumar, Z. Kira, and Y. S. Rawat, “Contextual self-paced learning for weakly supervised spatio-temporal video grounding,” in International Conference on Learning Representations , vol. 2025, 2025, pp. 65 787–65 810. [46] A. Garg, A. Kumar, and Y. S. Rawat, “Stpro: Spatial and tempo-ral progressive learning for weakly supervised spatio-temporal grounding,” in Proceedings of the Computer Vision and Pattern Recognition Conference , 2025, pp. 3384–3394. [47] S. Subramanian, W. Merrill, T. Darrell, M. Gardner, S. Singh, and A. Rohrbach, “Reclip: A strong zero-shot baseline for referring expression comprehension,” in Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , 2022, pp. 5198–5215. [48] A. Shtedritski, C. Rupprecht, and A. Vedaldi, “What does clip know about a red circle? visual prompt engineering for vlms,” in 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , 2023, pp. 11 987–11 997. [49] P. Bao, Z. Shao, W. Yang, B. P. Ng, and A. C. Kot, “E3m: zero-shot spatio-temporal video grounding with expectation-maximization multimodal modulation,” in European Conference on Computer Vision .Springer, 2024, pp. 227–243. [50] M. Wu, Y. Liu, J. Ji, X. Sun, and R. Ji, “Toward open-set human object interaction detection,” in Proceedings of the AAAI Conference on Artificial Intelligence , vol. 38, no. 6, 2024, pp. 6066–6073. [51] J. Han, Y. Ren, J. Ding, X. Pan, K. Yan, and G.-S. Xia, “Expanding low-density latent regions for open-set object detection,” in Pro-ceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2022, pp. 9591–9600. [52] Z. Lin and Y. Wang, “Vl-sam-v2: Open-world object detection with general and specific query fusion,” Advances in Neural Information Processing Systems , vol. 38, pp. 134 447–134 465, 2026. [53] Y. Wei, A. Xiao, H. Chen, J. Xia, and N. Yokoya, “Mm-ovseg: Multimodal optical-sar fusion for open-vocabulary segmentation in remote sensing,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2026, pp. 42 202–42 212. [54] Y. Li, W. Guo, X. Yang, N. Liao, S. Zhang, Y. Yu, W. Yu, and J. Yan, “Exploiting unlabeled data with multiple expert teachers for open vocabulary aerial object detection and its orientation adaptation,” 
+
+International Journal of Computer Vision , vol. 134, no. 4, p. 156, 2026. [55] Y. Li, W. Guo, X. Yang, N. Liao, D. He, J. Zhou, and W. Yu, “Toward open vocabulary aerial object detection with clip-activated student-teacher learning,” in European Conference on Computer Vision .Springer, 2024, pp. 431–448. [56] F. Liu, D. Chen, Z. Guan, X. Zhou, J. Zhu, Q. Ye, L. Fu, and J. Zhou, “Remoteclip: A vision language foundation model for remote sensing,” IEEE Transactions on Geoscience and Remote Sensing ,vol. 62, pp. 1–16, 2024. [57] J. Pan, Y. Liu, Y. Fu, M. Ma, J. Li, D. P. Paudel, L. Van Gool, and X. Huang, “Locate anything on earth: Advancing open-vocabulary object detection for remote sensing community,” in Proceedings of the AAAI Conference on Artificial Intelligence , vol. 39, no. 6, 2025, pp. 6281–6289. [58] C. Ye, Y. Zhuge, and P. Zhang, “Towards open-vocabulary remote sensing image semantic segmentation,” in Proceedings of the AAAI Conference on Artificial Intelligence , vol. 39, no. 9, 2025, pp. 9436–9444. [59] Y. Zheng, W. Wu, Q. Li, X. Wang, X. Zhou, A. Ren, J. Shen, L. Zhao, G. Li, and X. Yang, “Instructsam: A training-free framework for instruction-oriented remote sensing object recognition,” Advances in Neural Information Processing Systems , vol. 38, pp. 110 763–110 799, 2026. [60] K. Li, R. Liu, X. Cao, X. Bai, F. Zhou, D. Meng, and Z. Wang, “Segearth-ov: Towards training-free open-vocabulary segmentation for remote sensing images,” in Proceedings of the Computer Vision and Pattern Recognition Conference , 2025, pp. 10 545–10 556. [61] K. Li, X. Cao, R. Liu, S. Wang, Z. Jiang, Z. Wang, and D. Meng, “Annotation-free open-vocabulary segmentation for remote-sensing images,” arXiv preprint arXiv:2508.18067 , 2025. [62] H. Liu, C. Li, Y. Li, and Y. J. Lee, “Improved baselines with visual instruction tuning,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024, pp. 26 296–26 306. [63] S. Bai, K. Chen, X. Liu, J. Wang, W. Ge, S. Song, K. Dang, P. Wang, S. Wang, J. Tang, H. Zhong, Y. Zhu, M. Yang, Z. Li, J. Wan, P. Wang, W. Ding, Z. Fu, Y. Xu, J. Ye, X. Zhang, T. Xie, Z. Cheng, H. Zhang, Z. Yang, H. Xu, and J. Lin, “Qwen2.5-vl technical report,” arXiv preprint arXiv:2502.13923 , 2025. [64] K. Kuckreja, M. S. Danish, M. Naseer, A. Das, S. Khan, and F. S. Khan, “Geochat: Grounded large vision-language model for remote sensing,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024, pp. 27 831–27 840. [65] J. Li, D. Li, C. Xiong, and S. Hoi, “Blip: Bootstrapping language-image pre-training for unified vision-language understanding and generation,” in International conference on machine learning . PMLR, 2022, pp. 12 888–12 900. [66] F. Liu, Y. Liu, Y. Kong, K. Xu, L. Zhang, B. Yin, G. Hancke, and R. Lau, “Referring image segmentation using text supervision,” in 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , 2023, pp. 22 124–22 134. 18 
+
+[67] S. Hong, G. Lee, W. Jang, and S. Kim, “Improving sample quality of diffusion models using self-attention guidance,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , 2023, pp. 7462–7471. [68] S. Chen, G. Luo, Y. Zhou, X. Sun, G. Jiang, and R. Ji, “Querymatch: A query-based contrastive learning framework for weakly supervised visual grounding,” in Proceedings of the 32nd ACM International Conference on Multimedia , 2024, pp. 4177–4186. [69] J. Wang, X. Li, J. Zhang, Q. Xu, Q. Zhou, Q. Yu, L. Sheng, and D. Xu, “Diffusion model is secretly a training-free open vocabulary semantic segmenter,” IEEE Transactions on Image Processing , 2025. [70] D. Yang, R. Dong, J. Ji, Y. Ma, H. Wang, X. Sun, and R. Ji, “Exploring phrase-level grounding with text-to-image diffusion model,” in 
+
+European Conference on Computer Vision . Springer, 2024, pp. 161– 180. [71] C. Wang, W. Feng, X. Li, G. Cheng, S. Lyu, B. Liu, L. Chen, and Q. Zhao, “Ov-vg: A benchmark for open-vocabulary visual grounding,” Neurocomputing , vol. 591, p. 127738, 2024. [72] H. Shen, T. Zhao, M. Zhu, and J. Yin, “Groundvlp: Harnessing zero-shot visual grounding from vision-language pre-training and open-vocabulary object detection,” in Proceedings of the AAAI Conference on Artificial Intelligence , vol. 38, no. 5, 2024, pp. 4766–4775. [73] X. Lai, Z. Tian, Y. Chen, Y. Li, Y. Yuan, S. Liu, and J. Jia, “Lisa: Rea-soning segmentation via large language model,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,2024, pp. 9579–9589. [74] A. Zhang, Y. Yao, W. Ji, Z. Liu, and T.-S. Chua, “Next-chat: An lmm for chat, detection and segmentation,” arXiv preprint arXiv:2311.04498 , 2023. [75] S. Kang, J. Kim, J. Kim, and S. J. Hwang, “Your large vision-language model only needs a few attention heads for visual grounding,” in Proceedings of the Computer Vision and Pattern Recognition Conference , 2025, pp. 9339–9350.

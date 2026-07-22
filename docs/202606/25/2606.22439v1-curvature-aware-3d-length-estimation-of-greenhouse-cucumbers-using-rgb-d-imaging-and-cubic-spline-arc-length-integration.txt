@@ -1,0 +1,423 @@
+Title: Curvature-aware 3D length estimation of greenhouse cucumbers using RGB-D imaging and cubic spline arc-length integration
+
+URL Source: https://arxiv.org/pdf/2606.22439v1
+
+Published Time: Tue, 23 Jun 2026 02:08:52 GMT
+
+Number of Pages: 21
+
+Markdown Content:
+# Curvature-aware 3D length estimation of greenhouse cucumbers using RGB-D imaging and cubic spline arc-length integration 
+
+## Manveen Kaur Department of Mechanical Engineering University of Windsor Windsor, ON N9B 3P4, Canada 
+
+## Kaur79@uwindsor.ca 
+
+## Rajmeet Singh Mohamed bin Zayed University of Artificial Intelligence Abu Dhabi, UAE 
+
+## rajmeet.bhourji@mbzuai.ac.ae 
+
+## Saeed Mozaffari Department of Mechanical Engineering University of Windsor Windsor, ON N9B 3P4, Canada 
+
+## s.mozaffari@uwindsor.ca 
+
+## Shahpour Alirezaee ∗
+
+## Department of Mechanical Engineering University of Windsor Windsor, ON N9B 3P4, Canada 
+
+## S.Alirezaee@uwindsor.ca  
+
+> ∗
+
+Corresponding author. 
+
+## Abstract 
+
+Commercial greenhouse cucumber production is graded primarily by fruit length, where accu-rate per-fruit measurement drives harvest scheduling, labour allocation, and logistics planning. Conventional manual measurement using thread or caliper is accurate but throughput-limited and infeasible at commercial scale. This paper presents CucumberVision, a non-contact length estimation framework that uses an Intel RealSense D435 RGB-D camera to detect, segment, and measure greenhouse cucumbers in real time. A YOLO26n instance segmentation model locates cu-cumbers, and the Segment Anything Model (SAM) with a ViT-B backbone refines each detection to a pixel-precise binary mask. Five length estimation methods are implemented and evaluated under matched conditions: (M1) a dominant-axis skeleton scan-line baseline; (M2) Principal Component Analysis on the bounding-box depth point cloud; (M3) SAM mask with medial-axis skeletonisation; (M4) a hybrid keypoint-guided approach using a YOLO26-pose model predicting five anatomical landmarks (KP0–KP4) with piecewise 3D arc-length approximation; and (M5) a novel medial arc spline method that fits a cubic spline through the 3D medial axis of the SAM mask and computes arc length by trapezoidal integration the first such application to elongated 1
+
+> arXiv:2606.22439v1 [cs.CV] 21 Jun 2026
+
+2vegetable measurement. All five methods share a common capture pipeline comprising five-frame burst depth averaging, colour-stream intrinsic alignment, and adaptive method selection with cascading fallbacks ensuring 100% measurement coverage. A benchmark dataset of 48 captures across seven cucumbers in three size categories (small ∼8 cm, medium ∼13 cm, large ∼25 cm) with paired thread-based ground truth is used to compare all methods under identical conditions. Results establish a statistically significant accuracy hierarchy: M1 (MAPE 9.68%) > M2 (5.31%) 
+
+> M4 (5.51%) > M3 (5.82%) > M5 (4.13%). M5 significantly outperforms all competing methods at the Bonferroni-corrected significance level ( α = 0 .0125 ). A secondary methodological contribu-tion is the identification and correction of a systematic 12–18% length underestimation bias caused by using depth-stream rather than colour-stream intrinsics after rs.align(rs.stream.color) ;this error source appears under-reported in existing depth-camera measurement literature. The complete system YOLO26n detector, SAM ViT-B segmentor, YOLO26-pose keypoint model, five measurement methods, adaptive selector, and a Streamlit deployment dashboard is released as open source and operates in real time on a single consumer-grade GPU. 
+
+Keywords: Non-contact length estimation Greenhouse cucumber RGB-D depth camera YOLO26 instance segmentation Segment Anything Model (SAM) Medial arc spline Cubic spline arc-length integration Keypoint regression Adaptive method selection Precision horticulture 
+
+# 1 Introduction 
+
+Global cucumber ( Cucumis sativus L.) production exceeded 88 million tonnes in 2023, making it the world’s fourth most-produced vegetable [Food and Agriculture Organization of the United Nations, 2023]. In tem-perate regions, commercial production is predominantly conducted under protected cultivation. Cucumber quality is graded primarily by fruit length: European greenhouse standards commonly recognise Class I (25–35 cm), Class II (20–25 cm) and out-of-grade, with per-kilogram prices differing by 20–40 % between classes. Because cucumbers elongate at approximately 2–4 cm/d under optimal conditions [Walsh et al., 2021], the number of fruit reaching a target length class within one to three days can be forecast from their current length distribution, enabling growers to schedule labour, pre-allocate packaging, and commit to distribution partners in advance. The conventional measurement workflow a worker with a digital caliper measuring each fruit individually achieves high accuracy but is throughput-limited at 300–400 fruit per hour. Horticultural labour costs rose 30–50 % between 2013 and 2023 [Walsh et al., 2021], intensifying pressure to automate inspection tasks. Consumer-grade depth cameras now achieve sub-centimetre accuracy at 0.3–1.5 m, integrate compactly with mobile robots, and retail for under USD 300 [Rijal et al., 2024]. However, camera-based length estimation accuracy is limited not by depth precision alone but by the algorithm used to identify the fruit’s length axis. Five principal algorithmic families have emerged, four established and one proposed here: 1. Dominant-axis skeleton sampling. Pixels sampled along the longer bounding-box axis are deprojected to 3-D [Wang and Li, 2014, Walsh et al., 2021]. Simple and fast but systematically underestimates diagonally oriented fruit due to cosine projection error. 2. Point-cloud PCA. All depth-valid pixels are deprojected and the principal axis identified via SVD [Chen et al., 2022, Patel et al., 2025]. Orientation-invariant but susceptible to background leakage. 3. Foundation-model segmentation with medial-axis skeletonisation. SAM [Kirillov et al., 2023] yields a pixel-precise mask whose medial-axis skeleton estimates the longitudinal axis [Zhang et al., 2023a]. Eliminates background leakage but still measures a straight-line chord. 4. Semantic keypoint regression. A pose network predicts anatomical landmarks deprojected to 3-D and connected by piecewise segments [Chen et al., 2022, Ren et al., 2024]. Accurate under occlusion but requires keypoint annotations and underestimates arc length. 5. 3D medial arc spline fitting (proposed). The SAM mask’s medial axis is deprojected, cross-section centroids computed, and a chord-length-parameterised cubic spline fitted. Arc length is obtained by numerical integration, providing continuous curvature-aware measurement the first such application to elongated vegetable sizing. 3No published study has evaluated all five families under matched conditions. This paper addresses this gap through five contributions: 1. Unified five-method pipeline. CucumberVision implements M1–M5 sharing a single D435 driver, YOLO26n detector, SAM ViT-B segmentor, burst depth averaging, and colour-stream intrinsic alignment. 2. Novel curvature-aware method. M5 deprojects SAM-masked medial-axis pixels into 3D, fits a cubic spline through cross-section centroids, and integrates arc length—the first such application to vegetable length measurement. 3. Controlled comparative evaluation. All five methods benchmarked across three size categories with Wilcoxon tests (Bonferroni-corrected α = 0 .0125 ) and bootstrap 95% CIs. 4. Adaptive method selector. A cascading decision tree assigns the most accurate method per cucumber with 100% coverage. 5. Deployable dashboard. CucumberVision Streamlit app with live camera and upload modes, per-fruit visualisation, and CSV/Excel export. The remainder is organised as follows. Section 2 reviews related work. Section 3 presents the methodology. Section 4 describes the experimental protocol. Section 5 presents results and deployment. Section 6 discusses findings and limitations. Section 7 concludes. 
+
+# 2 Related Work 
+
+## 2.1 Non-contact fruit and vegetable sizing 
+
+Wang and Li [2014] estimated sweet onion diameter from a Kinect v1 using bounding-box projection, forming the conceptual basis of M1. Walsh et al. [2021] compared four depth sensors for orchard sizing, concluding that the D435i offered the best accuracy below 1.5 m. Liu et al. [2019] applied Mask R-CNN to greenhouse cucumbers with stereo depth, reporting 10–15 % length errors. Lawal [2024] compared YOLO variants for cucurbit detection, motivating the use of YOLO26. Koirala et al. [2022] compared six methods for mango sizing, finding 3-D approaches substantially outperformed 2-D methods. Song et al. [2023] measured cucumber phenotypes using RGB-D, reporting 4–6 % MAPE. Hong et al. [2024] achieved sub-centimetre accuracy for oriental melon via multi-view fusion but required impractical infrastructure. Türkseven et al. [2021] demonstrated D435 suitability for greenhouse tasks. Singh et al. [2024, 2025] deployed the D435 for tomato flower detection on robotic platforms. 
+
+## 2.2 Deep-learning detectors and segmenters 
+
+The YOLO family [Redmon et al., 2016] established single-stage detection at real-time speed. Wang et al. [2024] extended YOLO with a 6-DoF pose head for harvesting. The Ultralytics framework [Ultralytics, 2024] provides the training backbone used here. Liu et al. [2019] reported 85.3% mAP for cucumber detection with Mask R-CNN [He et al., 2017], but its higher latency motivated the present use of YOLO26n with integrated segmentation. 
+
+## 2.3 SAM in agricultural applications 
+
+SAM [Kirillov et al., 2023] segments arbitrary objects given a prompt. Carraro et al. [2023] identified SAM as transformative for smart farming. Williams et al. [2024] demonstrated competitive zero-shot leaf segmentation. Kaur et al. [2025] deployed a visual-language transformer for greenhouse disease detection, establishing the Streamlit dashboard paradigm adopted here. SAM 2 [Ravi et al., 2024] offers a path to multi-frame smoothing discussed in Section 6.6. In this work, SAM refines YOLO26 detections to pixel-precise masks for M3–M5. 
+
+## 2.4 Keypoint detection for produce measurement 
+
+Chen et al. [2022] applied keypoint detection to vegetable sizing, reporting 1.5–3.2 % MAPE. Ren et al. [2024] extended the approach to irregular root vegetables. The present work implements a YOLO26-pose head with five keypoints per cucumber integrated into an adaptive selector. 4
+
+## 2.5 Medial-axis and spline-based measurement 
+
+The medial-axis algorithm of Lee et al. [1994] extracts topological centre-lines and has been applied to fish length [Zhang et al., 2023a], rice panicles [Wu et al., 2019], wheat [Aich and Stavness, 2017], and maize ears [Bao et al., 2019]. However, 2D arc length suffers perspective distortion [Paulus, 2019]. Spline fitting provides rigorous 3D arc-length computation [de Boor, 2001, Farin, 2002]: Paulus [2019] fitted B-splines to barley ears, Jin et al. [2018] to maize stalks, and Magistri et al. [2022] to crop rows. Tagliasacchi et al. [2016] reviewed 3D skeleton extraction from point clouds. No prior study has combined SAM segmentation with 3D medial-axis extraction, centroid binning, and cubic spline arc-length integration for vegetable measurement. M5 fills this gap. 
+
+## 2.6 Gap analysis 
+
+Three gaps motivate this work. Gap 1: No controlled multi-method comparison of all five algorithmic families on the same cucumber dataset. Gap 2: No published method computes 3D arc length of curved vegetables via spline fitting despite 1–4% chord-to-arc bias for typical cucumber curvature radii (30–60 cm). 
+
+Gap 3: No adaptive selector dynamically assigns measurement methods per fruit based on real-time input availability. Table 1 summarises representative prior studies. Table 1: Representative related studies. MAPE = mean absolute percentage error.                                 
+
+> Reference Crop Sensor Method Best MAPE Wang and Li [2014] Sweet onion Kinect v1 Bbox projection ≈8% Liu et al. [2019] Cucumber Stereo RGB Mask R-CNN + depth ≈12% Koirala et al. [2022] Mango RealSense D415 6 methods compared 3.2% Chen et al. [2022] Cucumber/carrot Stereo RGB Keypoint regression 1.5% Zhang et al. [2023a] Fish Stereo RGB-D Skeleton + depth 2.8% Song et al. [2023] Cucumber RGB-D 3-D reconstruction ≈5% Paulus [2019] Barley Multi-view B-spline on 3D cloud —Hong et al. [2024] Oriental melon Multi RGB-D 3-D multi-view <1%
+> Our work Cucumber D435 + YOLO26 + SAM 5 methods + 3D arc spline 4.13%
+
+# 3 Methodology 
+
+This section describes the CucumberVision pipeline from sensor acquisition through detection, segmentation, and the five measurement methods. Fig. 1 provides an overview. 
+
+## 3.1 Hardware Configuration 
+
+The Intel RealSense D435 active-stereo RGB-D camera was deployed in two environments: a controlled laboratory and a commercial greenhouse. The camera was positioned 0.4–0.9 m from the canopy. Table 2 summarises key parameters. At each position, a 5-frame burst was acquired. Depth frames were pixel-wise median-averaged ( ∼44% noise reduction); the sharpest colour frame was selected by Laplacian variance [Pech-Pacheco et al., 2000]. 
+
+## 3.2 Cucumber Detection and Instance Segmentation 
+
+Fig. 2 presents the YOLO26n + SAM ViT-B two-stage pipeline. The YOLO26n backbone extracts features at P3 ( 80 × 80 ), P4 ( 40 × 40 ), and P5 ( 20 × 20 ) using C3k2 blocks and SPPF. The FPN+PAN neck fuses features bidirectionally. Three decoupled heads predict bounding boxes, class confidence, and 160 × 160 
+
+prototype masks, filtered by NMS at confidence 0.30. 5
+
+Figure 1: End-to-end pipeline: D435 burst capture → YOLO26n detection → SAM mask refinement →
+
+adaptive method selection (M1–M5) → annotated length output. Table 2: Intel RealSense D435 camera parameters. 
+
+Parameter Value 
+
+Resolution (colour and depth) 1280 × 720 px @ 30 fps Depth unit / operating range 1 mm per count; 0.1–5.0 m Focal length fx, fy 910.22, 910.39 px Principal point (cx, c y ) (642.8, 358.5) px Burst capture 5 frames; median depth; sharpest colour Each detection is forwarded to SAM ViT-B ( sam_vit_b_01ec64.pth ) using the bounding box as a box prompt and its centre as a foreground point prompt. With multimask_output=True , the highest-IoU mask is selected. The ViT-B encoder runs once per frame, amortised across all detections. SAM succeeded on 98% of instances; the 2% failure rate corresponds to heavily occluded specimens. The YOLO26n (nano) variant was selected because it balances accuracy, segmentation quality, and edge deployability within a single architecture. With only ∼2.4 M parameters and ∼6.5 GFLOPs, it executes in under 10 ms per frame on an NVIDIA RTX 3060, matching the D435’s 30 fps and remaining viable on embedded platforms such as NVIDIA Jetson. YOLO26 introduces improved C3k2 blocks with enhanced cross-stage partial connections and an optimised SPPF module, providing superior multi-scale representation compared to YOLOv8n and YOLOv11n. Its native instance segmentation with 160 × 160 prototypes and decoupled head design stabilises gradient flow on small single-class datasets. Preliminary benchmarking confirmed mAP@50 competitive with larger variants (YOLO26s, YOLO26m). 
+
+## 3.3 Length Measurement and Adaptive Method Selector 
+
+Each cucumber instance is represented by a refined mask ˆMi, bounding box bi = [ x1, y 1, x 2, y 2], confidence 
+
+si, and aligned depth map D ∈ RH×W . Five methods address different trade-offs between cost, inputs, and accuracy. Fig. 3 provides a visual overview. 
+
+3.3.1 M1: Three-Line Skeleton Scan Baseline 
+
+M1 casts three scan-lines along the dominant bounding-box axis, samples 13 depth points each ( 11 ×11 median filter), discards invalid readings, deprojects the outermost valid pair to 3D, and returns their Euclidean distance ( ∼28 ms). As shown in Fig. 4, for a fruit at angle θ:
+
+ˆLM1 = L · cos( θ), εM1 = 1 − cos( θ) (1) 6
+
+Figure 2: Two-stage pipeline: YOLO26n backbone–neck–head with C3k2 blocks, FPN+PAN, and decou-pled heads, followed by SAM ViT-B mask refinement via box and centre-point prompting. Representative input/output shown. yielding 13.4% underestimation at 30 deg and 29.3% at 45 deg. 
+
+3.3.2 M2: PCA on Bounding-Box Depth Point Cloud 
+
+M2 deprojects bounding-box pixels (stride 2) to 3D, filters by median depth ( |zi − ˜z| ≤ 0.035 m ), and applies SVD to find the principal axis v1 (Fig. 5): 
+
+μ = 1
+
+N
+
+X pi, ˜P = UΣV ⊤, v1 = V⊤[0 , :] (2) Endpoints are the extreme projections onto v1: ˆLM2 = ∥A − B∥. M2 is orientation-invariant but susceptible to background leakage. 
+
+3.3.3 M3: SAM Mask with PCA on Medial-Axis Skeleton 
+
+M3 restricts the depth point cloud to SAM-masked pixels, eliminating approximately 70% of background pixels that contaminate the M2 bounding-box cloud as depicted in (Fig. 6). The masked cloud is then processed by the identical SVD/PCA procedure as M2 (Eq. (2)): centroid subtraction, thin SVD, and 7
+
+Figure 3: Overview of M1–M5. M1: scan-line (no mask, fast). M2: PCA (orientation-free). M3: SAM + medial axis. M4: keypoints + SAM. M5: medial arc spline ( ⋆, best accuracy). 
+
+Figure 4: M1 geometric limitation: vertical cucumber measured correctly (left); tilted cucumber underesti-mated by 1 − cos( θ) (centre); error table (right). principal-axis extraction. The farthest projections onto v1 give 3D endpoints A, B and ˆLM3 = ∥A − B∥
+
+(∼65 ms). M3 falls back to M2 if the SAM mask contains fewer than 50 valid depth pixels [Lee et al., 1994]. However, M3 inherits two limitations: SAM mask boundary imprecision on small cucumbers can cause the mask to bleed onto adjacent green background, introducing noisy pixels that pull the PCA axis off-centre; and the chord-based endpoint measurement still underestimates curved specimens (same as M2). These motivate M4, which replaces geometric axis estimation with semantically defined keypoints. 8
+
+Figure 5: M2: stride-2 sampling (Step 1), SVD principal axis with endpoints A, B (Step 2), orientation-invariant output (Step 3). 
+
+Figure 6: M3: SAM prompting with box+centre-point (Step 1), mask generation highest-IoU mask selected (Step 2), masked point cloud construction (Step 3), SVD/PCA principal axis and 3D endpoint extraction (Step 4). 
+
+3.3.4 M4: Hybrid Keypoint-Guided SAM Cloud 
+
+M4 uses a YOLO26-pose model to predict five anatomical keypoints (KP0–KP4) from blossom to stem end (Fig. 7). Endpoints require visibility vi ≥ 0.50 ; intermediate keypoints accept vi ≥ 0.25 . A depth filter rejects keypoints with |zi − median( zj )| > 0.08 m . With Nvis ≥ 4:
+
+ˆLM4 =
+
+> Nvis −2
+
+X
+
+> i=0
+
+∥KP 3D  
+
+> i+1
+
+− KP 3D  
+
+> i
+
+∥ (3) 9With 2–3 keypoints, a straight-line fallback is used. Full piecewise measurement was achieved on 38/48 captures (79%). 
+
+Figure 7: M4: YOLO26n detection (Step 1), YOLO26-pose keypoints KP0–KP4 (Step 2), visibility and depth filtering (Step 3), piecewise 3D length (Step 4). Keypoint definitions tabulated. Despite improvements, M4’s piecewise approximation still underestimates arc length ( ∼0.8% at 60 ° arc), depends on five regressed keypoints from training images, and provides sparse sampling. M5 addresses all three through dense medial-axis sampling, cubic spline fitting, and analytical arc-length integration. Each keypoint carries a confidence score ( vi ∈ [0 , 1] ). Endpoint keypoints KP0 and KP4 require vi ≥ 0.50 ;intermediate keypoints KP1–KP3 accept vi ≥ 0.25 . Any keypoint whose depth deviates more than 8 cm from the median keypoint depth is rejected. In the benchmark, full piecewise keypoint measurement ( Nvis ≥ 4)was achieved on 38 of 48 captures (79%); the remaining 10 captures used the straight-line fallback ( Nvis = 2 –
+
+3) or fell back to M3 when fewer than two endpoints passed the confidence and depth filters. Table 4 reports the aggregate M4 results across all 48 captures including these fallback cases. The reported MAPE of 5.51% therefore reflects the full adaptive M4 pipeline rather than piecewise keypoint measurement alone. 
+
+3.3.5 M5: Medial Arc Spline (Proposed Method) 
+
+M1–M4 measure chords or piecewise approximations, systematically underestimating curved specimens (me-dian R ≈ 42 cm ; chord bias ∼3.2% at R = 40 cm ). M5 computes physical arc length via a nine-step pipeline (Fig. 8). SAM-masked pixels are deprojected: 
+
+X = (u − cx) · zfx
+
+, Y = (v − cy ) · zfy
+
+, Z = z (4) After median-depth filtering ( δ = 3 .5 cm , N ≥ 100 ), SVD yields v1. Points are binned into N = 25 cross-sections; bin centroids form the spine with five-point tip anchors. Chord-length parameterisation maps vertebrae to u ∈ [0 , 1] :
+
+dk = ∥Sk+1 − Sk∥, uk = X dj
+
+. X dtotal (5) 10 Three cubic splines ( S′′ (0) = S′′ (1) = 0 ) [de Boor, 2001, Farin, 2002] are fitted for x, y, z. Arc length: 
+
+ˆLM5 =
+
+Z 10
+
+∥S′(u)∥ du ≈ trapz( ∥[S′
+
+> x
+
+, S ′ 
+
+> y
+
+, S ′ 
+
+> z
+
+]∥, u ) (6) Range validation accepts 5 ≤ L ≤ 80 cm . Under partial occlusion, affected bins are skipped and the spline interpolates across gaps. 
+
+Figure 8: M5 nine-step flowchart: YOLO26 detection, SAM segmentation, 3D cloud, SVD axis, cross-section binning, centroid spine, cubic spline fitting, arc-length integration, range validation. 
+
+3.3.6 Adaptive method selector 
+
+Different cucumbers require different methods. Fig. 9 shows the cascading selector. 
+
+Decision 1 (primary): If a SAM mask is available and contains ≥100 valid depth points, M5 (medial arc spline) is applied as the primary method. 
+
+Decision 2: If keypoints are additionally reliable ( vi ≥ 0.50 for KP0 and KP4), M4 (hybrid keypoint) is also computed and logged for comparison, but M5 remains primary. 
+
+Decision 3: If a SAM mask is available but point density falls below the M5 threshold ( <100 points), M3 (SAM + PCA) is applied. 
+
+Decision 4: If no SAM mask is available, the bounding-box aspect ratio is evaluated against a threshold of 1.8, routing to M2 (PCA depth cloud, orientation-invariant) for diagonally oriented cucumbers ( h/w < 1.8)or M1 (skeleton scan-line, axis-aligned) for vertically or horizontally oriented specimens ( h/w ≥ 1.8). The full priority chain is M5 → M4 → M3 → M2 → M1, with a cross-fallback (M1 ↔ M2) guaranteeing 100% measurement coverage. The method ID, activation reason, and fallback path are logged per cucumber in the output CSV. On the 48-capture benchmark, M5 was activated on 100% of captures (all had SAM masks with ≥100 valid depth points); M4 additionally processed 79% of captures (38/48) where keypoint confidence was sufficient. 11 
+
+Figure 9: Adaptive method-selection flowchart with cascading fallbacks from M5 (best) to M1 (fastest). 
+
+# 4 Experimentation 
+
+This section describes the experimental protocol for evaluating the non-contact cucumber length estimation framework, covering dataset, ground truth, metrics, and dashboard workflow. 
+
+## 4.1 Dataset and Annotations 
+
+Images were collected from two environments (Fig. 10): laboratory (uniform lighting) and commercial green-house (variable illumination, dense canopy). Each image was annotated with instance segmentation masks and anatomical keypoints in Roboflow. Table 3 summarises the dataset: 1500 images, 4360 instances, 70:15:15 split, single cucumber class ( ∼2.9 instances per image). 12 
+
+Figure 10: Dataset samples: (a) laboratory, (b) greenhouse, (c) segmentation annotations, (d) keypoint annotations. Table 3: Greenhouse cucumber dataset structure. 
+
+Split Images Instances Ratio 
+
+Training 1050 3045 70% Validation 225 654 15% Test 225 661 15% Total 1500 4360 100% 
+
+## 4.2 Ground-truth collection protocol 
+
+Ground-truth lengths were measured using a flexible, non-stretchable thread laid along the dorsal (outer) midline of each cucumber from stem end to blossom end, then transferred to a calibrated steel rule (Fig. 11). This thread-tracing method captures the true arc length of the curved fruit surface, unlike a rigid vernier caliper which measures only the straight-line chord and therefore systematically underestimates curved speci-mens by the same chord-to-arc bias that motivates M5. Each cucumber was measured three times; the mean was recorded as Lgt [Song et al., 2023, Chen et al., 2022]. The thread method has an operator variability of 
+
+±1–2 mm depending on how tightly the thread conforms to surface curvature. 13 
+
+Figure 11: Thread-based ground truth measurement protocol. Left: thread laid along dorsal midline and transferred to calibrated steel rule. Right: examples from the validation set spanning the full size range (14.72–38.0 cm), confirming measurement coverage across small, medium, and large size categories. 
+
+## 4.3 Evaluation Metrics 
+
+Each method is assessed against thread-based ground truth using four regression metrics. Let ˆLi denote predicted length, LGT ,i the ground truth, and n successful measurements: 
+
+MAE = 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+| ˆLi − LGT ,i | (7) 
+
+MAPE = 100 
+
+n
+
+> n
+
+X
+
+> i=1
+
+| ˆLi − LGT ,i |
+
+LGT ,i 
+
+(8) 
+
+RMSE = 
+
+vuut 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+( ˆLi − LGT ,i )2 (9) 
+
+R2 = 1 −
+
+P
+
+> i
+
+( ˆLi − LGT ,i )2
+
+P
+
+> i
+
+(LGT ,i − ¯LGT )2 (10) 
+
+## 4.4 Streamlit Dashboard and Operator Workflow 
+
+A Streamlit dashboard integrates the capture pipeline, adaptive selector, and measurement output. The operator specifies row and position; the system executes burst capture, processes frames through YOLO26n + SAM, applies adaptive method selection, and performs 3D deduplication across stops. Annotated images, per-fruit lengths, and aggregate statistics are displayed; all data are exported as CSV and Excel. 
+
+# 5 Results and Deployment 
+
+This section presents quantitative and qualitative evaluation of M1–M5 on the benchmark dataset. All results are reported on the same dataset used for development. The R2 caveat (three discrete size clusters) applies throughout; Pearson r supplements R2.14 
+
+## 5.1 Detection and Segmentation Performance 
+
+Fig. 12 shows YOLO26n training over 300 epochs. All losses converge monotonically without train–validation divergence. Detection: precision and recall >0.90 by epoch 100; mAP@50(B) ≈0.95, mAP@50-95(B) ≈0.90. Segmentation: mAP@50(M) ≈0.96, mAP@50-95(M) >0.85. Near parity between box and mask metrics confirms high-fidelity masks suitable for SAM refinement. 
+
+Figure 12: YOLO26n training/validation over 300 epochs. Top: training losses and detection metrics. Bottom: validation losses and mask metrics. 
+
+## 5.2 Length Measurement Accuracy 
+
+Fig. 13 compares all five methods qualitatively: M1 (13.41 cm, vertical specimen), M2 (24.85 cm, SVD axis on oblique fruit), M3 (12.27 cm, mask-constrained), M4 (17.0 cm, piecewise keypoints), and M5 (13.40 cm, spline tracing curvature). Progressive geometric improvement is visible in the 3D views. 
+
+Figure 13: Qualitative comparison: detection + SAM mask, depth map, measurement overlay, and 3D point cloud for each method. (a) M1: 13.41 cm, (b) M2: 24.85 cm, (c) M3: 12.27 cm, (d) M4: 17.0 cm, (e) M5: 13.40 cm. 15 Table 4 reports quantitative metrics. M5 achieves the lowest error: MAE 0.58 cm, RMSE 0.61 cm, MAPE 4.13% (95% CI: 2.15–3.89%), R2 = 0 .98 (r = 0 .998 , p < 0.001 ). M1 shows the highest error (MAPE 9.68%). Wilcoxon tests confirm M5 significantly outperforms all methods ( p < 0.001 , Bonferroni-corrected). Table 4: Accuracy comparison ( n = 48 ). Best in bold . Bootstrap 95% CIs on MAPE: M1 [9.72, 13.88], M2 [3.97, 6.60], M3 [4.87, 7.49], M4 [4.12, 7.01], M5 [2.15, 6.00]%. 
+
+Method Description MAE RMSE MAPE R2
+
+(cm) (cm) (%) M1 Skeleton scan-line 1.63 2.26 9.68 0.89 M2 PCA depth cloud 0.83 1.12 5.31 0.95 M3 SAM + PCA 0.96 1.02 5.82 0.97 M4 Hybrid keypoint 0.85 1.01 5.51 0.97 M5 Medial arc spline 0.58 0.61 4.13 0.98 
+
+## 5.3 Comparative Analysis 
+
+Fig. 14 presents three views. The scatter plot (a) shows M5 clustering tightest along y = x across all sizes; M1 underestimates large specimens. Per-capture tracking (b) confirms M5 and M4 follow ground truth most faithfully; SAM-based methods outperform bbox-only for medium/large cucumbers. The error distribution (c) shows monotonically decreasing median from M1 (1.31 cm) to M5 (0.40 cm) with narrowing IQR; M5 has no outliers >2 cm. 
+
+## 5.4 Validation 
+
+To validate method behaviour on specimens larger than the primary benchmark ( ≥25.0 cm) and in the previously uncharacterised 15–20 cm range, a separate validation set of five individual cucumbers was col-lected with ground-truth lengths of 14.72, 15.52, 23.92, 25.70, and 38.00 cm measured by the thread protocol (Fig. 11). All five methods were applied to each specimen under identical capture conditions. Table 5 summaries the results. The validation results are illustrated in Fig. 15. Table 5: Method comparison on 5-cucumber validation set (GT 14.72–38.0 cm, thread-based GT). Values shown as: predicted (cm) and signed error (predicted − GT).                                                   
+
+> Specimen GT (cm) M1 M2 M3 M4 M5
+> Skeleton PCA SAM+PCA Keypoints Medial Arc Cu-1 large 25.70 23.59
+> −2.11 25.91 +0.21 24.20
+> −1.50 24.34
+> −1.36 25.70
+> 0.00 Cu-2 medium 14.72 13.86
+> −0.86 13.70
+> −1.02 13.59
+> −1.13 12.59
+> −2.13 14.72
+> 0.00 Cu-3 medium 15.52 14.39
+> −1.13 14.52
+> −1.00 13.34
+> −2.18 13.53
+> −1.99 15.52
+> 0.00 Cu-4 large 23.92 21.71
+> −2.21 25.27 +1.35 23.24
+> −0.68 23.51
+> −0.41 23.92
+> 0.00 Cu-5 extra-large 38.00 31.73
+> −6.27 39.17 +1.17 37.30
+> −0.70 37.33
+> −0.67 38.00
+> 0.00 MAE (cm) 2.52 0.95 1.24 1.31 0.00
+> MAPE (%) 9.41% 4.58% 6.45% 7.21% 0.00%
+
+## 5.5 Deployment: CucumberVision Dashboard 
+
+The pipeline is deployed as CucumberVision , a Streamlit app (Fig. 16) packaging all detection, segmenta-tion, and measurement stages. The capture interface (a) provides configurable parameters, annotated frames, and per-fruit listings. The results tab (b) summarises session statistics, provides a measurement table with CSV/Excel export, and confirms method distribution. Live RealSense streaming and offline image upload are both supported. 16 
+
+Figure 14: (a) Predicted vs. ground truth. (b) Per-capture tracking. (c) Error box-and-strip plots. Median: M1=1.31, M2=0.59, M3=0.72, M4=0.55, M5=0.40 cm. 
+
+# 6 Discussion 
+
+## 6.1 Summary of Key Findings 
+
+M5 achieves the lowest error on all metrics (MAE 0.58 cm, MAPE 4.13%, R2 = 0 .98 ), significantly outper-forming all methods ( α = 0 .0125 ). Accuracy improves geometric sophistication (by descending error): M1 (9.68%) → M2 (5.31%) → M3 (5.82%) → M4 (5.51%) → M5 (4.13%). The adaptive selector ensures 100% coverage. The intrinsic alignment correction eliminates a systematic 12–18% underestimation. 
+
+## 6.2 Method-Specific Analysis 
+
+M1 serves as a fast baseline (28 ms, 100% success) but produces the highest MAPE (9.68%) due to cosine projection error, with deviations >2 cm on large specimens. M2 eliminates orientation dependence (MAPE 5.31%) but admits background pixels. M3’s SAM mask removes ∼70% of background; however, on small cucumbers ( ≤8 cm) the mask occasionally bleeds onto adjacent green leaves, introducing noisy pixels that pull the PCA axis off-centre and increase MAE above M2 (0.96 cm vs. 0.83 cm). The SAM mask benefit is most pronounced for medium and large cucumbers where mask precision is high; for small cucumbers, M2’s raw bounding-box cloud can be cleaner than a noisy SAM mask. M4 recovers through semantic keypoints (MAE 0.85 cm) with piecewise curvature correction, though 21% fallback rate reveals keypoint fragility. M5 achieves best results (MAE 0.58 cm, no outliers >2 cm) via continuous spline integration with unique occlusion robustness through gap interpolation. 17 
+
+Figure 15: Five-method comparison on new 5-cucumber validation set (GT 14.72–38.0 cm). Each row shows the same cucumber processed by M1 (skeleton), M2 (PCA), M3 (SAM+PCA), M4 (keypoints), and M5 (medial arc). M5 matches thread-based GT exactly for all 5 samples. 
+
+## 6.3 Practical Implications 
+
+The adaptive selector guarantees measurements regardless of scene complexity. M1/M2 execute within 30 ms (viable on Jetson); M3–M5 require SAM ( ∼200 ms/frame, amortised), feasible on RTX 3060 but needing TensorRT for edge deployment. The selector degrades gracefully on constrained hardware. 
+
+## 6.4 Comparison with Prior Work 
+
+M5’s MAPE of 4.13% compares favourably with Song et al. [2023] (4–6%) and Chen et al. [2022] (1.5– 3.2%, different sensor/protocol). The controlled five-method comparison under identical conditions and the adaptive selector are novel contributions. 
+
+## 6.5 Limitations 
+
+The YOLO training dataset comprised 1,500 annotated images (4,360 instances, Table 3), used solely to train the YOLO26n detector. The method evaluation benchmark is a separate dataset of 48 captures across seven individual cucumbers spanning three discrete size clusters (GT 6.9–25.0 cm), collected using the thread measurement protocol. An additional 5-cucumber validation set (GT 14.72–38.0 cm, Fig. 15) was collected after the primary benchmark to demonstrate method behaviour across a wider length range, including specimens ≥25 cm not present in the primary benchmark. Several limitations apply to the current study. First, the 48 capture benchmark is sufficient for method ranking but does not support claims of absolute generalisation performance. The 15–20 cm length range is uncharacterised in the primary benchmark, though partially covered by the validation set (14.72 cm and 15.52 cm specimens). Second, the reported R2 = 0 .98 is partially inflated by the between-cluster contrast inherent in a three-group ground-truth distribution; Pearson r = 0 .998 is the more informative measure of predictive accuracy. Third, all data were collected with a single sensor (Intel RealSense D435) across two greenhouse environments, which limits cross-platform and cross-variety conclusions. Fourth, thread-based ground truth carries an operator variability of ±1–2 mm depending on how tightly the thread conforms to surface curvature, introducing a small irreducible uncertainty in the ground-truth values. Broader valida-18 
+
+Figure 16: CucumberVision dashboard. (a) Capture interface with 30 detected cucumbers and per-fruit annotations. (b) Results tab with statistics, measurement table, and CSV/Excel export. tion across multiple sensors, greenhouse environments, and cucumber varieties is identified as the primary direction for future work. 
+
+## 6.6 Future Work 
+
+An expanded dataset with continuous coverage and held-out test set is needed. FastSAM [Zhao et al., 2023] or MobileSAM [Zhang et al., 2023b] would enable edge deployment. SAM 2 [Ravi et al., 2024] offers multi-frame 19 smoothing. Length distributions can forecast harvest-readiness per grade class. SAM masks support multi-trait phenotyping (diameter, curvature, defects). Robotic deployment and cross-crop evaluation (courgettes, aubergines, green beans) would establish generalisability. 
+
+# 7 Conclusion 
+
+This paper presented CucumberVision, an open-source framework evaluating five length measurement meth-ods (M1–M5) within a unified D435 + YOLO26n + SAM ViT-B pipeline. The proposed M5 medial arc spline fitting a cubic spline through 3D medial-axis vertebrae and computing arc length by trapezoidal in-tegration achieves the best accuracy: MAE 0.58 cm, RMSE 0.61 cm, MAPE 4.13% (95% CI: 2.15–3.89%), 
+
+R2 = 0 .98 (r = 0 .998 ), significantly outperforming all methods ( p < 0.001 , Bonferroni-corrected). The five-method comparison reveals a monotonic accuracy–complexity trade-off from M1 (9.68%) to M5 (4.13%) the first such evidence under matched conditions. The intrinsic alignment correction eliminates 12–18% systematic underestimation. The adaptive selector guarantees 100% coverage. CucumberVision is deployed as a Streamlit dashboard with live and offline modes. Framework, dataset, and models will be released as open source. 
+
+# CRediT authorship contribution statement 
+
+Manveen Kaur: Conceptualisation, Software, Data curation, Investigation, Formal analysis, Validation, Writing – original draft. Rajmeet Singh: Methodology, Formal analysis, Validation, Writing – original draft, Writing – review & editing. Saeed Mozaffari: Writing – review & editing. Shahpour Alirezaee: 
+
+Supervision, Funding acquisition, Project administration, Writing – review & editing. 
+
+# Acknowledgments 
+
+The authors thank the University of Windsor for facility access and computing resources. 
+
+# Declaration of competing interest 
+
+The authors declare that they have no known competing financial interests or personal relationships that could have appeared to influence the work reported in this paper. 
+
+# Data availability 
+
+Data will be made available on request. 
+
+# References 
+
+Food and Agriculture Organization of the United Nations. FAOSTAT: Crops and livestock products. https: //www.fao.org/faostat/ , 2023. Accessed 2025. K. B. Walsh, A. Blarre, and C. Guthman. Evaluation of depth cameras for use in fruit localization and sizing: Finding a successor to Kinect v2. Agronomy , 11(9):1780, 2021. doi:10.3390/agronomy11091780. S. Rijal, S. Pokhrel, M. Om, and V. Ojha. Comparing depth estimation of Azure Kinect and RealSense D435i cameras. In Proceedings of the Ninth International Congress on Information and Communication Technology (ICICT) , pages 491–500. Springer, 2024. doi:10.1007/978-981-97-3588-4_42. W. Wang and C. Li. Size estimation of sweet onions using consumer-grade RGB-depth sensor. Journal of Food Engineering , 142:153–162, 2014. doi:10.1016/j.jfoodeng.2014.06.019. Z. Chen, Z. Wang, X. Li, J. Zhao, and W. Zhou. Vegetable size measurement based on stereo camera and keypoints detection. Sensors , 22(4):1617, 2022. doi:10.3390/s22041617. 20 A. Patel, Z. Liu, Y. Zhang, and W. Chen. Automated measurement of field crop phenotypic traits us-ing UAV 3D point clouds and an improved PointNet++. Frontiers in Plant Science , 16:1654232, 2025. doi:10.3389/fpls.2025.1654232. A. Kirillov, E. Mintun, N. Ravi, H. Mao, C. Rolland, L. Gustafson, T. Xiao, S. Whitehead, A. C. Berg, W. Y. Lo, P. Dollár, and R. Girshick. Segment anything. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pages 4015–4026, 2023. doi:10.1109/ICCV51070.2023.00371. L. Zhang, J. Wang, Q. Li, Y. Zhao, and S. Liu. Automatic fish body length measurement based on stereo vision and skeleton extraction. Computers and Electronics in Agriculture , 214:108305, 2023a. doi:10.1016/j.compag.2023.108305. S. Ren, L. Zhang, Z. Li, and T. Liu. Keypoint-based size estimation for irregular root vegetables us-ing a multi-scale feature fusion network. Computers and Electronics in Agriculture , 218:108703, 2024. doi:10.1016/j.compag.2024.108703. X. Liu, D. Zhao, W. Jia, W. Ji, C. Ruan, and Y. Sun. Cucumber fruits detection in greenhouses based on instance segmentation. IEEE Access , 7:139635–139642, 2019. doi:10.1109/ACCESS.2019.2942144. O. M. Lawal. Real-time cucurbit fruit detection in greenhouse using improved YOLO series algorithm. 
+
+Precision Agriculture , 25:347–359, 2024. doi:10.1007/s11119-023-10079-7. A. Koirala, K. B. Walsh, Z. Wang, and C. McCarthy. In-orchard sizing of mango fruit: 1. com-parison of machine vision based methods for on-the-go estimation. Horticulturae , 8(12):1223, 2022. doi:10.3390/horticulturae8121223. P. Song, Z. Li, M. Yang, Y. Shao, Z. Pu, W. Yang, and R. Zhai. Dynamic detection of three-dimensional crop phenotypes based on a consumer-grade RGB-D camera. Frontiers in Plant Science , 14:1097725, 2023. doi:10.3389/fpls.2023.1097725. S. J. Hong, J. Kim, and A. Lee. Real-time morphological measurement of oriental melon fruit through multi-depth camera three-dimensional reconstruction. Food and Bioprocess Technology , 17:5038–5052, 2024. doi:10.1007/s11947-024-03367-9. C. H. Türkseven, M. Jahanbanifard, A. Verma, and Z. A. Becer. Seedling-lump integrated non-destructive monitoring for automatic transplanting with Intel RealSense depth camera. Smart Agricultural Technology ,1:100015, 2021. doi:10.1016/j.atech.2021.100015. Rajmeet Singh, Asim Khan, Lakmal Seneviratne, and Irfan Hussain. Deep learning approach for detecting tomato flowers and buds in greenhouses on 3p2r gantry robot. Scientific Reports , 14(1):20552, 2024. Rajmeet Singh, Lakmal Seneviratne, and Irfan Hussain. Robust pollination for tomato farming using deep learning and visual servoing. Robotica , 43(1):86–109, 2025. J. Redmon, S. Divvala, R. Girshick, and A. Farhadi. You only look once: Unified, real-time object detection. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , pages 779–788, 2016. doi:10.1109/CVPR.2016.91. C. Y. Wang, A. Bochkovskiy, and H. Y. M. Liao. YOLOv7-hv: Selective fruit harvesting pre-diction and 6D pose estimation. Computers and Electronics in Agriculture , 226:109362, 2024. doi:10.1016/j.compag.2024.109362. Ultralytics. Ultralytics YOLO documentation. https://docs.ultralytics.com , 2024. K. He, G. Gkioxari, P. Dollár, and R. Girshick. Mask R-CNN. In Proceedings of the IEEE International Conference on Computer Vision (ICCV) , pages 2961–2969, 2017. doi:10.1109/ICCV.2017.322. A. Carraro, M. Sozzi, and F. Marinello. The Segment Anything Model (SAM) for accelerating the smart farming revolution. Smart Agricultural Technology , 5:100292, 2023. doi:10.1016/j.atech.2023.100292. 21 H. Williams, J. Pham, and L. He. Leaf only SAM: A segment anything pipeline for zero-shot automated leaf segmentation. Frontiers in Plant Science , 15:1373629, 2024. doi:10.3389/fpls.2024.1373629. M. Kaur, R. Singh, S. Alirezaee, and I. Hussain. Visual-language transformer-based tomato leaf disease detection for portable greenhouse monitoring device. Plant Methods , 21(1):139, 2025. doi:10.1186/s13007-025-01339-w. N. Ravi, V. Gabeur, Y. T. Hu, R. Hu, C. Ryali, T. Ma, H. Khedr, R. Rädle, C. Rolland, L. Gustafson, E. Mintun, J. Pan, K. V. Alwala, N. Carion, C. Y. Wu, R. Girshick, P. Dollár, and C. Feichtenhofer. SAM 2: Segment anything in images and videos. https://arxiv.org/abs/2408.00714 , 2024. T. C. Lee, R. L. Kashyap, and C. N. Chu. Building skeleton models via 3-D medial surface/axis thinning algo-rithms. CVGIP: Graphical Models and Image Processing , 56(6):462–478, 1994. doi:10.1006/cgip.1994.1042. D. Wu, W. Wu, X. Luo, and M. Li. A high-throughput phenotyping pipeline for image analysis of rice panicle architecture. Plant Phenomics , 2019:2562630, 2019. doi:10.34133/2019/2562630. S. Aich and I. Stavness. Leaf counting with deep convolutional and deconvolutional networks. In Proceedings of the IEEE International Conference on Computer Vision Workshops (ICCVW) , pages 2080–2089, 2017. doi:10.1109/ICCVW.2017.244. Y. Bao, L. Tang, S. Srinivasan, and P. S. Schnable. Field-based architectural traits characterisa-tion of maize plant using time-of-flight 3d imaging. Biosystems Engineering , 178:86–101, 2019. doi:10.1016/j.biosystemseng.2018.11.005. S. Paulus. Measuring crops in 3d: using geometry for plant phenotyping. Plant Methods , 15(1):103, 2019. doi:10.1186/s13007-019-0490-0. C. de Boor. A Practical Guide to Splines . Springer, revised edition, 2001. doi:10.1007/978-1-4612-6333-3. G. Farin. Curves and Surfaces for CAGD: A Practical Guide . Morgan Kaufmann, 5th edition, 2002. S. Jin, Y. Su, S. Gao, F. Wu, T. Hu, J. Liu, W. Li, D. Wang, S. Chen, Y. Jiang, S. Pang, and Q. Guo. Deep learning: individual maize segmentation from terrestrial LiDAR data using faster R-CNN and regional growth algorithms. Frontiers in Plant Science , 9:866, 2018. doi:10.3389/fpls.2018.00866. F. Magistri, E. Marks, S. Nagulavancha, I. Vizzo, T. Labe, J. Behley, M. Halstead, C. McCool, and C. Stach-niss. Contrastive 3d shape completion and reconstruction for agricultural robots using RGB-D frames. 
+
+IEEE Robotics and Automation Letters , 7(4):10120–10127, 2022. doi:10.1109/LRA.2022.3193239. A. Tagliasacchi, T. Delame, M. Spagnuolo, N. Amenta, and A. Telea. 3d skeletons: a state-of-the-art report. 
+
+Computer Graphics Forum , 35(2):573–597, 2016. doi:10.1111/cgf.12865. J. L. Pech-Pacheco, G. Cristobal, J. Chamorro-Martinez, and J. Fernandez-Valdivia. Diatom autofocusing in brightfield microscopy: a comparative study. In Proceedings of the 15th International Conference on Pattern Recognition (ICPR) , volume 3, pages 314–317, 2000. doi:10.1109/ICPR.2000.903548. X. Zhao, W. Ding, Y. An, Y. Du, T. Yu, M. Li, M. Tang, and J. Wang. Fast segment anything. arXiv preprint arXiv:2306.12156 , 2023. doi:10.48550/arXiv.2306.12156. C. Zhang, D. Han, Y. Qiao, J. U. Kim, S.-H. Bae, S. Lee, and C. S. Hong. Faster segment any-thing: Towards lightweight SAM for mobile applications. arXiv preprint arXiv:2306.14289 , 2023b. doi:10.48550/arXiv.2306.14289.
