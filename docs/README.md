@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-07-23</span>
+      <span class="dpr-home-dashboard-kicker">2026-07-24</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 11 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 13 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>3</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>8</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>7</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-07-23 22:14:05 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-07-24 22:12:16 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,9 +62,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日处理11篇论文，聚焦轻量级语义分割与3D视觉分割方向。</p>
-<p>推荐精读EGRNet的边门控优化和统一变分弱监督框架，以及速读中3D空间涌现与广义指代分割研究。</p>
-<p>建议优先关注轻量级分割网络的效率提升，同时追踪3D高斯泼溅在视觉任务中的扩展应用。</p>
+<p>今日聚焦立体匹配与开放词汇语义分割，两篇9.0高分论文领衔。</p>
+<p>最值得关注：高精度渐进立体匹配（STEREOFLOW）与连续视觉-文本对齐分割（DINOde），均达顶尖水平。</p>
+<p>建议优先精读这两篇核心论文，并关注速读中多视图分割和动态对象分割的拓展应用。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -73,12 +73,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">3 篇</strong>
+    <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="EGRNet: A Lightweight Semantic Segmentation Network with Edge-Gated Refinement and Adversarial Sensing">EGRNet: A Lightweight Semantic Segmentation Network with Edge-Gated Refinement and Adversarial Sensing</span></li><li><span class="dpr-home-dashboard-paper-title" title="A Unified Variational Framework for Deep Weakly Supervised Image Segmentation">A Unified Variational Framework for Deep Weakly Supervised Image Segmentation</span></li><li><span class="dpr-home-dashboard-paper-title" title="STEREOFLOW: Progressive Stereo Matching with StereoDiT and Transition Flow Matching">STEREOFLOW: Progressive Stereo Matching with StereoDiT and Transition Flow Matching</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="STEREOFLOW: Progressive Stereo Matching with StereoDiT and Transition Flow Matching">STEREOFLOW: Progressive Stereo Matching with StereoDiT and Transition Flow Matching</span></li><li><span class="dpr-home-dashboard-paper-title" title="DINOde: Continuous Vision-Text Alignment for Open-Vocabulary Semantic Segmentation">DINOde: Continuous Vision-Text Alignment for Open-Vocabulary Semantic Segmentation</span></li><li><span class="dpr-home-dashboard-paper-title" title="DAPM: UAV Monocular Depth Estimation from Any Height, Pitch, Roll and FOV">DAPM: UAV Monocular Depth Estimation from Any Height, Pitch, Roll and FOV</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">seg <strong>2</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">seg <strong>3</strong></span><span class="dpr-home-dashboard-tag">mono-depth <strong>1</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>1</strong></span><span class="dpr-home-dashboard-tag">vfm <strong>1</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -86,12 +86,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">8 篇</strong>
+    <strong class="dpr-home-dashboard-count">7 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="SeeSE3: Emergence of 3D Space in Vision Features">SeeSE3: Emergence of 3D Space in Vision Features</span></li><li><span class="dpr-home-dashboard-paper-title" title="ZeroSplat: Generalized Referring Segmentation in 3D Gaussian Splatting">ZeroSplat: Generalized Referring Segmentation in 3D Gaussian Splatting</span></li><li><span class="dpr-home-dashboard-paper-title" title="Extending a Large View Synthesis Model for Multi-view Panoptic Segmentation">Extending a Large View Synthesis Model for Multi-view Panoptic Segmentation</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="ReViV: Reconstructing the Viewer and the View in 4D from Monocular Egocentric Video">ReViV: Reconstructing the Viewer and the View in 4D from Monocular Egocentric Video</span></li><li><span class="dpr-home-dashboard-paper-title" title="MuViSeg: Multi-View Segment Correspondences from Dense Geometry Priors">MuViSeg: Multi-View Segment Correspondences from Dense Geometry Priors</span></li><li><span class="dpr-home-dashboard-paper-title" title="Robust Multimodal Dynamic Object Segmentation">Robust Multimodal Dynamic Object Segmentation</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">seg <strong>5</strong></span><span class="dpr-home-dashboard-tag">vfm <strong>2</strong></span><span class="dpr-home-dashboard-tag">depth-refine <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">mono-depth <strong>2</strong></span><span class="dpr-home-dashboard-tag">lite-vision <strong>1</strong></span><span class="dpr-home-dashboard-tag">matting <strong>1</strong></span><span class="dpr-home-dashboard-tag">neural-bokeh <strong>1</strong></span><span class="dpr-home-dashboard-tag">seg <strong>1</strong></span><span class="dpr-home-dashboard-tag">vfm <strong>1</strong></span></div>
 </section>
 </div>
 
