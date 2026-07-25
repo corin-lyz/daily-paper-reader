@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-07-24</span>
+      <span class="dpr-home-dashboard-kicker">2026-07-25</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 13 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 7 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>7</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>2</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>5</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-07-24 22:12:16 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-07-25 21:51:54 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,9 +62,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日聚焦立体匹配与开放词汇语义分割，两篇9.0高分论文领衔。</p>
-<p>最值得关注：高精度渐进立体匹配（STEREOFLOW）与连续视觉-文本对齐分割（DINOde），均达顶尖水平。</p>
-<p>建议优先精读这两篇核心论文，并关注速读中多视图分割和动态对象分割的拓展应用。</p>
+<p>今日处理7篇论文，精读2篇8分高质研究，速读3篇相关领域进展。最值得关注的方向：多视图全景分割的大模型扩展，以及基于零散数据的统一视频密集预测框架。建议优先精读两篇8分论文，它们分别揭示了3D场景理解与视频任务的新路径。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -73,12 +71,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">6 篇</strong>
+    <strong class="dpr-home-dashboard-count">2 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="STEREOFLOW: Progressive Stereo Matching with StereoDiT and Transition Flow Matching">STEREOFLOW: Progressive Stereo Matching with StereoDiT and Transition Flow Matching</span></li><li><span class="dpr-home-dashboard-paper-title" title="DINOde: Continuous Vision-Text Alignment for Open-Vocabulary Semantic Segmentation">DINOde: Continuous Vision-Text Alignment for Open-Vocabulary Semantic Segmentation</span></li><li><span class="dpr-home-dashboard-paper-title" title="DAPM: UAV Monocular Depth Estimation from Any Height, Pitch, Roll and FOV">DAPM: UAV Monocular Depth Estimation from Any Height, Pitch, Roll and FOV</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Extending a Large View Synthesis Model for Multi-view Panoptic Segmentation">Extending a Large View Synthesis Model for Multi-view Panoptic Segmentation</span></li><li><span class="dpr-home-dashboard-paper-title" title="Unified Video Dense Prediction from Disjoint Data">Unified Video Dense Prediction from Disjoint Data</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">seg <strong>3</strong></span><span class="dpr-home-dashboard-tag">mono-depth <strong>1</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>1</strong></span><span class="dpr-home-dashboard-tag">vfm <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">mono-depth <strong>1</strong></span><span class="dpr-home-dashboard-tag">seg <strong>1</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -86,12 +84,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">7 篇</strong>
+    <strong class="dpr-home-dashboard-count">5 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="ReViV: Reconstructing the Viewer and the View in 4D from Monocular Egocentric Video">ReViV: Reconstructing the Viewer and the View in 4D from Monocular Egocentric Video</span></li><li><span class="dpr-home-dashboard-paper-title" title="MuViSeg: Multi-View Segment Correspondences from Dense Geometry Priors">MuViSeg: Multi-View Segment Correspondences from Dense Geometry Priors</span></li><li><span class="dpr-home-dashboard-paper-title" title="Robust Multimodal Dynamic Object Segmentation">Robust Multimodal Dynamic Object Segmentation</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="MuViSeg: Multi-View Segment Correspondences from Dense Geometry Priors">MuViSeg: Multi-View Segment Correspondences from Dense Geometry Priors</span></li><li><span class="dpr-home-dashboard-paper-title" title="STEREOFLOW: Progressive Stereo Matching with StereoDiT and Transition Flow Matching">STEREOFLOW: Progressive Stereo Matching with StereoDiT and Transition Flow Matching</span></li><li><span class="dpr-home-dashboard-paper-title" title="OFD-Net: Teacher-Free Reliable Semi-supervised Medical Image Segmentation with Orthogonal Feature Disentanglement Net of Foreground-Background">OFD-Net: Teacher-Free Reliable Semi-supervised Medical Image Segmentation with Orthogonal Feature Disentanglement Net of Foreground-Background</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">mono-depth <strong>2</strong></span><span class="dpr-home-dashboard-tag">lite-vision <strong>1</strong></span><span class="dpr-home-dashboard-tag">matting <strong>1</strong></span><span class="dpr-home-dashboard-tag">neural-bokeh <strong>1</strong></span><span class="dpr-home-dashboard-tag">seg <strong>1</strong></span><span class="dpr-home-dashboard-tag">vfm <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">seg <strong>2</strong></span><span class="dpr-home-dashboard-tag">neural-bokeh <strong>1</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>1</strong></span><span class="dpr-home-dashboard-tag">vfm <strong>1</strong></span></div>
 </section>
 </div>
 
