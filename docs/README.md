@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-07-25</span>
+      <span class="dpr-home-dashboard-kicker">2026-07-26</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 7 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 6 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>2</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>5</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>3</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>3</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-07-25 21:51:54 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-07-26 21:35:21 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,7 +62,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日处理7篇论文，精读2篇8分高质研究，速读3篇相关领域进展。最值得关注的方向：多视图全景分割的大模型扩展，以及基于零散数据的统一视频密集预测框架。建议优先精读两篇8分论文，它们分别揭示了3D场景理解与视频任务的新路径。</p>
+<p>今日精读3篇、速读3篇共计6篇论文，其中《STEREOFLOW》以9.0分领跑，提出了渐进式立体匹配新框架。高分方向集中于三维视觉与遥感多模态理解，建议优先关注立体匹配和无人机视频理解的前沿方法。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -71,12 +71,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">2 篇</strong>
+    <strong class="dpr-home-dashboard-count">3 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Extending a Large View Synthesis Model for Multi-view Panoptic Segmentation">Extending a Large View Synthesis Model for Multi-view Panoptic Segmentation</span></li><li><span class="dpr-home-dashboard-paper-title" title="Unified Video Dense Prediction from Disjoint Data">Unified Video Dense Prediction from Disjoint Data</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="STEREOFLOW: Progressive Stereo Matching with StereoDiT and Transition Flow Matching">STEREOFLOW: Progressive Stereo Matching with StereoDiT and Transition Flow Matching</span></li><li><span class="dpr-home-dashboard-paper-title" title="SkyVLaM: Multimodal Large Language Model for UAV Video Understanding in Remote Sensing">SkyVLaM: Multimodal Large Language Model for UAV Video Understanding in Remote Sensing</span></li><li><span class="dpr-home-dashboard-paper-title" title="Latent Riemannian Flow Matching for Geometry-Grounded 3D Foundation Models">Latent Riemannian Flow Matching for Geometry-Grounded 3D Foundation Models</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">mono-depth <strong>1</strong></span><span class="dpr-home-dashboard-tag">seg <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">mono-depth <strong>1</strong></span><span class="dpr-home-dashboard-tag">seg <strong>1</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>1</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -84,12 +84,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">5 篇</strong>
+    <strong class="dpr-home-dashboard-count">3 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="MuViSeg: Multi-View Segment Correspondences from Dense Geometry Priors">MuViSeg: Multi-View Segment Correspondences from Dense Geometry Priors</span></li><li><span class="dpr-home-dashboard-paper-title" title="STEREOFLOW: Progressive Stereo Matching with StereoDiT and Transition Flow Matching">STEREOFLOW: Progressive Stereo Matching with StereoDiT and Transition Flow Matching</span></li><li><span class="dpr-home-dashboard-paper-title" title="OFD-Net: Teacher-Free Reliable Semi-supervised Medical Image Segmentation with Orthogonal Feature Disentanglement Net of Foreground-Background">OFD-Net: Teacher-Free Reliable Semi-supervised Medical Image Segmentation with Orthogonal Feature Disentanglement Net of Foreground-Background</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="MuViSeg: Multi-View Segment Correspondences from Dense Geometry Priors">MuViSeg: Multi-View Segment Correspondences from Dense Geometry Priors</span></li><li><span class="dpr-home-dashboard-paper-title" title="Recti-Q: Feature-Space Rectification for Out-of-Distribution-Robust Quantized Perception in Edge Robotics">Recti-Q: Feature-Space Rectification for Out-of-Distribution-Robust Quantized Perception in Edge Robotics</span></li><li><span class="dpr-home-dashboard-paper-title" title="IGGT4D: Streaming 4D Instance-Grounded Geometry Transformer">IGGT4D: Streaming 4D Instance-Grounded Geometry Transformer</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">seg <strong>2</strong></span><span class="dpr-home-dashboard-tag">neural-bokeh <strong>1</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>1</strong></span><span class="dpr-home-dashboard-tag">vfm <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">seg <strong>2</strong></span><span class="dpr-home-dashboard-tag">lite-vision <strong>1</strong></span></div>
 </section>
 </div>
 
