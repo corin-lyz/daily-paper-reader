@@ -1,0 +1,391 @@
+Title: ReflexTrack: A Feedback-Driven Agent for Training-Free Referring Video Object Segmentation
+
+URL Source: https://arxiv.org/pdf/2607.24098v1
+
+Published Time: Tue, 28 Jul 2026 01:38:25 GMT
+
+Number of Pages: 7
+
+Markdown Content:
+# ReflexTrack: A Feedback-Driven Agent for Training-Free Referring Video Object Segmentation 
+
+## Yuanjia Li, Tianyang Xu, Tao Zhou, Zhangyong Tang, Xiao-Jun Wu *, and Josef Kittler †
+
+## ,
+
+## Abstract 
+
+Referring video object segmentation (RVOS) requires seg-menting a target specified by natural language throughout a video. Recent agentic approaches combine multimodal large language models with promptable segmentation mod-els to perform RVOS without task-specific training. However, most pipelines rely on one-shot spatial grounding followed by mask propagation, leaving both the initial prompts and temporal predictions largely unverified. We introduce Reflex-Track, a training-free, feedback-driven agent that closes this loop at both spatial and temporal levels. Mask-guided Spa-tial Refinement evaluates the mask induced by the current keyframe prompt and iteratively updates the bounding box together with positive and negative points, yielding a more re-liable initialization. Video-level Mask Reflection assesses the complete mask sequence, localizes unreliable intervals, se-lects complementary repair keyframes, and generates candi-date predictions through mask-guided re-propagation. Only candidates that provide a verified improvement are used to update the affected intervals, preserving reliable predictions elsewhere. All components remain frozen during inference. ReflexTrack achieves an overall Q score of 69 .7 on Ref-VPS and a J &F score of 67 .2 on ReasonVOS. These results demonstrate that prediction-level feedback substantially im-proves the reliability of training-free RVOS. 
+
+## 1 Introduction 
+
+Referring video object segmentation (RVOS) requires seg-menting a target specified by a natural-language expression throughout a video [ 1, 2 ]. Beyond recognizing appearance, a model must resolve actions, spatial relations, interactions, and high-level semantics, while maintaining accurate masks                             
+
+> *Yuanjia Li, Tianyang Xu, Tao Zhou, Zhangyong Tang, and Xiao-Jun Wu (Corresponding author )are with the School of Artificial Intelligence and Computer Science, Jiangnan University, Wuxi, China. (e-mail: yuanjia li133@163.com, tianyang.xu@jiangnan.edu.cn, taozhou@jiangnan.edu.cn, zhangy-ong tang jnu@163.com, wu xiaojun@jiangnan.edu.cn).
+> †Josef Kittler is with the Centre for Vision, Speech and Signal Processing, University of Surrey, Guildford, GU2 7XH, UK. (e-mail: j.kittler@surrey.ac.uk).
+
+under occlusion, fast motion, deformation, and visually sim-ilar distractors [ 3, 4 ]. These coupled language, spatial, and temporal challenges make reliable target grounding and prop-agation central to RVOS. Most existing methods learn cross-modal video-text rep-resentations with supervised architectures. Transformer-based approaches formulate language as object queries and jointly perform target localization and mask decoding [ 5 –7], while recent methods further exploit motion-aware features, semantic-temporal alignment, global-local reasoning, and visual grounding foundations [ 8, 9 ]. Although effective, they typically rely on large-scale pixel-level supervision and architecture-specific training, which limits their ability to immediately benefit from rapidly evolving multimodal large language models (MLLMs) and promptable segmentation models. Training-free RVOS provides a flexible alternative by composing pretrained MLLMs, grounding models, and video segmentation foundation models into modular inference pipelines [ 10 – 12 ]. Existing agentic systems can select rep-resentative frames, interpret the query, identify the target, and verify semantic consistency without task-specific train-ing. However, their reflection is largely confined to reason-ing before dense prediction. The resulting spatial prompts and propagated masks are usually accepted without explicit prediction-level verification. This open-loop design is fragile. A semantically correct bounding box may still truncate the target, include distrac-tors, or provide weak foreground-background constraints. Likewise, a plausible keyframe mask may drift or disappear during propagation because of occlusion, deformation, fast motion, or temporary target absence. Although SAM 2 and SAM 3 offer strong generic segmentation and propagation capabilities [ 13 , 14 ], their outputs remain sensitive to prompt quality and temporal initialization. Local errors can there-fore accumulate into mask loss, target drift, and temporal inconsistency. We address this limitation with ReflexTrack, a feedback-driven agent for training-free RVOS. Instead of the one-way process of reasoning–grounding–segmentation , Reflex-Track introduces a closed loop of reasoning–grounding– segmentation–evaluation–repair . Feedback operates at two 1arXiv:2607.24098v1 [cs.CV] 27 Jul 2026 Initial Target 
+
+Grounding  
+
+> Keyframe&
+> Spatial Prompts
+
+Mask -guided 
+
+Spatial Refinement 
+
+> bbox & points
+
+Mask Generation 
+
+Video -level Mask Reflection 
+
+> the bright blue
+> lights in the water
+
+video 
+
+(a) Overview of ReflexTrack 
+
+Input 
+
+> Keyframe
+> Image
+> Spatial
+> Prompts
+
+SAM3 
+
+Segmentation 
+
+SAM3 
+
+Initial mask 
+
+Mask Evaluation 
+
+Correct target? 
+
+Complete mask? 
+
+？ 
+
+> Refined Spatial
+> Prompts
+> (bbox & points)
+
+Yes 
+
+No 
+
+Spatial Prompt Refinement 
+
+> Referring
+> Text
+> the bright
+> blue
+> lights in
+> the water
+
+(b) Mask -guided 
+
+Spatial Refinement     
+
+> Refined Bbox Strategies
+> Tighten loose boxes
+> Shift to correct target
+> Adjust to full extent
+> Positive Points Strategies
+> Add on target body
+> Cover key parts
+> Complete mask
+> Negative Points Strategies
+> Suppress distractors
+> Reduce background
+> Improve boundary
+
+Figure 1. (a) Overview of ReflexTrack. The primary pipeline performs Initial Target Grounding, Mask-guided Spatial Refinement, and mask generation, while Video-level Mask Reflection is further integrated to identify and repair unreliable predictions. By combining spatial prompt refinement with video-level reflection, ReflexTrack produces robust RVOS predictions. (b) Illustration of Mask-guided Spatial Refinement. Specifically, SAM 3 first generates an initial mask from the keyframe, referring expression, and spatial prompts. The mask is then evaluated for target correctness and completeness; when an error is detected, the spatial prompts are refined by updating the bounding box and positive and negative points for the next round of segmentation. 
+
+complementary prediction levels. First, Mask-guided Spatial Refinement evaluates the keyframe mask induced by the current spatial prompt. An MLLM checks target correctness and mask completeness, diagnoses spatial errors, and revises the bounding box to-gether with positive and negative point prompts. SAM 3 then regenerates the mask, enabling iterative prompt correction directly guided by downstream segmentation quality. Second, Video-level Mask Reflection inspects the com-plete mask sequence, localizes low-quality temporal inter-vals, and reconstructs a more discriminative repair context. It reselects multiple keyframes from the full video, generates complementary candidate sequences through mask-guided re-propagation, and replaces an interval only when repair verification confirms a reliable improvement. This selective strategy preserves high-confidence predictions while focus-ing expensive MLLM reasoning on problematic regions. All components remain frozen, requiring no task-specific training, additional pixel-level annotations, or parameter updates. ReflexTrack achieves an overall Q score of 69 .7 on Ref-VPS and a J &F score of 67 .2 on ReasonVOS. These results demonstrate that extending reflection from semantic reasoning to spatial and temporal predictions substantially improves the reliability of training-free RVOS. Overall, our contributions are summarized as follows: • We propose ReflexTrack, a training-free RVOS agent that introduces closed-loop feedback over both spatial prompts and video-level mask predictions. • We develop Mask-guided Spatial Refinement, which itera-tively revises bounding-box and point prompts using the induced keyframe mask as direct feedback. • We develop Video-level Mask Reflection, which local-izes unreliable intervals and selectively repairs them through context reconstruction, keyframe reselection, re-propagation, and verification. 
+
+## 2 Method 
+
+2.1 Problem Formulation and Overview 
+
+Given a video V = {I1, . . . , I T } and a natural-language query q, RVOS predicts a binary mask sequence M =
+
+{M1, . . . , M T } for the referred target, where Mt ∈{0, 1}H×W . ReflexTrack performs no task-specific training and coordinates frozen MLLMs, a visual grounding mod-ule, and SAM 3 for grounding, prompt refinement, mask propagation, and prediction repair. 2…
+
+t
+
+Adaptive Frame Sampling    
+
+> Endpoint Frames Uniform Frames
+> Random Frames Video Frames
+
+…
+
+…
+
+> Sample
+
+Repair Keyframe Reasoning 
+
+… the bright blue 
+
+> lights in the water
+> Understand issue and
+> reconstruct context
+> Select
+> Keyframes
+
+Quality Assessment 
+
+… 
+
+> VLM
+> Quality Score Bad Intervals
+
+… t
+
+> t
+
+Mask -Guided 
+
+Re -Propagation 
+
+Mask -guided 
+
+Spatial Refinement 
+
+Mask Generation 
+
+Repair Verification 
+
+Compare Candidates 
+
+(Overlap & Quality) 
+
+Inital 
+
+Candidate A 
+
+Candidate B 
+
+Select Better Repaired Mask 
+
+Iterative Repair 
+
+> Quality Score
+
+video mask Figure 2. Overview of Video-level Mask Reflection. Adaptive Frame Sampling selects endpoint, uniform, and random frames for efficient sequence-level quality assessment and unreliable-interval localization. Guided by the assessment, the repair agent reconstructs the video context and selects informative keyframes from the full sequence. Mask-guided Spatial Refinement and SAM 3 propagation then generate complementary repair candidates, which are compared with the initial prediction during Repair Verification. The better prediction is retained and can be iteratively refined. 
+
+As shown in Fig. 1, the framework contains four stages. 
+
+Initial Target Grounding selects representative keyframes and produces initial spatial prompts. Mask-guided Spa-tial Refinement evaluates the mask generated from each prompt and iteratively revises its bounding box and pos-itive/negative points. SAM 3 then generates and propa-gates the target masks to obtain an initial sequence. Finally, 
+
+Video-level Mask Reflection identifies low-quality intervals and selectively repairs them through keyframe reasoning, mask-guided re-propagation, and repair verification. Thus, keyframe masks provide spatial feedback, while sequence-level assessment provides temporal feedback. 
+
+2.2 Mask-guided Spatial Refinement 
+
+A semantically correct grounding result may still be unsuit-able for pixel-level segmentation: a loose box introduces background or distractors, whereas a tight box truncates the target. We therefore assess the mask induced by the current prompt and use its errors to refine the prompt itself. 
+
+2.2.1 Mask Generation and Evaluation 
+
+For a selected keyframe Ik, let P (0)  
+
+> k
+
+denote the initial prompt, typically a bounding box. At iteration r, SAM 3 generates 
+
+M (r) 
+
+> k
+
+= S
+
+
+
+Ik, P (r)
+
+> k
+
+
+
+, (1) where S is the promptable segmentation model. A mask-evaluation agent jointly observes Ik, q, P (r) 
+
+> k
+
+, and M (r) 
+
+> k
+
+to determine whether the mask selects the correct target and covers it completely. It also diagnoses truncation, back-ground leakage, distractor attachment, and boundary errors, producing feedback z(r) 
+
+> k
+
+.
+
+2.2.2 Prompt Refinement and Propagation 
+
+We represent a prompt as Pk = {bk, P + 
+
+> k
+
+, P − 
+
+> k
+
+}, containing a bounding box and positive/negative point sets. If the cur-rent mask fails evaluation, the refinement agent updates the prompt as 
+
+P (r+1)  
+
+> k
+
+= Rsp 
+
+
+
+Ik, q, P (r) 
+
+> k
+
+, M (r) 
+
+> k
+
+, z (r)
+
+> k
+
+
+
+, (2) where Rsp denotes the spatial-refinement agent. The box is tightened, shifted, or expanded according to the diagnosed error; positive points reinforce the target body or missing 3regions; negative points suppress background and similar distractors. The three prompt types are selected jointly rather than applied in a fixed pattern. The updated prompt is returned to SAM 3, and the evaluation-refinement loop continues until the mask is judged correct and sufficiently complete or a maximum itera-tion count is reached. The final prompt P ∗ 
+
+> k
+
+initializes SAM 3 video propagation, yielding the initial mask sequence M(0) .This procedure corrects spatial initialization errors without model updates. 
+
+2.3 Video-level Mask Reflection 
+
+Even with a reliable keyframe initialization, propagation may fail under occlusion, target reappearance, fast motion, or large deformation. Video-level Mask Reflection detects unreliable intervals, generates complementary repair candi-dates, and retains only verified improvements. As illustrated in Fig. 2, it comprises Adaptive Frame Sampling, Quality Assessment, Repair Keyframe Reasoning, Mask-Guided Re-Propagation, and Repair Verification. 
+
+2.3.1 Adaptive Frame Sampling and Assessment 
+
+Evaluating every frame with a VLM is expensive and redun-dant. We construct 
+
+Seval = Send ∪ S uni ∪ S rand , (3) where endpoint frames inspect temporal boundaries, uni-form frames cover the full sequence with spacing adapted to video length, and random frames reduce the chance of missing short failures. The corresponding image-mask pairs and query are passed to a quality-assessment agent, which evaluates target consistency, mask completeness, false pos-itives during target absence, and temporal coherence. It outputs a sequence-level score and low-quality intervals 
+
+B = {Bj }Jj=1 .
+
+2.3.2 Repair Keyframe Reasoning and Re-Propagation 
+
+For each interval, the repair agent analyzes the failure type and reconstructs a more discriminative textual context. It then selects multiple repair keyframes from the complete video, rather than restricting selection to the erroneous in-terval, so clearer evidence outside the interval can provide stable re-initialization. For each selected keyframe, the reconstructed context pro-duces an initial spatial prompt, which is further processed by Mask-guided Spatial Refinement. SAM 3 generates the refined keyframe mask and propagates it bidirectionally, pro-ducing C complete candidate sequences {M (c)}Cc=1 . Differ-ent temporal starting points provide complementary recovery behavior around occlusion, reappearance, and drift. 
+
+2.3.3 Repair Verification and Selective Update 
+
+Repair Verification compares the initial prediction M(0) 
+
+with all repaired candidates. For each interval Bj , it consid-ers candidate quality—target correctness, mask complete-ness, and temporal stability—together with overlap consis-tency among candidates and reliable surrounding frames. The selected candidate is 
+
+c∗ 
+
+> j
+
+= arg max 
+
+> c∈{ 0,...,C }
+
+E
+
+
+
+M(c) | Bj , q 
+
+
+
+, (4) where c = 0 denotes the initial prediction. Including the initial sequence prevents forced replacement when no repair is better. The final prediction is updated by 
+
+cMt =
+
+(
+
+M (c∗  
+
+> j)
+> t
+
+, t ∈ Bj and E(M(c∗ 
+
+> j)
+
+) > E(M(0) ) + δ, M (0)  
+
+> t
+
+, otherwise ,
+
+(5) where δ is the minimum accepted gain. Only verified in-tervals are replaced, preserving high-confidence predictions elsewhere. The updated sequence is reassessed, and the loop stops when no reliable improvement remains, the quality requirement is met, or the maximum number of rounds is reached. 
+
+## 3 Experiments 
+
+3.1 Experimental Setup 
+
+Datasets and metrics. We evaluate ReflexTrack on the new Ref-VPS benchmark and ReasonVOS. For Ref-VPS, we report the overall quality score Q, where a higher value indicates better performance. For ReasonVOS, following Refer-Agent [ 12 ], we report the standard J &F score, region similarity J , and contour accuracy F.
+
+Implementation details. All experiments are conducted on a single NVIDIA RTX 3090 GPU. The complete pipeline is training-free: Initial Target Grounding, the MLLM-based evaluation and repair agents, and SAM 3 remain frozen throughout inference. For the Ref-VPS evaluation, we re-port variants using Qwen3.7-Plus and GPT-5.5 as the reflec-tion and repair-verification model. For ReasonVOS, we use Qwen-3.5 9B. 
+
+3.2 Main Results 
+
+Results on Ref-VPS. Table 1 compares ReflexTrack with representative RVS baselines on the new Ref-VPS bench-mark. All methods are evaluated using the same overall quality metric Q. The Qwen3.7-Plus variant of ReflexTrack obtains Q = 64 .7, while replacing the reflection model with GPT-5.5 further improves the score to 69 .7. These results show that the proposed feedback-driven pipeline substan-tially improves over existing approaches and can directly benefit from stronger MLLM reasoning. 4Table 1. Comparison on the new Ref-VPS benchmark. All methods are evaluated by the overall quality score Q. The best result is highlighted in bold. 
+
+Method Q ↑ 
+
+MUTR [7] 25.4 UNINEXT [15] 28.7 VD-IT [16] 37.9 GLUS [8] 34.6 REM (MS-1.4B) [17] 49.0 REM (Wan-14B) [17] 50.0 ReflexTrack (Qwen3.7-Plus) 64.7 ReflexTrack (GPT-5.5) 69.7 
+
+Table 2. Comparison on ReasonVOS. The best result in each column is highlighted in bold. 
+
+Method J &F ↑ J ↑ F ↑ 
+
+VideoLISA [18] 47.5 45.1 49.9 GLUS [8] 49.9 47.5 52.4 RGA3 [19] 53.6 51.3 56.0 CoT-RVS (GPT-4o) [11] 65.5 62.4 68.7 Refer-Agent [12] 69.8 67.0 72.7 
+
+ReflexTrack (Qwen-3.5 9B) 67.2 70.1 64.2 
+
+Results on ReasonVOS. Table 2 compares ReflexTrack with supervised and zero-shot methods using the results sum-marized by Refer-Agent [ 12 ]. ReflexTrack with Qwen-3.5 9B achieves 67 .2 J &F, including 70 .1 J and 64 .2 F. The strong region-similarity score indicates that mask-guided spatial refinement improves target coverage and region accu-racy on reasoning-intensive queries. 
+
+3.3 Ablation Study 
+
+Table 3 isolates the contribution of the two feedback stages and the MLLM used for reflection. The base pipeline ob-tains Q = 54 .2. Adding Grounding Refinement increases the score to 60 .6, an absolute gain of 6.4 points, demon-strating that correcting the initial spatial prompts improves the quality of subsequent mask generation and propagation. Adding Video-level Mask Reflection further raises the score to 64 .7. This gain confirms that spatial refinement and tem-poral reflection address complementary error sources: the former improves initialization, whereas the latter detects unreliable temporal intervals and selectively replaces them with verified repair candidates. Replacing Qwen3.7-Plus with GPT-5.5 for reflection and repair verification increases Q from 64 .7 to 69 .7. Overall, the complete configuration improves over the base pipeline by 15 .5 points, corresponding to a relative gain of approx-imately 28 .6% . The result also shows that ReflexTrack Referring text ：the aurora      
+
+> Referring tex t：the lightning striking the mountain
+> Refer -Agent Ours
+> Refer -Agent Ours
+> Referring text ：the light reflected in the water
+> Ours Refer -Agent
+
+Figure 3. Qualitative comparison with Refer-Agent on Ref-VPS. Each row corresponds to one video, with the first three columns showing Refer-Agent and the last three columns showing Reflex-Track. The examples contain dynamic, ambiguous, and strongly deformable visual concepts. Table 3. Ablation study of the feedback components. GR denotes Grounding Refinement. 
+
+Method Q ↑ 
+
+Base 54.2 Base + GR (Qwen3.7-Plus) 60.6 Base + GR + Mask Reflection (Qwen3.7-Plus) 64.7 Base + GR + Mask Reflection (GPT-5.5) 69.7 
+
+can directly exploit stronger MLLM reasoning without task-specific retraining. 
+
+3.4 Qualitative Results 
+
+Comparison with Refer-Agent. Figure 3 compares Refer-Agent with ReflexTrack on representative Ref-VPS se-quences involving aurora, volcanic lightning, and reflected light on water. These examples contain highly deformable and non-object regions whose spatial extent changes sub-stantially over time. Refer-Agent can identify the relevant visual concept, but its masks may become over-expanded, fragmented, or temporally unstable. By refining the ini-tial prompts and repairing unreliable intervals, ReflexTrack produces masks that more consistently follow the referred dynamic regions across the sequence. 5the blue chemicals in the bowl the lightning striking the mountain the glass jar breaking into pieces the skin being pulled Figure 4. Examples of refined spatial prompts on selected keyframes. Red rectangles indicate refined bounding boxes; yellow and red markers indicate positive and negative point prompts, re-spectively. 
+
+Visualization of refined spatial prompts. Figure 4 visual-izes the keyframe prompts produced by Mask-guided Spatial Refinement. Red rectangles denote refined bounding boxes, while yellow and red points represent positive and negative prompts, respectively. Positive points are placed on the tar-get body or missing target regions to strengthen foreground evidence. Negative points are placed on background regions and nearby distractors to suppress false responses. These examples illustrate that the combined box-and-point prompts provide more precise spatial constraints than a single coarse box and therefore offer a more reliable initialization for SAM 3 propagation. 
+
+## 4 Conclusion 
+
+We introduced ReflexTrack, a training-free, feedback-driven agent for referring video object segmentation. ReflexTrack combines Mask-guided Spatial Refinement, which iteratively improves bounding-box and point prompts using keyframe-mask feedback, with Video-level Mask Reflection, which detects and selectively repairs unreliable temporal intervals. Experiments on Ref-VPS and ReasonVOS demonstrate that these spatial and temporal feedback mechanisms improve segmentation accuracy and robustness without task-specific training or parameter updates. 
+
+## References 
+
+[1] K. Gavrilyuk, A. Ghodrati, Z. Li, and C. G. M. Snoek, “Actor and action video segmentation from a sentence,” in Proceed-ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2018, pp. 5958–5966. [2] S. Seo, J.-Y. Lee, and B. Han, “URVOS: Unified referring video object segmentation network with a large-scale bench-mark,” in European Conference on Computer Vision , 2020, pp. 208–223. [3] H. Ding, C. Liu, S. He, X. Jiang, and C. C. Loy, “MeViS: A large-scale benchmark for video segmentation with motion expressions,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , 2023, pp. 2694–2703. [4] C. Yan, H. Wang, S. Yan, X. Jiang, Y. Li, G. Kang, W. Lu, X. Zhang, and J. Xie, “VISA: Reasoning video object segmen-tation via large language models,” in European Conference on Computer Vision , 2024, pp. 98–115. [5] A. Botach, E. Zheltonozhskii, and C. Baskin, “End-to-end referring video object segmentation with multimodal trans-formers,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2022, pp. 4985– 4995. [6] J. Wu, Y. Jiang, P. Sun, Z. Yuan, and P. Luo, “Language as queries for referring video object segmentation,” in Proceed-ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2022, pp. 4974–4984. [7] S. Yan, R. Zhang, Z. Guo, W. Chen, W. Zhang, H. Li, Y. Qiao, H. He, and P. Gao, “Referred by multi-modality: A unified temporal transformer for video object segmentation,” in Pro-ceedings of the AAAI Conference on Artificial Intelligence ,vol. 38, no. 6, 2024, pp. 6449–6457. [8] L. Lin, X. Yu, Z. Pang et al. , “GLUS: Global-local reasoning unified into a single large language model for video seg-mentation,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2025. [9] T. Liang, K. Q. Lin, C. Tan et al. , “ReferDINO: Referring video object segmentation with visual grounding foundations,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , 2025, pp. 20 009–20 019. [10] S. Huang, R. Ling, H. Li et al. , “Unleashing the temporal-spatial reasoning capacity of GPT for training-free audio and language referenced video object segmentation,” arXiv preprint arXiv:2408.15876 , 2024. [11] S.-H. Kao, Y.-W. Tai, and C.-K. Tang, “CoT-RVS: Zero-shot chain-of-thought reasoning segmentation for videos,” arXiv preprint arXiv:2505.18561 , 2025. [12] H. Jiang, T. Liang, W.-S. Zheng, and J.-F. Hu, “Refer-agent: A collaborative multi-agent system with reasoning and reflec-tion for referring video object segmentation,” arXiv preprint arXiv:2602.03595 , 2026. [13] N. Ravi, V. Gabeur, Y.-T. Hu et al. , “SAM 2: Segment any-thing in images and videos,” in International Conference on Learning Representations , 2025. [14] N. Carion, L. Gustafson, Y.-T. Hu et al. , “SAM 3: Segment anything with concepts,” arXiv preprint arXiv:2511.16719 ,2025. [15] B. Yan, Y. Jiang, J. Wu, D. Wang, P. Luo, Z. Yuan, and H. Lu, “Universal instance perception as object discovery and retrieval,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2023. [16] Z. Zhu, X. Feng, D. Chen, J. Yuan, C. Qiao, and G. Hua, “Exploring pre-trained text-to-video diffusion models for re-ferring video object segmentation,” in European Conference on Computer Vision , 2024. [17] A. Bagchi, Z. Bao, Y.-X. Wang, P. Tokmakov, and M. Hebert, “Refereverything: Towards segmenting everything we can speak of in videos,” in Proceedings of the IEEE/CVF Inter-national Conference on Computer Vision , 2025, pp. 23 221– 23 231. 
+
+6[18] Z. Bai, T. He, H. Mei, P. Wang, Z. Gao, J. Chen, L. Liu, Z. Zhang, and M. Z. Shou, “One token to seg them all: Lan-guage instructed reasoning segmentation in videos,” arXiv preprint arXiv:2409.19603 , 2024. [19] H. Wang, Q. Chen, C. Yan, J. Cai, X. Jiang, Y. Hu, W. Xie, and E. Gavves, “Object-centric video question answering with visual grounding and referring,” in Proceedings of the IEEE/CVF International Conference on Computer Vision ,2025, pp. 22 274–22 284. 
+
+7

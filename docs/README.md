@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-07-27</span>
+      <span class="dpr-home-dashboard-kicker">2026-07-28</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 9 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 14 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>2</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>7</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>8</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-07-27 22:07:07 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-07-28 22:23:46 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,7 +62,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日更新9篇论文，精读2篇、速读7篇，重点推荐立体匹配与全景分割方向。精读聚焦STEREOFLOW（9.0分）的渐进立体匹配新范式，以及多视图全景分割模型扩展（8.0分）。建议优先跟踪扩散模型在立体匹配中的应用，或探索大模型在多视图分割中的潜力。</p>
+<p>今日精选14篇，聚焦神经外科手术场景重建与超快深度感知两大突破。最值得关注的是单目显微图像3D表面重建（9.0分）和事件相机立体视觉（9.0分），前者提升手术精度，后者突破速度极限。建议优先精读这两篇高分论文，其方法可迁移至其他实时3D重建场景。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -71,12 +71,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">2 篇</strong>
+    <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="STEREOFLOW: Progressive Stereo Matching with StereoDiT and Transition Flow Matching">STEREOFLOW: Progressive Stereo Matching with StereoDiT and Transition Flow Matching</span></li><li><span class="dpr-home-dashboard-paper-title" title="Extending a Large View Synthesis Model for Multi-view Panoptic Segmentation">Extending a Large View Synthesis Model for Multi-view Panoptic Segmentation</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Metric Surface Reconstruction of Neurosurgical Scenes from Monocular Operating Microscope Images and Microscope Pose">Metric Surface Reconstruction of Neurosurgical Scenes from Monocular Operating Microscope Images and Microscope Pose</span></li><li><span class="dpr-home-dashboard-paper-title" title="Towards Ultrafast Depth Sensing Via Active Event-based Stereo Vision">Towards Ultrafast Depth Sensing Via Active Event-based Stereo Vision</span></li><li><span class="dpr-home-dashboard-paper-title" title="A Unified Stereo Geometry Estimation Framework for Disparity and Surface Normal">A Unified Stereo Geometry Estimation Framework for Disparity and Surface Normal</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">seg <strong>1</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">mono-depth <strong>3</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>2</strong></span><span class="dpr-home-dashboard-tag">neural-bokeh <strong>1</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -84,12 +84,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">7 篇</strong>
+    <strong class="dpr-home-dashboard-count">8 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Induce to Empower: Improving Lightweight Baselines via Foundation Model Induction for Generalized Polyp Segmentation">Induce to Empower: Improving Lightweight Baselines via Foundation Model Induction for Generalized Polyp Segmentation</span></li><li><span class="dpr-home-dashboard-paper-title" title="SWITi: Quantifying and Reducing Tiling Artifacts with Sliding Window Inner Tiling">SWITi: Quantifying and Reducing Tiling Artifacts with Sliding Window Inner Tiling</span></li><li><span class="dpr-home-dashboard-paper-title" title="Finding Fast Filters">Finding Fast Filters</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="STEREOFLOW: Progressive Stereo Matching with StereoDiT and Transition Flow Matching">STEREOFLOW: Progressive Stereo Matching with StereoDiT and Transition Flow Matching</span></li><li><span class="dpr-home-dashboard-paper-title" title="Finding Fast Filters">Finding Fast Filters</span></li><li><span class="dpr-home-dashboard-paper-title" title="Real-Time Semantic Segmentation with Optimized RetinaNet Architectures for Embedded Automotive Systems">Real-Time Semantic Segmentation with Optimized RetinaNet Architectures for Embedded Automotive Systems</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">seg <strong>2</strong></span><span class="dpr-home-dashboard-tag">cv-render <strong>1</strong></span><span class="dpr-home-dashboard-tag">depth-refine <strong>1</strong></span><span class="dpr-home-dashboard-tag">lite-vision <strong>1</strong></span><span class="dpr-home-dashboard-tag">mono-depth <strong>1</strong></span><span class="dpr-home-dashboard-tag">vfm <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">mono-depth <strong>3</strong></span><span class="dpr-home-dashboard-tag">seg <strong>2</strong></span><span class="dpr-home-dashboard-tag">cv-render <strong>1</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>1</strong></span><span class="dpr-home-dashboard-tag">vfm <strong>1</strong></span></div>
 </section>
 </div>
 
