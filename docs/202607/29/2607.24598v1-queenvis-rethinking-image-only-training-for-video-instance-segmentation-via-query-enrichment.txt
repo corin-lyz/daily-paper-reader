@@ -1,0 +1,404 @@
+Title: QueenVIS: Rethinking Image-Only Training for Video Instance Segmentation via Query Enrichment
+
+URL Source: https://arxiv.org/pdf/2607.24598v1
+
+Published Time: Tue, 28 Jul 2026 02:12:59 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+# QueenVIS: Rethinking Image-Only Training for Video Instance Segmentation via Query Enrichment 
+
+## Arian Kheirandish 1 Fardin Ayar 1 Ehsan Javanmardi 2 Manabu Tsukada 2
+
+## Mahdi Javanmardi 1∗
+
+> 1
+
+## Amirkabir University of Technology (AUT), Tehran, Iran 
+
+> 2
+
+## The University of Tokyo, Tokyo, Japan 
+
+> ∗
+
+mjavan@aut.ac.ir 
+
+# Abstract 
+
+Video instance segmentation (VIS) requires models to detect, segment, and track object identities across frames, and most methods enforce temporal consistency through video-level supervision. Image-only training approaches, with MinVIS as one prominent example, have challenged this assumption, reaching competitive VIS without video training by treating frames as inde-pendent images and associating instances only at infer-ence. The field has nonetheless moved toward ever more elaborate video-trained trackers, which depend on costly identity-consistent annotations, leaving the image-only direction under-explored. A diagnostic analysis iden-tifies object query quality as the bottleneck: queries trained only to localize objects within a frame drift apart across frames and destabilize association. QueenVIS introduces a query-centric framework for strengthening image-trained VIS. During single-frame training, we en-rich Mask2Former queries with two auxiliary heads: a feature-prediction loss that aligns each query with the pooled backbone descriptor of its instance, and a center-prediction loss that injects spatial structure. Both heads are discarded at inference, adding zero parameters, and temporal identity is maintained by a training-free query-propagation and memory-bank scheme. On YouTube-VIS and OVIS with a ResNet-50 backbone, QueenVIS improves over MinVIS, up to +6.7 AP on YouTube-VIS, +4.8 AP on OVIS, and +10.3 AP on the long-sequence YouTube-VIS split. QueenVIS achieves 50.9 AP on YouTube-VIS and remains competitive with re-cent video-supervised state-of-the-art, without process-ing a single video clip during training. Our findings suggest that strengthening the discriminative power and temporal stability of object queries is an important, un-derexplored axis for VIS. Code and models: https://github.com/ ArianKheir/QueenVIS Queen VIS  MinVIS 
+
+Figure 1: t-SNE visualization of object queries on the OVIS dataset. Each colored point represents a query for a ground-truth identity, matched across QueenVIS (left) and MinVIS (right). Red dashed ovals explicitly de-note instances where QueenVIS successfully maintains tight clusters compared to the widely scattered base-line. While MinVIS suffers from severe feature drift that destabilizes association, QueenVIS embeds both spatial and appearance priors to keep instance queries highly cohesive across frames. 
+
+# 1 Introduction 
+
+Video instance segmentation (VIS) extends image in-stance segmentation to the temporal domain, where the per-frame masks of each object must additionally be linked into a single identity that persists throughout a video. Its main difficulty is keeping these identities con-sistent despite large appearance changes, heavy occlu-sion, camera motion, and object deformation. VIS is also a building block for many applications, such as au-tonomous driving, robotic manipulation, and long-term video understanding. The common approach to these challenges is explicit temporal modeling. Building on the transformer query formulation of DETR [1] and Mask2Former [2], meth-ods such as SeqFormer [3], IDOL [4], and VISAGE [5] train on multi-frame clips with identity losses, tempo-ral attention, and dedicated tracking modules. These methods reach strong temporal accuracy, but at a cost. 1arXiv:2607.24598v1 [cs.CV] 27 Jul 2026 Video-level training needs temporally linked, identity-consistent annotations that are far costlier to collect than independent image masks, and it raises training cost be-cause the model must process several frames at once rather than one. This burden is heaviest for offline meth-ods, which run on long clips or whole sequences and therefore demand large memory and compute. Together, these requirements limit scalability. MinVIS [6] observed that queries trained only to dis-criminate instances within a frame are already tempo-rally consistent enough to be tracked by bipartite match-ing alone, with no video-level supervision. This consis-tency, however, emerges as a byproduct rather than an objective: queries encode only what intra-frame sepa-ration demands, which proves brittle under the appear-ance change and occlusion that characterize real video. Perhaps for this reason, most subsequent work has re-treated to the video-supervised regime: GenVIS [7], TCOVIS [8], and DVIS [9] layer increasingly elabo-rate temporal modeling on multi-frame training, while VISAGE [5] and CAVIS [10] enrich instance represen-tations with appearance and context under the same su-pervision. Both treat video as the source of the miss-ing signal. We argue instead that much of this signal is already latent in per-frame features and can be injected into the object query at training time, with no video clips required. With only per-frame classification and mask losses, queries learn to localize but not to re-identify, so the embeddings of a given instance diverge across frames, as Figure 1 illustrates for MinVIS. Building on this observation, we propose QueenVIS (QUEry ENrichment), a framework that enriches ob-ject queries with appearance and spatial cues under image-only supervision. Much of the appearance cue that video-supervised methods extract through temporal modules is already present in the per-frame backbone features, and need not be learned from video. We re-cover it with a lightweight MLP head that, during train-ing only, regresses each query toward the pooled back-bone descriptor of its matched instance, transferring this appearance signal into the query. Appearance alone, however, cannot disambiguate visually similar instances that lie in different parts of the frame, a common source of long-range identity switches. We therefore also pre-dict each instance’s center with a single linear layer, in-jecting a spatial cue that keeps such instances separable, an idea already validated for video panoptic segmenta-tion [11]. Both heads are discarded at inference and add no parameters. To associate the resulting queries over time without a learned tracker, we adopt a fully training-free scheme: high-confidence content queries from pre-ceding frames are blended into the current frame as a warm start, and an off-the-shelf memory bank [5] sup-ports bipartite matching over recent frames. Our core contributions are summarized as follows: • We show that image-only training can be far more competitive than commonly assumed: enriching ob-ject queries with dense appearance and spatial priors during image-only training closes much of the gap to video-supervised models. • We introduce two complementary training-only ob-jectives, feature prediction and center prediction, that adapt Mask2Former queries for cross-frame as-sociation without any video-clip supervision. Both heads are discarded after training, so QueenVIS adds zero parameters and matches the MinVIS in-ference cost (identical GFLOPs), sidestepping the heavy compute and identity-consistent annotation pipelines that video-supervised trackers require. • We propose a fully training-free, confidence-guided query-propagation mechanism for cross-frame as-sociation, and combine it with a memory bank [5] to improve identity consistency under severe occlu-sion, all without any tracking parameters or video supervision. • With a ResNet-50 backbone, QueenVIS improves over MinVIS across YouTube-VIS 2019/2021 and OVIS without any video clips, matching or sur-passing several video-supervised methods while nar-rowing the gap on the heavily occluded OVIS, and the margin grows largest on the long-sequence YouTube-VIS 2022 split. • Using the model-agnostic oracle framework of Hamdi et al. [12], we attribute this gain to asso-ciation, shrinking the tracking-recall gap to essen-tially the oracle ceiling, tighter than even video-supervised trackers achieve. These results suggest the image-only regime is far from exhausted: stronger query optimization alone closes much of the gap to video-supervised methods while avoiding their costly multi-frame annotation and temporal training, offering a practical path to compet-itive VIS when labeled video is scarce or compute is limited. 
+
+# 2 Related Work 
+
+## 2.1 Query-Based Object Detection and Segmentation 
+
+Our method builds on the query-based segmentation paradigm. DETR [1] reformulated object detection as direct set prediction, using bipartite matching and a 2fixed set of transformer object queries to remove non-maximum suppression and anchor generation. Mask-Former [13] extended this formulation to segmentation by having queries jointly predict class labels and mask embeddings, and Mask2Former [2] added masked atten-tion, which confines cross-attention to predicted mask regions and set the standard for image-level panoptic and instance segmentation. In all of these methods, each query is optimized only to separate instances within a single image. QueenVIS keeps the Mask2Former ar-chitecture unchanged but reshapes how its queries are trained, so that they encode each object’s appearance and spatial priors rather than representations optimized only for within-frame instance separation. 
+
+## 2.2 Video Instance Segmentation 
+
+Most VIS methods reach temporal consistency through video-level supervision. Early tracking-by-detection pipelines [14, 15] have largely been replaced by end-to-end transformer frameworks. Offline methods such as SeqFormer [3] process an entire clip at once through video-level object queries, whereas online methods such as GenVIS [7], TCOVIS [8], DVIS [9], and VideoMT [16] propagate instance queries frame by frame. Either way, both paradigms require multi-frame annotations with consistent identities across the clip. MinVIS [6] is the main exception and the line closest to ours: it trains on frames as independent images and associates instances only at inference, showing that a strong image model is already a competitive VIS base-line without video supervision. Its queries, however, are optimized by generic classification and mask losses and drift apart under occlusion and appearance change, which destabilizes association. QueenVIS keeps this image-only regime but closes much of the gap by en-riching queries with appearance and spatial objectives during single-frame training. 
+
+## 2.3 Cross-Frame Association and Track-ing 
+
+Beyond the modeling paradigm, VIS methods differ in how they associate instances across frames, and this association is almost always a learned module. On-line trackers match per-frame predictions through con-trastive embeddings, as in IDOL [4], or propagate dedi-cated track queries [17, 18]. A common ingredient is an explicit memory bank of instance features that resolves long occlusions, used by CTVIS [19], VISOLO [20], and VISAGE [5]. In CTVIS and VISOLO the mem-ory is written and read by video-trained modules; VIS-AGE instead employs a non-parametric, training-free memory bank, though it stores both object queries and dedicated appearance features produced by a video-supervised network. QueenVIS keeps association en-tirely training-free and feeds it from an image-only model: confidence-guided blending warm-starts the cur-rent frame with high-confidence queries from previous frames, paired with the non-parametric memory bank of VISAGE [5] repurposed to store our object queries di-rectly for bipartite matching, injecting temporal stability at inference without any tracking parameters or video supervision. 
+
+# 3 Method 
+
+## 3.1 Overview 
+
+QueenVIS (Figure 2) trains a Mask2Former-based ar-chitecture under strictly single-frame supervision. Dur-ing training, two auxiliary heads enrich each query: a feature-prediction head that distills the backbone’s per-instance appearance descriptor into the query by re-gressing the query toward that descriptor (Section 3.2), and a center-prediction head that injects a spatial prior (Section 3.3). Both heads are discarded after-ward, adding no inference cost. At inference, tempo-ral identity is maintained without any learned tracker through confidence-guided query propagation and a non-parametric memory bank (Section 3.5). 
+
+## 3.2 Appearance-Aware Query Learning 
+
+As argued in Section 1, the appearance signal that video-supervised methods learn from clips is already latent in per-frame features; here we make it explicit and inject it into the object query under image-only supervision. Standard Mask2Former queries are optimized only by classification and mask losses. The backbone, however, already computes a discriminative per-instance appear-ance signal, yet nothing in the standard objective re-quires the object query to retain it. We therefore treat the backbone’s pooled instance descriptor as a fixed teacher target and distill it into the corresponding query: an aux-iliary head projects each query into the descriptor space, and an L1 loss forces the query to reproduce the back-bone signal it would otherwise drop. Given backbone feature maps F(l) ∈ RCl×Hl×Wl and a ground-truth object mask Mi, we extract object-level appearance descriptors via masked average pooling: 
+
+f (l) 
+
+> i
+
+=
+
+P 
+
+> u,v
+
+˜M(l) 
+
+> i
+
+(u, v ) ⊙ F(l)(: , u, v )
+
+P 
+
+> u,v
+
+˜M(l) 
+
+> i
+
+(u, v ) , (1) where ˜M(l) 
+
+> i
+
+is the resized mask. The descriptors from the 4th and 5th backbone stages are concatenated to form the final target representation fi = [ f (4)  
+
+> i
+
+, f (5)  
+
+> i
+
+].3Input Frame T                     
+
+> Backbone Pixel Decoder Transformer Decoder
+> Qinit
+> Output Queries
+> Class & Mask Heads
+> Feature Head
+> Center Head
+> Lfeat Lcenter
+> Backbone Features
+> Masked Avg. Pooling
+> GT Mask Mi
+> Target Descriptor fi
+> ⊥stop-grad
+> ˆfiˆci
+> QT−1
+> Confidence Filter (s > τ )
+> Blend
+> (α)
+> Qinit
+> MinVIS Architecture
+> Input Frame T
+> Output QT
+> Memory Bank (K= 3)
+> T−1
+> T−2
+> T−3
+> Hungarian Matching & Association
+> QT
+> input
+> (a) Image-Only Training Pipeline (b) Temporal Inference Pipeline (Training-Free)
+> Proposed Auxiliary Branches (training only)
+
+Figure 2: Overview of the proposed appearance-aware query learning framework. To preserve the efficiency of image-only optimization, the architecture is divided into two distinct phases. (a) Image-Only Training Pipeline: 
+
+We introduce auxiliary feature and center prediction branches (active only during training). Ground-truth features are extracted by pooling backbone feature maps using target masks, supervising the transformer queries via an ℓ1
+
+loss to enforce dense appearance awareness. (b) Temporal Inference Pipeline: During inference, the auxiliary branches are discarded. Temporal identity is maintained entirely without video-level training using a training-free query propagation mechanism, which blends high-confidence queries from the previous frame ( T − 1) with the current frame alongside a lightweight memory bank ( K = 3 ) for robust historical matching. An auxiliary MLP head maps each object query to a prediction of its corresponding descriptor. Be-cause object queries are unordered, the regression is defined on matched query–instance pairs. Let σ de-note Mask2Former’s Hungarian assignment, mapping ground-truth instance i to the predicted query slot σ(i).We ℓ2-normalize both vectors and apply an ℓ1 regression loss: 
+
+Lfeat = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+ˆfσ(i)
+
+∥ˆfσ(i)∥2
+
+− fi
+
+∥fi∥2 1
+
+(2) As supported by our diagnostic analysis (Section 4.4, Table 4), enriching the object queries helps relieve the temporal-association bottleneck: QueenVIS cuts the T-Oracle tracking gap from 12 .5 (MinVIS) to 7.5 AP, mak-ing cross-frame association more stable and discrimina-tive. 
+
+## 3.3 Center Prediction 
+
+A prevalent failure mode in online VIS is the long-range identity switch, where after heavy occlusion a track jumps to a different instance in a distant region of the frame. Appearance cannot resolve these cases when the competing instances share a category and look alike, as in crowded OVIS scenes where location is the only separating cue; center prediction therefore complements the feature objective of Section 3.2 along an orthogonal, spatial axis. Standard Mask2Former queries carry some latent position sensitivity [5], which we make explicit through direct supervision; since spatial coordinates are simple to regress, a single linear projection, discarded at inference with no added parameters, suffices and yields a consistent +1 .3 AP on YouTube-VIS 2021 (Table 2). Let c∗ 
+
+> i
+
+∈ [0 , 1] 2 denote the normalized center coordi-nates of the bounding box for the ground-truth mask 
+
+Mi. We attach a linear projection layer to each ob-ject query to predict its normalized spatial coordinates 
+
+ˆc = Linear (Q). Utilizing the same Hungarian assign-ment σ, the center prediction objective is supervised via an ℓ1 loss: 
+
+Lcenter = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+ˆcσ(i) − c∗  
+
+> i1
+
+(3) Regressing each query to its absolute center gives the bi-partite matcher an explicit geometric prior that stabilizes association and reduces identity switches across distant spatial locations. 
+
+## 3.4 Training Objective 
+
+The two auxiliary objectives are optimized jointly with the standard baseline losses under single-frame supervi-sion. The overall objective adds the feature- and center-prediction terms to the MinVIS losses ( λfeat = 0.2,
+
+λcenter = 0 .05 ): 
+
+L = LMinVIS + λfeat Lfeat + λcenter Lcenter (4) where LMinVIS = λce Lce + λdice Ldice + λmask Lmask de-notes the baseline objective ( λce = 2 .0, λdice = λmask =5.0). Beyond serving as a loss, the feature-prediction distance also augments the bipartite matching cost: ex-tending the Mask2Former matching cost [2], the Hun-garian algorithm that assigns ground-truth instances to query slots within each frame minimizes the classifica-tion and mask costs together with the ℓ1 appearance dis-tance, so that appearance agreement guides the assign-ment σ itself rather than only its subsequent supervision. 4Both auxiliary heads are removed after training, so the segmentation network carries no additional parameters over MinVIS; temporal identity is instead maintained by the training-free association scheme described next. 
+
+## 3.5 Training-Free Temporal Association 
+
+To inject temporal consistency at inference without a learned tracker, we blend queries across frames un-der confidence guidance. Object queries decouple into learnable content queries Ci and static positional queries Pi; to preserve the native spatial prior, we prop-agate only the content embeddings and leave Pi un-changed. Let Cti, init be the default initialization of con-tent query i at frame t. If its previous-frame score st−1
+
+> i
+
+exceeds a threshold τ , we blend the optimized embed-ding Ct−1 
+
+> i
+
+into the same query at the current frame: 
+
+Cti =
+
+(
+
+αCt−1 
+
+> i
+
++ (1 − α)Cti, init if st−1 
+
+> i
+
+> τ 
+
+Cti, init otherwise (5) The blending factor α acts as a regularizer: it in-jects a temporal “warm start” from the previous frame while keeping the input within the decoder’s expected manifold, mitigating train–test distribution shift. Low-confidence queries, e.g. under severe occlusion, fall back to the learned prior Cti, init , and the decoder corrects any remaining drift. Propagation relies on a single previous frame, so a momentary drop in quality, e.g. a brief occlusion, can destabilize association. To make matching more robust, we keep a lightweight, non-parametric memory bank that aggregates each instance’s embeddings over the most recent K = 3 frames into one temporal embedding by confidence-aware temporal weighting, adapted from VISAGE [5]. As in query-based VIS, identities are then assigned by Hungarian matching between the current-frame queries and these stored embeddings using em-bedding similarity; matched queries inherit the existing identity, and unmatched high-confidence queries start new tracks. 
+
+# 4 Experiments 
+
+## 4.1 Datasets & Implementation Details 
+
+We evaluate QueenVIS on four standard VIS bench-marks: YouTube-VIS 2019 and YouTube-VIS 2021 [14, 26], the YouTube-VIS 2022 long split [27], whose sub-stantially longer sequences stress long-horizon tempo-ral association, and the more challenging, heavily oc-cluded OVIS [28]. We report the standard video Av-erage Precision (AP) and Average Recall (AR) met-rics. All experiments use a ResNet-50 [29] backbone. We follow the VISAGE [5] training recipe unchanged except that we remove its video-level supervision and train on single frames only, adding our two auxiliary objectives so that any gain is attributable to query en-richment rather than to retuning the baseline. Mod-els are trained on a single NVIDIA H200 GPU with 
+
+num frames=1 (a single frame per training step): 75k iterations for OVIS and YouTube-VIS 2021 and 30k for YouTube-VIS 2019. YouTube-VIS 2022 shares its training data with YouTube-VIS 2021, so we evaluate the YouTube-VIS 2021 model directly on the 2022 long 
+
+validation set without any additional training. At infer-ence, the training-free association uses a memory bank of size K = 3 and confidence-guided query propagation with blending factor α = 0 .25 and confidence threshold 
+
+τ = 0 .8.
+
+## 4.2 Main Results 
+
+Table 1 compares QueenVIS against state-of-the-art VIS methods on OVIS, YouTube-VIS 2019, and YouTube-VIS 2021. Across all three benchmarks, enriching ob-ject queries during single-frame training consistently improves the image-only baseline. QueenVIS raises MinVIS from 44.2 to 50.9 AP on YouTube-VIS 2021 (+6.7 AP) and from 47.4 to 51.8 AP on YouTube-VIS 2019 (+4.4 AP). The improvement is also substantial on OVIS, where occlusion is most severe and appearance-and spatial-aware queries matter most: QueenVIS im-proves from 25.0 to 29.8 AP (+4.8 AP), a nearly +20% relative gain over the baseline. None of these gains re-quire video clips, temporal gradients, or any added in-ference parameters. Despite relying solely on image-level supervision, QueenVIS substantially narrows the gap to recent video-supervised methods. On YouTube-VIS 2021 its 50.9 AP surpasses the online video-supervised CAVIS [10] (50.5 AP) and trails the strongest video-supervised method, VISAGE [5] (51.6 AP), by only 0.7 AP, bringing image-only training to within run-to-run variation of video su-pervision on this benchmark. On YouTube-VIS 2019, QueenVIS (51.8 AP) surpasses IDOL [4] and Gen-VIS [7] while trailing the strongest video-supervised methods by a modest margin. The picture is different on OVIS: QueenVIS (29.8 AP) improves over IDOL [4] (28.2 AP), but a substantial gap remains to most video-supervised methods in Table 1, including NOVIS, TCO-VIS, CTVIS, VISAGE, and CAVIS. OVIS represents the most extreme occlusion regime, where the limit of image-only training is most visible; we argue this gap is a target for better-designed auxiliary objectives rather than an inherent ceiling. Query enrichment already re-covers most of the gain previously credited to video su-pervision on the standard benchmarks, and the remain-5Table 1: Comparison with state-of-the-art VIS methods. Metrics denote Average Precision (AP) at various IoU thresh-olds and Average Recall (AR). Methods are grouped by their reliance on explicit video supervision and by the on-line/offline inference setting. Bold numbers denote the best result among image-only methods. Method Setting OVIS YouTube-VIS 2019 YouTube-VIS 2021 AP AP 50 AP 75 AR 1 AR 10 AP AP 50 AP 75 AR 1 AR 10 AP AP 50 AP 75 AR 1 AR 10 
+
+ResNet-50 Backbone 
+
+Offline Methods (Video Supervision) 
+
+IFC [21] Offline 13.1 27.8 11.6 9.4 23.9 41.2 65.1 44.6 42.3 49.6 35.2 55.9 37.7 32.6 42.9 SeqFormer [3] Offline 15.1 31.9 13.8 10.4 27.1 47.4 69.8 51.8 45.5 54.8 40.5 62.4 43.7 36.1 48.1 Mask2Former-VIS [2] Offline 17.3 37.3 15.1 10.5 23.5 46.4 68.0 50.0 – – 40.6 60.9 41.8 – –VITA [22] Offline 19.6 41.2 17.4 11.7 26.0 49.8 72.6 54.5 49.4 61.0 45.7 67.4 49.5 40.9 53.6 MDQE [23] Offline 29.2 55.2 27.1 14.5 34.2 47.8 – – – – 44.5 67.1 48.7 37.9 49.8 NOVIS [17] Offline 30.8 54.4 31.0 15.2 35.3 52.8 75.7 56.9 50.3 60.6 47.2 69.4 50.0 41.3 54.4 RefineVIS [24] Offline 33.7 56.2 34.8 15.6 39.8 52.2 76.3 57.7 47.5 57.6 50.2 72.8 55.4 41.2 56.3 DVIS [9] Offline 33.8 60.4 33.5 15.3 39.5 52.6 76.5 58.2 47.4 60.4 47.4 71.0 51.6 39.9 55.2 GenVIS [7] Offline 34.5 59.4 35.0 16.6 38.3 51.3 72.0 57.8 49.5 60.0 46.3 67.0 50.2 40.6 53.2 
+
+Online Methods (Video Supervision) 
+
+MaskTrack R-CNN [14] Online 10.8 25.3 8.5 7.9 14.9 30.3 51.1 32.6 31.0 35.5 28.6 48.9 29.6 26.5 33.8 SipMask [25] Online 10.2 24.7 7.8 7.9 15.8 33.7 54.1 35.8 35.4 40.1 31.7 52.5 34.0 30.8 37.8 CrossVIS [15] Online 14.9 32.7 12.1 10.3 19.8 36.3 56.8 38.9 35.6 40.7 34.2 54.4 37.9 30.4 38.2 VISOLO [20] Online 15.3 31.0 13.8 11.1 21.7 38.6 56.3 43.7 35.7 42.5 36.9 54.7 40.2 30.6 40.9 IDOL [4] Online 28.2 51.0 28.0 14.5 38.6 49.5 74.0 52.9 47.7 58.7 43.9 68.0 49.6 38.0 50.9 DVIS [9] Online 30.2 55.0 30.5 14.5 37.3 51.2 73.8 57.1 47.2 59.3 46.4 68.4 49.6 39.7 53.5 TCOVIS [8] Online 35.3 60.7 36.6 15.7 39.5 52.3 73.5 57.6 49.8 60.2 49.5 71.2 53.8 41.3 55.9 CTVIS [19] Online 35.5 60.8 34.9 16.1 41.9 55.1 78.2 59.1 51.9 63.2 50.1 73.7 54.7 41.8 59.5 GenVIS [7] Online 35.8 60.8 36.2 16.3 39.6 50.0 71.5 54.6 49.5 59.7 47.1 67.5 51.5 41.6 54.7 VISAGE [5] Online 36.2 60.3 35.3 17.0 40.3 55.1 78.1 60.6 51.0 62.3 51.6 73.8 56.1 43.6 59.3 CAVIS [10] Online 37.6 63.4 38.2 16.5 43.5 55.7 78.3 61.7 51.5 63.3 50.5 74.1 54.9 42.6 58.5 
+
+Image-Only Training (No Video Supervision) 
+
+MinVIS [6] Online 25.0 45.5 24.0 13.9 29.7 47.4 69.0 52.1 45.7 55.7 44.2 66.0 48.1 39.2 51.7 
+
+QueenVIS Online 29.8 52.7 29.0 15.4 34.6 51.8 75.2 58.3 49.4 62.1 50.9 72.1 55.8 42.8 57.3 
+
+Table 2: Incremental ablation study on the YouTube-VIS 2021 validation set. QP: Query Propagation, MB: Memory Bank, FP: Feature Prediction loss, CP: Center Prediction loss. Method Configuration AP AP 50 AP 75 
+
+MinVIS [6] Official model 44.2 66.0 48.1 MinVIS Official + QP + MB 46.4 70.1 50.1 QueenVIS FP ( λfeat = 0 .20 ) + QP + MB 49.6 71.1 54.7 QueenVIS FP ( 0.20 ) + CP ( 0.05 ) + QP + MB 50.9 72.1 55.8 
+
+ing margin under dense occlusion motivates further re-search in this direction. 
+
+Long-video setting. We further evaluate on the YouTube-VIS 2022 long validation set, whose sequences are markedly longer than those in the 2019/2021 splits and therefore stress long-horizon tem-poral association, exactly the regime in which per-frame query drift accumulates most. Table 3 reports the com-parison against the MinVIS baseline under the same ResNet-50 backbone. QueenVIS improves AP from 
+
+23 .3 to 33 .6 (+10.3 AP ), a larger margin than on any of the shorter benchmarks, with consistent gains across all metrics (e.g. +14.7 AP 75 and +11.5 AR 1). This widen-ing gap on long videos indicates that appearance- and spatial-aware queries become increasingly valuable as Table 3: Comparison on the YouTube-VIS 2022 long 
+
+validation set (ResNet-50 backbone), whose long se-quences emphasize long-horizon association. Queen-VIS improves over the image-only MinVIS baseline without any video supervision. Method AP AP 50 AP 75 AR 1 AR 10 
+
+MinVIS [6] 23.3 47.9 19.3 20.2 28.0 
+
+QueenVIS 33.6 56.6 34.0 31.7 39.9 
+
+sequence length grows, supporting our claim that query quality, rather than video-level supervision, is the bind-ing constraint on temporal association. 6Queen VIS  MinVIS Figure 3: Qualitative comparison on the OVIS dataset. The rows correspond to the original input frames (top), MinVIS baseline predictions (middle), and our proposed QueenVIS predictions (bottom). Left: MinVIS exhibits mask frag-mentation and poor segmentation quality (orange dashed rectangles), which QueenVIS resolves to produce coherent, accurate masks (green dashed rectangles). Middle: During heavy occlusion, MinVIS suffers from a severe identity switch, confusing two different instances (yellow dashed rectangle). QueenVIS successfully maintains a consistent temporal track for the correct identity. Right: When a target (the person) disappears from the scene, MinVIS incor-rectly assigns the obsolete track to a sheep’s face (red dashed rectangle). By effectively enriching queries, QueenVIS accurately handles the disappearance and suppresses false positive assignments. 
+
+## 4.3 Qualitative Results 
+
+Figure 3 compares QueenVIS against MinVIS on OVIS sequences with heavy occlusion. When trajectories in-tersect, the baseline matches queries that lack discrim-inative appearance cues and frequently fails, producing identity switches or fragmented masks. QueenVIS in-stead preserves identities through the occlusion: by em-bedding dense appearance and spatial priors into the ob-ject queries during training, it re-identifies each target after it reappears, without any temporal video supervi-sion. As a side benefit, these same enriched queries also yield more complete, less fragmented masks. These cases illustrate the same failure mode that the diagnostic analysis below quantifies. 
+
+## 4.4 Diagnostic Bottleneck Analysis 
+
+A raw AP gain is ambiguous: it may stem from sharper masks or more accurate classification rather than from better tracking, so AP alone cannot tell us whether query enrichment actually relieves the association bottleneck of online VIS or merely improves these other factors. To attribute the gain to a specific error source, we evaluate QueenVIS with the model-agnostic oracle framework of Hamdi et al. [12]. The framework replaces one error source at a time with a ground-truth oracle: a Tracking Table 4: Diagnostic error gap analysis on YouTube-VIS 2021 using the framework of Hamdi et al. [12]. Lower values ( ∆) indicate a tighter performance gap to the re-spective optimized global oracles. VISAGE and CAVIS are video-supervised; QueenVIS attains the smallest (or tied-smallest) gaps despite image-only training. Method T-Oracle Gap ( ∆T O ) TC-Oracle Gap ( ∆T CO )AP AR 1 AP AR 1                
+
+> MinVIS [6] 12.5 7.9 20.0 11.4 VISAGE [5] 9.2 6.2 16.7 9.8 CAVIS [10] 8.7 4.2 14.2 8.5
+> QueenVIS 7.5 1.0 14.2 5.4
+
+Oracle (T-Oracle) isolates pure temporal-association er-ror, while a Tracking+Classification Oracle (TC-Oracle) additionally removes semantic-assignment error, leav-ing only mask-representation quality. The reported gap 
+
+∆ is the AP a model leaves on the table relative to the corresponding oracle, so a smaller ∆ means the model operates closer to its own upper bound. Table 4 reports both gaps for QueenVIS and MinVIS on the YouTube-VIS 2021 validation set. The two gaps reveal distinct behavior in tracking sta-bility and in classification robustness, which we exam-ine in turn. 7Tracking robustness. The T-Oracle gap measures er-ror attributable to association alone, so it serves as a di-rect proxy for identity consistency that overall AP hides. MinVIS leaves a gap of 12 .5 AP and 7.9 AR 1. Queen-VIS cuts the tracking gap to 7.5 AP and, most strikingly, the tracking-recall gap to 1.0 AR 1, essentially the oracle ceiling, so almost every instance it detects is also tracked correctly. This 7.5 AP tracking gap is even tighter than that of strong video-supervised trackers such as VIS-AGE ( 9.2 AP) [5] and CAVIS ( 8.7 AP) [10], despite QueenVIS never seeing a video clip: the embedded ap-pearance and spatial priors and inference-time history close most of the association gap once thought to require video-level temporal gradients. 
+
+Semantic and combined errors. Relaxing the classi-fication constraint with the TC-Oracle exposes the com-bined classification-and-matching headroom. Queen-VIS reduces this gap from 20 .0 AP (MinVIS) to 
+
+14 .2 AP. Subtracting the tracking gap isolates the classification-only component ( ∆T CO − ∆T O ): it is 
+
+7.5 AP for MinVIS and 6.7 AP for QueenVIS, es-sentially unchanged. Almost all of our improvement therefore comes from tracking, and the residual head-room is now split evenly between association and se-mantics rather than dominated by tracking; the diagnos-tic itself singles out the classification head as the next lever. Even so, this 14 .2 AP combined gap ranks among the tightest reported for recent online VIS systems by Hamdi et al. [12], matching video-supervised CAVIS (14 .2 AP) [10] and undercutting VISAGE ( 16 .7 AP) [5] even though QueenVIS trails it by only 0.7 AP in raw accuracy: QueenVIS reaches a comparable score while operating markedly closer to its own upper bound. 
+
+## 4.5 Ablation Studies 
+
+Table 2 isolates each component on YouTube-VIS 2021. Applied to the official MinVIS weights, training-free query propagation and the memory bank lift AP from 
+
+44 .2 to 46 .4 (+2.2) without any retraining. The larger improvement, however, comes from training rather than inference: making the queries appearance- and spatial-aware through feature and center prediction adds a fur-ther +4.5 AP, reaching 50 .9. This ordering supports our central claim that query representation, not the associ-ation heuristic, is the binding constraint in image-only VIS. We also considered a relational alternative to our per-query feature loss, distilling the pairwise similarity ge-ometry between queries rather than their absolute de-scriptors [30]. In our experiments this consistently de-graded performance; we report the full formulation and ablation in the supplementary material, along with a sen-sitivity analysis of the loss weights λfeat and λcenter .Table 5: Effect of target feature levels for appearance prediction on YouTube-VIS 2021 (ResNet-50). Con-catenating intermediate and deep features yields the best representation. Feature Level AP AP 50 AP 75 
+
+Res4 48.7 70.0 52.5 Res5 49.2 70.6 54.2 Res4 + Res5 (QueenVIS) 50.9 72.1 55.8 
+
+Table 6: Ablation on Query Propagation and Memory Bank hyperparameters on YouTube-VIS 2021 (ResNet-50). We evaluate memory bank size ( K), blending fac-tor ( α), and confidence threshold ( τ ). Default settings are highlighted in bold. 
+
+K α τ AP AP 50 AP 75 
+
+1 0.25 0.80 49.3 70.2 53.7 
+
+3 0.25 0.80 50.9 72.1 55.8 
+
+5 0.25 0.80 50.5 71.6 55.7 3 0.1 0.80 50.4 71.3 55.0 
+
+3 0.25 0.80 50.9 72.1 55.8 
+
+3 0.5 0.80 50.4 71.2 55.8 3 0.25 0.50 50.4 71.7 55.2 
+
+3 0.25 0.80 50.9 72.1 55.8 
+
+3 0.25 0.90 50.4 71.4 55.6 
+
+Which feature level to distill. The feature-prediction target can be drawn from different backbone stages, and this choice matters. Table 5 compares descriptors pooled from the intermediate stage (Res4), the deep-est stage (Res5), and their concatenation. Res5 carries strong semantics but coarse localization, while Res4 car-ries finer spatial detail but weaker semantics; concate-nating the two (Res4 + Res5) performs best, supplying the query with both the semantic and the spatial granu-larity that cross-frame association needs. 
+
+Inference hyperparameters. The association pipeline exposes three inference-time hyperparameters: the memory-bank size K, the query-propagation blend-ing factor α, and the propagation confidence thresh-old τ . Table 6 reports a sensitivity sweep over each on YouTube-VIS 2021, varying one at a time around the default (K=3 , α =0 .25 , τ =0 .80) . The variance across configurations is negligible: the gain stems from the presence of query propagation rather than its pre-cise tuning. We keep this default unchanged across all datasets, including the heavily occluded OVIS. 
+
+Inference efficiency. QueenVIS adds zero learn-able parameters at inference and maintains the exact same GFLOPs as the MinVIS baseline. The training-8free memory bank incurs only a marginal computational overhead, resulting in a throughput drop of less than 7 FPS. This trades a negligible, comfortably real-time cost for substantial accuracy gains without the massive scal-ing penalties of video-supervised trackers. 
+
+# 5 Conclusion 
+
+This work explores the capabilities of image-only train-ing for competitive VIS. By restructuring the representa-tion learning of transformer queries during single-frame optimization, we force the network to learn highly dis-criminative, instance-specific appearance and geometry priors. When paired with a training-free query propa-gation strategy, QueenVIS successfully maintains tem-poral identity without processing video clips. Con-sequently, our approach bridges the performance gap, rivaling state-of-the-art video-supervised architectures while significantly reducing training complexity. The benefit is largest on longer videos, where QueenVIS out-performs MinVIS by +10 .3 AP on the long-sequence YouTube-VIS 2022 split. On YouTube-VIS 2021, the model-agnostic oracle framework of Hamdi et al. [12] (T-Oracle and TC-Oracle) attributes QueenVIS’s gains almost entirely to improved association, narrowing the tracking-recall gap to within 1.0 AR 1 of the oracle ceil-ing, tighter than even video-supervised trackers. A per-formance gap nonetheless persists under the densest oc-clusions of OVIS, leaving a detailed diagnosis of these failure cases and targeted improvements to future work. Our results suggest that strong spatial and appearance modeling can substantially reduce the performance gap associated with the absence of explicit temporal super-vision. 
+
+# References 
+
+[1] N. Carion, F. Massa, G. Synnaeve, N. Usunier, A. Kir-illov, and S. Zagoruyko, “End-to-end object detection with transformers,” in European conference on computer vision , pp. 213–229, Springer, 2020. [2] B. Cheng, I. Misra, A. G. Schwing, A. Kirillov, and R. Girdhar, “Masked-attention mask transformer for universal image segmentation,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 1290–1299, 2022. [3] J. Wu, Y. Jiang, S. Bai, W. Zhang, and X. Bai, “Seq-former: Sequential transformer for video instance seg-mentation,” in European Conference on Computer Vi-sion , pp. 553–569, Springer, 2022. [4] J. Wu, Q. Liu, Y. Jiang, S. Bai, A. Yuille, and X. Bai, “In defense of online models for video instance segmen-tation,” in European Conference on Computer Vision ,pp. 588–605, Springer, 2022. [5] H. Kim, J. Kang, M. Heo, S. Hwang, S. W. Oh, and S. J. Kim, “Visage: Video instance segmentation with appearance-guided enhancement,” in European Confer-ence on Computer Vision , pp. 93–109, Springer, 2024. [6] D.-A. Huang, Z. Yu, and A. Anandkumar, “Minvis: A minimal video instance segmentation framework without video-based training,” Advances in Neural Information Processing Systems , vol. 35, pp. 31265–31277, 2022. [7] M. Heo, S. Hwang, J. Hyun, H. Kim, S. W. Oh, J.-Y. Lee, and S. J. Kim, “A generalized framework for video instance segmentation,” in Proceedings of the IEEE/CVF conference on computer vision and pattern recognition ,pp. 14623–14632, 2023. [8] J. Li, B. Yu, Y. Rao, J. Zhou, and J. Lu, “Tcovis: Tempo-rally consistent online video instance segmentation,” in 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 1097–1107, 2023. [9] T. Zhang, X. Tian, Y. Wu, S. Ji, X. Wang, Y. Zhang, and P. Wan, “Dvis: Decoupled video instance segmentation framework,” in Proceedings of the IEEE/CVF Interna-tional Conference on Computer Vision , pp. 1282–1291, 2023. [10] S. Lee, J. Seo, K. Han, M. Choi, and S. Im, “Cavis: Context-aware video instance segmentation,” in Pro-ceedings of the IEEE/CVF International Conference on Computer Vision , pp. 4507–4517, 2025. [11] F. Ayar, E. Javanmardi, M. Tsukada, M. Javanmardi, and M. Rahmati, “Lidar-camera fusion for video panoptic segmentation without video training,” in Proceedings of the 2024 International Conference on Intelligent Com-puting and Its Emerging Applications (ICEA) , pp. 1–7, 2024. [12] D. Hamdi, F. Ayar, and M. Javanmardi, “Mind the gap: Disentangling performance bottlenecks in video instance segmentation,” arXiv preprint arXiv:2606.07394 , 2026. [13] B. Cheng, A. G. Schwing, and A. Kirillov, “Per-pixel classification is not all you need for semantic segmen-tation,” in Advances in Neural Information Processing Systems , vol. 34, pp. 17864–17875, 2021. [14] L. Yang, Y. Fan, and N. Xu, “Video instance segmen-tation,” in Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pp. 5188–5197, 2019. [15] S. Yang, Y. Fang, X. Wang, Y. Li, C. Fang, Y. Shan, B. Feng, and W. Liu, “Crossover learning for fast on-line video instance segmentation,” in Proceedings of the IEEE/CVF International Conference on Computer Vi-sion (ICCV) , pp. 8043–8052, October 2021. [16] N. Norouzi, I. E. Zulfikar, N. Cavagnero, T. Kerssies, B. Leibe, G. Dubbelman, and D. de Geus, “VidEoMT: Your ViT is secretly also a video segmentation model,” in 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 35177– 35186, 2026. 
+
+9[17] T. Meinhardt, M. Feiszli, Y. Fan, L. Leal-Taix´ e, and R. Ranjan, “NOVIS: A case for end-to-end near-online video instance segmentation,” arXiv preprint arXiv:2308.15266 , 2023. [18] J. Wu, S. Yarram, H. Liang, T. Lan, J. Yuan, J. Eledath, and G. Medioni, “Efficient video instance segmentation via tracklet query and proposal,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 959–968, 2022. [19] K. Ying, Q. Zhong, W. Mao, Z. Wang, H. Chen, L. Y. Wu, Y. Liu, C. Fan, Y. Zhuge, and C. Shen, “Ctvis: Con-sistent training for online video instance segmentation,” in Proceedings of the IEEE/CVF International Confer-ence on Computer Vision , pp. 899–908, 2023. [20] S. H. Han, S. Hwang, S. W. Oh, Y. Park, H. Kim, M.-J. Kim, and S. J. Kim, “Visolo: Grid-based space-time aggregation for efficient online video instance segmen-tation,” in proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 2896–2905, 2022. [21] S. Hwang, M. Heo, S. W. Oh, and S. J. Kim, “Video instance segmentation using inter-frame communication transformers,” Advances in Neural Information Process-ing Systems , vol. 34, pp. 13352–13363, 2021. [22] M. Heo, S. Hwang, S. W. Oh, J.-Y. Lee, and S. J. Kim, “Vita: Video instance segmentation via object token as-sociation,” Advances in neural information processing systems , vol. 35, pp. 23109–23120, 2022. [23] M. Li, S. Li, W. Xiang, and L. Zhang, “Mdqe: Mining discriminative query embeddings to segment occluded instances on challenging videos,” in Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 10524–10533, 2023. [24] A. Abrantes, J. Wang, P. Chu, Q. You, and Z. Liu, “Re-finevis: Video instance segmentation with temporal at-tention refinement,” arXiv preprint arXiv:2306.04774 ,2023. [25] J. Cao, R. M. Anwer, H. Cholakkal, F. S. Khan, Y. Pang, and L. Shao, “Sipmask: Spatial information preserva-tion for fast image and video instance segmentation,” in European Conference on Computer Vision , pp. 1–18, Springer, 2020. [26] L. Yang, Y. Fan, Y. Fu, and N. Xu, “The 3rd large-scale video object segmentation challenge – video instance segmentation track,” June 2021. [27] L. Yang, Y. Fan, and N. Xu, “The 4th large-scale video object segmentation challenge – video instance segmen-tation track,” June 2022. [28] J. Qi, Y. Gao, Y. Hu, X. Wang, X. Liu, X. Bai, S. Be-longie, A. Yuille, P. H. S. Torr, and S. Bai, “Occluded video instance segmentation: A benchmark,” Interna-tional Journal of Computer Vision , vol. 130, no. 8, pp. 2022–2039, 2022. [29] K. He, X. Zhang, S. Ren, and J. Sun, “Deep residual learning for image recognition,” in Proceedings of the IEEE conference on computer vision and pattern recog-nition , pp. 770–778, 2016. [30] W. Park, D. Kim, Y. Lu, and M. Cho, “Relational knowledge distillation,” in Proceedings of the IEEE/CVF conference on computer vision and pattern recognition ,pp. 3967–3976, 2019. [31] Z. Liu, Y. Lin, Y. Cao, H. Hu, Y. Wei, Z. Zhang, S. Lin, and B. Guo, “Swin Transformer: Hierarchical vision transformer using shifted windows,” in Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pp. 10012–10022, 2021. 
+
+10 Supplementary Material A Scaling to Vision Transformer Backbones 
+
+To demonstrate the generalizability of QueenVIS be-yond standard convolutional networks, we evaluate our query enrichment framework using the Swin-L (Swin Transformer Large) backbone [31]. Table S1 presents the comparison of QueenVIS against recent state-of-the-art methods on the YouTube-VIS 2019, YouTube-VIS 2021, and OVIS datasets. The integration of ViT-based features into our image-only training pipeline requires no architectural modifi-cations. The dense appearance and spatial priors ex-tracted by our auxiliary branches seamlessly translate to transformer-based feature maps. As shown in Ta-ble S1, QueenVIS with a Swin-L backbone consis-tently improves the image-only MinVIS baseline, with a +4.5 AP gain on YouTube-VIS 2021 and +1.6 AP on both YouTube-VIS 2019 and OVIS. Despite rely-ing solely on image-level supervision, it surpasses sev-eral video-supervised methods, including SeqFormer and Mask2Former-VIS, on all three benchmarks, and narrows the gap to the strongest video-supervised ap-proaches: on YouTube-VIS 2021 it trails VISAGE, CTVIS, and CAVIS by only 0.8–1.4 AP. As in the ResNet-50 setting, a larger gap remains on the heav-ily occluded OVIS, where the limit of image-only train-ing is most visible. These results indicate that our single-frame query enrichment strategy is not specific to convolutional backbones and continues to benefit from stronger, transformer-based feature extractors. 
+
+# B Inference Efficiency 
+
+As detailed in the main manuscript, our auxiliary fea-ture and center prediction heads are entirely discarded post-training, meaning QueenVIS introduces zero addi-tional parameters during inference. The only computa-tional overhead stems from our online tracking compo-nents: the query propagation and memory-bank match-ing schemes, which operate sequentially across frames. Table S2 quantifies this runtime trade-off against the MinVIS baseline. All measurements were conducted on a single NVIDIA H200 GPU using the ResNet-50 backbone. The throughput gap stems entirely from our additional online tracking components, namely query propagation and memory-bank matching, which run se-quentially on top of the per-frame inference shared with MinVIS. This overhead reduces throughput from ∼27 to 
+
+∼20 FPS, which remains well-suited for real-time appli-cations and preserves causal temporal awareness while circumventing the memory footprint and computational burden of optimizing long video clips during training. 
+
+# C Relational Distillation vs. Abso-lute Feature Regression 
+
+Why per-query regression, not relational distilla-tion? A natural alternative to our per-query feature loss is to match the relations between queries rather than their absolute descriptors. We tested this with a feature-geometry distillation loss inspired by [30]. Let P be the set of unique matched-object pairs (i, j ) within a frame. We compute the pairwise cosine similarity of the object query embeddings ( SQi,j ) and of the ground-truth back-bone descriptors ( SGi,j ): 
+
+SQi,j = qi · qj
+
+∥qi∥2∥qj ∥2
+
+, SGi,j = fi · fj
+
+∥fi∥2∥fj ∥2
+
+(S1) The geometric distillation objective penalizes the struc-tural divergence between the query space and the tar-get feature space by minimizing the ℓ1 distance between these similarity distributions: 
+
+Lgeom = 1
+
+|P| 
+
+X
+
+> (i,j )∈P
+
+SQi,j − SGi,j (S2) Under a matched base (query propagation and memory bank, without center prediction), replacing our absolute per-query regression ( Lfeat ) with this relational term de-grades performance: AP drops from 49 .6 (FP) to 47 .5
+
+(FA), a 2.1 AP loss (Table S3). We tuned λgeom and report its best value ( 0.1); neither smaller nor larger weights closed the gap, so it does not stem from loss weighting. A likely cause is a mismatch between what the relational term supervises and how queries are used at inference: the loss constrains only the relative pair-wise geometry among instances and leaves each query’s absolute embedding under-determined, whereas asso-ciation matches queries by their absolute embeddings through cosine similarity in the matcher and memory bank. Absolute regression supplies precisely this per-query target. The effect is compounded by the few ob-jects typically present per frame, which makes the set of matched pairs small and the relational signal compara-tively sparse and noisy. 
+
+# D Sensitivity to Auxiliary Loss Weights 
+
+Our training objective augments the MinVIS baseline with two auxiliary terms, weighted by λfeat (feature pre-diction, FP) and λcenter (center prediction, CP). Table S4 11 Table S1: Comparison with state-of-the-art VIS methods using the Swin-L backbone. Metrics denote Average Pre-cision (AP) at various IoU thresholds and Average Recall (AR). QueenVIS maintains robust performance against video-supervised methods without requiring any multi-frame training. Method Setting OVIS YouTube-VIS 2019 YouTube-VIS 2021 AP AP 50 AP 75 AR 1 AR 10 AP AP 50 AP 75 AR 1 AR 10 AP AP 50 AP 75 AR 1 AR 10                                                                                                                                                 
+
+> Video Supervision
+> SeqFormer [3] Offline 31.7 54.8 31.2 15.6 39.4 61.2 84.1 66.8 52.8 67.2 53.6 76.5 59.9 43.1 61.6 Mask2Former-VIS [2] Offline 35.5 62.4 35.8 16.9 42.1 60.4 84.4 67.0 ––52.6 76.4 57.2 ––VITA [22] Offline 44.8 70.9 46.1 18.7 48.9 61.5 85.9 67.7 54.4 67.6 57.5 80.6 61.0 47.7 62.6 GenVIS [7] Offline 45.4 73.1 45.4 19.3 49.3 64.0 87.0 71.3 55.4 67.7 60.1 82.9 66.0 48.2 64.6 VISAGE [5] Online 46.2 71.9 48.5 19.2 49.7 64.5 86.8 72.1 55.3 68.2 60.6 83.3 66.8 49.0 66.0 CTVIS [19] Online 46.9 71.5 47.5 19.1 52.1 65.6 87.7 72.2 56.5 70.4 61.2 84.0 68.8 48.0 65.8 CAVIS [10] Online 48.6 74.0 52.5 19.5 53.3 66.0 89.5 73.3 56.8 71.4 61.1 84.1 69.2 48.2 66.3
+> Image-Only Training (No Video Supervision)
+> MinVIS [6] Online 39.4 61.5 41.3 18.1 43.3 61.6 83.3 68.6 54.8 66.6 55.3 76.6 62.0 45.9 60.8
+> QueenVIS Online 41.0 62.2 43.0 18.4 45.0 63.2 85.3 68.3 55.5 68.4 59.8 81.5 65.2 48.3 64.2
+
+Table S2: Inference speed and AP comparison on YouTube-VIS 2021 (ResNet-50) evaluated on a single NVIDIA H200. Method AP ↑ FPS ↑ GFLOPs #Params MinVIS [6] 44.2 26.92 266.09 293.89 M 
+
+QueenVIS 50.9 20.02 266.09 300.34 M Table S3: Absolute feature regression (FP) vs. rela-tional distillation (FA) on YouTube-VIS 2021. Under a matched base (QP + MB, no CP), replacing our per-query regression with the relational term lowers AP by 
+
+2.1, supporting absolute feature regression. FP: Feature Prediction loss ( Lfeat ); FA: relational geometric distilla-tion ( Lgeom ); CP: Center Prediction; QP: Query Propa-gation; MB: Memory Bank. Configuration AP AP 50 AP 75 
+
+Final Model (FP + CP + QP + MB) 50.9 72.1 55.8 
+
+FP ( λfeat = 0 .2) + QP + MB 49.6 71.1 54.7 FA ( λgeom = 0 .1) + QP + MB 47.5 68.8 52.5 reports a sensitivity sweep over both on YouTube-VIS 2021; all configurations share the same training-free as-sociation (query propagation and memory bank) at in-ference, so differences reflect the loss weighting alone. We first vary the feature-prediction weight in isola-tion. Overly large weights let the auxiliary regression dominate the classification and mask losses and degrade accuracy: λfeat = 4 and λfeat = 2 reach only 47 .4 and 
+
+48 .4 AP, whereas λfeat = 0 .2 is clearly best at 49 .6 AP. Fixing λfeat = 0 .2, we then add center prediction. The model is robust to λcenter : every tested value improves over the FP-only model, and λcenter = 0 .05 yields the best overall result ( 50 .9 AP), our final QueenVIS con-figuration. The narrow spread across center weights in-dicates that the gain comes from the presence of the spa-tial objective rather than from its precise weighting. 
+
+# E Additional Qualitative Results 
+
+To further demonstrate the robustness of QueenVIS, we provide additional qualitative visualizations. Figure S1 compares QueenVIS against the MinVIS baseline on challenging sequences: where MinVIS drifts into iden-tity switches and fragmented masks, QueenVIS keeps identities consistent and segments objects more com-pletely, without any video-level supervision. Figure S2 further shows QueenVIS predictions on three additional sequences. Together, these results suggest that our query enrichment strategies successfully retain tracking con-sistency across challenging sequences involving rapid motion, severe scale variation, and intersection of visu-ally similar instances. 12 Table S4: Sensitivity to the auxiliary loss weights λfeat (feature prediction, FP) and λcenter (center prediction, CP) on YouTube-VIS 2021 (ResNet-50). All configurations use query propagation and a memory bank at inference. Best results in bold .Configuration AP AP 50 AP 75 AR 1 AR 10 
+
+FP ( λfeat = 4 ) 47.4 69.1 52.5 42.2 55.3 FP ( λfeat = 2 ) 48.4 70.5 52.3 41.7 55.4 FP ( λfeat = 0 .2) 49.6 71.1 54.7 42.8 56.2 FP ( λfeat = 0 .2) + CP ( λcenter = 0 .1) 49.7 70.9 55.0 43.0 56.9 FP ( λfeat = 0 .2) + CP ( λcenter = 0 .01 ) 49.8 70.4 54.7 42.7 56.7 
+
+FP ( λfeat = 0 .2) + CP ( λcenter = 0 .05 ) (QueenVIS) 50.9 72.1 55.8 42.8 57.3 Queen VIS  MinVIS Queen VIS  MinVIS 
+
+Figure S1: Additional qualitative comparison between MinVIS and QueenVIS on OVIS. For each sequence, rows show, from top to bottom, the input frames, the MinVIS baseline, and our QueenVIS predictions; identical instances keep a consistent color across frames. Compared with MinVIS, QueenVIS preserves object identities through occlusion and crossing trajectories and produces more complete masks, all without any video-level supervision. 13 Figure S2: Additional QueenVIS results on OVIS. Qualitative tracking results of QueenVIS on three OVIS se-quences. Consistent colors denote consistent identities maintained across the temporal window under rapid motion, scale variation, and occlusion, illustrating that query-space appearance and spatial enrichment stabilizes inference without relying on video-level ground truth. 14
