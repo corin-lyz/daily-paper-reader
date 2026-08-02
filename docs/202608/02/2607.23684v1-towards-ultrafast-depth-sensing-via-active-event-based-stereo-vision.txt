@@ -1,0 +1,769 @@
+Title: Towards Ultrafast Depth Sensing Via Active Event-based Stereo Vision
+
+URL Source: https://arxiv.org/pdf/2607.23684v1
+
+Published Time: Tue, 28 Jul 2026 01:09:32 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+> IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 1
+
+# Towards Ultrafast Depth Sensing Via Active Event-based Stereo Vision 
+
+## Jianing Li, Member, IEEE , Yunjian Zhang, Haiqian Han, Kangyao Huang, and Xiangyang Ji, Member, IEEE 
+
+Abstract —Conventional frame-based imaging for active stereo systems has encountered major challenges in fast-motion scenarios. However, how to design a novel paradigm for ultrafast depth sensing remains an open issue. In this paper, we propose a novel problem setting, namely active event-based stereo vision, which attempts to integrate binocular event cameras and an infrared 2D pattern projector for high-speed dense depth sensing. Technically, we first build a stereo camera prototype system and present a real-world dataset with over 21.5k spatiotemporal synchronized labels at 15 Hz, while also establishing a realistic synthetic dataset with stereo event streams and 23.8k synchronized labels at 20 Hz. Then, we propose ActiveEventNet+, a lightweight yet effective event-based stereo matching neural network that learns to generate high-quality dense disparity maps from stereo event streams with low latency. Our ActiveEventNet+ mainly involves three innovations: incorporating lightweight blocks into event-based stereo matching frameworks, designing a novel cost volume with dynamic interactions between stereo pairs, and presenting an effective temporal consistency architecture to fully use rich temporal cues in event streams. The results show that our ActiveEventNet+ outperforms state-of-the-art methods while significantly reducing computational complexity. Our solution offers superior depth sensing performance compared to conventional frame-based stereo cameras in high-speed scenes. In particular, the lightweight ActiveEventNet enables the prototype system to achieve real-time processing at speeds up to 150 FPS. We believe that this novel active event-based stereo vision paradigm can provide new insights into the design of future high-speed depth sensing camera systems. Our dataset and code can be available at https://github.com/jianing-li/active event based stereo. 
+
+Index Terms —Neuromorphic Vision, Event Cameras, Active Stereo Vision, Stereo Matching, Structured Light. 
+
+## ✦
+
+## 1 INTRODUCTION 
+
+# STEREO depth perception [1], [2], one of the longstand-ing and fundamental topics, supports a wide range of computer vision and robotics tasks. Passive stereo vision typically struggles in texture-less regions and low-light en-vironments [3]. In contrast, active stereo vision [4] addresses these challenges by projecting an infrared pattern, enabling more accurate depth maps compared to passive stereo sys-tems. Nevertheless, conventional active stereo cameras are generally constrained by their depth frame rates (e.g., 30 FPS for Kinect V1 and 90 FPS for RealSense D435), limiting their effectiveness in high-speed scenarios [5], [6]. For instance, a racing drone could suffer a severe collision in a short period between two adjacent depth frames. This may raise a key question: How can we develop a novel active stereo sensing paradigm for high-speed depth perception to overcome the limitations of conventional stereo cameras? 
+
+Event cameras [7], [8], also known as silicon retinas, operate differently from conventional frame-based cameras. Instead of capturing frames at a fixed rate, they detect changes in intensity at each pixel, generating asynchronous 
+
+• Jianing Li is with the School of Computer Science, Peking University, Beijing 100871, China, and also with Peng Cheng Laboratory, Shenzhen 518000, China (e-mail: lijianing@pku.edu.cn). 
+
+• Yunjian Zhang, Haiqian Han, and Xiangyang Ji are with the De-partment of Automation, Tsinghua University, Beijing 100084, Bei-jing, P.R. China. E-mail: lijianing@pku.edu.cn, sdtczyj@gmail.com, hanhq23@mails.tsinghua.edu.cn, xyji@tsinghua.edu.cn. 
+
+• Kangyao Huang is with the Department of Computer Science and Technology, Tsinghua University, Beijing 100084, P.R. China. E-mail: kangyao.huang@outlook.com. 
+
+• Manuscript received September 7, 2025; revised January 15, 2026; ac-cepted March 8, 2026. 
+
+• (Corresponding author: Xiangyang Ji.) 
+
+events with microsecond-level temporal resolution [9]. This capability makes them ideal for various high-speed vision tasks [10], [11], [12], [13], [14], [15], [16], [17], [18], [19], [20], [21] that require low-latency processing. Consequently, there is growing research interest in leveraging event cameras for high-speed depth sensing (i.e., monocular and binocular) in agile robots [22]. In particular, event-based stereo vision [23], [24], [25], [26] offers the advantage of providing more accu-rate and reliable depth information compared to monocular depth estimation [27], [28], [29], [30], [31]. One problem is that current event-based stereo depth systems [32], [33], [34], [35], [36], [37], [38], [39] are passive stereo, resulting in inaccurate depth maps in texture-less regions and dark scenes . In other words, passive event-based stereo methods rely on feature matching, which may be challeng-ing or even impossible in areas with little texture or low contrast. While some structured light systems with a single event camera [40], [41], [42], [43], [44], [45], [46], [47], [48] have attempted to achieve high-speed depth sensing, these active monocular depth methods may not always match the accuracy of stereo depth systems in challenging scenes. This limitation exists because monocular systems depend entirely on the precise detection of projected patterns, which can be easily compromised by highly absorptive or texture-less surfaces. Conversely, a binocular system benefits from the fusion of active and passive perception. By integrating active infrared patterns with passive environmental textures from two viewpoints, the system leverages strong geometric constraints through stereo triangulation to ensure robust depth estimation across diverse real-world settings. Yet, the integration of binocular event cameras with structured arXiv:2607.23684v1 [cs.RO] 26 Jul 2026 IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 23D Scene  Dense depth maps 
+
+> Event streams
+> ActiveEventNet +
+> Active stereo
+> event cameras
+> Laser 2D
+> pattern
+> Recurrent
+
+Fig. 1: Our active event-based stereo camera system inte-grates binocular event cameras and an infrared 2D pattern laser for high-speed depth sensing. Our ActiveEventNet+ efficiently generates dense depth maps with low latency, achieving an optimal accuracy-speed trade-off while fully exploiting rich temporal cues from stereo event streams. light in active stereo systems has received relatively limited exploration. Meanwhile, existing passive event-based stereo vision datasets [49], [50], [51] typically provide only sparse LiDAR depth maps, and there is a lack of event streams with structured light and dense depth labels. Another problem is that most event-based stereo match-ing methods [24], [26], [33], [34], [37], [52], [53], [54], [55] prioritize maximizing accuracy through more complex feed-forward neural networks, leading to high computational com-plexity and wasted rich temporal cues . This may be contrary to the advantages of event cameras, which offer low la-tency and rich temporal data. For example, some stereo matching algorithms [23], [24], [33] aim to build higher-dimensional architectures (e.g., 3D or 4D cost volumes) to further enhance accuracy, yet few efforts have been made to develop lightweight models that explicitly optimize com-putational efficiency and inference speed. Moreover, these methods typically process event bins independently using feed-forward models, thereby discarding valuable temporal cues from continuous event streams. While leveraging tem-poral information can improve accuracy, it often comes at the cost of increased computational overhead. Thus, a key challenge lies in designing an efficient event-based stereo matching model that achieves a balance between accuracy and speed while fully utilizing rich temporal cues. To address the aforementioned problems, we propose a novel paradigm for ultrafast dense depth sensing, namely active event-based stereo vision, which attempts to integrate binocular event cameras and an infrared 2D pattern projec-tor to enable low-latency dense depth estimation (see Fig. 1). The goal of this work is to develop and validate a novel active event-based stereo vision system that addresses the following challenges: (i) Lack of prototype system and dataset 
+
+– How do we establish an active stereo camera setup and build high-quality event-based datasets, including both sim-ulated and real-world scenarios? (ii) Lightweight yet effective model – How can we design a lightweight event-based stereo matching model that balances accuracy and speed while effectively leveraging rich temporal cues? To this end, we first build an active event-based stereo camera prototype and present a real-world dataset with over 21.5k spatiotemporal synchronized true depth labels at 15 Hz, while also creating a highly realistic synthetic dataset with 23.8k synchronized labels at 20 Hz. Then, we design a lightweight yet effective event-based stereo matching neu-ral network (i.e., ActiveEventNet+ ), which generates high-quality dense disparity maps from stereo event streams with low latency. The proposed ActiveEventNet+ incorpo-rates three key innovations: (i) Pioneering the integration of lightweight MobileNet blocks into event-based stereo matching modeling; (ii) Designing a novel cost volume with dynamic interactions between stereo event stream pairs; and (iii) Devising an efficient temporal consistency architecture to fully utilize rich temporal cues in stereo event streams. Experimental results demonstrate that our ActiveEvent-Net+ outperforms state-of-the-art stereo matching meth-ods while significantly reducing computational complexity. Our prototype system, integrating binocular event cameras and an infrared projector, delivers superior depth sensing performance compared to conventional frame-based stereo cameras in high-speed motion scenarios. In particular, our lightweight ActiveEventNet enables the prototype system to achieve real-time processing at speeds up to 150 FPS. Furthermore, our solution also highlights that active event-based stereo vision surpasses passive stereo in low-texture regions and dark environments. We believe that this novel active event-based stereo vision paradigm can provide new insights into the development of next-generation neuromor-phic stereo camera systems. In summary, the main contributions of this work are:  
+
+> •
+
+We present a novel problem setting, termed active event-based stereo vision , which attempts to integrate binocular event cameras and an infrared 2D pattern projector for high-speed dense depth sensing.  
+
+> •
+
+We propose ActiveEventNet+, a lightweight yet ef-fective event-based stereo matching model, which achieves an optimal speed-accuracy trade-off by effi-ciently utilizing rich temporal cues in event streams.  
+
+> •
+
+We establish a real-world dataset using our active event-based stereo camera prototype, along with a highly realistic synthetic dataset containing tempo-rally continuous labels. We believe these open-source standardized datasets will open up new opportuni-ties for research in this novel problem setting. A preliminary conference version of ActiveEventNet [56] has appeared in CVPR 2025, which has demonstrated the effectiveness of active event-based stereo vision for high-speed depth sensing. Compared to the prior conference ver-sion, this long article is improved in the following aspects: (i) Our ActiveEventNet+ enhances the preliminary model (i.e., ActiveEventNet) by incorporating an efficient temporal con-sistency architecture, which leverages rich temporal cues in event streams to optimally balance accuracy and inference speed. (ii) We present more statistical details on two standardized datasets and conduct extensive experiments to verify the effective-ness of our ActiveEventNet+. (iii) We propose an extension of a joint framework that effectively leverages the complementary strengths of events and frames for stereo matching, achieving superior performance over unimodal frame-based methods in low-light, low-texture, and high-speed motion scenarios. 
+
+The rest of the paper is organized as follows. Section 2 re-views related work. In Section 3, we describe our stereo cam-era prototype and two newly constructed datasets. Section 4 presents the event camera’s working principle and formu-lates the problem setting. Section 5 details our lightweight yet effective event-based stereo matching model. Section 6 analyzes the proposed method’s performance, while also IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 3
+
+presenting an extension of the joint framework that in-tegrates stereo events and frames. Finally, Section 7 and Section 8 provide discussion and conclusions. 
+
+## 2 RELATED WORK 
+
+This section first reviews conventional stereo cameras, then surveys neuromorphic stereo datasets and methods, and finally covers neuromorphic vision with structured light. 
+
+2.1 Conventional Stereo Camera Systems 
+
+Conventional stereo cameras [1], [2] can be broadly cat-egorized into passive and active stereo systems. Passive stereo cameras (e.g., ZED [57]) typically rely on hand-crafted matching algorithms to establish correspondences between two RGB images. However, passive stereo systems face significant challenges in texture-less regions and low-light environments, where the lack of sufficient texture informa-tion hinders effective feature matching. Active stereo camera systems [4], [58], [59] extend the capabilities of passive stereo by projecting a pseudorandom pattern into the scene using an infrared light source. By selecting the appropri-ate sensing wavelength, active stereo cameras capture a combination of structured active illumination and ambient passive light, enabling robust depth sensing in both indoor and outdoor environments. For example, Intel R200 [60] is one of the commercially available active stereo sensors, featuring binocular cameras with a resolution of 640 ×480 and capable of producing depth maps at 60 FPS. This is followed by Microsoft Kinect V1 [61], which captures depth images at 30 FPS. Note that, the Intel D400 series [62] further enhances these capabilities, providing high-resolution depth maps with a maximum frame rate of 90 FPS. Despite the widespread commercialization of conventional frame-based stereo cameras for various vision tasks, they remain limited by their depth frame rates. This constraint reduces their effectiveness in real-world high-speed applications, partic-ularly those requiring low-latency depth sensing [22], such as high-speed drone obstacle avoidance. Thus, this work aims to design a novel event-based stereo vision solution for high-speed depth sensing. 
+
+2.2 Neuromorphic Stereo Datasets 
+
+Several efforts [63], [64] have been made to develop multi-camera systems with stereo event cameras and LiDAR for unmanned systems, creating multi-modal datasets (e.g., MVSEC [49], DSEC [51], VECtor [65], M3ED [50], Fusion-Portable [66], [67], CoSEC [68], and PKU-Spike-Stereo [69]) for various tasks. Notably, MVSEC [49] is a pioneering event-based stereo dataset featuring two binocular DAVIS cameras and a LiDAR sensor for ground truth depth. PKU-Spike-Stereo [69] is the first high-speed depth estimation dataset utilizing two spike cameras [70], [71] alongside a ZED camera. DSEC [51] is a widely used multi-modal dataset supporting various vision tasks in autonomous driving scenarios. While publicly available passive stereo datasets using neuromorphic cameras are gradually increas-ing, active event-based stereo datasets remain largely unex-plored. Besides, existing passive event-based stereo vision datasets typically provide only sparse LiDAR depth maps. Therefore, this work aims to establish an active event-based stereo matching dataset with dense depth labels. 
+
+2.3 Neuromorphic Stereo Matching Approaches 
+
+Since Misha Mahowald’s groundbreaking work [72] in 1992 on the first neuromorphic stereo vision system, the field [63] has rapidly advanced with the commercialization of neuro-morphic cameras. Existing neuromorphic stereo matching methods can broadly be categorized into two categories. The first category refers to traditional model-based meth-ods [23], [25], [35], [73], [74], [75], [76], which estimate per-pixel disparity from stereo event streams using reliable local correspondences and global optimization algorithms. While these model-based methods can generate sparse or semi-dense depth maps with low latency, they may be hard to obtain globally dense depth maps. The second category is end-to-end event-based stereo matching networks [24], [26], [32], [33], [34], [36], [37], [38], [38], [52], [53], [54], [55], [77], [78], [79], [80], [81], which have become the mainstream approach and have achieved state-of-the-art performance. For example, early attempts (e.g., DDES [26]) typically convert stereo events into image-like representation pairs, enabling compatibility with frame-based neural networks. Subsequently, joint frameworks [24], [33], [52], [53] are de-veloped to integrate frames and events, aiming to obtain high-quality dense maps. There have also been explorations of hybrid stereo matching strategies [82], [83] that use a frame-based camera and an event camera to form stereo pairs for evaluating disparity and depth. While existing methods achieve reasonable depth estimation from stereo event streams, they have two key drawbacks. On one hand, their improved accuracy comes at a high computational cost, requiring substantial GPU memory that limits deploy-ment on resource-constrained systems. On the other hand, they usually process each event bin independently using simple feed-forward models, wasting rich temporal cues. This leads to poor depth estimation performance in low-texture or out-of-focus scenarios. Such heavy stereo match-ing architectures contradict event cameras’ advantages of low latency and rich temporal cues. Thus, we propose an efficient event-based stereo matching framework that preserves low latency while fully exploiting temporal cues. 
+
+2.4 Neuromorphic Vision with Structured Light 
+
+Neuromorphic cameras are increasingly being utilized in combination with infrared structured light for high-speed 3D sensing [93] (see Table 1). In general, structured light sources are commonly categorized into three types (i.e., point, line, and 2D pattern). For instance, Brandli et al. [84] first integrates a laser line-projector and an event camera for 3D reconstruction in high-speed scenarios. Martel et al. [86] combine a laser light source with an event-based stereo setup to quickly scan a scene. Muglikar et al. [40] design a structured light system with a laser point-projector and an event camera for depth estimation. Huang et al. [43] present a structured light system using an event camera and a laser pattern-projector for high-speed 3D scanning. Lu et al. [92] design a structured light system using gray codes and an event camera, achieving a depth acquisition speed of over 1,000 Hz. Indeed, most active event-based vision IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 4
+
+TABLE 1: Comparison with existing neuromorphic vision systems using various structured light sources. Note that, our work is the first to explore an active event-based stereo vision system utilizing end-to-end learning-based methods for dense depth sensing in high-speed scenarios. 
+
+Camera system Venue Year Type Camera Resolution Projector Dataset label Method Density Brandli et al. [84] FNS 2014 Monocular DVS128 128 ×128 Laser line, 500 Hz No Model-based Sparse Leroux et al. [85] arXiv 2018 Monocular ATIS 304 ×260 Laser 2D pattern No Model-based Sparse Martel et al. [86] ISCAS 2018 Stereo DAVIS240 240 ×180 Laser point, laser line No Model-based Sparse FFP [87] SPL 2020 Monocular DAVIS346 346 ×260 Laser 2D pattern No Model-based Sparse Muglikar et al. [40] 3DV 2021 Monocular Gen3 640 ×480 Laser point, 60 Hz No Model-based Sparse Muglikar et al. [42] 3DV 2021 Monocular Gen3 640 ×480 Laser point, 60 Hz Dense Learning-based Dense Huang et al. [43] OE 2021 Monocular CeleX-V 1280 ×800 Laser 2D pattern, 9,500 Hz No Model-based Sparse Takatani et al. [88] CVPR 2021 Monocular DAVIS346 346 ×260 Laser beam No Model-based Sparse Wang et al. [44] MTF 2022 Monocular DVXplorer 640 ×480 Laser 2D pattern Dense Learning-based Dense Morgenstern et al. [89] CVPRW 2023 Monocular Gen3 640 ×480 Laser line, 60 Hz No Model-based Sparse Bajestani et al. [41] WACV 2023 Monocular Gen3 640 ×480 Laser 2D pattern, 4,225 Hz No Model-based Sparse SEpi-3D [90] OE 2023 Monocular Gen3 640 ×480 Laser 2D patterns, 60 Hz Semi-dense Model-based Sparse Fu et al. [47] OE 2023 Monocular EKV4 1280 ×720 Laser 2D patterns, 60 Hz No Model-based Sparse Sirikonda et al. [91] arXiv 2024 Monocular EKV4 1280 ×720 Laser line, 2M Hz No Model-based Sparse eFPSL [46] SJ 2024 Monocular DAVIS346 346 ×260 Laser 2D pattern, 60 Hz Dense Model-based Sparse SGE [92] OE 2024 Monocular EKV4 1280 ×720 Laser line, 60 Hz No Model-based Sparse 
+
+Our AESVS - 2024 Stereo DAVIS346 346 ×260 Laser 2D pattern Dense Learning-based Dense 
+
+systems [40], [41], [43], [45], [46], [47], [84], [85], [86], [87], [88], [89], [90], [91], [92], [94], [95], [96] using traditional model-based methods achieve sparse or semi-dense with low latency but lack density. To obtain dense depth maps, several end-to-end learning-based methods [42], [44] have been developed specifically for event-based depth estima-tion with structured light. For example, Muglikar et al. [42] propose a novel bio-inspired event-guided depth estimation method using deep neural networks for an event-based structured light system. Wang et al. [44] present a multi-modal feature fusion network to obtain high-quality depth maps for a hybrid structured light imaging system. While monocular active event-based vision systems are simpler in design, stereo vision systems achieve higher depth estima-tion accuracy by leveraging triangulation to capture spatial information more effectively. In this work, we design an active event-based stereo vision system, which uses an end-to-end learning-based model for dense depth sensing. 
+
+## 3 ACTIVE EVENT -BASED STEREO DATASET 
+
+This section first describes the construction of our Active-Event-Stereo dataset using our camera prototype and pro-vides statistics for better understanding. 
+
+3.1 Stereo Camera Prototype and Calibration 
+
+To verify the effectiveness of our solution, we develop an active event-based stereo vision system (AESVS) by inte-grating binocular DAVIS346 cameras (resolution 346×260), an infrared 2D pattern projector, and an Intel RealSense D455 camera (resolution 640×480). Unlike conventional pas-sive vision, our stereo camera prototype can detect dynamic events even in static scenarios or dark environments by adjusting the laser frequency or intensity of the signal generator. As shown in Fig. 2(a), our system utilizes an infrared 2D pattern projector with a wavelength of 850 nm, a power of 360 mW, and a field of view of 91° × 65°. While the projector’s modulation frequency is adjustable up to 20,000 Hz, it is fixed at 60 Hz during dataset acquisition. Besides, we employ the RealSense D455 stereo camera at 15 FPS to DAVIS346 camera          
+
+> 346 ×260, 12Meps
+> Intel RealSense D455
+> Laser 2D pattern
+> Signal generator
+> DAVIS346 view
+> RealSense D455 view
+> (a) Stereo camera prototype (b) Calibrated views
+> (c) Indoor synchronized examples (d)Ou tdoor synchronized examples
+
+(a) Stereo camera prototype DAVIS346 camera           
+
+> 346 ×260, 12Meps
+> Intel RealSense D455
+> Laser 2D pattern
+> Signal generator
+> DAVIS346 view
+> RealSense D455 view
+> (a) Stereo camera prototype (b) Calibrated views
+> (c) Indoor synchronized examples (d)Ou tdoor synchronized examples
+
+(b) Calibrated views 
+
+Fig. 2: An active event-based stereo camera prototype. (a) The experimental setup combines binocular event cameras and an infrared pattern projector. (b) Spatiotemporal calibra-tion between two cameras using a standard checkerboard. capture depth ground truth in normal motion scenes and provide a fair comparison in high-speed motion scenarios. In general, spatiotemporal calibration is a critical step for hybrid multi-camera systems [97]. For temporal calibration ,we synchronize the two stereo event cameras and the Re-alSense D455 camera by publishing each topic’s timestamp in the robot operating system (ROS). For spatial calibration ,one objective is to achieve horizontal baseline correction for accurate stereo matching between the two event cameras. Another goal is to align the RealSense D455 camera’s view with that of the left DAVIS346 camera. As illustrated in Fig. 2(b), a standard checkerboard is positioned in front of our active event-based stereo camera system to provide a complete view. We first use a professional binocular stereo matching correction toolbox to perform baseline correction on the RGB images captured by the two DAVIS346 cameras. Meanwhile, checkerboard keypoints are extracted from the RGB images of both the left DAVIS346 camera and the RealSense D455 camera, and an affine transformation tool-box is applied to align the two coordinate sets. After spa-tiotemporal synchronization, all sequences will be manually reviewed by a team composed of multiple members. 
+
+3.2 Dataset Recording and Statistics 
+
+To provide a high-quality and challenging benchmark, our Active-Event-Stereo dataset considers factors such as ve-locity distribution, illumination changes, scene diversity, IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 5Indoor checkerboard  Indoor cabinet  Indoor desk 
+
+Ou tdoor car  Ou tdoor bike  Ou tdoor deer 
+
+Fig. 3: Representative spatiotemporal synchronized exam-ples. Indoor scenarios are showcased in the top row, and outdoor scenarios in the bottom row. Each pair shows the left DAVIS346 view and the RealSense D455 depth map. TABLE 2: The number of ground truth depth labels in each set of our newly built Active-Event-Stereo dataset. 
+
+Name Indoor scenes Outdoor scenes Normal light Low-light Normal light Low-light Train 6,736 2,944 2,848 2,115 Validation 1,953 829 620 199 Test 983 1651 419 247 Total 9,654 5,424 3,887 2,561 
+
+and varying distances during data collection in indoor and outdoor scenarios. Utilizing our stereo camera prototype, we capture 85 sequences that include synchronized event stream pairs, RGB frames, infrared frames, and depth val-ues. After spatiotemporal calibration, the dataset includes ground truth depth labels generated at a frequency of 15 Hz from the RealSense D455. As illustrated in Fig. 3, we showcase some representative spatiotemporal synchronized examples from our Active-Event-Stereo dataset, showcasing both indoor and outdoor scenarios. Furthermore, we sum-marize the number of depth labels in each set in Table 2. The newly built dataset includes stereo-paired event streams and 21.5k synchronized ground truth labels. These depth labels are subsequently divided into 14.6k for training, 3.6k for validation, and 3.3k for testing. In addition, we further analyze the attributes of our dataset from four perspectives. 
+
+Scene Diversity . To ensure comprehensive coverage of diverse scenarios, we record sequences from various indoor scenes (e.g., checkerboards, cabinets, and desks) and out-door scenarios (e.g., cars, bikes, deer, and plants). Fig. 3 shows representative visualization samples from indoor and outdoor scenes. Fig. 4(a) illustrates the distribution of depth labels for indoor and outdoor scenes. More precisely, the number of indoor samples in the training, validation, and testing sets is (9,680, 2,782, 2,634), while the corresponding numbers for outdoor samples are (4,963, 819, 666). 
+
+Light Condition . To validate the effectiveness of the event-based structured light system under low-light conditions, we ensure that our dataset covers a wide range of illumi-nation conditions from daytime to nighttime. The low-light scenarios primarily include indoor low-light environments and outdoor nighttime scenes. As the DAVIS346 camera provides both RGB and event streams, we can easily identify Low light    
+
+> Normal light
+> 62.9%
+> 37.1%
+> 0
+> 2000
+> 4000
+> 6000
+> 8000
+> 10000
+> Indoor Outdoor
+> Train Valiation Test
+> Moderate
+> (2 -6m)
+> Fa r
+> (>6m)
+> Nea r
+> (0 -2m)
+> 9.9%
+> 13.2%
+> 76. 9%
+> 76.3% 17.3%
+> Highly Dense
+> (>0.9)
+> Ultra dense
+> (0.8 -0.9)
+> Dens e
+> (<0.8)
+
+(a) Scene distribution Low light     
+
+> Normal light
+> 62.9%
+> 37.1%
+> 0
+> 2000
+> 4000
+> 6000
+> 8000
+> 10000
+> Indoor Outdoor
+> Train Valiation Test
+> Moderate
+> (2 -6m)
+> Far
+> (>6m)
+> Near
+> (0 -2m)
+> 9.9%
+> 13.2%
+> 76.9%
+> 76.3% 17.3%
+> Highly Dense
+> (>0.9)
+> Ultra dense
+> (0.8 -0.9)
+> Dense
+> (<0.8)
+
+(b) Light condition Low light    
+
+> Normal li
+> 62.9%
+> 37.1%
+> 0
+> 2000
+> 4000
+> 6000
+> 8000
+> 10000
+> Indoor Outdoor
+> Train Valiation Test
+> Moderate
+> (2 -6m)
+> Fa r
+> (>6m)
+> Nea r
+> (0 -2m)
+> 9.9%
+> 13.2%
+> 76. 9%
+> 76.3% 17.3%
+> Highly De
+> (>0.9)
+> Ultra dense
+> (0.8 -0.9)
+> Dens e
+> (<0.8)
+
+(c) Distance distribution Low light     
+
+> Normal light
+> 62.9%
+> 37.1%
+> 0
+> 2000
+> 4000
+> 6000
+> 8000
+> 10000
+> Indoor Outdoor
+> Train Valiation Test
+> Moderate
+> (2 -6m)
+> Fa r
+> (>6m)
+> Nea r
+> (0 -2m)
+> 9.9%
+> 13.2%
+> 76. 9%
+> 76.3% 17.3%
+> Highly Dense
+> (>0.9)
+> Ultra dense
+> (0.8 -0.9)
+> Dens e
+> (<0.8)
+
+(d) Depth Density 
+
+Fig. 4: Dataset statistics in our Active-Event-Stereo dataset. (a) The distribution of indoor and outdoor scenes shows the balance between the two categories. (b-d) The proportions of light conditions, working distances, and depth densities. low-light conditions by visually inspecting the RGB frames. As shown in Fig. 4(b), the proportions of normal light and low-light samples are 62.9% and 37.1%, respectively. 
+
+Distance Variation . To comprehensively cover the work-ing distance range of our stereo camera prototype, we collect indoor and outdoor scenes at various distances. The average depth value of a scene typically reflects the working distance of the camera system. We broadly classify all scenes into three scales (i.e., near, medium, and far). The medium scale is preliminarily defined as ranging from 2m to 6m, with near distances referring to average depth values less than 2m, and far distances corresponding to average depth values greater than 6m. As shown in Fig. 4(c), the proportions of scene average distances in the near, medium, and far scales are 9.9%, 76.9%, and 13.3%, respectively. 
+
+Depth Density . To quantitatively assess the density of depth labels, we categorize them into three levels (i.e., highly dense, ultra dense, and dense) by the proportion of valid depth pixels relative to the total pixels. Specifically, depth labels are considered highly dense if the valid depth pixel ratio exceeds 0.9, ultra dense if the ratio falls between 0.8 and 0.9, and dense if the ratio is below 0.8. As illustrated in Fig. 4(d), the proportions of depth labels in the highly dense, ultra dense, and dense levels are 76.3%, 17.3%, and 6.4%, respectively. This result shows that the depth labels in our dataset are predominantly dense, providing high-quality ground truth for dense depth estimation. All in all, such a novel active event-based stereo cam-era system with structured light and professional design enables our Active-Event-Stereo to be a competitive dataset with multiple unique characteristics : (i) High temporal resolution from event streams with millisecond-level latency ; (ii) Dynamic event generation with infrared structured light even in static scenes or dark environments ; (iii) Temporally long-term stereo event stream pairs with dense depth labels at 15 Hz ; (iv) Real-world recordings with abundant diversities in scene categories, moving speed, light changes, and distance variations .IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 6Light intensity 
+
+𝑡  
+
+> 𝐼 (𝑡 )
+> 𝑉 𝑟𝑎𝑤
+> ON events
+> OFF events DVS -1
+> 1
+
+𝑡 
+
+> Texture -less Scene
+> Raw events without 2D pattern
+> Events with 2D pattern
+
+𝑡  
+
+> +𝑃 (𝑡 )
+> 400nm -780nm
+> 850nm
+> RGB
+> Structured light
+> Dark Scene
+
+Fig. 5: Comparison with the event camera using or without structured light. Our solution enables event cameras to generate events even in static scenes or low-light conditions. 
+
+## 4 PRELIMINARY AND PROBLEM DEFINITION 
+
+This section first explains how DAVIS cameras work under structured light conditions, then defines the problem of active event-based stereo matching. 
+
+4.1 Event Camera Sampling Principle 
+
+Event cameras [8], namely dynamic vision sensor (DVS) [7], respond to light changes with a continuous event stream. More specifically, each event en is represented as a tuple 
+
+⟨xn, y n, t n, p n⟩ in address event representation (AER) [8], comprising spatial coordinates ⟨xn, y n⟩, a timestamp tn, and the binary polarity pn. Intuitively, these events form sparse asynchronous points in the spatiotemporal domain as: 
+
+S (x, y, t ) = {pnδ (x − xn, y − yn, t − tn)}Ne 
+
+> n=1
+
+. (1) where the polarity pn ∈ { 1, −1} denotes whether the bright-ness is increasing or decreasing, Ne is the number of events in a spatiotemporal window, and δ (·) refers to the Dirac delta function, with δ (t) = 0 , ∀t̸ = 0 and R δ (t) dt = 1 .This novel sensing mechanism enables event cameras to perform reliable depth estimation in high-speed motion sce-narios [8], [63]. However, most existing event-based stereo vision systems belong to passive vision, typically detecting changes in light intensity within the 400–780 nm spectrum. As a result, passive stereo vision struggles in texture-less or low-light scenes. Notably, the sensor chip of event cameras (e.g., DAVIS346 [98]) is sensitive to a broader spectrum ranging from 300 to 1000 nm. To address this limitation, this study presents an active stereo system that combines binocular event cameras with an 850 nm infrared pattern projector. As shown in Fig. 5, the proposed system actively generates events by modulating the laser’s frequency or in-tensity, enabling event generation even in static scenes with constant illumination or in extremely low-light conditions. 
+
+4.2 Active Event-based Stereo Matching 
+
+This work aims to achieve high-speed depth sensing in challenging scenes by computing the disparity map de from the stereo event streams Sl and Sr . As illustrated in Fig. 6, the generation of the event stream is mainly influenced by Right 
+
+event camera  2D pattern 
+
+> Natural light
+> DAVIS346 Quantum
+> Efficiency vs Wavelength
+
+Left 
+
+event camera  
+
+> Broad spectrum
+
+𝐼 (𝑡 )
+
+𝑆 𝑙 
+
+𝑆 𝑟 
+
+Fig. 6: Sensing mechanism of active event-based stereo vi-sion. Projecting a 2D pattern from an infrared projector over-comes some challenges in texture-less regions or extremely low-light scenes, improved stereo matching performance. natural light, the 850 nm 2D laser pattern, and sensor noise, which can be mathematically formulated as: 
+
+Sl = G (Wl · [I (t) + P (t)] + N (t)) ,Sr = G (Wr · [I (t) + P (t)] + N (t)) , (2) where G refers to the event generation process of event cameras. Wl and Wr denote the left and right warping operations via projecting a real 3D scene to each 2D camera plane. N (t) is the event camera noise. I (t) and P(t) are the scene light intensity and the infrared laser intensity at time t. Consequently, our solution enables the generation of dynamic events in static scenes by modulating the intensity or frequency of the laser P(t).For learning-based stereo matching with asynchronous events, continuous event streams are typically divided into temporal bins. For example, the left event stream Sl can be partitioned into K temporal bins as Sl = {Sl, 1, ..., S l,K }.Given a timestamp t, the disparity map Dt can be estimated using multiple left temporal bins {Sl,t −k, ..., S l,t }, k ∈ [1 , K ]
+
+and corresponding right temporal bins {Sr,t −k, ..., S r,t }.Thus, this process can be formulated as follows: 
+
+Dt = Md({Sl,t −k, ..., S l,t } , {Sr,t −k, ..., S r,t } , θ ), (3) where Md refers to the proposed active event-based stereo matching model that effectively leverages rich temporal cues from k + 1 adjacent stereo event bin pairs. The parame-ter k controls the temporal bins for information aggregation, balancing the trade-off between accuracy and speed. θ de-notes the optimized parameters of Md.Given the ground truth ¯D =  ¯D1, ..., ¯DK , we aim to make the predicted disparity maps D = {D1, ..., D K } of the optimized model to fit ¯D as closely as possible. This can be formulated as the following minimization problem: 
+
+ˆθ = arg min 
+
+> θ
+
+1
+
+K
+
+> K
+
+X
+
+> t=1
+
+LM
+
+ (Dt, ¯Dt
+
+ + λΦ ( θ) , (4) where LM
+
+ Dt, ¯Dt
+
+ is the loss function between the pre-dicted disparity Dt and the ground truth ¯Dt. Φ ( θ) is the regularization term, and λ is the trade-off parameter. Note that, this novel active event-based stereo vision sys-tem operates fundamentally differently from conventional IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 7
+
+frame-based stereo cameras. Our solution has three unique properties: (i) It estimates depth accurately using temporal cues from stereo event streams instead of a single image pair ; (ii) 
+
+Event streams with high temporal resolution enable on-demand continuous depth sensing, overcoming the fixed inference rates of conventional frame-based systems ; (iii) Structured light integra-tion enables robust performance in static or low-light scenes where passive stereo vision systems fail .
+
+## 5 METHODOLOGY 
+
+This section begins with an overview of our framework (Section 5.1), followed by the incorporation of lightweight MobileNet blocks for stereo matching (Section 5.2). We then detail the novel cost volume (Section 5.3) and the efficient temporal consistency architecture (Section 5.4). Finally, we briefly describe the loss function (Section 5.5). 
+
+5.1 Network Overview 
+
+This work aims to design a novel lightweight yet effective active event-based stereo matching neural network, termed 
+
+ActiveEventNet+ , which achieves ultra-high-speed dense depth sensing via integrating binocular event cameras and infrared structured light. As depicted in Fig. 7, our frame-work mainly consists of five modules: event representation, feature extraction, dynamic interaction for cost volume ,
+
+efficient temporal consistency , and an encoder-decoder. More specifically, the continuous event stream is first seg-mented into temporal event bins, each bin is converted into a 2D image-like representation (e.g., event images [99] or voxel grids [28]) to optimize the trade-off between accuracy and speed. In the feature extraction stage, we incorpo-rate lightweight MobileNet blocks [100] with corresponding standard convolutions. The event embeddings from stereo pairs are fed into the feature extraction backbone and a channel reduction module to obtain compact yet powerful features. In particular, our ActiveEventNet+ contains two core innovations: (i) A dynamic 3D cost volume module, which enhances the estimated accuracy by dynamically exchanging feature channels and concatenating interactive stereo features; (ii) An efficient temporal consistency archi-tecture, which exploits rich temporal cues from adjacent temporal event bins to achieve a balance between accuracy and speed. Finally, an encoder-decoder module processes the cost volume features and passes them to the temporal consistency component. The predicted head then refines the spatiotemporal features to generate dense disparity maps. 
+
+5.2 Raising MobileNet for Event-based Stereo 
+
+To balance fidelity and inference speed, we utilize the lightweight MobileNet blocks [100], [101] as a replacement for standard convolutional operations in active event-based stereo matching. As a pioneering work, MobileNet v1 intro-duces depthwise convolutions followed by pointwise con-volutions, which dramatically reduce computational cost with minimal accuracy degradation compared to standard convolutions. Furthermore, MobileNet v2 improves effi-ciency by introducing linear bottlenecks and inverted resid-uals, enabling memory-efficient inference with low-latency. By leveraging these design principles, we aim to enhance the computational efficiency of event-based stereo matching while minimizing performance degradation. We formulate the output Fres of an inverted residual block as follows: 
+
+F1 =
+
+> tC
+
+X
+
+> c
+
+kp(x, y, c ) · F (x, y, c ),F2 = X
+
+> x,y
+
+kd(x, y, tc ) · F1(x − 1, y − 1, tc ),F3 = X
+
+> c
+
+kp(x, y, c ) · F2(x, y, c ),Fres = F + F3,
+
+(5) where kd(x, y, c ) denotes the depthwise convolution kernel at position (x, y, c ) of the input feature map F with channel number C. kp is the 1 ×1 pointwise convolution kernel. 
+
+F1, F2, and F3 represent intermediate feature maps within the inverted residual block. The channel dimension c is expanded by an expansion factor t during the pointwise and depthwise convolution operations. Inspired by MobileNet’s computational efficiency, we integrate MobileNet v2 blocks into ActiveEventNet+, re-placing standard convolutions in both the feature extraction and encoder-decoder modules. This design brings three key benefits: (i) Depthwise separable convolutions reduce computational cost by decoupling spatial and channel-wise processing; (ii) The linear bottleneck structure expands and compresses channel dimensions, preserving represen-tational capacity while minimizing parameters; and (iii) Dynamic expansion ratios adapt to event sparsity patterns, focusing computation only where events occur. Together, these innovations enable low-latency processing of stereo event streams without compromising model accuracy. 
+
+5.3 Dynamic Interaction for Cost Volume 
+
+Cost volume [1] is a fundamental component in the stereo matching pipeline, representing the matching cost between pixels at different disparities. A 3D cost volume Cd can be constructed by computing the dissimilarity between the left feature map Fl and the right feature map Fr as follows: 
+
+Cd(x, y, c ) = Mc(Fl(x, y, c ), F r (x − d, y, c )) , (6) where d denotes the disparity between pixels in a stereo pair, and Mc is the similarity measurement function. In learning-based models, Md typically uses concatenation or correlation operations [24], [52] between two feature maps. This work aims at designing a lightweight yet powerful 3D cost volume that dynamically exchanges stereo chan-nels and concatenates interacted features, achieving high performance with efficient computation. First, it employs context-aware dynamic gating, which computes channel-wise attention weights by jointly analyzing stereo features. This operation can be formally described as follows: 
+
+G = σ (Wg ∗ AvgPool (Concat (Fl, F r ))) , (7) where Concat (·) is the concatenation operation for stereo features, ∗ represents the convolution, and σ is the sigmoid function. AvgPool (·) refers to the global average pooling operation. Wg is the weight of the 1 ×1 convolution. IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 8Left event stream        
+
+> Right event stream
+> Event
+> tensors
+> C
+> C
+> Channel
+> reduction
+> Dynamic
+> exchanging
+> Dynamic interaction for
+> cost volume 𝑺 𝑙 ,𝑡
+> 𝑪 𝑑 ,𝑡
+> MobileNet block
+> MobileNet block
+> 𝑺 𝑟 ,𝑡
+> 𝑬 𝑙 ,𝑡
+> 𝑬 𝑟 ,𝑡
+> 𝑭 𝑙 ,𝑡
+> 𝑭 𝑟 ,𝑡
+> Encoder -decoder
+> 𝛼 C×𝜎 𝐶𝑜𝑛𝑣 1−
+> +×
+> 𝐶𝑜𝑛𝑣 ReLU
+> 𝑔 𝒕
+> Efficient temporal consistency
+> 𝑯 𝒕 −𝟏
+> ••• •••
+> Predicted head
+> Predicted head
+> ETC
+> 𝑯 𝒕 𝑴 𝒕
+> 𝑴 𝒕 +𝟏
+> 𝑯 𝒕 +𝟏
+> 𝑫 𝒕 +𝟏
+> 𝑫 𝒕
+> 𝑫 𝒕 −𝟏
+> 𝑫 𝒕 +𝟐
+> 𝑴 𝒕
+> 𝐶𝑜𝑛𝑣
+
+Fig. 7: Overview of active event-based stereo matching neural network (ActiveEventNet+) . We then incorporate MobileNet blocks for feature extraction. Next, we design a novel cost volume with dynamic stereo event interactions, along with an efficient temporal consistency (ETC) module to use temporal cues. Finally, an encoder-decoder processes the cost volume features, which are refined by the temporal consistency module and decoded into dense disparity maps by a prediction head. Then, feature adaptive weighting performs soft feature selection via channel-wise modulation. The stereo features are reweighted using complementary gating coefficients as: 
+
+˜Fl = Fl ⊙ G, 
+
+˜Fr = Fr ⊙ (1 − G), (8) where ⊙ refers to channel-wise multiplication. This opera-tion preserves discriminative features from each view while automatically suppressing unreliable regions. Finally, the processed stereo features Fl and Fr are merged into the final cost volume Cd via a dynamic channel interleaving operation. This strategy yields a compact yet expressive cost volume that maintains the geometric consis-tency critical for accurate disparity estimation with efficient computation. More specifically, each output channel c is assigned from either the i-th channel of the left feature map 
+
+Fl or the right feature map Fr . The channel interleaving operation can be formally expressed as follows: 
+
+Cd(x, y, c ) = 
+
+> C
+
+X
+
+> i=1
+
+δc, 2i ˜Fl(x, y, i ) + δc, 2i+1 ˜Fr (x, y, i ), (9) where i ∈ [1 , C ] denotes the input feature channel index, 
+
+c ∈ [1 , 2C] is the output channel index of the cost volume, and δc, 2i is the Kronecker delta function, which acts as a binary selector equal to 1 when c = 2 i and 0 otherwise. 
+
+5.4 Efficient Temporal Consistency 
+
+Event streams offer rich temporal information, but existing event-based stereo matching models [63] often process each event bin independently using feed-forward architectures, discarding valuable temporal cues. While leveraging tem-poral cues may enhance depth accuracy and consistency, it typically incurs computational overhead. To balance this trade-off between accuracy and efficiency, we present an ef-ficient temporal consistency (ETC) module for active event-based stereo matching, which refines depth estimates across event bins while minimizing redundant computation. The ETC module adopts a recurrent architecture to pro-cess multiple adjacent event bins (see Fig. 7). It is integrated after the encoder-decoder in our ActiveEventNet+. For each event bin, the ETC module takes as input the current feature map Mt and the memory state Ht−1 propagated from pre-vious bins. It then outputs a refined spatiotemporal feature map M + 
+
+> t
+
+along with an updated memory state Ht. We can formulate the recurrent architecture R as follows: 
+
+(M + 
+
+> t
+
+, H t) = R(Mt, H t−1). (10) To be specific, the ETC module incorporates three key optimization strategies for efficient processing: (i) reducing the number of hidden units, thereby decreasing both the parameter count and computational load; (ii) simplifying the activation function by replacing the tanh function with ReLU, eliminating costly exponential operations and im-proving runtime efficiency; and (iii) sharing gating param-eters by merging the GRU’s reset and update gates into a single unified gate, computed through a linear layer to minimize parameter redundancy. Thus, the ETC module can be rewritten as follows: 
+
+gt = σ (Wg · Concat (Mt, H t−1) + bg ) ,
+
+˜Ht = ReLU (Wc · Concat (Mt, H t−1) + bc) ,Ht = (1 − gt) ⊙ Ht−1 + gt ⊙ ˜Ht,M + 
+
+> t
+
+= Wo · Ht + bo,
+
+(11) Where Mt ∈ RC denotes the input feature vector at time step t, while Ht−1, H t, ˜Ht ∈ RH′
+
+represent the previous hid-den state, current hidden state, and candidate hidden state. The hidden dimension is reduced to H′ = ⌊α · H⌋, where 
+
+α ∈ (0 , 1) is a tunable compression ratio that balances model compactness and expressive capacity. The unified gate vec-tor gt ∈ RH′
+
+is computed via a sigmoid function, based on the concatenated input and hidden features [Mt, H t−1] ∈
+
+RC+H′
+
+. The weight matrices Wg , W c ∈ RH′×(C+H′) and 
+
+Wo ∈ RC×H′
+
+, along with the bias terms bg , b c ∈ RH′
+
+and bo ∈ RC , are all learnable parameters. The functions 
+
+σ(·) and ReLU (·) denote the sigmoid and rectified linear unit activations, respectively, and ⊙ indicates element-wise multiplication. The final output M + 
+
+> t
+
+∈ RC is the temporally aggregated representation produced at each time step. 
+
+5.5 Loss Functions 
+
+Our ActiveEventNet+ adopts an end-to-end training strat-egy with full ground truth supervision across all predicted IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 9
+
+stages. The network produces N progressive disparity re-finement stages, comprising intermediate outputs and one final prediction. The total supervision loss is defined as: 
+
+LM =
+
+> N
+
+X
+
+> n=1
+
+Wn · L smooth (Dnt , ¯Dt), (12) Where Lsmooth is the smooth L1 loss. Wn is the weight that increases to give higher weights for later predictions. Super-vision is applied to all N predicted stages during training, only the final-stage prediction is used during inference. 
+
+## 6 EXPERIMENTS 
+
+This section presents the experimental setup and imple-mentation details (Section 6.1), followed by performance evaluations across diverse scenarios and comparisons with existing methods (Section 6.2). We then conduct ablation studies to analyze the impact of each module and parameter (Section 6.3). Finally, we assess scalability to provide further insights into our ActiveEventNet+ (Section 6.4). 
+
+6.1 Experimental Settings 
+
+In this subsection, we present the synthetic dataset, imple-mentation details, and evaluation metrics as follows. 
+
+Simulated Dataset . To provide a large amount of labor-saving yet high-quality synthetic data, we establish an ac-tive event-based stereo matching simulated dataset, named RealSense-Event-Sim. We first use an Intel RealSense D435 sensor to capture 119 infrared video sequences at a reso-lution of 640×480, covering variations in velocity, lighting conditions, and scene diversity. These videos are then con-verted into event streams using the V2E simulator [102]. The synthetic dataset provides stereo event streams along with 23.8k synchronized labels. We split the dataset into 16k samples for training, 3.8k for validation, and 4k for testing. 
+
+Implementation Details . We utilize event images [103] as the event representation to balance accuracy and compu-tational efficiency. The maximum disparity for stereo vision is set to 192 for stereo matching in all cases. The number of channels C is set to 48 in implementing dynamic inter-action for cost volume. Our ActiveEventNet+ incorporates an efficient temporal consistency module, using a temporal event bin size of 3 and a tunable compression ratio of 0.95 to balance accuracy and computational speed. For the training loss, we apply progressively increasing weights of [0.5, 0.5, 0.7, 1.0] across the four refinement stages, placing greater emphasis on later predictions [101]. The proposed models and baselines are trained for 50 epochs using the Adam optimizer with a learning rate of 10 −3. Inference time is measured on an NVIDIA RTX 3090 GPU. Final performance is reported using the best model selected on the validation set and evaluated on the test set. 
+
+Evaluation Metrics . We evaluate accuracy using the mean average end-point error (EPE), root mean square error (RMSE), the percentage of pixels with a disparity error greater than 3 pixels or 5% of the ground truth (D1-all), and the percentage of pixels with disparity errors exceeding 1, 2, and 3 pixels (i.e., >1px, >2px, and >3px). To assess computational efficiency, we report the number of model parameters (#Params) and the average inference time. 
+
+6.2 Effective Test 
+
+This section verifies the effectiveness of our ActiveEvent-Net+ by conducting performance evaluations across various scenarios and comparing it with state-of-the-art methods. 
+
+6.2.1 Performance Evaluation in Various Scenarios 
+
+This subsection presents quantitative and visual results on both real-world and simulated datasets to provide a com-prehensive evaluation across diverse scenarios. 
+
+Evaluation on Real-world Dataset . To compare our solution with conventional frame-based stereo, we report quantitative results of ActiveEventNet+ for each sequence using both RGB frames and event data with structured light on the real-world Active-Event-Stereo dataset (see Table 3). Our active event-based stereo vision solution is capable of producing high-quality dense disparity maps across both in-door and outdoor scenes under varying lighting conditions. It consistently outperforms passive stereo vision using RGB frames, especially in low-light scenarios. More specifically, ActiveEventNet+ significantly reduces errors across all eval-uation metrics compared to passive stereo, with EPE, RMSE, and D1-all reduced by 0.279, 0.063, and 0.048, respectively. To our surprise, our solution using sparse stereo event streams outperforms dense RGB images in most sequences, even under normal light conditions. This performance gain can be attributed to the integration of structured light with event-based vision, which enhances scene texture and fur-ther improves disparity estimation accuracy. 
+
+Evaluation on Simulated Dataset . To provide a detailed evaluation of ActiveEventNet+ on the simulated RealSense-Event-Sim dataset, we report the quantitative results for each synthetic sequence in Table 4. The test set consists of 15 sequences under normal lighting and 6 sequences under low-light conditions. Note that, our ActiveEventNet+ ob-tains a satisfactory performance, achieving an average EPE of 1.077, RMSE of 2.078, and a D1-all of 0.056. The results show that our active event-based stereo vision scheme is capable of achieving high-quality depth sensing in both in-door and outdoor scenes across diverse lighting conditions. 
+
+6.2.2 Comparison with State-of-the-Art Methods 
+
+We investigate why and how ActiveEventNet+ outperforms other competitors from the following two perspectives. 
+
+Quantitative Evaluation . To ensure a fair compari-son with stereo matching methods, we first convert the event streams into videos using E2VID [109], and then use the reconstructed grayscale images as input to the classical SGM algorithm [104]. In addition, we compare our ActiveEventNet+ with five frame-based stereo match-ing networks (i.e., PSMNet [105], DeepPruner-Fast [106], AANet [107] and Unimatch [108]), three open-source event-based stereo matching models (i.e., DDES [26], Stere-oSpike [54], and SE-CFF [24]), and our baseline ActiveEvent-Net [56]. For the real-world dataset evaluation , we compare our ActiveEventNet+ against the above methods on the real-world Active-Event-Stereo dataset in Table 5. Note that, our baseline ActiveEventNet outperforms most state-of-the-art feed-forward methods while maintaining a smaller model size and faster inference speed. Our ActiveEventNet+ in-corporates an efficient temporal consistency module, which IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 10 
+
+TABLE 3: Performance evaluation of ActiveEventNet+ on the real-world Active-Event-Stereo dataset. Notably, our event-based stereo vision solution with structured light outperforms frame-based stereo methods, particularly in low-light scenes.                                                                                                                                                                            
+
+> Scenario Sequence RGB frames Events EPE ↓RMSE ↓D1-all ↓>1px ↓>2px ↓>3px ↓EPE ↓RMSE ↓D1-all ↓>1px ↓>2px ↓>3px ↓
+> Normal 05 indoor boxes 1.752 7.962 0.089 0.244 0.126 0.088 1.793 7.955 0.068 0.299 0.119 0.068 10 indoor boxes 2.534 8.916 0.175 0.534 0.302 0.175 2.492 8.848 0.158 0.580 0.301 0.157 26 indoor checkerboard 1.908 7.875 0.099 0.363 0.159 0.099 1.722 7.725 0.058 0.289 0.102 0.063 70 outdoor car 0.804 3.469 0.015 0.223 0.048 0.015 1.204 3.573 0.032 0.444 0.141 0.031 80 outdoor deer 2.020 8.123 0.089 0.451 0.182 0.088 2.127 8.074 0.069 0.576 0.203 0.069 Low-light 15 indoor office desk dark 2.901 11.787 0.124 0.383 0.184 0.123 3.031 12.004 0.141 0.392 0.209 0.140 17 indoor office desk dark 3.342 11.670 0.210 0.591 0.355 0.210 2.753 11.699 0.099 0.354 0.166 0.098 22 indoor printer dark 1.970 7.600 0.074 0.488 0.187 0.073 1.421 7.503 0.046 0.181 0.071 0.046 27 indoor checkerboard dark 1.833 7.685 0.092 0.342 0.199 0.092 1.737 7.747 0.059 0.426 0.145 0.059 32 indoor conference desk dark 2.624 7.091 0.253 0.653 0.413 0.253 1.450 6.655 0.051 0.305 0.121 0.050 58 indoor washroom dark 1.651 5.526 0.072 0.529 0.208 0.071 1.072 5.356 0.029 0.222 0.062 0.029 64 outdoor car dark 1.346 3.828 0.037 0.434 0.224 0.036 0.961 3.618 0.013 0.321 0.053 0.012
+> All Average 2.128 7.850 0.121 0.444 0.221 0.120 1.849 7.787 0.073 0.351 0.141 0.072 80_outdoor_deer/ 19 3.png
+> 10_indoor_boxes/ 24 6.png
+> 32_indoor_conference_desk_dark /18 7.png
+
+RGB image  Left  event s Righ t event s Ground truth ActiveEventNet +DDES  SE -CF F
+
+Fig. 8: Representative visualization results on our real-world Active-Event-Stereo dataset. The three rows show normal outdoor lighting, dark indoor environments, and low-light indoor scenes. ActiveEventNet+ outperforms two competing methods, delivering robust results across diverse lighting and scenes. Improvements are highlighted in red boxes. significantly boosts performance but also increases compu-tational cost. Compared to the top-performing frame-based stereo matching model Unimatch [108], our ActiveEvent-Net+ achieves higher accuracy with a 2.9 × speedup in inference time. For the simulated dataset evaluation , we report the partial quantization metrics of our ActiveEventNet+ and other competitors on the synthetic RealSense-Event-Sim dataset in Table 6. The results show that the trends observed on the simulated dataset align well with those from the real-world dataset. In short, our ActiveEventNet+, built on a lightweight yet powerful recurrent architecture, consistently outperforms nine state-of-the-art methods. This strong balance between accuracy and speed makes our ActiveEventNet+ well-suited for applications that demand high-precision depth sensing under challenging conditions. 
+
+Visualization Evaluation . To provide an intuitive quali-tative evaluation, Figures 8 and 9 present representative vi-sualization results from the real-world Active-Event-Stereo dataset and the simulated RealSense-Event-Sim dataset, respectively. Note that, our ActiveEventNet+ consistently outperforms two state-of-the-art event-based stereo match-ing methods (i.e., DDES [26] and SE-CFF [24]). In dark indoor environments, where RGB images provide little to no discernible structure, our method effectively leverages stereo events to recover meaningful scene contours. In particular, both feed-forward models fail to capture edge details, whereas ActiveEventNet+ generates sharp and ac-curate disparity boundaries (see highlighted in red boxes). This improvement stems from the proposed lightweight yet efficient temporal consistency module in ActiveEvent-Net+, which exploits rich temporal cues from stereo event streams. Overall, our ActiveEventNet+ excels at producing high-quality disparity maps, even under varying lighting conditions in both indoor and outdoor environments. 
+
+6.3 Ablation Test 
+
+This section performs ablation studies to assess how design choices and parameters affect performance as follows. 
+
+6.3.1 Contribution of Each Component 
+
+To explore the impact of each component on final per-formance, the baseline model uses standard convolutions, simple concatenation in the cost volume module, and ex-cludes the efficient temporal consistency (ETC) module. As illustrated in Table 7, five event-based stereo match-ing methods, namely (a), (b), (c), ActiveEventNet, and our IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 11 100_outdoor_people/149.png 
+
+> 050_indoor_office_cabinet/23.png
+> 107_indoor_checkboard/68.png
+> 090_outdoor_floor
+> 变色：
+> 064_indoor_office_checkbord/
+> 002_indoor_boxes/
+
+Rec.  left  image  Left events  Right events  Ground truth ActiveEventNet +DDES  SE -CFF 
+
+Fig. 9: Representative visualization results on our simulated RealSense-Event-Sim dataset. Our ActiveEventNet+ outper-forms two state-of-the-art methods on both indoor and outdoor scenarios. Improvements are highlighted in red boxes. TABLE 4: Performance evaluation of ActiveEventNet+ on the simulated RealSense-Event-Sim dataset.                                                                     
+
+> Scenario Sequence EPE ↓RMSE ↓D1-all ↓
+> Normal 002 indoor boxes 0.746 1.266 0.023 003 indoor desk 1.156 1.844 0.079 010 indoor desk 1.964 4.202 0.119 042 indoor car 0.686 1.047 0.014 047 indoor office sofa 1.606 4.326 0.062 050 indoor office cabinet 1.005 1.670 0.054 059 indoor conference room 0.786 1.162 0.023 064 indoor office checkerboard 0.771 1.569 0.026 073 indoor floor 1.803 3.392 0.132 078 indoor office room 1.029 1.803 0.056 090 outdoor floor 0.676 1.091 0.015 097 outdoor bridge 0.507 0.979 0.016 100 outdoor people 0.565 1.060 0.013 106 indoor checkerboard 0.855 2.520 0.024 107 indoor checkerboard 0.732 1.855 0.019 Low-light 015 indoor desk night 0.971 1.526 0.049 057 indoor office night 1.341 2.329 0.102 108 indoor checkerboard night 0.715 1.039 0.017 118 outdoor wall night 1.366 2.728 0.102 119 outdoor wall night 1.770 3.358 0.130
+> All Average 1.077 2.078 0.056
+
+ActiveEventNet+, consistently indicate that leveraging Mo-bileNet blocks boosts inference speed, while the introduc-tion of dynamic interaction for cost volume and the efficient temporal consistency (ETC) module enhances accuracy on two datasets. More specifically, incorporating dynamic in-teraction for the cost volume results in EPE reductions of 0.156 and 0.259, RMSE decreases of 0.185 and 0.202, and D1-all declines of 0.017 and 0.042 across the two datasets. Com-pared to ActiveEventNet, our ActiveEventNet+ reduces the EPE from 1.993 to 1.849, the RMSE from 7.821 to 7.787, and the D1-all from 0.083 to 0.073 on the real-world Active-Event-Stereo dataset. Similarly, it lowers the EPE from 1.223 to 1.077, the RMSE from 2.320 to 2.078, and the D1-all from 0.070 to 0.056 on the simulated RealSense-Event-Sim dataset. To our surprise, replacing standard convolutions with MobileNet blocks results in nearly 5.5× and 5.4× in-creases in inference speed on the real-world and simulated datasets, respectively. Nevertheless, the efficient temporal consistency (ETC) module improves accuracy by leveraging rich temporal cues from stereo event streams, but it also in-creases computational complexity. We believe this accuracy-speed trade-off can be valuable in depth sensing scenarios where higher precision is required. 
+
+6.3.2 Influence of Event Representation 
+
+To assess the generality of our ActiveEventNet+ across dif-ferent event representations, we compare four typical event representations (i.e., event images [103], voxel grids [28], event embeddings [26], and reconstructed images [109]) on the real-world Active-Event-Stereo dataset. As shown in Table 8, improved disparity estimation accuracy often comes at the cost of increased computational overhead. In this study, we choose to encode event temporal bins into event images to balance accuracy and inference speed. Notably, our ActiveEventNet+ provides a flexible interface compatible with various input event representations. We be-lieve that a simple yet effective event representation enables our ActiveEventNet+ to better exploit stereo event streams, achieving high accuracy with low computational cost. 
+
+6.3.3 Influence of MobileNet Block 
+
+To evaluate the impact of MobileNet blocks in our Ac-tiveEventNet+, we replace standard convolutions with Mo-bileNet v2 blocks in both the feature extraction and encoder-decoder modules. As illustrated in Table 9, incorporating MobileNet v2 blocks allows ActiveEventNet+ to achieve significantly faster inference speeds while maintaining com-parable accuracy. More specifically, using MobileNet v2 blocks in the feature extraction and encoder-decoder mod-ules results in only a slight drop in accuracy, while re-ducing inference time by approximately 2.5 × and 1.6 ×,respectively. Overall, the absolute increase in EPE is just 0.097, while the total inference time is reduced by nearly 5.2 ×. The results demonstrate that using MobileNet v2 enables our ActiveEventNet+ to achieve an effective trade-off between accuracy and computational efficiency, making it well-suited for practical applications. IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 12 
+
+TABLE 5: Comparison with state-of-the-art methods on our real-world Active-Event-Stereo dataset. Our ActiveEventNet+, incorporating a lightweight yet effective recurrent architecture, outperforms nine state-of-the-art methods, including frame-based models, event-based models, and our baseline ActiveEventNet. “+” indicates that a method leverages temporal cues.                                                                                                                    
+
+> Method Event representation Backbone EPE ↓RMSE ↓D1-all ↓>1px ↓>2px ↓>3px ↓# Params. (M) Time (ms) SGM [104] Rec. images No learning 3.625 16.567 0.586 0.751 0.684 0.585 -32.1 PSMNet [105] Event images 2D CNN 2.894 11.756 0.204 0.603 0.352 0.204 5.22 15.6 DeepPruner-Fast [106] Event images 2D CNN 2.514 8.758 0.113 0.545 0.253 0.112 7.39 39.4 AANet [107] Event images 2D CNN 2.317 8.123 0.106 0.525 0.287 0.106 3.68 16.7 Unimatch [108] Event images Transformer 1.902 7.759 0.068 0.361 0.116 0.066 4.70 87.6 DDES [26] Event embeddings 2D CNN 2.643 8.920 0.122 0.591 0.341 0.122 2.33 19.5 StereoSpike [54] Event images 2D SNN 2.178 7.884 0.103 0.506 0.223 0.103 1.59 31.2 SE-CFF [24] Event stacks 2D CNN 2.015 7.824 0.089 0.425 0.182 0.088 27.00 24.9 ActiveEventNet [56] Event images MobileNet 1.993 7.821 0.083 0.399 0.163 0.082 2.23 6.5 Our ActiveEventNet+ Event images MobileNet + ETC 1.849 7.787 0.073 0.351 0.141 0.073 2.23 30.4
+
+TABLE 6: Comparison with state-of-the-art stereo matching methods on our simulated RealSense-Event-Sim dataset.                                                
+
+> Method EPE ↓RMSE ↓D1-all ↓Runtime (ms) SGM [104] 4.298 8.326 0.681 43.2 PSMNet [105] 2.786 5.583 0.211 20.6 DeepPruner-Fast [106] 1.463 2.513 0.087 76.0 AANet [107] 1.397 2.463 0.077 28.5 Unimatch [108] 1.108 1.780 0.063 172.6 DDES [26] 1.696 3.241 0.125 36.4 StereoSpike [54] 1.500 2.718 0.096 73.6 SE-CFF [24] 1.308 2.326 0.081 65.3 ActiveEventNet 1.223 2.320 0.070 21.9 Our ActiveEventNet+ 1.077 2.078 0.056 97.3
+
+6.3.4 Influence of Cost Volume Strategy 
+
+To evaluate the effectiveness of various cost volume strate-gies in our ActiveEventNet+, we compare our approach with several typical aggregation methods on the Active-Event-Stereo dataset. We set the number of channels C to 48 for all aggregation operations used to construct the cost volume. As depicted in Table 10, our dynamic interaction strategy achieves the best performance compared to three methods (i.e., concatenation, correlation [24], and attention-based fusion) while maintaining comparable computational speed. This improvement is attributed to the ability of our dynamic interaction strategy to efficiently exchange stereo information and aggregate the interacted features. The re-sults show that our method enables the construction of a lightweight yet powerful 3D cost volume, achieving high accuracy with efficient computation. 
+
+6.3.5 Influence of Temporal Modeling Architecture 
+
+To evaluate the impact of different temporal modeling archi-tectures, we assess the effectiveness of the proposed efficient temporal consistency (ETC) module by replacing it with typical recurrent temporal models (e.g., ConvLSTM [110] and ConvGRU [111]) in our ActiveEventNet+. As shown in Table 11, all recurrent architectures outperform the feed-forward model (i.e., ActiveEventNet) without temporal con-sistency modeling. These results highlight the importance of a well-designed temporal consistency strategy for achieving optimal performance. Compared to the two alternatives, our ETC module achieves higher accuracy and lower inference time than ConvLSTM, and offers faster inference than Con-vGRU while maintaining comparable accuracy. To further enhance the interpretability of temporal mod-eling, we provide comparative visualizations to assess whether temporal cues are effectively exploited. As shown in Fig. 10, we present four temporal sequences for each timestamp: the left event stream, predicted disparity maps from our ActiveEventNet+, corresponding error maps with the proposed efficient temporal consistency (ETC) module, and error maps without ETC. The feed-forward baseline (i.e., ActiveEventNet) exhibits progressively larger disparity errors over time, as reflected in its higher EPE and D1-all scores. In contrast, our ActiveEventNet+, incorporating the ETC module, produces disparity predictions with consis-tently lower errors across each timestamp, underscoring the impact of ETC on accuracy. These results confirm that the ETC module effectively models temporal dependencies in stereo event streams, enabling ActiveEventNet+ to achieve more accurate and temporally stable disparity estimation. 
+
+6.3.6 Influence of Temporal Aggregation Length 
+
+To assess the influence of temporal parameters in the ETC module, we conduct an ablation study to investigate how the temporal aggregation length affects performance on the Active-Event-Stereo dataset. As shown in Table 12, we evaluate ETC with aggregation lengths of 1, 2, 3, 4, and 6 event bins. Compared with the feed-forward baseline, the corresponding EPE values are reduced by 0.105, 0.146, 0.166, and 0.213, respectively. In addition, both RMSE and D1-all consistently decrease as the temporal aggregation length in-creases, suggesting that longer aggregation allows the ETC module to capture richer long-range temporal cues from stereo event streams, thereby improving accuracy. However, this improvement comes at the cost of higher computational time. To balance accuracy and computational speed, we set the temporal aggregation length to 3 in our ETC module. This trade-off is particularly well-suited for some scenarios demanding higher accuracy. 
+
+6.4 Scalability Test 
+
+This section investigates the role of structured light, evalu-ates the effectiveness of our solution in high-speed scenes, and explores the feasibility of integrating frames and events. 
+
+6.4.1 Analyzing the Role of Structured Light 
+
+To evaluate the impact of structured light on event-based stereo vision, we conduct a comparative experiment on a IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 13 
+
+TABLE 7: The contribution of each component to our ActiveEventNet+ on our real-world Active-Event-Stereo dataset and our simulated RealSense-Event-Sim dataset. All results are based on the baseline model, which uses standard convolutions, simple concatenation in the cost volume module, and does not incorporate the efficient temporal consistency (ETC) module.                                                                      
+
+> Method MobileNet Cost volume ETC Active-Event-Stereo dataset RealSense-Event-Sim dataset EPE ↓RMSE ↓D1-all ↓Runtime (ms) EPE ↓RMSE ↓D1-all ↓Runtime (ms) Baseline 2.124 7.935 0.092 33.8 1.468 2.496 0.109 108.1 (a) ✓2.210 7.952 0.095 6.2 1.516 2.972 0.117 20.2
+> (b) ✓1.968 7.750 0.075 35.7 1.209 2.294 0.067 112.3 (c) ✓✓2.015 7.824 0.088 29.0 1.153 2.185 0.058 95.1 ActiveEventNet ✓✓1.993 7.821 0.083 6.5 1.223 2.320 0.070 21.9
+> Our ActiveEventNet+ ✓✓✓1.849 7.787 0.073 30.4 1.077 2.078 0.056 97.3
+
+100_outdoor_people /124 , 128, 132, 136, 140,  144 , 148 .png ( 实际间隔 0.2s) 
+
+𝑡  𝑡 + 100 𝑚𝑠  𝑡 + 200 𝑚𝑠  𝑡 + 300 𝑚𝑠  𝑡 + 400 𝑚𝑠  𝑡 + 500 𝑚𝑠  𝑡 + 600 𝑚𝑠 
+
+> Left scene Ours With ETC Without ETC
+> Error
+> 0
+> 1
+> 2
+> 3
+> 4
+
+Fig. 10: Representative visualization results on continuous sequences from the RealSense-Event-Sim dataset. The four rows show the left event stream sequence, predicted disparity maps from our ActiveEventNet+, error maps with our efficient temporal consistency (ETC) module, and error maps without ETC. Note that, our ActiveEventNet+ using temporal cues outperforms the feed-forward baseline (i.e., ActiveEventNet [56]), with improvements highlighted in red boxes. TABLE 8: Comparison of ActiveEventNet+ with event rep-resentations on the real-world Active-Event-Stereo dataset.                       
+
+> Event representation EPE ↓RMSE ↓D1-all ↓Runtime (ms) Event images [103] 1.849 7.787 0.073 30.4
+> Voxel grid [28] 1.827 7.800 0.075 33.7 Event embeddings [26] 1.819 7.780 0.073 38.2 Reconstructed images [109] 1.791 7.761 0.072 59.1
+
+TABLE 9: The influence of MobileNet blocks in ActiveEvent-Net+ on our real-world Active-Event-Stereo dataset.                        
+
+> Feature extraction Encoder-decoder EPE ↓RMSE ↓D1-all ↓Time (ms) Standard Conv. Standard Conv. 1.752 7.756 0.070 156.9 Standard Conv. MobileNet v2 1.819 7.759 0.072 98.8 MobileNet v2 Standard Conv. 1.825 7.770 0.072 61.6 MobileNet v2 MobileNet v2 1.849 7.787 0.073 30.4
+
+representative slow-motion sequence (see Fig. 11). Specifi-cally, we fix the camera system and apply slight perturba-tions along a predefined trajectory, performing experiments both with and without an infrared filter placed in front of the event-camera lens to control the presence of struc-tured light. The quantitative results show that incorporating TABLE 10: Comparison of ActiveEventNet+ with various cost volume strategies on our Active-Event-Stereo dataset.                        
+
+> Aggregation operation EPE ↓RMSE ↓D1-all ↓Runtime (ms) Concatenation 2.015 7.824 0.088 29.0
+> Correlation [24] 1.939 7.813 0.079 29.5 Attention-based fusion 1.879 7.782 0.078 29.8
+> Dynamic interaction 1.849 7.787 0.073 30.4
+
+TABLE 11: The influence of temporal modeling architectures in ActiveEventNet+ on our Active-Event-Stereo dataset.                       
+
+> Modeling architecture EPE ↓RMSE ↓D1-all ↓Runtime (ms) Our feed-forward baseline [56] 1.993 7.821 0.083 6.5
+> ConvLSTM [110] 1.904 7.830 0.089 43.3 ConvGRU [111] 1.843 7.803 0.080 38.9
+> Our ETC 1.849 7.787 0.073 30.4
+
+structured light significantly improves accuracy. In addition, we observe that passive stereo vision generates almost no events, whereas our prototype produces abundant dynamic events thanks to structured light. In other words, integrating structured light into binocular event-camera systems can effectively overcome the limitations of passive event-based IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 14 
+
+TABLE 12: The influence of temporal aggregation length on our Active-Event-Stereo dataset. The feed-forward baseline is conducted using an event bin for ActiveEventNet [56].                                
+
+> Aggregation length EPE ↓RMSE ↓D1-all ↓Runtime ( ms )11.995 7.821 0.083 6.5
+> 21.890 7.812 0.082 20.3 31.849 7.787 0.073 30.4 41.829 7.792 0.072 53.7 61.782 7.761 0.071 76.1 heckbord_low_light /19 6.png
+> Event without
+> 2D pattern Event with
+> 2D patter nError without
+> 2D pattern Error with
+> 2D pattern
+
+Fig. 11: Representative example with and without struc-tured light in extremely slow-motion scenes. Unlike passive stereo, our active stereo vision solution generates more events to enhance texture and achieves better performance. stereo schemes and enhance texture representation in static scenes or low-light environments. 
+
+6.4.2 Verification in High-Speed Scenarios 
+
+To validate our high-speed depth sensing solution, we compare our camera prototype with a conventional frame-based stereo system (Intel RealSense D455). As illustrated in Fig. 12, our method achieves higher disparity estimation accuracy than the RealSense D455 at 90 FPS in high-speed motion scenarios. Conventional RGB frames from the Re-alSense D455 suffer from motion blur, which hinders high-quality depth perception in such conditions. In contrast, our system leverages the high temporal resolution of event cameras to enable high-frequency depth sensing, while in-corporating structured light to enhance texture and further improve accuracy. More precisely, the proposed lightweight ActiveEventNet efficiently processes stereo event stream pairs, achieving inference speeds of up to 150 FPS on an NVIDIA 3090 GPU. Moreover, the proposed ActiveEvent-Net+ offers a flexible trade-off between accuracy and speed by exploiting rich temporal cues, making it well-suited for specific scenarios that demand higher accuracy. 
+
+6.4.3 Depth Sensing with Events and Frames 
+
+To assess whether frames are necessary for active event-based stereo vision, we develop a joint framework that integrates frames and events for stereo matching on the Active-Event-Stereo dataset. Specifically, we utilize an asyn-chronous attention-based fusion module [112] to integrate the cost volumes from stereo event streams and frames in our ActiveEventNet+. To verify the effectiveness of the asyn-chronous fusion strategy, we vary only the frame rate while keeping the temporal event bins fixed at 15 Hz, with the output frequency remaining the same. The baseline refers to our ActiveEventNet+, which processes only the frame modality without using the fusion module. As shown in Table 13, combining the two modalities consistently reduces three evaluation metrics (i.e., EPE, RMSE, and D1-all) com-pared to using events or frames alone. Meanwhile, the joint Blur RGB image  Left events  Our prototype  RealSense D455 
+
+83_outdoor_deer/6.png 
+
+22_indoor_printer_dark/266.png 
+
+Fig. 12: Comparison with frame-based active stereo camera in high-speed motion scenes. Notably, our camera prototype outperforms Realsense D455 for high-speed depth sensing. TABLE 13: The impact of different modalities on the Active-Event-Stereo dataset. The joint integration of frames and events outperforms each single-modality method.                                            
+
+> Input rate (Hz) Modality EPE ↓RMSE ↓D1-all ↓Runtime (ms) Frame Label 015 Events 1.849 7.787 0.073 30.4 515 Frames 2.343 7.959 0.141 30.2 Events + Frames 1.828 7.765 0.072 31.5 10 15 Frames 2.223 7.898 0.126 30.2 Events + Frames 1.819 7.763 0.072 31.5 15 15 Frames 2.128 7.850 0.121 30.2 Events + Frames 1.767 7.759 0.071 31.5
+
+framework achieves computational speed comparable to single-modality methods. Due to the limited measurement rate of the RealSense D455, the real-world dataset provides depth ground truth at only 15 Hz. Ideally, the inference frequency of the joint framework could reach the ultra-high temporal resolution of an event camera, depending on the application and available computational capacity. Furthermore, Fig. 13 presents representative indoor and outdoor results in challenging scenes. The visualizations clearly show that incorporating frames further improves event-based stereo matching, particularly in low-texture re-gions. This is because conventional frames provide valuable texture information for static or slow-motion scenes, while event streams become more critical in low-light scenes or when severe motion blur degrades frame quality. 
+
+## 7 DISCUSSION 
+
+Active event-based stereo vision offers a promising solution for high-speed depth perception, paving the way for next-generation depth cameras for agile robotics. Here, we will discuss the practicality and the limitations of our solution. 
+
+Practicality . Although the proposed lightweight Ac-tiveEventNet achieves high computational efficiency (e.g., 150 FPS on an NVIDIA 3090 GPU), its inference speed is lim-ited by its synchronous frame-based processing paradigm, thus failing to match the microsecond-level temporal reso-lution of event cameras. Designing an asynchronous event-based paradigm capable of achieving ultra-low latency in-ference on resource-constrained mobile platforms remains an open challenge. In addition, the current stereo camera system serves as a simplified prototype primarily for data acquisition. There is significant potential for miniaturiza-tion, similar to the RealSense D400 series, enabling more compact and practical deployment. Although our prototype IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 15 air/27.png 
+
+Lef t RGB image  Left events  Only events  Events and frames 
+
+Fig. 13: Representative visualization results in indoor and outdoor scenarios. Incorporating frames improves the per-formance of the active event-based stereo matching task. employs the DAVIS346 to provide both events and frames, the proposed system is inherently scalable to higher reso-lution event cameras in future implementations. We believe our solution provides a novel perspective for advancing 3D perception in agile robotic platforms. 
+
+Limitations . All depth data from the RealSense camera used as ground truth are collected only under normal-speed motion. This design choice follows a common practice in existing event-based depth estimation datasets, as neither commodity RGB-D sensors nor LiDARs can reliably provide accurate depth labels in high-speed motion scenarios. In practice, this work evaluates depth sensing in real high-speed scenes only through qualitative visual assessment, as no quantitative ground truth labels are available for these scenarios. Additionally, the raw RealSense depth labels can be noisy and exhibit occlusions. Future iterations could benefit from data preprocessing strategies (e.g., temporal filtering) to generate higher-quality depth labels. In short, acquiring high-quality ground truth for depth estimation in high-speed scenes remains an open challenge. 
+
+## 8 CONCLUSION 
+
+This paper presents a novel active event-based stereo vision paradigm, which encompasses a stereo camera prototype, new datasets, and lightweight matching models for low-latency depth estimation. To our knowledge, this work represents an early exploration into integrating binocular event cameras with an infrared 2D pattern projector for ultrafast dense depth sensing. To this end, we first establish a real-world dataset using our active event-based stereo camera prototype, along with a synthetic dataset. Then, we propose ActiveEventNet+, a lightweight yet effective event-based stereo matching neural network designed to gener-ate high-quality dense disparity maps from stereo event streams with low latency. Our solution demonstrates supe-rior depth sensing performance compared to conventional frame-based stereo cameras in low-light, low-texture, and high-speed motion scenarios. We believe that our camera prototype can provide new insights into the development of next-generation neuromorphic stereo camera systems. 
+
+## ACKNOWLEDGMENTS 
+
+This work was supported in part by the National Natural Science Foundation of China under Grant 62506190 and Grant 61827804, in part by the National Key R&D Program of China 2018AAA0102801. 
+
+## REFERENCES 
+
+[1] H. Laga, L. V. Jospin, F. Boussaid, and M. Bennamoun, “A survey on deep learning techniques for stereo-based depth estimation,” 
+
+IEEE Trans. Pattern Anal. Mach. Intell. , vol. 44, no. 4, pp. 1738– 1764, 2020. 1, 3, 7 [2] M. Poggi, F. Tosi, K. Batsos, P. Mordohai, and S. Mattoccia, “On the synergies between machine learning and binocular stereo for depth estimation from images: A survey,” IEEE Trans. Pattern Anal. Mach. Intell. , vol. 44, no. 9, pp. 5314–5334, 2021. 1, 3 [3] H.-G. Jeon, J.-Y. Lee, S. Im, H. Ha, and I. S. Kweon, “Stereo matching with color and monochrome cameras in low-light con-ditions,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2016, pp. 4086–4094. 1 [4] S. R. Fanello, J. Valentin, C. Rhemann, A. Kowdle, V. Tankovich, P. Davidson, and S. Izadi, “Ultrastereo: Efficient learning-based matching for active stereo systems,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2017, pp. 6535–6544. 1, 3 [5] A. Loquercio, E. Kaufmann, R. Ranftl, M. M ¨ uller, V. Koltun, and D. Scaramuzza, “Learning high-speed flight in the wild,” Sci. Robot. , vol. 6, no. 59, p. eabg5810, 2021. 1 [6] D. Falanga, K. Kleber, and D. Scaramuzza, “Dynamic obstacle avoidance for quadrotors with event cameras,” Sci. Robot. , vol. 5, no. 40, p. eaaz9712, 2020. 1 [7] P. Lichtsteiner, C. Posch, and T. Delbruck, “A 128 ×128 120 db 15 μs latency asynchronous temporal contrast vision sensor,” 
+
+IEEE J. Solid-State Circuits , vol. 43, no. 2, pp. 566–576, 2008. 1, 6[8] G. Gallego, T. Delbr ¨ uck, G. Orchard, C. Bartolozzi et al. , “Event-based vision: A survey,” IEEE Trans. Pattern Anal. Mach. Intell. ,vol. 44, no. 1, pp. 154–180, 2020. 1, 6 [9] J. Li, Y. Fu, S. Dong, Z. Yu, T. Huang, and Y. Tian, “Asynchronous spatiotemporal spike metric for event cameras,” IEEE Trans. Neural Netw. Learn. Syst. , vol. 34, no. 4, pp. 1742–1753, 2021. 1 [10] H. Rebecq, R. Ranftl, V. Koltun, and D. Scaramuzza, “High speed and high dynamic range video with an event camera,” IEEE Trans. Pattern Anal. Mach. Intell. , vol. 43, no. 6, pp. 1964–1980, 2019. 1 [11] Z. Wan, Y. Dai, and Y. Mao, “Learning dense and continuous optical flow from an event camera,” IEEE Trans. Image Process. ,vol. 31, pp. 7237–7251, 2022. 1 [12] X. Liu, X. Fan, J. Li, D. Li, W. Zhang, Z. Ma, and Y. Tian, “High-rate monocular depth estimation via cross frame-rate collabora-tion of frames and events,” Int. J. Comput. Vis. , pp. 1–20, 2025. 1[13] M. Muglikar, L. Bauersfeld, D. P. Moeys, and D. Scaramuzza, “Event-based shape from polarization,” in Proc. IEEE Conf. Com-put. Vis. Pattern Recognit. , 2023, pp. 1547–1556. 1 [14] Y. Bao, L. Sun, Y. Ma, and K. Wang, “Temporal-mapping photog-raphy for event cameras,” in Proc. Eur. Conf. Comput. Vis. , 2024, pp. 55–72. 1 [15] B. He, Z. Wang, Y. Zhou, J. Chen, C. D. Singh, H. Li, Y. Gao, S. Shen, K. Wang, Y. Cao et al. , “Microsaccade-inspired event camera for robotics,” Sci. Robot. , vol. 9, no. 90, p. eadj8124, 2024. 1[16] L. Sun, D. Gehrig, C. Sakaridis, M. Gehrig, J. Liang, P. Sun, Z. Xu, K. Wang, L. Van Gool, and D. Scaramuzza, “A unified framework for event-based frame interpolation with ad-hoc deblurring in the wild,” IEEE Trans. Pattern Anal. Mach. Intell. , vol. 47, no. 4, pp. 2265–2279, 2025. 1 [17] X. Yin, H. Shi, J. Chen, Z. Wang, Y. Ye, K. Yang, and K. Wang, “Exploring event-based human pose estimation with 3d event representations,” Comput. Vis. Image Underst. , vol. 249, p. 104189, 2024. 1 [18] L. Sun, C. Sakaridis, J. Liang, Q. Jiang, K. Yang, P. Sun, Y. Ye, K. Wang, and L. V. Gool, “Event-based fusion for motion deblur-ring with cross-modal attention,” in Proc. Eur. Conf. Comput. Vis. ,2022, pp. 412–428. 1 [19] S. Liu, J. Li, G. Zhao, Y. Zhang, and X. Ji, “Eventbench: Towards comprehensive benchmarking of event-based mllms,” in arXiv ,2025. 1 [20] W. Yu, C. Feng, J. Li, J. Tang, J. Yang, Z. Tang, M. Cao, X. Jia, Y. Yang, L. Yuan et al. , “Evagaussians: Event stream assisted gaussian splatting from blurry images,” in Proc. IEEE Int. Conf. Comput. Vis. , 2025, pp. 24 780–24 790. 1 [21] S. Liu, J. Li, G. Zhao, Y. Zhang, X. Meng, F. R. Yu, X. Ji, and M. Li, “Eventgpt: Event stream understanding with multimodal IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 16 
+
+large language models,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2025, pp. 29 139–29 149. 1 [22] D. Falanga, S. Kim, and D. Scaramuzza, “How fast is too fast? the role of perception latency in high-speed sense and avoid,” IEEE Robot. Autom. Lett. , vol. 4, no. 2, pp. 1884–1891, 2019. 1, 3 [23] A. Z. Zhu, Y. Chen, and K. Daniilidis, “Realtime time synchro-nized event-based stereo,” in Proc. Eur. Conf. Comput. Vis. , 2018, pp. 433–447. 1, 2, 3 [24] Y. Nam, M. Mostafavi, K.-J. Yoon, and J. Choi, “Stereo depth from events cameras: Concentrate and focus on the future,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2022, pp. 6114–6123. 1, 2, 3, 7, 9, 10, 12, 13 [25] Y. Zhou, G. Gallego, H. Rebecq, L. Kneip, H. Li, and D. Scara-muzza, “Semi-dense 3d reconstruction with a stereo event cam-era,” in Proc. Eur. Conf. Comput. Vis. , 2018, pp. 235–251. 1, 3 [26] S. Tulyakov, F. Fleuret, M. Kiefel, P. Gehler, and M. Hirsch, “Learning an event sequence embedding for dense event-based deep stereo,” in Proc. IEEE Int. Conf. Comput. Vis. , 2019, pp. 1527– 1537. 1, 2, 3, 9, 10, 11, 12, 13 [27] X. Liu, J. Li, J. Shi, X. Fan, Y. Tian, and D. Zhao, “Event-based monocular depth estimation with recurrent transformers,” IEEE Trans. Circuits Syst. Video Technol. , 2024. 1 [28] A. Z. Zhu, L. Yuan, K. Chaney, and K. Daniilidis, “Unsupervised event-based learning of optical flow, depth, and egomotion,” in 
+
+Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2019, pp. 989–997. 1, 7, 11, 13 [29] X. Liu, J. Li, X. Fan, and Y. Tian, “Event-based monocular dense depth estimation with recurrent transformers,” in arXiv , 2022. 1 [30] S. Chiavazza, S. M. Meyer, and Y. Sandamirskaya, “Low-latency monocular depth estimation using event timing on neuromor-phic hardware,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. ,2023, pp. 4071–4080. 1 [31] D. Li, J. Li, X. Liu, X. Fan, and Y. Tian, “Asynchronous collabo-rative graph representation for frames and events,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2025, pp. 1655–1666. 1 [32] K. Zhang, K. Che, J. Zhang, J. Cheng, Z. Zhang, Q. Guo, and L. Leng, “Discrete time convolution for fast event-based stereo,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2022, pp. 8676– 8686. 1, 3 [33] S. N. Uddin, S. H. Ahmed, and Y. J. Jung, “Unsupervised deep event stereo for depth estimation,” IEEE Trans. Circuits Syst. Video Technol. , vol. 32, no. 11, pp. 7489–7504, 2022. 1, 2, 3 [34] H. Cho, J. Cho, and K.-J. Yoon, “Learning adaptive dense event stereo from the image domain,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2023, pp. 17 797–17 807. 1, 2, 3 [35] A. Andreopoulos, H. J. Kashyap, T. K. Nayak, A. Amir, and M. D. Flickner, “A low power, high throughput, fully event-based stereo system,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. ,2018, pp. 7532–7542. 1, 3 [36] S. H. Ahmed, H. W. Jang, S. N. Uddin, and Y. J. Jung, “Deep event stereo leveraged by event-to-image translation,” in Proc. AAAI Conf. on Artificial Intell. , vol. 35, no. 2, 2021, pp. 882–890. 1, 3[37] P. Liu, G. Chen, Z. Li, H. Tang, and A. Knoll, “Learning local event-based descriptor for patch-based stereo matching,” in Proc. IEEE Conf. Robot. Autom. , 2022, pp. 412–418. 1, 2, 3 [38] J. Jiang, H. Zhuang, X. Huang, D. Kong, and Z. Fang, “Event-based stereo depth estimation with motion guidance and left-right consistency,” IEEE Trans. Instrum. Meas. , 2025. 1, 3 [39] D. K. Ghosh and Y. J. Jung, “Depth cue fusion for event-based stereo depth estimation,” Informat. Fusion. , vol. 117, p. 102891, 2025. 1 [40] M. Muglikar, G. Gallego, and D. Scaramuzza, “Esl: Event-based structured light,” in Proc. Int. Conf. 3D Vis. , 2021, pp. 1165–1174. 1, 3, 4 [41] S. E. M. Bajestani and G. Beltrame, “Event-based rgb sensing with structured light,” in Proc. Int. IEEE Winter Conf. Applications Comput. Vis. , 2023, pp. 5458–5467. 1, 4 [42] M. Muglikar, D. P. Moeys, and D. Scaramuzza, “Event guided depth sensing,” in Proc. Int. Conf. 3D Vis. , 2021, pp. 385–393. 1, 4 [43] X. Huang, Y. Zhang, and Z. Xiong, “High-speed structured light based 3d scanning using an event camera,” Opt. Eng. , vol. 29, no. 22, pp. 35 864–35 876, 2021. 1, 3, 4 [44] H. Wang, T. Liu, C. He, C. Li, J. Liu, and L. Yu, “Enhancing event-based structured light imaging with a single frame,” in Proc. Int. Conf. Multisensor Fusion Integr. Intell. Syst. , 2022, pp. 1–7. 1, 4 [45] G. Wang, C. Feng, X. Hu, and H. Yang, “Temporal matrices mapping-based calibration method for event-driven structured light systems,” IEEE Sensor J. , vol. 21, no. 2, pp. 1799–1808, 2020. 1, 4 [46] Y. Li, H. Jiang, C. Xu, and L. Liu, “Event-driven fringe projec-tion structured light 3d reconstruction based on time-frequency analysis,” IEEE Sensor J. , vol. 24, no. 4, pp. 5097–5106, 2024. 1, 4 [47] J. Fu, Y. Zhang, Y. Li, J. Li, and Z. Xiong, “Fast 3d reconstruction via event-based structured light with spatio-temporal coding,” 
+
+Opt. Eng. , vol. 31, no. 26, pp. 44 588–44 602, 2023. 1, 4 [48] B. Yu, J. Liang, Z. Wang, B. Fan, A. Subpa-asa, B. Shi, and I. Sato, “Active hyperspectral imaging using an event camera,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2025, pp. 929–939. 1 [49] A. Z. Zhu, D. Thakur, T. ¨Ozaslan, B. Pfrommer, V. Kumar, and K. Daniilidis, “The multivehicle stereo event camera dataset: An event camera dataset for 3d perception,” IEEE Robot. Autom. Lett. ,vol. 3, no. 3, pp. 2032–2039, 2018. 2, 3 [50] K. Chaney, F. Cladera, Z. Wang, A. Bisulco, M. A. Hsieh, C. Ko-rpela, V. Kumar, C. J. Taylor, and K. Daniilidis, “M3ed: Multi-robot, multi-sensor, multi-environment event dataset,” in Proc. IEEE Conf. Comput. Vis. Pattern Recog. Worksh. , 2023, pp. 4016– 4023. 2, 3 [51] M. Gehrig, W. Aarents, D. Gehrig, and D. Scaramuzza, “Dsec: A stereo event camera dataset for driving scenarios,” IEEE Robot. Autom. Lett. , vol. 6, no. 3, pp. 4947–4954, 2021. 2, 3 [52] M. Mostafavi, K.-J. Yoon, and J. Choi, “Event-intensity stereo: Estimating depth by the best of both worlds,” in Proc. IEEE Int. Conf. Comput. Vis. , 2021, pp. 4258–4267. 2, 3, 7 [53] H. Cho and K.-J. Yoon, “Selection and cross similarity for event-image deep stereo,” in Proc. Eur. Conf. Comput. Vis. , 2022, pp. 470–486. 2, 3 [54] U. Ranc ¸on, J. Cuadrado-Anibarro, B. R. Cottereau, and T. Masquelier, “Stereospike: Depth learning with a spiking neural network,” IEEE Access , vol. 10, pp. 127 428–127 439, 2022. 2, 3, 9, 12 [55] W. Chen, Y. Zhang, X. Sun, and F. Wu, “Event-based stereo depth estimation by temporal-spatial context learning,” IEEE Signal Process. Lett. , 2024. 2, 3 [56] J. Li, Y. Zhang, H. Han, and X. Ji, “Active event-based stereo vision,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2025, pp. 971–981. 2, 9, 12, 13, 14 [57] A. Abdelsalam, M. Mansour, J. Porras, and A. Happonen, “Depth accuracy analysis of the zed 2i stereo camera in an indoor environment,” Robot. Autonomous Syst. , 2024. 3 [58] E. Grosso and M. Tistarelli, “Active/dynamic stereo vision,” IEEE Trans. Pattern Anal. Mach. Intell. , vol. 17, no. 9, pp. 868–879, 1995. 3[59] Y. Zhang, S. Khamis, C. Rhemann, J. Valentin, A. Kowdle, V. Tankovich, M. Schoenberg, S. Izadi, T. Funkhouser, and S. Fanello, “Activestereonet: End-to-end self-supervised learning for active stereo systems,” in Proc. Eur. Conf. Comput. Vis. , 2018, pp. 784–801. 3 [60] Y. W. Kuan, N. O. Ee, and L. S. Wei, “Comparative study of intel r200, kinect v2, and primesense rgb-d sensors performance outdoors,” IEEE Sensor J. , vol. 19, no. 19, pp. 8741–8750, 2019. 3 [61] L. Yang, L. Zhang, H. Dong, A. Alelaiwi, and A. El Saddik, “Evaluating and improving the depth accuracy of kinect for windows v2,” IEEE Sensor J. , vol. 15, no. 8, pp. 4275–4285, 2015. 3[62] L. Keselman, J. Iselin Woodfill, A. Grunnet-Jepsen, and A. Bhowmik, “Intel realsense stereoscopic depth cameras,” in 
+
+Proc. IEEE Conf. Comput. Vis. Pattern Recog. Worksh. , 2017, pp. 1–10. 3 [63] S. Ghosh and G. Gallego, “Event-based stereo depth estimation: A survey,” in arXiv , 2024. 3, 6, 8 [64] L. Steffen, D. Reichard, J. Weinland, J. Kaiser, A. Roennau, and R. Dillmann, “Neuromorphic stereo vision: A survey of bio-inspired sensors and algorithms,” Front. Neurosci. , vol. 13, p. 28, 2019. 3 [65] L. Gao, Y. Liang, J. Yang, S. Wu, C. Wang, J. Chen, and L. Kneip, “Vector: A versatile event-centric benchmark for multi-sensor slam,” IEEE Robot. Autom. Lett. , vol. 7, no. 3, pp. 8217–8224, 2022. 3[66] J. Jiao, H. Wei, T. Hu, X. Hu, Y. Zhu, Z. He, J. Wu, J. Yu, X. Xie, H. Huang et al. , “Fusionportable: A multi-sensor campus-scene dataset for evaluation of localization and mapping accuracy on IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 17 
+
+diverse platforms,” in Proc. IEEE Conf. Intell. Robot. Syst. , 2022, pp. 3851–3856. 3 [67] H. Wei, J. Jiao, X. Hu, J. Yu, X. Xie, J. Wu, Y. Zhu, Y. Liu, L. Wang, and M. Liu, “Fusionportablev2: A unified multi-sensor dataset for generalized slam across diverse platforms and scalable envi-ronments,” in arXiv , 2024. 3 [68] S. Peng, H. Zhou, H. Dong, Z. Shi, H. Liu, Y. Duan, Y. Chang, and L. Yan, “Cosec: A coaxial stereo event camera dataset for autonomous driving,” in arXiv , 2024. 3 [69] Y. Wang, J. Li, L. Zhu, X. Xiang, T. Huang, and Y. Tian, “Learning stereo depth estimation with bio-inspired spike cameras,” in Proc. IEEE Int. Conf. Multimedia Expo. , 2022, pp. 1–6. 3 [70] T. Huang, Y. Zheng, Z. Yu, R. Chen, Y. Li, R. Xiong, L. Ma, J. Zhao, S. Dong, L. Zhu et al. , “1000 × faster camera and machine vision with ordinary devices,” Eng. , vol. 25, pp. 110–119, 2023. 3 [71] L. Zhu, S. Dong, J. Li, T. Huang, and Y. Tian, “Ultra-high temporal resolution visual reconstruction from a fovea-like spike camera via spiking neuron model,” IEEE Trans. Pattern Anal. Mach. Intell. ,vol. 45, no. 1, pp. 1233–1249, 2022. 3 [72] M. Mahowald, “Vlsi analogs of neuronal visual processing: A synthesis of form and function,” Ph.D. dissertation, California Institute of Technology, 1992. 3 [73] S. Schraml, A. Nabil Belbachir, and H. Bischof, “Event-driven stereo matching for real-time 3d panoramic vision,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2015, pp. 466–474. 3 [74] Z. Xie, S. Chen, and G. Orchard, “Event-based stereo depth estimation using belief propagation,” Front. Neurosci. , vol. 11, p. 535, 2017. 3 [75] N. Risi, E. Calabrese, and G. Indiveri, “Instantaneous stereo depth estimation of real-world stimuli with a neuromorphic stereo-vision setup,” in Proc. IEEE Int. Symposium Circuits Syst. ,2021, pp. 1–5. 3 [76] S. Shiba, Y. Klose, Y. Aoki, and G. Gallego, “Secrets of event-based optical flow, depth and ego-motion estimation by contrast maximization,” IEEE Trans. Pattern Anal. Mach. Intell. , 2024. 3 [77] H. Cho, J.-Y. Kang, and K.-J. Yoon, “Temporal event stereo via joint learning with stereoscopic flow,” in Proc. Eur. Conf. Comput. Vis. , 2025, pp. 294–314. 3 [78] L. Bartolomei, M. Poggi, A. Conti, and S. Mattoccia, “Lidar-event stereo fusion with hallucinations,” in Proc. Eur. Conf. Comput. Vis. ,2025, pp. 125–145. 3 [79] J. Jiang, H. Zhuang, X. Huang, D. Kong, and Z. Fang, “Ev-mgdispnet: Motion-guided event-based stereo disparity estima-tion network with left-right consistency,” in arXiv , 2024. 3 [80] H. Zhang, Y. Zhang, J. Li, L. Zhu, M. Lv, Y. Zhu, Y. Liu, and X. Ji, “Enhanced event-based dense stereo via cross-sensor knowledge distillation,” in Proc. IEEE Int. Conf. Comput. Vis. , 2025, pp. 5437– 5447. 3 [81] P. Zhang, L. Zhu, X. Wang, L. Wang, and H. Huang, “Ematch: A unified framework for event-based optical flow and stereo matching,” in Proc. IEEE Int. Conf. Comput. Vis. , 2025, pp. 5845– 5855. 3 [82] Y.-F. Zuo, L. Cui, X. Peng, Y. Xu, S. Gao, X. Wang, and L. Kneip, “Accurate depth estimation from a hybrid event-rgb stereo setup,” in Proc. IEEE Conf. Intell. Robot. Syst. , 2021, pp. 6833–6840. 3[83] Z. Wang, L. Pan, Y. Ng, Z. Zhuang, and R. Mahony, “Stereo hybrid event-frame (shef) cameras for 3d perception,” in Proc. IEEE Conf. Intell. Robot. Syst. , 2021, pp. 9758–9764. 3 [84] C. Brandli, T. A. Mantel, M. Hutter, M. A. H ¨ opflinger, R. Berner, R. Siegwart, and T. Delbruck, “Adaptive pulsed laser line extrac-tion for terrain reconstruction using a dynamic vision sensor,” 
+
+Front. Neurosci. , vol. 7, p. 275, 2014. 3, 4 [85] T. Leroux, S.-H. Ieng, and R. Benosman, “Event-based structured light for depth reconstruction using frequency tagged light pat-terns,” in arXiv , 2018. 4 [86] J. N. Martel, J. M ¨ uller, J. Conradt, and Y. Sandamirskaya, “An active approach to solving the stereo matching problem using event-based sensors,” in Proc. IEEE Int. Symposium Circuits Syst. ,2018, pp. 1–5. 3, 4 [87] A. R. Mangalore, C. S. Seelamantula, and C. S. Thakur, “Neuro-morphic fringe projection profilometry,” IEEE Signal Process. Lett. ,vol. 27, pp. 1510–1514, 2020. 4 [88] T. Takatani, Y. Ito, A. Ebisu, Y. Zheng, and T. Aoto, “Event-based bispectral photometry using temporally modulated illumi-nation,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2021, pp. 15 638–15 647. 4 [89] W. Morgenstern, N. Gard, S. Baumann, A. Hilsmann, and P. Eis-ert, “X-maps: Direct depth lookup for event-based structured light systems,” in Proc. IEEE Conf. Comput. Vis. Pattern Recog. Worksh. , 2023, pp. 4007–4015. 4 [90] X. Yang, Q. Liao, X. Hu, C. Shi, and G. Wang, “Sepi-3d: Soft epipolar 3d shape measurement with an event camera for mul-tipath elimination,” Opt. Eng. , vol. 31, no. 8, pp. 13 328–13 341, 2023. 4 [91] D. Sirikonda, P. Chakravarthula, I. Gkioulekas, and A. Pediredla, “Structured light with a million light planes per second,” in arXiv ,2024. 4 [92] X. Lu, L. Sun, D. Gu, and K. Wang, “Sge: Structured light system based on gray code with an event camera,” Opt. Eng. , vol. 32, no. 26, pp. 46 044–46 061, 2024. 3, 4 [93] R. Guo, Q. Yang, A. S. Chang, G. Hu, J. Greene, C. V. Gabel, S. You, and L. Tian, “Eventlfm: Event camera integrated fourier light field microscopy for ultrafast 3d imaging,” Light Sci. Appl. ,vol. 13, no. 1, p. 144, 2024. 3 [94] A. Dashpute, J. Wang, J. Taylor, O. Cossairt, A. Veeraraghavan, and F. Willomitzer, “Event-based motion-robust accurate shape estimation for mixed reflectance scenes,” in arXiv , 2023. 4 [95] Y. Fujimoto, T. Sawabe, M. Kanbara, and H. Kato, “Structured light of flickering patterns having different frequencies for a projector-event-camera system,” in Proc. IEEE Conf. Virtual Real. 3D User Interfaces. , 2022, pp. 582–588. 4 [96] J. Fu, Y. Li, X. Dong, W. Weng, Y. Zhang, and Z. Xiong, “Event-based hdr structured light,” in Proc. Adv. Neural Inf. Process. Syst. ,2025. 4 [97] J. Li, X. Wang, L. Zhu, J. Li, T. Huang, and Y. Tian, “Retinomor-phic object detection in asynchronous visual streams,” in Proc. AAAI Conf. on Artificial Intell. , 2022, pp. 1332–1340. 4 [98] G. Taverni, D. P. Moeys, C. Li, C. Cavaco, V. Motsnyi, D. S. S. Bello, and T. Delbruck, “Front and back illuminated dynamic and active pixel vision sensors comparison,” IEEE Trans. Circuits Syst. II , vol. 65, no. 5, pp. 677–681, 2018. 6 [99] A. I. Maqueda, A. Loquercio, G. Gallego, N. Garc´ ıa, and D. Scara-muzza, “Event-based vision meets deep learning on steering prediction for self-driving cars,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2018, pp. 5419–5427. 7 [100] M. Sandler, A. Howard, M. Zhu, A. Zhmoginov, and L.-C. Chen, “Mobilenetv2: Inverted residuals and linear bottlenecks,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2018, pp. 4510–4520. 7 [101] F. Shamsafar, S. Woerz, R. Rahim, and A. Zell, “Mobilestereonet: Towards lightweight deep networks for stereo matching,” in Proc. Int. IEEE Winter Conf. Applications Comput. Vis. , 2022, pp. 2417– 2426. 7, 9 [102] Y. Hu, S.-C. Liu, and T. Delbruck, “v2e: From video frames to realistic dvs events,” in Proc. IEEE Conf. Comput. Vis. Pattern Recog. Worksh. , 2021, pp. 1312–1321. 9 [103] D. Gehrig, A. Loquercio, K. G. Derpanis, and D. Scaramuzza, “End-to-end learning of representations for asynchronous event-based data,” in Proc. IEEE Int. Conf. Comput. Vis. , 2019, pp. 5633– 5643. 9, 11, 13 [104] H. Hirschmuller, “Stereo processing by semiglobal matching and mutual information,” IEEE Trans. Pattern Anal. Mach. Intell. ,vol. 30, no. 2, pp. 328–341, 2007. 9, 12 [105] J.-R. Chang and Y.-S. Chen, “Pyramid stereo matching network,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2018, pp. 5410– 5418. 9, 12 [106] S. Duggal, S. Wang, W.-C. Ma, R. Hu, and R. Urtasun, “Deep-pruner: Learning efficient stereo matching via differentiable patchmatch,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. ,2019, pp. 4384–4393. 9, 12 [107] H. Xu and J. Zhang, “Aanet: Adaptive aggregation network for efficient stereo matching,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2020, pp. 1959–1968. 9, 12 [108] H. Xu, J. Zhang, J. Cai, H. Rezatofighi, F. Yu, D. Tao, and A. Geiger, “Unifying flow, stereo and depth estimation,” IEEE Trans. Pattern Anal. Mach. Intell. , vol. 45, no. 11, pp. 13 941–13 958, 2023. 9, 10, 12 [109] H. Rebecq, R. Ranftl, V. Koltun, and D. Scaramuzza, “Events-to-video: Bringing modern computer vision to event cameras,” in 
+
+Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2019, pp. 3857– 3866. 9, 11, 13 [110] J. Li, J. Li, L. Zhu, X. Xiang, T. Huang, and Y. Tian, “Asynchronous spatio-temporal memory network for continuous event-based IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE 18 
+
+object detection,” IEEE Trans. Image Process. , vol. 31, pp. 2975– 2987, 2022. 12, 13 [111] D. Gehrig, M. R ¨ uegg, M. Gehrig, J. Hidalgo-Carri ´ o, and D. Scara-muzza, “Combining events and frames using recurrent asyn-chronous multimodal networks for monocular depth prediction,” 
+
+IEEE Robot. Autom. Lett. , vol. 6, no. 2, pp. 2822–2829, 2021. 12, 13 [112] D. Li, Y. Tian, and J. Li, “Sodformer: Streaming object detection with transformer using events and frames,” IEEE Trans. Pattern Anal. Mach. Intell. , vol. 45, no. 11, pp. 14 020–14 037, 2023. 14 
+
+Jianing Li (Member, IEEE) received the Ph.D. degree from the National Engineering Research Center for Visual Technology, School of Com-puter Science, Peking University, Beijing, China, in 2022. He is currently an associate researcher in the School of Computer Science at Peking University, Beijing, China. He is the author or coauthor of over 50 technical papers in refereed journals and conferences, such as TPAMI, TIP, CVRP, ICCV, NeurIPS, and ICML. He received the Outstanding Research Award from Peking University in 2020. He was honored with the Outstanding PhD Thesis Award from the CIE in 2024. His research interests include neuro-morphic computing, event-based vision, neuromorphic engineering, and robot learning. 
+
+Yunjian Zhang received the B.S. degree from Northeastern University, China, in 2017, and the Ph.D. degree from the Institute of Information Engineering, Chinese Academy of Sciences, China, in 2023. His research interests include trustworthy AI and and 3D robotic vision. 
+
+Haiqian Han is currently pursuing the the M.S. degree in the Department of Automation, Ts-inghua University, Beijing, China, under the su-pervision of Prof. Xiangyang Ji. He received the B.E. degree in Robotics from Zhejiang Univer-sity, Hangzhou, China, in 2023. His research in-terests include event-based vision, robotics, and computer vision. 
+
+Kangyao Huang is currently pursuing the Ph.D degree in Computer Science at Tsinghua Uni-versity, Beijing, China. He received the B.Eng. in Aerospace from Northwestern Polytechnical University, Xi’an, China, in 2016, and M.Res. in Control & Systems Engineering from the Uni-versity of Sheffield, Sheffield, U.K., in 2020. He has several years working experience in indus-try, and provided applied research in coopera-tion with partners in information, aerospace and manufacturing sectors. His research interests in-clude robot learning and 3D vision. 
+
+Xiangyang Ji (Member, IEEE) received the BE degree in materials science and the MS degree in computer science from the Harbin Institute of Technology, Harbin, China, in 1999 and 2001, re-spectively, and the PhD degree in computer sci-ence from the Institute of Computing Technology, Chinese Academy of Sciences, Beijing, China. He joined Tsinghua University, Beijing, in 2008, where he is currently a professor with the De-partment of Automation, School of Information Science and Technology. He has authored more than 200 refereed conference and journal papers. His current research interests include signal processing, computer vision, and computational photography.
