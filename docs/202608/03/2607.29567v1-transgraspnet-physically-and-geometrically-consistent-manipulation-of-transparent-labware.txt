@@ -1,0 +1,355 @@
+Title: TransGraspNet: Physically and Geometrically Consistent Manipulation of Transparent Labware
+
+URL Source: https://arxiv.org/pdf/2607.29567v1
+
+Published Time: Mon, 03 Aug 2026 01:13:43 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# TransGraspNet: Physically and Geometrically Consistent Manipulation of Transparent Labware 
+
+Hailing Hu 1, Mingyi Zhu 2, Yiquan An 1, Yifei Tian 1, Tianyou Zuo 1, Jian S. Dai 3, and Lifeng Zhou 1,∗
+
+Abstract — Manipulating transparent laboratory glassware that contains liquid is inherently safety-critical: even small geometric errors can cause unstable grasps and hazardous spillage. Although recent progress has been made in trans-parent object perception and robotic grasping, most existing systems optimize detection, depth reconstruction, and grasp planning independently, which leads to cross-stage inconsis-tency—imperfect boundaries induce depth bleeding, distorted surfaces corrupt normal estimation, and task-agnostic grasp scoring yields tilted or off-center grasps that fail under dy-namic motion. In this paper, we propose TransGraspNet, a geometry–physics consistent framework that explicitly enforces consistency from perception to execution through three coupled principles: boundary consistency to produce structurally reli-able object contours as downstream priors, surface consistency to preserve geometric fidelity and surface normal accuracy during depth reconstruction, and physics consistency to refine grasp selection with centroid alignment and wrench-space stability for upright and dynamically robust manipulation. We evaluate TransGraspNet on public benchmarks, a dedicated transparent glassware dataset, and a real robotic platform. The results show improved boundary quality and surface normal fidelity, and demonstrate strong task-level performance in cluttered transparent scenes. Most importantly, the proposed system achieves reliable real-world operation, including high grasp success rates in clutter and zero spillage during high-speed liquid transport, highlighting its practicality for safety-critical laboratory automation. 
+
+I. I NTRODUCTION 
+
+Autonomous laboratory systems, often referred to as “robot scientists,” aim to perform complex experimental procedures with minimal human intervention. In such en-vironments, robotic manipulators must reliably handle trans-parent laboratory glassware such as beakers, cylinders, and test tubes under cluttered and reflective conditions. Unlike structured industrial parts, transparent objects exhibit se-vere optical ambiguity: refractions, specular highlights, and background distortions dominate RGB observations, while commodity depth sensors frequently suffer from missing returns and boundary corruption. When these objects contain liquid, the manipulation problem becomes inherently safety-critical—minor geometric errors can induce tilted grasps, unstable transport, or even hazardous spillage. Therefore, robust and physically stable transparent object manipulation is a fundamental requirement for laboratory automation. 
+
+> *Corresponding author: Lifeng Zhou (email: lifengzhou@pku.edu.cn; ORCID: 0000-0001-5479-3681)
+> 1Hailing Hu, Yiquan An, Yifei Tian, Tianyou Zuo, and Lifeng Zhou are with Peking University, Beijing, China (Lifeng Zhou is also with the School of Advanced Manufacturing and Robotics, Peking University).
+> 2Mingyi Zhu is with Shanghai Jiao Tong University, Shanghai, China.
+> 3Jian S. Dai is with Southern University of Science and Technology, Shenzhen, China.
+
+Despite recent advances in transparent object perception and robotic grasping, most existing systems adopt a cascaded pipeline consisting of detection, depth completion, and grasp planning, where each component is optimized independently. While such modular designs perform reasonably well in iso-lated benchmarks, they often fail in transparent manipulation scenarios. The underlying reason is error propagation caused by cross-stage geometric inconsistency. Inaccurate object boundaries lead to depth bleeding during reconstruction; dis-torted depth surfaces degrade surface normal estimation; and grasp planners that rely solely on local geometric feasibility produce tilted or off-center grasps. In cluttered laboratory environments, these inconsistencies accumulate across stages and ultimately manifest as unstable physical interaction. We argue that the core challenge in transparent glassware manipulation is not merely the need for stronger models within individual modules, but the lack of geometry–physics consistency across perception and action stages. Transparent objects amplify the consequences of structural misalignment between modules: a boundary error in perception can fun-damentally alter the reconstructed surface geometry, which in turn compromises force-closure analysis and dynamic stability during execution. Addressing this problem therefore requires a principled framework that enforces structural and physical consistency throughout the entire pipeline. To this end, we propose TransGraspNet, a geome-try–physics consistent framework for transparent object ma-nipulation. At the perception stage, we introduce boundary-consistent reasoning to generate structurally reliable ob-ject contours that serve as explicit geometric priors for downstream reconstruction. During depth reconstruction, we enforce surface consistency through boundary-guided gat-ing and geometry-preserving constraints to prevent depth bleeding and maintain surface normal fidelity. Finally, at the manipulation stage, we incorporate physics-consistent grasp refinement by integrating centroid alignment and wrench-space stability analysis, transforming geometrically feasible grasps into dynamically safe and upright executions suitable for liquid-containing glassware. The contributions of this work are fourfold. First, we es-tablish a unified geometry–physics consistent framework that systematically addresses cross-stage inconsistency in trans-parent object manipulation. Second, we design a boundary-enforced reconstruction strategy that preserves geometric structure and surface normal fidelity under severe optical ambiguity. Third, we develop a physics-aware grasp re-finement mechanism that explicitly incorporates task-level stability constraints for safe execution. Finally, we validate arXiv:2607.29567v1 [cs.RO] 31 Jul 2026 the proposed system on public benchmarks and a real robotic platform, including dynamic liquid transport experiments, demonstrating robust performance in cluttered transparent laboratory environments.  
+
+> Fig. 1. Overall framework. TransGraspNet consist of perception, depth re-construction, and grasp planning modules to ensure cross-stage consistency for transparent labware manipulation.
+
+II. R ELATED WORK 
+
+A. Transparent Object Detection and Segmentation 
+
+Transparent objects lack inherent texture, making their appearance heavily dependent on background and lighting, which defeats traditional color- or texture-based methods. Early work exploited physics-driven cues: specular highlights [1], edge distortion [2], light-field consistency [3], and po-larization [4]. While effective in controlled settings, these approaches require specialized hardware or strict lighting, limiting generalization in open laboratories. With deep learning, data-driven methods became main-stream. Lai et al. [5] first applied R-CNN with color and highlight features. Sajjan et al. [6] used Mask R-CNN on synthetic data for instance segmentation. Xie et al. released the Trans10K dataset and the dual-branch TransLab model [7], later improving with Trans2Seg, a Transformer-based approach treating segmentation as dictionary lookup [8]. Despite progress, challenges remain for robotic manip-ulation. First, state-of-the-art methods focus on semantic segmentation (e.g., “glass” category), whereas grasping re-quires high-precision instance segmentation to distinguish individual objects. Second, applying generic instance mod-els like Mask R-CNN to transparent objects suffers from “perspective effects”—background textures leak into masks, causing blurred edges or holes. To address this, we refine Mask R-CNN with CBAM attention for noise suppression and an explicit Edge Branch to enforce geometric contours, achieving fine-grained perception at low cost. 
+
+B. Transparent Object Depth Completion and Restoration 
+
+Transparent objects cause severe depth corruption in con-sumer RGB-D cameras due to infrared transmission and specular reflection, creating an ill-posed reconstruction prob-lem that requires additional visual cues. Early depth completion research targeted autonomous driving, using sparse convolutions [9] and spatial propagation networks like CSPN [10] and NLSPN [11]. While effective for LiDAR data, these methods fail on transparent objects where valid depth seeds are rarely acquired from glass surfaces. Addressing transparent objects specifically, ClearGrasp [6] predicted normals, boundaries, and masks for global optimization, but its multi-stage pipeline is too slow for real-time grasping. Later methods improved shape coherence via implicit neural representations [12] and occlusion awareness [13], though inference costs remain high in cluttered scenes. The current efficient paradigm is RGB-guided depth com-pletion, where high-resolution RGB guides sparse depth filling [14], [15], [16]. However, these methods face severe modality misalignment in laboratory scenarios. Multi-modal fusion networks [17], [18] assume RGB and depth edges are spatially consistent—an assumption broken for transpar-ent objects. Background textures seen through glass create texture-structure ambiguity, causing networks to produce depth bleeding or over-smoothing [12], [15]. To address this, we propose TDCNet with a gating mecha-nism [19], [20] that adaptively learns RGB feature confidence and suppresses guidance in texture-rich but geometrically flat regions, achieving high-fidelity reconstruction. 
+
+C. Robotic Grasp Detection and Planning 
+
+Robotic grasping generates feasible grasp configurations from perceptual input, broadly categorized into planar and 6-DoF grasping. 
+
+1) Planar Grasping: Early planar grasping used analytic methods for force closure constraints [21]. Deep learning advanced this field: Lenz et al. [22] used cascaded net-works for grasp rectangles; Redmon et al. [23] introduced YOLO-based single-stage detection; Morrison et al. [24] proposed GG-CNN for real-time grasp quality maps. While computationally efficient, planar grasping restricts robots to top-down operations, limiting applicability in laboratory scenarios requiring side-grasping of beakers. 2) 6-DoF Grasping: Six-DoF grasping enables complete 3D pose inference. The sample-and-evaluate paradigm, ex-emplified by GPD [25] and PointNetGPD [26], samples candidates and evaluates contact quality. Dex-Net [27] lever-aged physics simulation for robustness prediction. Recent advances include GraspNet-1Billion with VAE-based gen-eration and geometric scoring [28], Contact-GraspNet for dense prediction via implicit maps [29], and Transformer [30] or diffusion-based [31] models for handling transparent or reflective objects. 
+
+3) Task-Agnostic vs. Task-Constrained Grasping: Generic 6-DoF models excel in geometric stability but remain task-agnostic, with scoring functions optimizing only friction and contact depth [28], [29]. In robot scientist applications, grasping must also satisfy process constraints: pipetting requires upright orientation, and grasp points must clear liquid centroids to prevent tipping. Directly applying generic GraspNet often yields high-confidence but tilted poses. This paper addresses this gap by embedding laboratory-specific physics safety constraints into the scoring module, selecting physically safe grasps from geometrically feasible candi-dates. III. M ETHOD 
+
+We propose TransGraspNet , a geometry–physics con-sistent framework for transparent glassware manipulation. The system enforces structural coherence from 2D bound-ary perception to 3D surface reconstruction and finally to physics-aware grasp execution. Given RGB-D input (I, D ),the pipeline outputs a safety-compliant 6-DoF grasp pose. 
+
+A. Edge-Guided Boundary Consistency 
+
+Transparent objects exhibit weak internal texture but rel-atively clear refractive contours. To enhance boundary reli-ability, we build upon a ResNet-101 + FPN backbone and introduce an Enhanced CBAM (E-CBAM) attention module followed by a dual-stream boundary head. The attention refinement is defined as: 
+
+F ′ = Ms(Mc(F ) ⊗ F ) ⊗ (Mc(F ) ⊗ F ), (1) where Mc and Ms denote channel and spatial attention, respectively, and ⊗ is element-wise multiplication. A lightweight Edge Branch predicts contour probability 
+
+Pedge , which is fused with mask features: 
+
+Ff used = Concat (Fmask , F edge ). (2) Edge supervision is generated via morphological erosion: 
+
+Gedge = Gmask − Erosion (Gmask ). (3) The overall loss is: 
+
+Ltotal = Lcls + Lbox + Lmask + λL edge , (4) with Dice-style edge loss: 
+
+Ledge = 1 − 2 P 
+
+> i
+
+pigi + ϵ
+
+P 
+
+> i
+
+pi + P 
+
+> i
+
+gi + ϵ . (5) The predicted mask Mobj and edge map Emask are explic-itly forwarded as geometric priors for depth reconstruction.  
+
+> Fig. 2. Architecture of TransGraspNet-Det. The network employs E-CBAM for edge-aware feature enhancement and a dual-stream head for joint boundary-guided segmentation and object detection.
+
+B. Surface Consistency via Geometry-Aware Depth Comple-tion 
+
+Depth sensing on transparent objects suffers from missing returns and cross-boundary diffusion. We adopt a TDCNet backbone and introduce an Edge-Guided Attention Gate (EGAG) to regulate multi-modal fusion. At scale l, fusion is defined as: 
+
+αgate = σ(Wg · Concat (Frgb , F depth , E mask )) , (6) 
+
+˜F (l) = ϕ(F (l)
+
+> depth
+
+, α gate ⊙ F (l)
+
+> rgb
+
+). (7) This mechanism suppresses cross-boundary depth propa-gation while preserving interior smoothness. To preserve object geometry, we introduce a Masked Geometric Retention (MGR) loss: 
+
+Lsmooth = X
+
+> p∈Ω
+
+(αhigh Mobj (p) + αdecay Mbg (p)) |∇ D(p)|.
+
+(8) Surface normal accuracy is evaluated as: 
+
+θerr = 1
+
+|Ω|
+
+X
+
+> i∈Ω
+
+arccos npred i · ngt i
+
+∥npred i ∥∥ ngt i ∥
+
+!
+
+. (9) The refined depth Dref ined is back-projected to generate point cloud P and surface normals N . 
+
+> Fig. 3. Architecture of TransGraspNet-Depth. The model integrates an Edge-Guided Attention Gate (EGAG) and Masked Geometric Retention (MGR) loss to suppress depth bleeding and preserve surface normal fidelity.
+
+C. Geometry–Physics Aware Grasp Refinement 
+
+Given grasp candidates {gi} generated by a pre-trained 6-DoF model, we refine their scores by integrating geometric alignment and physical stability. Using PCA, we compute object centroid cobj and principal axis vmain . For grasp gi with center cg and approach vector 
+
+vapp , we define: 
+
+Radial alignment: 
+
+Sradial = exp 
+
+
+
+− d(cg , v main )2
+
+2σ2
+
+> r
+
+
+
+, (10) 
+
+Angular matching: 
+
+Sangle = exp 
+
+
+
+− (θapp − θideal )2
+
+2σ2
+
+> a
+
+
+
+, (11) 
+
+Centroid alignment: 
+
+Scentroid = exp 
+
+
+
+− ∆2 
+
+> axial
+
++ ∆ 2
+
+> lateral
+
+2σ2
+
+> c
+
+
+
+. (12) At the contact level, we evaluate: 
+
+Antipodal condition: 
+
+Santi = I(π − θn < 2β), (13) 
+
+Wrench-space robustness: 
+
+SQ = Radius (ConvexHull (Wrenches )) . (14) The final score is: 
+
+w0Sraw + w1Sradial + w2Sangle 
+
++ w3Scentroid + w4Santi + w5SQ = Sfinal . (15)  
+
+> Fig. 4. Geometry-physics aware grasp refinement. Raw candidates are re-scored by fusing global geometric priors (axis/centroid alignment) with contact mechanics (antipodal and wrench-space Q1 metrics) via adaptive weight learning.
+
+D. System Execution 
+
+The selected grasp g∗ is transformed to the robot base frame and executed through a standard approach–grasp– lift–place pipeline. By enforcing boundary, surface, and physics consistency across stages, the system produces up-right and dynamically stable grasps suitable for liquid-containing glassware. IV. E XPERIMENTS AND RESULTS 
+
+We validate TransGraspNet on transparent perception, depth restoration, and grasp planning via public benchmark evaluation, domain fine-tuning on RobotSci-Glass, and real-robot grasping. We further conduct ablations to isolate the contribution of key modules. 
+
+A. Dataset Preparation 
+
+To address scarce transparent-object data and unavailable depth ground truth in chemical labs, we adopt Public Bench-mark Pre-training + Domain-Specific Fine-tuning .
+
+1) Public Benchmarks:  
+
+> •
+
+Trans10K: 10k+ real images for pre-training TransGraspNet-Det to learn generic transparent appearance cues.  
+
+> •
+
+ClearGrasp: synthetic+real RGB-D for pre-training TransGraspNet-Depth to learn depth recovery priors from noisy measurements. 
+
+2) RobotSci-Glass Dataset: We construct RobotSci-Glass for “Robot Scientist” operations, covering 20 categories (15 transparent glassware). We use Paired Acquisition & Sparse Fine-tuning with two subsets: 1) Perception Subset: 5,000+ RGB-D images under varying backgrounds/lighting, annotated with 2D in-stance masks to train and test segmentation robustness. 2) Depth Golden Subset: 200 representative scenes for accurate depth supervision. We apply Opaque Coating 
+
+to blacken transparent vessels, enabling a RealSense camera to capture near noise-free depth as Ground Truth. This subset is used exclusively for fine-tuning and quantitative evaluation of TransGraspNet-Depth. 
+
+B. Implementation Details 
+
+All models are implemented in PyTorch on Ubuntu 20.04 with an NVIDIA RTX 4090 GPU. 
+
+1) Perception Network: We use ResNet-101 (ImageNet initialized). Training follows a two-stage protocol: pre-train on Trans10K for 20 epochs (lr=0.002) to learn generic trans-parent features, then fine-tune on RobotSci-Glass Perception Subset for 10 epochs (lr=0.0002) to improve laboratory vessel boundaries. 
+
+2) Depth Completion Network: Based on TDCNet with ClearGrasp pre-trained weights, we fine-tune only on the Depth Golden Subset. To avoid overfitting, we apply a
+
+Partial Freezing Strategy : freeze the first three encoder layers while updating the decoder and the proposed EGAG. We use AdamW with batch size 8. 
+
+3) Grasp Scoring Module: We generate initial 6D can-didates using the official GraspNet-1Billion model, then apply our geometric-physics constrained refinement as post-processing. We calibrate the score weights offline using 200 typical grasps labeled success/failure and fit a linear regression to maximize correlation with grasp success (no backprop training required). 
+
+C. Evaluation Metrics 
+
+We evaluate each module with task-aligned metrics. TABLE I ABLATION STUDY ON INSTANCE SEGMENTATION PERFORMANCE                           
+
+> ID Method E-CBAM Edge Branch AP mask (%) Boundary F (%) 1Baseline (Mask R-CNN) ××72.5 48.2 2+ Attention Only ✓×74.1 (+1.6) 51.5 (+3.3) 3+ Edge Branch Only ×✓75.9 (+3.4) 62.8 (+14.6)
+> 4Ours (Full Method) ✓✓78.5 (+6.0) 65.3 (+17.1)
+
+1) Perception Metrics: We report AP box and AP mask .Since transparent boundaries are easily blurred, we addi-tionally use Boundary IoU , computed only within a narrow contour band to better reflect fine-edge quality. 
+
+2) Depth and Geometry Metrics: We report RMSE, MAE, and REL for depth accuracy. To assess whether the recovered surface is physically plausible (e.g., cylindrical curvature), we use Mean Surface Normal Error ( θerr ):
+
+θerr = 1
+
+|Ω|
+
+X
+
+> i∈Ω
+
+arccos npred i · ngt i
+
+∥npred i ∥∥ ngt i ∥
+
+!
+
+(16) where Ω denotes valid pixels. Lower θerr indicates smoother and more geometry-consistent reconstructions, which is crit-ical for force-closure analysis. 
+
+3) Grasp Success Rate: A successful grasp completes a full loop: lift, transport, and stable placement (no slip/collision). We compute: Success Rate = Nsuccess 
+
+Ntotal 
+
+× 100% (17) where Ntotal is the total trials and Nsuccess is the number of successes. 
+
+Fig. 5. Qualitative comparison of edge-guided mechanism. Compared to Mask R-CNN, our method with E-CBAM and edge supervision effectively suppresses reflection noise and preserves complete contours. 
+
+D. Component Effectiveness Analysis 
+
+We validate the necessity of key modules via ablations and qualitative visualizations. 
+
+1) Impact of Edge-Guided Perception: We conduct or-thogonal ablations on RobotSci-Glass to evaluate the E-CBAM and the Edge Branch .As shown in Table I, E-CBAM improves overall seg-mentation mainly by suppressing background-induced false 
+
+TABLE II QUANTITATIVE COMPARISON OF DEPTH COMPLETION ON 
+
+ROBOT SCI -G LASS 
+
+Method RMSE (mm) ↓ REL ↓ Normal Error ( ◦) ↓
+
+Baseline (TDCNet) 25.4 0.09 15.2 Ours 18.1 (-7.3) 0.06 8.4 (-6.8) 
+
+positives, while the Edge Branch is the dominant factor for contour accuracy (+14.6% Boundary F). Combining both yields the best performance, because attention reduces reflective high-frequency clutter and allows edge supervision to focus on true object boundaries. Figure 5 confirms that the baseline errors largely come from reflection noise causing mask bleeding, while our edge-guided constraints produce more reliable masks for downstream depth completion. 
+
+2) Geometry-Aware Depth Completion: We compare our depth module (EGAG + MGR loss) against the original TDCNet. As shown in Table II, our method reduces RMSE by 7.3 mm and, more importantly, halves the normal error (15.2 ◦
+
+→ 8.4 ◦), indicating that we recover physically consistent curvature rather than only smoothing pixels. 
+
+Fig. 6. Qualitative comparison of depth completion. Error heatmaps show that our method maintains lower error distributions and preserves surface curvature better than the baseline TDCNet. 
+
+Figure 6 visualizes reduced error accumulation and mit-igated geometric collapse, providing more reliable normals for force-closure grasping. 
+
+3) Geometric Quality Evaluation of Grasp Poses: To isolate pose quality, we test on opaque objects and evaluate whether grasps are well-aligned rather than merely success-ful. 
+
+Metrics. We compare Top-1 grasps to the ideal principal-axis frame using: (i) Angular Error ( θerr ) between approach vector and surface normal (smaller is more vertical); (ii) 
+
+Center Offset (dof f ) between grasp center and object centroid along height (smaller is more stable). TABLE III GEOMETRIC QUALITY COMPARISON OF TOP -1 G RASP POSES                                              
+
+> Strategy Score Basis Succ. (%) Angle Err ( ◦)Offset (mm) Baseline Visual Conf. 94.0 22.5 ±8.4 35.2 ±5.1 Ours Geo. + Phy. 98.0 ∗3.8 ±1.5 ∗∗∗ 8.5 ±1.2 ∗∗∗
+> *p < 0.05 , *** p < 0.001 . Standard deviations are denoted by ±.
+> Fig. 7. Visualization of Top-kgrasp ranking. Our geometry-physics aware re-ranking prioritizes structurally aligned and stable poses over the tilted or edge-biased grasps favored by GraspNet. TABLE IV COMPARISON OF INSTANCE SEGMENTATION METHODS ON
+> CLEAR GRASP
+> Method AP mask AP box Boundary F Mask R-CNN 76.9 78.4 52.1 PointRend 78.5 80.1 61.4 TransLab 79.8 81.2 58.6 Ours 78.2 79.5 65.1
+
+As shown in Table III, the baseline often prefers tilted edge grasps (high visual confidence) leading to large angle/offset errors, which is undesirable for precise placement. Our scoring explicitly enforces near-orthogonal, centroid-aligned grasps, achieving 3.8 ◦ angular error and 8.5 mm offset. Figure 7 further shows that our method ranks structurally aligned grasps higher, functioning as an optimizer rather than a simple failure filter. 
+
+E. Comparison with State-of-the-Art Methods 
+
+We evaluate generalization on ClearGrasp under compa-rable backbones/architectures. 
+
+1) Transparent Object Segmentation: We compare with TransLab [7] and PointRend (ResNet backbones). Table IV shows that while TransLab slightly improves global AP, our method achieves the best boundary quality 
+
+(65.1%), which is more crucial for downstream geometric constraints in grasping. 
+
+2) Depth Completion Performance: We compare with ClearGrasp [6] and NLSPN on ClearGrasp Test-Real. As shown in Table V, our method achieves the best RMSE and the highest δ < 1.25 (91.5%), indicating stronger robustness against outliers and reducing collision risks in manipulation.                                            
+
+> TABLE V COMPARISON OF DEPTH COMPLETION METHODS ON CLEAR GRASP
+> Method RMSE (m) ↓MAE (m) ↓δ < 1.25 ↑
+> ClearGrasp 0.054 0.043 85.3% NLSPN 0.048 0.038 89.6% TDCNet (Base) 0.045 0.037 90.2% Ours 0.043 0.035 91.5%
+> TABLE VI SUCCESS RATES IN DIFFERENT SCENARIOS
+> Scenario Complexity Attempts Success Rate (%) Scenario-I Simple 50 48 96.0 Scenario-II Hard 50 43 86.0 Average -100 91 91.0
+> Fig. 8. Real robot grasping in single-object scenarios. TransGraspNet reliably predicts and executes high-quality grasps across varying optical properties and scales for both transparent and non-transparent objects.
+
+F. Real-World Robotic Grasping and Manipulation Experi-ments 
+
+We validate TransGraspNet on a real “Robot Scientist” platform to measure end-to-end reliability on transparent glassware. 
+
+1) Experimental Setup and Protocol: Hardware: AUBO i5 6-DoF arm with CTAG2F90C adaptive parallel gripper and an eye-in-hand Intel RealSense D435i RGB-D camera. 
+
+Success Criteria: A trial is successful only if it completes the full pipeline: 1) Perception success: correct identification and local-ization. 2) Grasp success: lift to 30 cm and hold for 3 s without slipping. 3) Transport success: horizontal move of 20 cm to place-ment area. 4) Placement success: upright, stable placement without tipping/shaking. 
+
+2) Quantitative Evaluation of Grasp Stability: We per-form 50 trials per scenario (100 total). Table VI reports success rates. As shown in Table VI, TransGraspNet achieves 96.0% in simple scenes and 86.0% in clutter. Since success requires 
+
+stable placement , the results also verify that the physics-aware scoring rejects grasps that are pickable but not place-able, improving closed-loop reliability. 
+
+3) Dynamic Stability Test: Liquid Transport: We further test dynamic stability via high-speed transport of partially Fig. 9. Manipulation results in multi-object scenarios. The complete pick-transport-place sequence demonstrates stable grasping and collision-free execution under clutter and occlusions.    
+
+> Fig. 10. Dynamic stability test in high-speed liquid transport. The robot achieves zero spillage during 0.5m/s transport, confirming that wrench-constrained scoring ensures orientation alignment and suppresses slippage.
+
+filled glassware, where small pose errors can be amplified into sloshing/spillage. We use a 50 ml Erlenmeyer flask and a 100 ml glass bottle, each filled to 50% with colored liquid. The robot executes a horizontal transport trajectory of 30 cm with v = 0 .5 m/s and 
+
+a = 1 .0 m/s 2. As shown in Figure 10, the grasp orientation remains aligned with gravity during lifting and transport; the liquid surface shows only minor fluctuations, and no slippage is observed. The task achieves zero spillage throughout. This improvement is mainly due to wrench-constrained scoring that favors contact points near the centroid, reducing inertial moments, and frictional closure constraints that en-large disturbance coverage, suppressing micro-slippage on smooth glass surfaces. Compared with purely geometric grasp selection, our approach is more robust to start-stop in-ertial disturbances, meeting safety requirements in chemical operations. V. C ONCLUSION AND FUTURE WORK 
+
+Targeting the challenges of autonomous robotic manip-ulation of transparent glassware in unstructured laboratory environments, this paper proposes and validates a full-stack perception and grasping system named TransGraspNet .This research is dedicated to systematically resolving three core challenges: the Visual Feature Sparsity and Background Coupling of transparent objects under uncontrolled lighting, the Depth Incompleteness and Distortion in 3D geometric reconstruction, and the Contact Instability during physical interaction. To overcome these hurdles, we first proposed an edge-guided perception mechanism. By introducing the E-CBAM attention module and a dual-stream edge branch, we ex-plicitly utilize high-frequency contour features as strong supervision signals, effectively decoupling object boundaries from strong reflections and background clutter, thus solving the “visual invisibility” segmentation problem. Building on this, we designed the TransGraspNet-Depth completion network. Utilizing the Edge-Guided Attention Gate (EGAG) and geometric retention loss, it fundamentally repairs depth voids and geometric collapse caused by refraction and transmission, providing the robot with a high-fidelity 3D operational space. Crucially, we innovatively constructed a joint “Geometric-Physics” scoring strategy. Transcending tra-ditional visual confidence assessment, it enforces stable grasp poses compliant with friction closure principles through prin-cipal axis alignment constraints and Wrench Space analysis. Extensive experiments on the RobotSci-Glass dataset and a real physical platform demonstrate the system’s effective-ness. Results show that even in challenging multi-object oc-clusion and strong reflection scenarios, the system maintains a high grasp success rate of 86.0% and achieves zero-spillage dynamic stability in high-speed liquid transport tasks. This verifies that introducing geometric consistency restoration and physical constraints into the planning layer significantly enhances robustness when handling transparent, fragile, and high-risk chemical vessels, laying a solid foundation for auto-mated laboratory systems with “Robot Scientist” capabilities. REFERENCES 
+
+[1] Osadchy, Jacobs, and Ramamoorthi, “Using specu-larities for recognition,” in Proceedings Ninth IEEE International Conference on Computer Vision , IEEE, 2003, pp. 1512–1519. [2] K. McHenry, J. Ponce, and D. Forsyth, “Finding glass,” in Proceedings of the 2005 IEEE Computer Society Conference on Computer Vision and Pattern Recog-nition (CVPR) , 2005, pp. 973–979. DOI : 10.1109/ CVPR.2005.161 
+
+[3] Y. Xu, H. Nagahara, A. Shimada, and R.-i. Taniguchi, “Transcut: Transparent object segmentation from alight-field image,” in Proceedings of the IEEE Interna-tional Conference on Computer Vision , 2015, pp. 3442– 3450. [4] A. Kalra, V. Taamazyan, S. K. Rao, K. Venkataraman, R. Raskar, and A. Kadambi, “Deep polarization cues for transparent object segmentation,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2020, pp. 8602–8611. DOI : 10. 1109/CVPR42600.2020.00863 
+
+[5] P.-J. Lai and C.-S. Fuh, “Transparent object detection using regions with convolutional neural network,” in 
+
+IPPR conference on computer vision, graphics, and image processing , vol. 2, 2015. [6] S. Sajjan et al., “Clear grasp: 3d shape estimation of transparent objects for manipulation,” in 2020 IEEE international conference on robotics and automation (ICRA) , IEEE, 2020, pp. 3634–3642. [7] E. Xie, W. Wang, W. Wang, M. Ding, C. Shen, and P. Luo, “Segmenting transparent objects in the wild,” in European Conference on Computer Vision (ECCV) ,2020. [8] E. Xie et al., “Segmenting transparent objects in the wild with transformer,” in Proceedings of the Thirtieth International Joint Conference on Artificial Intelligence (IJCAI) , 2021, pp. 1194–1200. DOI : 10 . 24963 / ijcai.2021/165 
+
+[9] J. Uhrig, N. Schneider, L. Schneider, U. Franke, T. Brox, and A. Geiger, “Sparsity invariant cnns,” in 2017 international conference on 3D Vision (3DV) , IEEE, 2017, pp. 11–20. [10] X. Cheng, P. Wang, and R. Yang, “Depth estimation via affinity learned with convolutional spatial propagation network,” in Proceedings of the European conference on computer vision (ECCV) , 2018, pp. 103–119. [11] J. Park, K. Joo, Z. Hu, C.-K. Liu, and I. So Kweon, “Non-local spatial propagation network for depth com-pletion,” in European conference on computer vision ,Springer, 2020, pp. 120–136. [12] L. Zhu et al., “Rgb-d local implicit function for depth completion of transparent objects,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2021, pp. 4649–4658. [13] H. Fang, H.-S. Fang, S. Xu, and C. Lu, “Tran-scg: A large-scale real-world dataset for transparent object depth completion and a grasping baseline,” 
+
+IEEE Robotics and Automation Letters , vol. 7, no. 3, pp. 7383–7390, 2022. [14] F. Ma and S. Karaman, “Sparse-to-dense: Depth pre-diction from sparse depth samples and a single image,” in 2018 IEEE international conference on robotics and automation (ICRA) , IEEE, 2018, pp. 4796–4803. [15] J. Tang, F.-P. Tian, W. Feng, J. Li, and P. Tan, “Learn-ing guided convolutional network for depth comple-tion,” IEEE Transactions on Image Processing , vol. 30, pp. 1116–1129, 2020. [16] J. Qiu et al., “Deeplidar: Deep surface normal guided depth prediction for outdoor scene from sparse lidar data and single color image,” in Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , 2019, pp. 3313–3322. [17] J. Hu, M. Ozay, Y. Zhang, and T. Okatani, “Revisiting single image depth estimation: Toward higher resolu-tion maps with accurate object boundaries,” in 2019 IEEE winter conference on applications of computer vision (WACV) , IEEE, 2019, pp. 1043–1051. [18] M. Jaritz, R. De Charette, E. Wirbel, X. Perrotton, and F. Nashashibi, “Sparse and dense data with cnns: Depth completion and semantic segmentation,” in 2018 International Conference on 3D Vision (3DV) , IEEE, 2018, pp. 52–60. [19] J. Hu, L. Shen, and G. Sun, “Squeeze-and-excitation networks,” in Proceedings of the IEEE conference on computer vision and pattern recognition , 2018, pp. 7132–7141. [20] A. Li, Z. Yuan, Y. Ling, W. Chi, C. Zhang, et al., “A multi-scale guided cascade hourglass network for depth completion,” in Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision , 2020, pp. 32–40. [21] A. Bicchi and V. Kumar, “Robotic grasping and con-tact: A review,” in Proceedings 2000 ICRA. Millen-nium conference. IEEE international conference on robotics and automation. Symposia proceedings (Cat. No. 00CH37065) , IEEE, vol. 1, 2000, pp. 348–353. [22] I. Lenz, H. Lee, and A. Saxena, “Deep learning for detecting robotic grasps,” The International Journal of Robotics Research , vol. 34, no. 4-5, pp. 705–724, 2015. [23] J. Redmon and A. Angelova, “Real-time grasp detection using convolutional neural networks,” in 2015 IEEE international conference on robotics and automation (ICRA) , IEEE, 2015, pp. 1316–1322. [24] D. Morrison, P. Corke, and J. Leitner, “Closing the loop for robotic grasping: A real-time, generative grasp synthesis approach,” arXiv preprint arXiv:1804.05172 ,2018. [25] A. Ten Pas, M. Gualtieri, K. Saenko, and R. Platt, “Grasp pose detection in point clouds,” The Interna-tional Journal of Robotics Research , vol. 36, no. 13-14, pp. 1455–1473, 2017. [26] H. Liang et al., “Pointnetgpd: Detecting grasp configu-rations from point sets,” in 2019 International Confer-ence on Robotics and Automation (ICRA) , IEEE, 2019, pp. 3629–3635. [27] J. Mahler et al., “Dex-net 2.0: Deep learning to plan robust grasps with synthetic point clouds and analytic grasp metrics,” arXiv preprint arXiv:1703.09312 , 2017. [28] H.-S. Fang, C. Wang, M. Gou, and C. Lu, “Graspnet-1billion: A large-scale benchmark for general object grasping,” in Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , 2020, pp. 11 444–11 453. [29] M. Sundermeyer, A. Mousavian, R. Triebel, and D. Fox, “Contact-graspnet: Efficient 6-dof grasp generation in cluttered scenes,” in 2021 IEEE International Confer-ence on Robotics and Automation (ICRA) , IEEE, 2021, pp. 13 438–13 444. [30] Z. Liu, Z. Chen, S. Xie, and W.-.-S. Zheng, “Trans-grasp: A multi-scale hierarchical point transformer for 7-dof grasp detection,” in 2022 International Confer-ence on Robotics and Automation (ICRA) , IEEE, 2022, pp. 1533–1539. [31] B. Zuo, Z. Zhao, W. Sun, X. Yuan, Z. Yu, and Y. Wang, “Graspdiff: Grasping generation for hand-object interaction with multimodal guided diffusion,” IEEE Transactions on Visualization and Computer Graphics ,2024.

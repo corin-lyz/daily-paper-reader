@@ -1,0 +1,602 @@
+Title: ZMIS-SAM: Segment Anything Model Enhanced with Wavelet Transform for Zooplankton Microscopy Image Instance Segmentation
+
+URL Source: https://arxiv.org/pdf/2607.27585v1
+
+Published Time: Fri, 31 Jul 2026 00:26:30 GMT
+
+Number of Pages: 32
+
+Markdown Content:
+# ZMIS-SAM: Segment Anything Model Enhanced with Wavelet Transform for Zooplankton Microscopy Image Instance Segmentation 
+
+Dekun Yuan 1 , Zhongwei Li 1,B , Zheng Qiao 1 , and Jie Zhang 1
+
+> 1
+
+College of Oceanography and Space Informatics, China University of Petroleum (East China), Qingdao, 266580, China 
+
+ydk_libra0903@163.com, li.zhongwei@vip.163.com 
+
+Abstract. As primary consumers in the marine food chain, zooplankton play a crucial role in maintaining marine ecological balance. However, the Segment Anything Model (SAM) exhibits limited performance in micro-scopic image instance segmentation due to its lack of zooplankton-specific domain knowledge. To address these challenges, we propose a novel in-stance segmentation model based on SAM and wavelet transform (ZMIS-SAM), effectively tackling issues such as inaccurate classification, dis-continuous segmentation of slender appendages, and incomplete bound-ary segmentation. Our framework incorporates three core innovations: ZM-ViT enhances SAM’s capability to model zooplankton morphology and image intensity distributions through two lightweight adapters, the Neighboring Feature Aggregation Module (NFAM) improves continu-ous segmentation of semi-transparent slender appendages by integrat-ing general-purpose and domain-specific features, and the Wavelet-based Multi-scale Multi-directional Feature Enhancement (WM2FE) module effectively recovers high-frequency details to refine boundary segmenta-tion completeness. Extensive experiments demonstrate that ZMIS-SAM achieves state-of-the-art instance segmentation performance on the zoo-plankton dataset and exhibits strong generalization capability across multiple public cross-domain datasets. Code: ZMIS-SAM. 
+
+Keywords: Segment Anything Model (SAM) · Instance segmentation ·
+
+Zooplankton recognition · Wavelet transform 
+
+## 1 Introduction 
+
+Zooplankton, serving as a crucial intermediate link in the marine food chain, plays a vital role in maintaining the stability of marine ecosystems [40]. Current methods for zooplankton identification can be broadly categorized into manual and intelligent approaches [36,57,58]. Traditional manual identification relies on biological experts observing and counting specimens under microscopes. While this method achieves high accuracy, it suffers from low efficiency and falls short of meeting the demands for efficient, large-scale analysis of zooplankton com-munities [38, 55]. With the advancement of artificial intelligence technologies, arXiv:2607.27585v1 [cs.CV] 30 Jul 2026 2 Dekun.Y et al. Calanus sinicus Acartia pacifica Centropages tenuiremis Pleurobrachia globosa   
+
+> Ground Truth
+> Ground Truth
+> Challenge 1 & Challenge 2
+> (USIS -SAM)
+> Challenge 1 & Challenge 2
+> (RSPrompter) Challenge 1 & Challenge 2
+> (ZMIS -SAM)
+> Challenge 3
+> (USIS -SAM)
+> Challenge 3
+> (RSPrompter) Challenge 3
+> (ZMIS -SAM)
+
+Fig. 1: Comparison of ZMIS-SAM with other state-of-the-art models on the ZMIS5K dataset. Challenge 1, Challenge 2, and Challenge 3 represent inaccurate classification, discontinuous segmentation of slender appendages, and incomplete boundary segmen-tation, respectively. 
+
+intelligent identification techniques based on deep learning methods, such as instance segmentation, offer a promising alternative for achieving efficient and accurate zooplankton identification. Instance segmentation stands as one of the most challenging tasks in in-telligent visual recognition, requiring not only pixel-wise dense prediction but also distinguishing between different object instances within the same cate-gory [37]. Two-stage methods, exemplified by Mask R-CNN [20], have become the mainstream paradigm in this field. These approaches explicitly generate re-gion proposals and perform dense prediction to produce instance-level masks. While they demonstrate stronger segmentation performance on domain-specific datasets compared to single-stage methods, their effectiveness heavily depends on dataset scale, image quality, and the distribution and quantity of object in-stances. This characteristic makes it difficult for two-stage methods to achieve satisfactory instance segmentation performance in the special field of zooplank-ton. With their powerful zero-shot generalization capabilities learned from vast and diverse datasets, recent advances in large-scale pre-trained models [24,39,41] can extract transferable visual representations, providing a more efficient and flexible paradigm, for example, segmentation in specialized domains like zoo-plankton research. The Segment Anything Model (SAM) [24] has emerged as a highly popular large-scale vision foundation model with strong zero-shot segmentation capa-bilities, allowing it to be effectively adapted to various downstream tasks such as image inpainting [11, 56] and instance segmentation [9, 26, 31]. For example, USIS-SAM [31] and RSPrompter [9] have successfully applied SAM to instance segmentation in underwater and remote sensing imagery, respectively, provid-ing valuable references for its extension to vertical domains. However, due to ZMIS-SAM 3
+
+significant differences in morphological characteristics between zooplankton and typical underwater or remote sensing targets, as well as distinct imaging mecha-nisms in microscopy, adapting SAM to zooplankton instance segmentation poses several challenges, as illustrated in Fig. 1: 1) Inaccurate Classification: Zooplankton encompass a wide variety of species, and organisms from different genera or families often exhibit highly similar morphological appearances under the microscope. For instance, as shown in the third row of Fig. 1, Calanus sinicus and Acartia pacifica have similar body sizes across different magnification levels, with the key distinguishing feature being the red eye spot present in Acartia pacifica . However, due to the lack of fine-grained prior knowledge about zooplankton, SAM tends to misclassify Acartia pacifica as Calanus sinicus [59]. 2) Discontinuous Segmentation of Slender Appendages: Some zooplank-ton possess translucent slender appendages. Centropages tenuiremis uses two elongated, semi-transparent antennae on its head for feeding and sensing en-vironmental changes. However, existing SAM-based instance segmentation models fail to fully leverage features extracted by the image encoder, result-ing in fragmented predictions of these fine structures. 3) Incomplete Boundary Segmentation: To enhance predation efficiency or avoid predators, some zooplankton have evolved transparent body struc-tures, such as Pleurobrachia globosa . When adapting SAM for instance seg-mentation in such specialized domains, a common approach involves up-sampling low-resolution feature maps to recover high-resolution details and improve model robustness. However, the upsampling process often fails to fully restore high-frequency details, making it difficult for the model to accu-rately separate these translucent organisms from the background, ultimately leading to incomplete boundary segmentation [16, 32]. To address the aforementioned challenges, we constructed the first high-quality zooplankton microscopy image instance segmentation dataset (ZMIS5K) using imaging from a research-grade stereomicroscope. ZMIS5K comprises 5,358 pixel-level annotated images across 47 species, containing 10,228 instances in to-tal. Furthermore, we propose a SAM-based instance segmentation model specifi-cally designed for zooplankton microscopy images. To address the issues encoun-tered when applying SAM to zooplankton instance segmentation, the innovations of our proposed ZMIS-SAM are as follows: 1) For classification inaccuracy, we de-sign two novel adapter modules, Shape Adapter (SA) and Intensity Adapter (IA), built upon the widely-used lightweight adapter tuning framework [35]. These two adapters, together with ViT [17], constitute ZM-ViT. These are designed to cap-ture zooplankton-specific morphological characteristics and microscopy-specific channel intensity distributions, respectively. The proposed ZM-ViT integrates these adapters into selected ViT within SAM’s image encoder, enabling effective domain-specific feature learning. 2) For discontinuous segmentation of slender appendages, we design a Neighboring Feature Aggregation Module (NFAM) that effectively integrates general-purpose features from frozen ViT layers in SAM’s image encoder and domain-specific features from ZM-ViT. This enhances the 4 Dekun.Y et al. 
+
+model’s ability to segment translucent slender appendages with improved con-tinuity. 3) To tackle incomplete boundary segmentation, we design a Wavelet-based Multi-scale and Multi-directional Feature Enhancement (WM2FE) mod-ule. The resulting feature enhancement module compensates for high-frequency details lost during upsampling, thereby improving segmentation accuracy along transparent or low-contrast edges. The main contributions of this work are as follows: 1) To our knowledge, ZMIS-SAM is the first large vision model for instance seg-mentation in zooplankton microscopy images. It shows strong performance in ZMIS5K and offers valuable insight for adapting SAM to other vertical domains. 2) We propose three key components: ZM-ViT enhances domain-specific repre-sentation learning for improved species classification, an NFAM improves segmentation continuity of translucent slender appendages by combining general and domain-specific features, and a WM2FE module recovers high-frequency details to refine boundary segmentation. 3) We introduce ZMIS5K, the species-rich, high-resolution zooplankton mi-croscopy image dataset for instance segmentation. It includes 5,358 images across 47 species with 10,228 instances, and supports various vision tasks such as image classification, object detection, semantic segmentation, and instance segmentation. For a more detailed introduction to the ZMIS5K dataset, please refer to Appendix A. 
+
+## 2 Related work 
+
+2.1 Instance Segmentation 
+
+Instance segmentation methods are primarily categorized into single-stage and two-stage approaches. Single-stage methods [5, 7, 25, 48] simultaneously predict object category, location, and segmentation mask to achieve rapid instance seg-mentation, though their segmentation accuracy is lower than that of two-stage methods. Two-stage methods utilize object detection results for segmentation mask tasks, divided into bottom-up and top-down approaches. Bottom-up meth-ods [1, 21, 27] first perform pixel-level predictions, then employ clustering meth-ods to distinguish different instances. This approach better preserves low-level information such as details, but its poor generalization capability makes it chal-lenging to handle complex scenes [30]. Top-down approaches [12, 13, 20, 42] first generate bounding boxes for candidate objects, then perform pixel-level segmen-tation within these boxes. Their strong generalization and segmentation capabil-ities have made them the current mainstream method for instance segmentation. Due to the vast diversity of zooplankton species requiring annotation by expe-rienced biological experts, coupled with the necessity of specialized microscopy equipment to capture zooplankton microscopic images, no relevant instance seg-mentation datasets exist in the field of zooplankton research. Therefore, this paper establishes the first zooplankton microscopic image instance segmentation dataset to advance instance segmentation studies in this domain. ZMIS-SAM 5
+
+2.2 Segment Anything Model (SAM) 
+
+SAM [24] is a prompt-engineering-based large-scale visual segmentation model pre-trained on 11 million images and over 1.1 billion masks. Its robust zero-shot segmentation capability enables transfer to various downstream visual tasks such as image restoration [11, 56] and style transfer [33], as well as other ver-tical domains including medicine, remote sensing, and underwater applications [9,10,18,26,31,43,46,52,54]. For instance, FoodSAM [26] integrates SAM’s robust segmentation capabilities with domain-specific semantic knowledge through se-mantic enhancement strategies, achieving semantic segmentation, instance seg-mentation, and panoramic segmentation of food images via object detectors. USIS-SAM [31] fine-tunes SAM’s encoder to learn underwater domain knowl-edge and generates salient features using a salient feature prompt generator, enabling instance segmentation of underwater images. However, SAM’s lack of domain-specific knowledge for zooplankton and the distinct distribution of zoo-plankton microscopic images compared to other datasets limit its performance in segmenting such images. In this study, we leverage a zooplankton microscopic image instance segmentation dataset to build the first large-scale instance seg-mentation model for the zooplankton domain based on SAM. 
+
+2.3 Wavelet Transform 
+
+The Wavelet Transform adaptively adjusts the analysis scale by scaling and translating a mother wavelet function, enabling multi-scale and multi-directional signal analysis. In recent years, several studies have integrated wavelet transform with deep learning to enhance model performance in image processing [2, 15, 60] and intelligent recognition tasks [4, 19, 29, 53, 61]. In the field of image seg-mentation, Xu et al. [51] addressed the problem of information loss caused by conventional downsampling by introducing a Haar wavelet-based downsampling method. As a result, it reduces feature map resolution while preserving structural and textural details, demonstrating improved performance on public semantic segmentation datasets. For challenging segmentation tasks under low-light or adverse weather conditions such as rain and fog, Wang et al. [49] proposed a wavelet-constrained semantic segmentation framework. Their method incorpo-rates the dual-tree complex wavelet transform within a multi-branch architec-ture and employs a pixel attention mechanism to fuse information from both the wavelet and feature domains, effectively improving segmentation accuracy in complex railway scenes. Unlike the aforementioned works, which do not in-troduce any learnable or weighted operations, our work focuses on dynamically fusing wavelet features for instance segmentation. We propose a wavelet-based multi-scale and multi-directional feature enhancement module designed to re-cover fine details lost, thereby improving boundary segmentation accuracy for transparent zooplankton in complex microscopic imaging conditions. 6 Dekun.Y et al.  
+
+> Fig. 2: Overview of ZMIS-SAM architecture. ZMIS-SAM includes ZMIS-SAM En-coder, ZMIS-SAM Prompter, and Mask Decoder.
+
+## 3 Methodology 
+
+In this section, we will introduce our proposed ZMIS-SAM model, a SAM-based framework that is designed specifically for instance segmentation of zooplankton microscopic images. The subsections are as follows: 3.1 Overall Framework of ZMIS-SAM, 3.2 Zooplankton Micrograph Adaptive Vision Transformer (ZM-ViT), 3.3 Neighboring Feature Aggregation Module (NFAM), and 3.4 Wavelet-based Multi-scale and Multi-directional Feature Enhancement (WM2FE). For more prior knowledge, the loss function and evaluation metrics of the model, please refer to Appendix B. 3.1 Overall Framework of ZMIS-SAM 
+
+The overall architecture of ZMIS-SAM is illustrated in Fig. 2, which consists of three key components: ZM-ViT, NFAM, and WM2FE. Specifically, ZM-ViT incorporates two lightweight adapters, the Shape Adapter (SA) and the Inten-sity Adapter (IA). The SA refines the representation of zooplankton morpho-logical structures, while the IA adjusts the channel-wise feature intensity dis-tribution. Together, they guide SAM to capture domain-specific characteristics better and extract more discriminative zooplankton features. The NFAM aggre-gates the zooplankton-specific features extracted by ZM-ViT with the general visual features from adjacent frozen ViT layers, followed by a Feature Pyramid Network [32] to obtain multi-scale representations. Furthermore, the WM2FE module performs wavelet decomposition on the multi-scale features to enhance both low-frequency contextual cues and high-frequency directional details, effec-tively compensating for the edge information lost during the encoding process. Finally, the features from the encoder and the embeddings from the prompt encoder are fed into the frozen mask decoder of SAM to produce fine-grained zooplankton instance segmentation results. 
+
+3.2 ZM-ViT: Zooplankton Micrograph Adaptive ViT 
+
+The SAM’s image encoder can extract rich and general-purpose visual repre-sentations that are effective across many vertical domains. However, zooplank-ZMIS-SAM 7
+
+ton in marine environments often exhibit slender appendages, transparent or semi-transparent bodies, and significant illumination variations caused by the microscopic imaging environment. Moreover, there exists a notable domain gap between the natural images used for SAM pretraining and the microscopic zoo-plankton images. These factors make the original SAM image encoder less effec-tive in capturing the fine-grained morphological characteristics of zooplankton, leading to suboptimal segmentation performance. To address this issue, we pro-pose ZM-ViT, which integrates two lightweight adapters into the ViT blocks of SAM, as shown in Fig. 2(b). This design enables ZM-ViT to effectively leverage the pretrained SAM image encoder while adapting to the zooplankton domain, allowing for more discriminative feature extraction and improved instance seg-mentation accuracy. The proposed ZM-ViT can effectively learn discriminative features of zoo-plankton in microscopic imagery through Parameter-Efficient Fine-Tuning [47]. Inspired by USIS-SAM, we integrate two lightweight adapters into the ViT archi-tecture, namely the Intensity Adapter (IA) and the Shape Adapter (SA). Unlike the adapter design in USIS-SAM, we introduce a parallel branch that com-bines Conv–GELU–BN operations with the Layer Normalization (LN) residual pathway for the features fed into the adapter. This design forms the IA, which dynamically adjusts the channel-wise feature intensity distribution. The place-ment of IA within the ViT block remains consistent with that of the adapter in USIS-SAM: one IA module is inserted after the multi-head self-attention layer to modulate the channel intensity distribution, and another is integrated in par-allel with the frozen MLP residual branch to aggregate and update contextual information more effectively. The IA can be formulated as follows: 
+
+FIA = Up(Dp(BN (LN (x) ∗ C (x)))) + Fin  (1) where x and FIA ∈ RN ×C denote the input and output features, respectively. 
+
+C(·) denotes the convolutional branch consisting of Conv–GELU–BN, Up(·) and 
+
+Dp(·) denote the up projection and down projection, respectively. BN (·) and 
+
+LN (·) denote the batch normalization and layer normalization, respectively. Since zooplankton have diverse morphological structures, we further design a Shape Adapter (SA) based on a striped depth-wise separable convolution. The SA can effectively enhance the model’s ability to represent the shape structural characteristics of zooplankton, while the depthwise separable convolution greatly reduces computational complexity. The SA can be expressed as follows: 
+
+FSA = X
+
+> max ;avg
+
+C1(( P ool i(x)))  (2) where x and FSA ∈ RN ×C denote the input and output features, respectively. 
+
+C1(·) denotes the PWConv-DWConv-GELU-DWConv operation. P ool (·) denotes average pooling or maximum pooling. To enable the SAM image encoder to extract optimal feature representations, we use ViT-H as the backbone of the SAM image encoder. Furthermore, to ensure a fair comparison with the baseline experiments, ZM-ViT replaces one frozen ViT layer every two layers, starting from the eighth layer. 8 Dekun.Y et al.  
+
+> Fig. 3: Overview of Neighboring Feature Aggregation Module (NFAM) architecture.
+
+3.3 NFAM: Neighboring Feature Aggregation Module 
+
+To achieve automatic instance segmentation, existing approaches usually treat the representations extracted from certain ViT layers of the SAM image en-coder as pseudo-prompts. However, when transferring SAM to domain-specific instance segmentation tasks, current methods either rely solely on the frozen ViT features with general representations or only exploit the domain-specific representations obtained from the adapter. Both strategies fail to fully leverage the complementary information between general and domain-specific represen-tations for generating effective prompt features. We propose an NFAM that comprehensively aggregates both the general representations extracted from the frozen ViT layers and the domain-specific features captured by the fine-tuned ZM-ViT, thereby producing more effective prompt representations and enhancing the instance segmentation performance of SAM. As illustrated in Fig. 3, NFAM processes the domain-specific features 
+
+{Fsdf }Li=j ∈ RCi×Hi×Wi , the general features {Fgf }L−1 
+
+> i=j−1
+
+∈ RCi×Hi×Wi , and their concatenated representations Fcf ∈ R2Ci×Hi×Wi in parallel. The domain-specific and general features are respectively refined using a ConvBlock (Fig. 3 (b)) and a depthwise separable convolution to enhance local feature extraction, while residual connections preserve fine-grained spatial information. 
+
+˜Fsdf = ConvBlock (Fsdf ) + C2(ConvBlock (Fsdf ))  (3) 
+
+˜Fgf = ConvBlock (Fgf ) + C3(ConvBlock (Fgf ))  (4) 
+
+Fcf = Concat (Fsdf , F gf ) (5) where ˜Fsdf and ˜Fgf domain-specific and general features after local enhancement, respectively. C2(·) and C3(·) denote the PWConv-DWConv-PWConv-DWConv and the PWConv-DWConv operation, respectively. In parallel, the concatenated features are passed through a 1 × 1 convolution to balance the channel dimen-sions. The resulting feature map is then divided into n parts, each processed ZMIS-SAM 9
+
+by an independent multi-scale convolutional block (Fig. 3 (c)) with different receptive fields to capture spatial details at multiple scales. 
+
+[F (1) , ..., F (n)] = Split n(Conv 1×1(Fcf ))  (6) 
+
+M (j) = M ConvBlock (F (j)), j = 1 , ..., n  (7) where Split n(·) denotes dividing the input representation into n parts. F (j)
+
+denotes the j-th characteristic obtained from the division. M (j) denotes the j-th part after multi-scale convolution processing. In the MConvBlock, depth-wise convolutions with different receptive fields are first used to extract multi-scale features from the input features separately. Then, a gating mechanism is employed to dynamically adjust the weights of features at different scales. Pointwise convolution, Batch Normalization, and GELU activation follow each receptive field is utilized to output the enhanced representation. 
+
+ψk = σ(DW k×k(x))  (8) 
+
+xgate k = ( ψk ∗ x + (1 − ψk) ∗ x))  (9) 
+
+Bk(x) = GELU (BN (P W 1×1(xgate k ))  (10) 
+
+M ConvBlock (x) = 
+
+> K
+
+X
+
+> k=3
+
+Bk(x), k = 3 , 5, 7 (11) where ψk denotes the gating attention weights under different receptive fields. 
+
+σ(·) and GELU (·) denote the activation function of the sigmoid and GELU, respectively. xgate k denotes the gating characteristic. BN (·) denotes the Batch Normalization. Bk(x) refers output feature of the receptive field k branch. Fi-nally, the outputs from all branches are concatenated to form the aggregated representation Fa.
+
+Fa = Concat (M (1) , M (2) , ..., M (n), ˜Fsdf , ˜Fgf ) (12) 
+
+3.4 WM2FE: Wavelet-based Multi-scale and Multi-directional Feature Enhancement 
+
+After obtaining the aggregated features, existing SAM-based instance segmen-tation methods usually employ a simple FPN network to extract multi-scale features and generate candidate prompts for enhancing model robustness. How-ever, in the FPN, upsampling low-resolution features to high-resolution ones via deconvolution may lead to the loss of fine-grained details. As a multi-scale and multi-directional image analysis tool, the wavelet transform can provide high-frequency details in vertical, horizontal, and diagonal directions. Therefore, we 10 Dekun.Y et al.  
+
+> Fig. 4: Overview of Wavelet-based Multi-scale and Multi-directional Feature Enhance-ment (WM2FE) architecture.
+
+design a Wavelet-based Multi-scale Feature Enhancement (WM2FE) module to compensate for the missing details during upsampling and improve the instance segmentation performance for zooplankton. As illustrated in Fig. 4, WM2FE enhances multi-scale feature representation through dynamic fusion of aggregated features and wavelet-weighted features. Specifically, the aggregated feature Fa is divided into n parts {Fa, 1, F a, 2, ...F a,n }
+
+along the wavelet feature Fw dimension, and each part is modulated by the corresponding wavelet feature to strengthen the representation of transparent boundaries of zooplankton. Then, linear learnable parameters are applied to dynamically fuse the aggregated features and wavelet-enhanced features. Finally, the n parts are concatenated along the channel dimension, and a directional depthwise separable convolution is employed to enhance directional perception. 
+
+Fo,i = Fa,i ⊙ Fw (13) 
+
+Fm,i = αiFo,i + (1 − αi)Fa,i , i = 1 , 2, ..., n  (14) 
+
+Fm = C4(Concat (Fm, 1, F m, 2, ..., F m,n ))  (15) where C4(·) denotes the PWConv-ReLu-DWConv-BN-DWConv operation. ⊙ de-notes element-wise multiplication, αi denotes the linear learnable parameter of the i-th part. Fw = Contact [LL ; LH ; HL ; HH ] denotes the wavelet features. To further focus on informative regions, inspired by [50], we introduce chan-nel and spatial attention mechanisms in WM2FE. The channel attention module learns channel-wise weights by feeding both average-pooled and max-pooled fea-tures into a shared MLP followed by a sigmoid activation function. 
+
+Mc = σ( X
+
+> avg ;max
+
+C5(Fm))  (16) 
+
+F ′
+
+= Mc ⊗ Fm (17) ZMIS-SAM 11 
+
+where F ′
+
+denotes the refined features. Mc denotes the channel attention map and σ denotes the sigmoid function. C5(·) denotes the PWConv-ReLu-DWConv-BN-DWConv-BN-DWConv operation. Subsequently, the spatial attention mechanism aggregates average-pooled and max-pooled features along the channel dimension, followed by a 7 ×7 con-volution and sigmoid activation to generate the spatial attention map: 
+
+Ms = σ(f 7×7([ A(F ′
+
+); M(F ′
+
+)]))  (18) 
+
+Ff e = Ms ⊗ F ′
+
+(19) 
+
+## 4 Experiments 
+
+In this section, we evaluate the performance of ZMIS-SAM on the ZMIS5K dataset and compare it with SOTA instance segmentation models, and further conduct ablation experiments. In addition, we conducted generalization experi-ments on public datasets from other domains, as detailed in Appendix D. 4.1 Datasets 
+
+The ZMIS5K dataset contains a total of 5,358 images, including 47 species of zooplankton, and was divided into 4,262 images for the training set and 1,096 images for the test set. For a more detailed introduction to the ZMIS5K dataset, please refer to Appendix A. 4.2 Implementation details 
+
+We build our ZMIS-SAM model based on the MMDetection framework [8], and most of the comparison models in this paper are also trained and evaluated within the same framework. ZMIS-SAM and other SAM-based comparison mod-els are trained on 6 NVIDIA RTX 3090 GPUs, with a batch size of 2 per GPU, for 400 epochs. All input images are resized to 512 × 512 pixels, and standard data augmentation techniques, including random flipping, random scaling, and random cropping, are applied to enhance the model’s generalization capability. We use the AdamW optimizer and adopt automatic mixed precision to acceler-ate training and reduce GPU memory consumption. The initial learning rate is set to 2.0e-4. In the first stage, a linear warm-up is performed over the first 50 iterations, followed by a cosine decay schedule to gradually reduce the learning rate in the second stage. 
+
+4.3 Experiments Result Quantitative Results. We compare our ZMIS-SAM with fourteen state-of-the-art instance segmentation models on the ZMIS5K test set. To explore the opti-mal segmentation performance of each model, traditional instance segmentation 12 Dekun.Y et al.                                                                                                           
+
+> Table 1: A comparison with SOTA methods on ZMIS5K is provided. Results high-lighted in red indicate the best performance, while those in blue denote the second-best. Method Backbone Params mAP AP 50 AP 75
+> Mask R-CNN (ICCV’17) [20] ResNet-101 63M 66.4 90.9 69.0 Cascade Mask R-CNN (CVPR’18) [6] ResNet-101 88M 66.0 89.5 68.3 Mask Scoring R-CNN (CVPR’19) [22] ResNet-101 79M 67.0 89.8 69.1 CondInst (ECCV’20) [44] ResNet-101 63M 68.3 91.7 70.9
+> R3-CNN (CAIP’21) [42] ResNet-101 77M 66.6 90.0 70.0 ConvNeXt (CVPR’22) [34] ConvNeXt-T 63M 68.4 92.4 70.3 Mask2Former (CVPR’22) [12] ResNet-101 63M 70.7 87.4 76.1 WaterMask (ICCV’23) [30] ResNet-101 67M 60.7 82.2 64.4 ViT-UWA (TIP’26) [23] ViT-B 129M 62.3 90.7 61.7 SAM+Bbox (ICCV’23) [24] ViT-H 641M 60.2 82.9 65.2 SAM+Mask (ICCV’23) [24] ViT-H 641M 70.1 94.0 75.5 RSPrompter (TGRS’24 ) [9] ViT-H 632M 71.8 92.2 76.9
+> USIS-SAM (ICML’24) [31] ViT-H 700M 70.4 91.7 75.8 UCIS-SAM (TIP’26) [45] ViT-H 723M 66.9 80.4 72.1 ZMIS-SAM ViT-H 758M 73.6 94.6 80.7
+
+methods are implemented with ResNet-101 as the backbone, while SAM-based methods adopt ViT-H, the largest variant of the SAM backbone, to ensure fair comparison. As shown in Tab. 1, our proposed ZMIS-SAM achieves the best overall performance across all instance segmentation metrics. Traditional meth-ods such as Mask R-CNN, CondInst, and ConvNeXt exhibit limited accuracy, with mAP values ranging from 66.0% to 68.4%. Among traditional models, Mask2Former achieves the highest 70.7%, 87.4%, and 76.1% AP in mAP , AP 50 
+
+and AP 75 , however, ZMIS-SAM surpasses it by 2.9% in mAP , 7.2% in AP 50 ,and 4.6% in AP 75 , demonstrating the superior capability of our model in cap-turing fine-grained object boundaries. Compared with traditional models, SAM-based instance segmentation approaches achieve better performance owing to their strong feature extraction and prompt-based representation learning. Nev-ertheless, our ZMIS-SAM further improves segmentation accuracy with only a small increase in model parameters, outperforming the best SAM-based model RSPrompter by 1.8% in mAP , 2.4% in AP 50 , and 3.8% in AP 75 .
+
+Qualitative Results. We further conduct qualitative comparisons between ZMIS-SAM and several top-performing instance segmentation models on the ZMIS5K test set. To investigate the limitations of SAM when transferred to ver-tical domains, we visualize the segmentation results and analyze them in detail. As shown in Fig. 5, the proposed ZMIS-SAM not only distinguishes different zooplankton species accurately but also captures distinctive morphological char-acteristics such as slender appendages, while performing fine-grained boundary segmentation. Specifically, in Fig. 5 (a), our method successfully differentiates between Jellyfish larvae and Sugiura chengshanense , while avoiding false segmen-tation of unannotated organisms. In contrast, Mask2Former incorrectly segments unidentified organisms (e.g., Fish eggs ) as known species. In Fig. 5 (b), ZMIS-ZMIS-SAM 13 Ground Truth       
+
+> (a)
+> Mask2Former Mask R -CNN RSPrompter SAM+Bbox SAM+Mask USIS -SAM ZMIS -SAM (Our)
+> (b)
+> (c)
+
+Fig. 5: Quantitative comparison between the ZMIS-SAM model and other state-of-the-art models on the ZMIS5K dataset. (a), (b), and (c) denote inaccurate classification, discontinuous segmentation of slender appendages, and incomplete boundary segmen-tation, respectively. Higher-resolution visualizations can be found in the appendix. 
+
+SAM effectively captures the relationship between the main body and slender appendages of Calanus sinicus , achieving complete and coherent segmentation. Although RSPrompter and USIS-SAM can also segment the appendages, their results are fragmented and discontinuous, unlike our method’s continuous rep-resentation. In Fig. 5 (c), ZMIS-SAM demonstrates superior boundary refine-ment ability. For example, Mask R-CNN fails to delineate the boundaries of 
+
+Pleurobrachia globosa , while our approach achieves precise and consistent edge segmentation. These qualitative comparisons further confirm that ZMIS-SAM excels in recognizing fine morphological details, maintaining boundary integrity, and suppressing false detections, addressing key challenges in SAM’s transfer to specialized domains such as microscopic zooplankton segmentation. 
+
+4.4 Ablation experiments on ZMIS-SAM 
+
+In this section, we conduct a series of ablation studies on the ZMIS5K dataset to evaluate the design of ZMIS-SAM systematically. The experiments are de-signed to investigate: 1) the effectiveness of individual modules and 2) the influ-ence of different wavelet basis functions on the final segmentation results. More ablation experiments and parametric analysis are provided in Appendix C. 
+
+Table 2: Albation study of our contributions. 
+
+ZM-ViT NFAM WM2FE mAP AP 50 AP 75 
+
+70.4 91.7 75.8 
+
+✓ 71.7 92.0 77.7 
+
+✓ ✓ 73.0 94.4 78.7 
+
+✓ ✓ 72.7 94.1 79.4 
+
+✓ ✓ ✓ 73.6 94.6 80.7 
+
+Table 3: Albation study of wavelet function for the WM2FE. 
+
+φ mAP AP 50 AP 75 
+
+rbio1.1 72.7 93.8 79.2 bior1.1 72.0 92.6 78.4 haar 73.6 94.6 80.7 
+
+Effectiveness of Individual Modules. We perform an incremental abla-tion study to systematically evaluate the individual contribution and combined effect of each proposed module for zooplankton instance segmentation in mi-croscopy images. The complete results are presented in Tab. 2, where we se-quentially evaluate the following configurations: 1) whether to use ZM-ViT, 2) whether to incorporate the NFAM, and 3) whether to employ the WM2FE mod-ule. The results demonstrate that each module consistently improves instance 14 Dekun.Y et al. 
+
+segmentation performance. Using USIS-SAM with a ViT-H backbone as the baseline, we observe that replacing its original ViT with our ZM-ViT brings a 1.3% mAP gain with only a marginal increase in parameters. Building upon ZM-ViT, the further addition of NFAM and WM2FE improves mAP by 1.3% and 1.0%, respectively. When both NFAM and WM2FE are integrated, ZMIS-SAM achieves mAP , AP 50 , and AP 75 scores of 73.6%, 94.6%, and 80.7%, respectively, establishing a new state-of-the-art in zooplankton instance segmentation with only a modest parameter overhead. 
+
+Optimal Wavelet Function for the WM2FE. We evaluate the impact of different wavelet basis functions on the instance segmentation performance of ZMIS-SAM, with experimental results summarized in Tab. 3. Different wavelets exhibit distinct frequency domain response characteristics when extracting im-age features, which influences the model’s ability to capture fine object details. Experimental results indicate that using the Haar wavelet in the WM2FE mod-ule yields the best performance across mAP , AP 50 , and AP 75 , achieving scores of 73.6%, 94.6%, and 80.7%, respectively, surpassing both rbio1.1 and bior1.1 wavelets. We attribute this improvement to the high sensitivity of the Haar wavelet to edge structures, which enables more effective capture of zooplankton contour and boundary information, thereby enhancing the instance segmentation capability of ZMIS-SAM. 
+
+## 5 Limitations 
+
+Although the ZMIS-SAM model can perform instance segmentation on micro-scopic images of zooplankton, differences in task definition prevent the frame-work from separately segmenting the heads and antennae of zooplankton. In future work, we will introduce taxonomic and morphological text information to construct a multimodal framework for the zooplankton domain to achieve fine-grained segmentation of zooplankton body structures. 
+
+## 6 Conclusion 
+
+In this study, we introduce the first high-quality zooplankton microscopy im-age segmentation dataset (ZMIS5K), spanning 47 species with 5,358 images and 10,228 instances. More importantly, we propose ZMIS-SAM, the first SAM-based instance segmentation model specifically designed for zooplankton microscopy images. In ZMIS-SAM, we innovatively propose three modules: ZM-ViT, NFAM, and WM2FE, which effectively address the issues of inaccurate classification, discontinuous segmentation of slender appendages, and incomplete boundary segmentation encountered when transferring SAM to the zooplankton domain. Extensive experiments demonstrate that ZMIS-SAM achieves state-of-the-art performance on the ZMIS5K dataset and exhibits strong generalization capabil-ity on cross-domain benchmarks. ZMIS-SAM 15 
+
+## Acknowledgements 
+
+This work is supported in part by the Natural Science Foundation of Shandong Province (Grant No. ZR2024MF037). The North China Sea Ecological Center of the Ministry of Natural Resources strongly supports this work. The center provided samples for zooplankton photography and the microscopic imaging equipment required for this study. In addition, teachers, including Xiaoli Song and Yanping Qi, offered detailed guidance on zooplankton biology. 
+
+## References 
+
+1. Arnab, A., Torr, P.H.S.: Bottom-up instance segmentation using deep higher-order crfs. arXiv (2016), http://arxiv.org/abs/1609.02583 42. Balster, E., Zheng, Y., Ewing, R.: Combined spatial and temporal domain wavelet shrinkage algorithm for video denoising. IEEE Transactions on Circuits and Sys-tems for Video Technology 16 (2), 220–230 (2006). https://doi.org/10.1109/ TCSVT.2005.857816 53. Bergum, S., Saad, A., Stahl, A.: Automatic in-situ instance and semantic segmenta-tion of planktonic organisms using mask r-cnn. In: Global Oceans 2020: Singapore – U.S. Gulf Coast. pp. 1–8 (2020). https://doi.org/10.1109/IEEECONF38699. 2020.9389377 22 4. Bi, Q., You, S., Gevers, T.: Learning generalized segmentation for foggy-scenes by bi-directional wavelet guidance. In: Proceedings of the AAAI Conference on Artificial Intelligence. vol. 38, pp. 801–809 (2024). https://doi.org/10.1609/ aaai.v38i2.27838 55. Bolya, D., Zhou, C., Xiao, F., Lee, Y.J.: Yolact: Real-time instance segmenta-tion. In: 2019 IEEE International Conference on Computer Vision (ICCV) (2019). 
+
+https://doi.org/10.1109/ICCV.2019.00925 46. Cai, Z., Vasconcelos, N.: Cascade r-cnn: Delving into high quality object detection. In: 2018 IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 6154–6162 (2018). https://doi.org/10.1109/CVPR.2018.00644 12 7. Chen, H., Sun, K., Tian, Z., Shen, C., Huang, Y., Yan, Y.: BlendMask: Top-down meets bottom-up for instance segmentation. In: 2020 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 8570–8578 (2020). https: //doi.org/10.1109/CVPR42600.2020.00860 48. Chen, K., Wang, J., Pang, J., Cao, Y., Xiong, Y., Li, X., Sun, S., Feng, W., Liu, Z., Xu, J., Zhang, Z., Cheng, D., Zhu, C., Cheng, T., Zhao, Q., Li, B., Lu, X., Zhu, R., Wu, Y., Dai, J., Wang, J., Shi, J., Ouyang, W., Loy, C.C., Lin, D.: MMDetection: Open mmlab detection toolbox and benchmark. arXiv (2019), https://arxiv. org/abs/1906.07155 11 9. Chen, K., Liu, C., Chen, H., Zhang, H., Li, W., Zou, Z., Shi, Z.: Rsprompter: Learn-ing to prompt for remote sensing instance segmentation based on visual foundation model. IEEE Transactions on Geoscience and Remote Sensing 62 , 1–17 (2024). 
+
+https://doi.org/10.1109/TGRS.2024.3356074 2, 5, 12 10. Chen, T., Zhu, L., Ding, C., Cao, R., Wang, Y., Zhang, S., Li, Z., Sun, L., Zang, Y., Mao, P.: Sam-adapter: Adapting segment anything in underperformed scenes. In: 2023 IEEE/CVF International Conference on Computer Vision Workshops (ICCVW). pp. 3359–3367 (2023). https://doi.org/10.1109/ICCVW60793.2023. 00361 516 Dekun.Y et al. 11. Chen, W., Vong, Y.J., Kuo, S.Y., Ma, S., Wang, J.: Robustsam: Segment anything robustly on degraded images. In: 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 4081–4091 (2024). https://doi.org/10. 1109/CVPR52733.2024.00391 2, 5 12. Cheng, B., Misra, I., Schwing, A.G., Kirillov, A., Girdhar, R.: Masked-attention mask transformer for universal image segmentation. In: 2022 IEEE/CVF Confer-ence on Computer Vision and Pattern Recognition (CVPR). pp. 1280–1289 (2022). 
+
+https://doi.org/10.1109/CVPR52688.2022.00135 4, 12 13. Cheng, B., Schwing, A.G., Kirillov, A.: Per-pixel classification is not all you need for semantic segmentation. In: Proceedings of the 35th International Conference on Neural Information Processing Systems (NeurIPS) (2021) 4 14. Cheng, G., Zhou, P., Han, J.: Learning rotation-invariant convolutional neural networks for object detection in vhr optical remote sensing images. IEEE Trans-actions on Geoscience and Remote Sensing 54 (12), 7405–7415 (2016). https: //doi.org/10.1109/TGRS.2016.2601622 22, 32 15. Ding, S., Wang, Q., Guo, L., Li, X., Ding, L., Wu, X.: Wavelet and adaptive coor-dinate attention guided fine-grained residual network for image denoising. vol. 34, pp. 6156–6166 (2024). https://doi.org/10.1109/TCSVT.2023.3348804 516. Dong, C., Loy, C.C., He, K., Tang, X.: Image super-resolution using deep convolu-tional networks. IEEE Transactions on Pattern Analysis and Machine Intelligence 
+
+38 (2), 295–307 (2016). https://doi.org/10.1109/TPAMI.2015.2439281 317. Dosovitskiy, A., Beyer, L., Kolesnikov, A., Weissenborn, D., Zhai, X., Unterthiner, T., Dehghani, M., Minderer, M., Heigold, G., Gelly, S., Uszkoreit, J., Houlsby, N.: An image is worth 16 x 16 words: Transformers for image recognition at scale. In: 9th International Conference on Learning Representations (ICLR) (2021) 3, 23 18. Fang, H., Zhang, T., Zhou, X., Zhang, X.: Learning better video query with sam for video instance segmentation. IEEE Transactions on Circuits and Systems for Video Technology 35 (4), 2963–2974 (2025). https://doi.org/10.1109/TCSVT. 2024.3361076 519. Finder, S.E., Amoyal, R., Treister, E., Freifeld, O.: Wavelet convolutions for large receptive fields. In: Computer Vision – ECCV 2024. pp. 363–380. Springer Nature Switzerland, Cham (2025). https://doi.org/10.1007/978-3-031-72949-2_21 520. He, K., Gkioxari, G., Dollár, P., Girshick, R.: Mask r-cnn. In: 2017 IEEE Inter-national Conference on Computer Vision (ICCV). pp. 2980–2988 (2017). https: //doi.org/10.1109/ICCV.2017.322 2, 4, 12 21. Hu, J., Lu, Y., Zhang, S., Cao, L.: Istr: Mask-embedding-based instance segmenta-tion transformer. IEEE Transactions on Image Processing 33 , 2895–2907 (2024). 
+
+https://doi.org/10.1109/TIP.2024.3385980 422. Huang, Z., Huang, L., Gong, Y., Huang, C., Wang, X.: Mask scoring r-cnn. In: 2019 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 6402–6411 (2019). https://doi.org/10.1109/CVPR.2019.00657 12 23. Jia, Y., Lin, Q., Li, H., Li, Y., Kwong, S., Cong, R.: Vit-uwa: Vision transformer underwater-adapter for dense predictions beneath the water surface. IEEE Trans-actions on Image Processing 35 , 4012–4026 (2026). https://doi.org/10.1109/ TIP.2026.3682126 12 24. Kirillov, A., Mintun, E., Ravi, N., Mao, H., Rolland, C., Gustafson, L., Xiao, T., Whitehead, S., Berg, A.C., Lo, W.Y., Dollár, P., Girshick, R.: Segment anything. In: 2023 IEEE/CVF International Conference on Computer Vision (ICCV). pp. 3992–4003 (2023). https://doi.org/10.1109/ICCV51070.2023.00371 2, 5, 12, 23 ZMIS-SAM 17 25. Kirillov, A., Wu, Y., He, K., Girshick, R.: Pointrend: Image segmentation as ren-dering. In: 2020 IEEE/CVF Conference on Computer Vision and Pattern Recog-nition (CVPR). pp. 9796–9805 (2020). https://doi.org/10.1109/CVPR42600. 2020.00982 426. Lan, X., Lyu, J., Jiang, H., Dong, K., Niu, Z., Zhang, Y., Xue, J.: Foodsam: Any food segmentation. IEEE Transactions on Multimedia 27 , 2795–2808 (2025). 
+
+https://doi.org/10.1109/TMM.2023.3330047 2, 5 27. Lazarow, J., Xu, W., Tu, Z.: Instance segmentation with mask-supervised polygo-nal boundary transformers. In: 2022 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 4382–4391 (2022). https://doi.org/10. 1109/CVPR52688.2022.00434 428. Li, Q., Sun, X., Dong, J., Song, S., Zhang, T., Liu, D., Zhang, H., Han, S.: Develop-ing a microscopic image dataset in support of intelligent phytoplankton detection using deep learning. ICES Journal of Marine Science 77 (4), 1427–1439 (09 2019). 
+
+https://doi.org/10.1093/icesjms/fsz171 21, 22 29. Li, Q., Shen, L.: Wavesnet: Wavelet integrated deep networks for image segmenta-tion. In: Pattern Recognition and Computer Vision. pp. 325–337. Springer Nature Switzerland, Cham (2022). https://doi.org/10.1007/978-3-031-18916-6_27 530. Lian, S., Li, H., Cong, R., Li, S., Zhang, W., Kwong, S.: Watermask: Instance seg-mentation for underwater imagery. In: 2023 IEEE/CVF International Conference on Computer Vision (ICCV). pp. 1305–1315 (2023). https://doi.org/10.1109/ ICCV51070.2023.00126 4, 12, 32 31. Lian, S., Zhang, Z., Li, H., Li, W., Yang, L.T., Kwong, S., Cong, R.: Diving into underwater: Segment anything model guided underwater salient instance segmenta-tion and a large-scale dataset. In: Proceedings of the 41st International Conference on Machine Learning (ICML). pp. 29545–29559 (2024) 2, 5, 12, 22, 32 32. Lin, T.Y., Dollár, P., Girshick, R., He, K., Hariharan, B., Belongie, S.: Fea-ture pyramid networks for object detection. In: 2017 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 936–944 (2017). https: //doi.org/10.1109/CVPR.2017.106 3, 6 33. Liu, S., Ye, J., Wang, X.: Any-to-any style transfer: Making picasso and da vinci collaborate. arXiv (2023), https://arxiv.org/abs/2304.09728 534. Liu, Z., Mao, H., Wu, C.Y., Feichtenhofer, C., Darrell, T., Xie, S.: A convnet for the 2020s. In: 2022 IEEE/CVF Conference on Computer Vision and Pattern Recog-nition (CVPR). pp. 11966–11976 (2022). https://doi.org/10.1109/CVPR52688. 2022.01167 12 35. Lu, Y., Liu, J., Zhang, Y., Liu, Y., Tian, X.: Prompt distribution learning. In: 2022 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 5196–5205 (2022). https://doi.org/10.1109/CVPR52688.2022.00514 336. Masoudi, M., Giering, S.L., Eftekhari, N., Massot-Campos, M., Irisson, J.O., Thornton, B.: Optimizing plankton image classification with metadata-enhanced representation learning. IEEE Journal of Selected Topics in Applied Earth Obser-vations and Remote Sensing 17 , 17117–17133 (2024). https://doi.org/10.1109/ JSTARS.2024.3424498 137. Minaee, S., Boykov, Y., Porikli, F., Plaza, A., Kehtarnavaz, N., Terzopoulos, D.: Image segmentation using deep learning: A survey. IEEE Transactions on Pattern Analysis and Machine Intelligence 44 (7), 3523–3542 (2022). https://doi.org/10. 1109/TPAMI.2021.3059968 238. Pu, Y., Feng, Z., Wang, Z., Yang, Z., Li, J.: Anomaly detection for in situ marine plankton images. In: Proceedings of the IEEE/CVF International Conference on 18 Dekun.Y et al. Computer Vision (ICCV) Workshops. pp. 3661–3671 (2021). https://doi.org/ 10.1109/ICCVW54120.2021.00409 139. Radford, A., Kim, J.W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., Krueger, G., Sutskever, I.: Learning transfer-able visual models from natural language supervision. In: Proceedings of the 38th International Conference on Machine Learning (ICML). vol. 139, pp. 8748–8763 (2021) 2 40. Ratnarajah, Lavenia, A.A., Rana, A., Angus, B., Sonia, B., Nicholas J, B., Kim S, C., Gabrielle, C., Astrid, E., Jason D, G., Maria, I., Nurul Huda Ahmad, J., David, L., Fabien, M., Erik, O., Clare, P., Sophie, R., Anthony J, S., Katrin, S., Lars, S., Kerrie M, Y., Guang, Y., Lidia: Monitoring and modelling marine zooplankton in a changing climate. Nature Communications 14 (2023). https://doi.org/10. 1038/s41467-023-36241-5 141. Ravi, N., Gabeur, V., Hu, Y.T., Hu, R., Ryali, C., Ma, T., Khedr, H., Rädle, R., Rolland, C., Gustafson, L., Mintun, E., Pan, J., Alwala, K.V., Carion, N., Wu, C.Y., Girshick, R., Dollár, P., Feichtenhofer, C.: Sam 2: Segment anything in images and videos. arXiv (2024), https://arxiv.org/abs/2408.00714 242. Rossi, L., Karimi, A., Prati, A.: Recursively refined r-cnn: Instance segmentation with self-roi rebalancing. In: Computer Analysis of Images and Patterns (CAIP). pp. 476–486 (2021). https://doi.org/10.1007/978-3-030-89128-2_46 4, 12 43. Shan, Z., Liu, Y., Zhou, L., Yan, C., Wang, H., Xie, X.: Ros-sam: High-quality interactive segmentation for remote sensing moving object. In: 2025 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 3625–3635 (2025). https://doi.org/10.1109/CVPR52734.2025.00343 544. Tian, Z., Shen, C., Chen, H.: Conditional convolutions for instance segmentation. In: Computer Vision – ECCV 2020. pp. 282–298 (2020). https://doi.org/10. 1007/978-3-030-58452-8_17 12 45. Wang, C., Li, H., Li, C., Liu, H., Tang, X., Kwong, S.: Expose camouflage in the water: Underwater camouflaged instance segmentation and dataset. IEEE Trans-actions on Image Processing 35 , 3283–3298 (2026). https://doi.org/10.1109/ TIP.2026.3675502 12 46. Wang, D., Zhang, J., Du, B., Xu, M., Liu, L., Tao, D., Zhang, L.: Samrs: Scaling-up remote sensing segmentation dataset with segment anything model. In: Proceedings of the 37th International Conference on Neural Information Processing Systems (NeurIPS). vol. 36, pp. 8815–8827 (2023) 5 47. Wang, L., Chen, S., Jiang, L., Pan, S., Cai, R., Yang, S., Yang, F.: Parameter-efficient fine-tuning in large models: A survey of methodologies. arXiv (2024), 
+
+https://arxiv.org/abs/2410.19878 748. Wang, X., Kong, T., Shen, C., Jiang, Y., Li, L.: SOLO: Segmenting objects by locations. In: Computer Vision – ECCV 2020. pp. 649–665 (2020). https://doi. org/10.1007/978-3-030-58523-5_38 449. Wang, Z., Liao, Z., Wang, P., Chen, P., Luo, W.: Wavecrnet: Wavelet transform-guided learning for semantic segmentation in adverse railway scenes. IEEE Trans-actions on Intelligent Transportation Systems 26 (6), 8794–8809 (2025). https: //doi.org/10.1109/TITS.2025.3543925 550. Woo, S., Park, J., Lee, J.Y., Kweon, I.S.: Cbam: Convolutional block attention module. In: Computer Vision – ECCV 2018. pp. 3–19. Springer International Pub-lishing, Cham (2018). https://doi.org/10.1007/978-3-030-01234-2_1 10 51. Xu, G., Liao, W., Zhang, X., Li, C., He, X., Wu, X.: Haar wavelet downsam-pling: A simple but effective downsampling module for semantic segmentation. ZMIS-SAM 19 Pattern Recognition 143 , 109819 (2023). https://doi.org/10.1016/j.patcog. 2023.109819 552. Xu, Y., Tang, J., Men, A., Chen, Q.: Eviprompt: A training-free evidential prompt generation method for adapting segment anything model in medical images. IEEE Transactions on Image Processing 33 , 6204–6215 (2024). https://doi.org/10. 1109/TIP.2024.3482175 553. Yang, Y., Jiao, L., Liu, X., Liu, F., Yang, S., Li, L., Chen, P., Li, X., Huang, Z.: Dual wavelet attention networks for image classification. IEEE Transactions on Circuits and Systems for Video Technology 33 (4), 1899–1910 (2023). https: //doi.org/10.1109/TCSVT.2022.3218735 554. Ye, M., Zhang, J., Liu, J., Liu, C., Yin, B., Liu, C., Du, B., Tao, D.: Hi-sam: Mar-rying segment anything model for hierarchical text segmentation. IEEE Trans-actions on Pattern Analysis and Machine Intelligence 47 (3), 1431–1447 (2025). 
+
+https://doi.org/10.1109/TPAMI.2024.3495831 555. Ye, X., Wang, H., Yao, J.: A lightweight deep learning network for the precise detection and classification of variable plankton. Engineering Applications of Ar-tificial Intelligence 163 , 112719 (2026). https://doi.org/10.1016/j.engappai. 2025.112719 156. Yu, T., Feng, R., Feng, R., Liu, J., Jin, X., Zeng, W., Chen, Z.: Inpaint anything: Segment anything meets image inpainting. arXiv (2023), https://arxiv.org/abs/ 2304.06790 2, 5 57. Yu, Y., Lv, Q., Li, Y., Wei, Z., Dong, J.: Phytracker: An online tracker for phyto-plankton. IEEE Transactions on Circuits and Systems for Video Technology 35 (3), 2932–2944 (2025). https://doi.org/10.1109/TCSVT.2024.3498349 158. Yuan, D., Qi, Y., Zhang, J., Li, Z.: Planktontnet: Rethinking plankton classification from a global view with swin-transformer. In: OCEANS 2025 Brest. pp. 1–5 (2025). 
+
+https://doi.org/10.1109/OCEANS58557.2025.11104797 159. Zhang, C., Liu, L., Cui, Y., Huang, G., Lin, W., Yang, Y., Hu, Y.: A comprehensive survey on segment anything model for vision and beyond. arXiv (2023), https: //arxiv.org/abs/2305.08196 360. Zhang, W., Zhou, L., Zhuang, P., Li, G., Pan, X., Zhao, W., Li, C.: Underwater image enhancement via weighted wavelet visual perception fusion. IEEE Trans-actions on Circuits and Systems for Video Technology 34 (4), 2469–2483 (2024). 
+
+https://doi.org/10.1109/TCSVT.2023.3299314 561. Zou, W., Gao, H., Yang, W., Liu, T.: Wave-mamba: Wavelet state space model for ultra-high-definition low-light image enhancement. In: Proceedings of the 32nd ACM International Conference on Multimedia. p. 1534–1543 (2024). https://doi. org/10.1145/3664647.3681580 520 Dekun.Y et al. 
+
+## A ZMIS5K Dataset 
+
+A.1 Dataset Collection and Annotation 
+
+We captured 5830 microscopic images of zooplankton using a research-grade stereomicroscope, Leica M205A. This microscope has a magnification ratio of 20.5:1, can achieve a maximum magnification of 1280x based on a combination of optical components, and has a resolution of 1050 lp/mm. These images con-tain most species of zooplankton in the coastal waters of Shandong Province, such as Calanus sinicus , Sagitta crassa , and Macruran larvae . Then, we perform pixel-level and category-level annotations on each zooplankton instance in these images. To ensure the quality and accuracy of data annotation as much as possi-ble, we first have biological experts in the field of zooplankton perform category annotation on the captured images. Then, 10 annotators received training from the experts proficient in zooplankton biology. Annotations were independently reviewed and refined by three additional senior annotators. Quantitative eval-uation (Fig. 6(a)) achieves a high pairwise IoU of 0.9008, confirming reliable annotation consistency. After removing unclear images and images with exces-sive impurities, we finally obtained 5358 images, which constitute ZMIS5K. The actual annotation results are shown in Fig. 7.  
+
+> Fig. 6: Evaluation results of dataset construction quality.
+
+A.2 Dataset Characteristics and Statistics 
+
+In this subsection, we will introduce the basic information, characteristics of ZMIS5K, and the challenges encountered in instance segmentation. Some statis-tical information can also be seen in Fig. 8. 
+
+Number and Category of Dataset. Under a microscope, different light-ing conditions and magnification levels result in zooplankton exhibiting other characteristics, while also encompassing a wide range of categories. It is there-fore necessary to enhance the model’s generalization ability in complex scenar-ios and avoid overfitting. Therefore, the 5358 images were collected, each with a resolution of 2736 ×1824 pixels. Each species was imaged under two differ-ent illumination conditions, bright-field and dark-field, and captured at multiple ZMIS-SAM 21 Ground Truth Original Image 
+
+(a) (b) (c) (d) 
+
+Fig. 7: Examples of annotations for various instances in ZMIS5K. (a) is Fish larva . (b) includes Sagitta crassa , Penilia avirostris , and Evadne tergestina . (c) includes Eirene menoni and Pleurobrachia globosa . (d) includes Turritopsis nutricula and Oikopleura longicauda .
+
+magnification levels. The dataset contains 47 species of zooplankton and 1 back-ground class, and these data are divided into a training set and a test set in an 8:2 ratio. In dataset partitioning, we adopted SSIM to check duplicate or near-identical samples between training and test sets. Samples with SSIM above 0.95 (Fig. 6(b)), caused merely by slight variations in illumination and focal plane during imaging, which conforms to practical real-world imaging conditions. Fur-thermore, to make the ZMIS5K dataset suitable for more downstream tasks, all annotated data include category labels, instance masks, and bounding boxes. This enables the ZMIS5K dataset to be used for semantic segmentation, instance segmentation, object detection, and other downstream tasks. 3422      
+
+> 435
+> 1235
+> 208 72
+> 0
+> 500
+> 1000
+> 1500
+> 2000
+> 2500
+> 3000
+> 3500
+> 4000
+> 123~4 5~6 >6
+
+Number of Instance per Images                                      
+
+> 1185
+> 1156
+> 683
+> 600
+> 519
+> 498
+> 394 420
+> 286
+> 304
+> 248
+> 256
+> 232
+> 272
+> 246
+> 242
+> 207
+> 205
+> 198
+> 180
+> 163 149
+> 138 140
+> 131
+> 109
+> 117 97
+> 101 78
+> 62
+> 65 69 59
+> 47 56
+> 50
+> 52
+> 42 32
+> 27 24 24 18 21 16 10 Calanus sinicus Sagitta crassa
+> Eirene menoni Macrura larva
+> Pleurobrachia globosa Muggiaea atlantica
+> Fritillaria formica Penilia avirostris
+> Evadne tergestina Dolioletta gegenbauri
+> Brachyura zoea larva Ophioplutues larva early
+> Acartia pacifica Ophioplutues larva later
+> Labidocera rotunda Aequorea conica
+> Themisto gracilipes Clytia folleata
+> Oikopleura longicauda Tornaria larva
+> Trochophora larva Turritopsis nutricula
+> Fish eggs Bougainvillia muscus
+> Proboscidactyla flavicirrata Alima larva
+> Jellyfish larva Obelia dichotoma
+> Porcellana zoea larva Fish larva
+> Sugiura chengshanense Polychaeta larva later
+> Varitentaculata yantaiensis Centropages tenuiremis
+> Paracalanus parvus Polychaeta larva early
+> Megalopa larva Remains
+> Acetes larva Oithona plumifera
+> Centropages dorsispinatus Centropages abdominalis
+> Calanopia thompsoni Clytia hemisphaerica
+> Pontellopsis tenuicauda Actinotrocha larva
+> Ectopleura bimanatus
+
+Labels and Numbers for Instance Categories  
+
+> Number of Images
+> (a) (b)
+
+Fig. 8: Essential characteristics of the ZMIS5K dataset. (a) Distribution of the number of instances per image in the ZMIS5K dataset. (b) The number of instances per category in the ZMIS5K dataset. 
+
+Number and Size of Instances. There are many individual images con-taining multiple instances in the ZMIS5K dataset. In the dataset we constructed, the total number of instances is 10,228, among which the number of images with more than 3 instances amounts to 1,515 in total, accounting for 28.2% of the to-tal dataset size. In the phytoplankton object detection dataset, PMID2019 [28], 22 Dekun.Y et al.                              
+
+> Table 4: Comparison with existing plankton datasets. Where OD indicates object detection, SS indicates semantic segmentation, and IS indicates instance segmentation. Max indicates the maximum number of instances in a single image. ≥3indicates the number of images where the number of instances contained in a single image is greater than or equal to 3. Dataset OD SS IS Number Categories Max ≥3Year PMID2019 [28] ✓× × 10819 24 6436 2019 Bergum et.al [3] ✓✓ ✓ 131 7988 2020 ZMIS5K ✓✓ ✓ 5358 47 26 1497 2026
+
+it contains 24 species of phytoplankton, with a total of 10,819 images and 13,817 instances in total, where images with more than three instances account for 4.0% of the total. In the in-situ plankton instance segmentation dataset, Bergum 
+
+et.al [3], there are only 131 images. This dataset contains 7 species of plankton and a total of 776 instances. As can be seen from Table 4, the ZMIS5K dataset is the first species-rich zooplankton microscopic image dataset. This indicates that the ZMIS5K dataset is more challenging for existing methods. Due to the sig-nificant variation in the area proportion of different zooplankton species at the same magnification level, we conducted further analysis on the ZMIS5K training set. The average size of the instances is 760,820 pixels, which is approximately 872 ×872 pixels, accounting for 15.2% of the image size. Among these instances, those with an area smaller than 15.2% of the image size account for 64.76% of the total number of instances, while those with an area larger than 30% of the image size account for 14.64%. 
+
+Channel Intensity of Zooplankton Images under Different Illumina-tion Conditions. Zooplankton in microscopic images exhibit significant differ-ences in their characteristics under different illumination conditions. To quantify the differences between zooplankton microscopic images and images from other fields, we calculated the average channel intensity and probability density for each image separately on underwater images [31], remote sensing images [14], and the ZMIS5K dataset. As shown in the Fig. 9, the red channel in the ZMIS5K dataset has the highest density, while the R channel density in underwater images is the lowest. Similar to ZMIS5K, remote sensing images also have the highest density in the R channel, and this explains why RSPrompter achieves better segmentation performance on the ZMIS5K dataset than USIS-SAM. However, each channel of remote sensing images has only one peak, whereas zooplankton microscopic images have multiple peaks. Therefore, the RSPrompter model still poses significant challenges on the ZMIS5K dataset. ZMIS-SAM 23 (b) (a) 
+
+> Average Channel Intensity
+> Average Channel Intensity of Bright -filed
+> Proportion
+> (c)
+> Proportion
+> Average Channel Intensity
+> (d)
+
+Fig. 9: Average channel intensity in the case of different datasets with proportion. (a) Average channel intensity of ZMIS5K under dark-field conditions. (b) Average channel intensity of ZMIS5K under flight-field conditions. (c) Average channel intensity of un-derwater images. (d) Average channel intensity of remote sensing images. 
+
+## B Preliminaries 
+
+B.1 Preliminaries of SAM 
+
+The SAM framework [24] is an interactive prompt segmentation model that performs image segmentation tasks using prompt engineering, which comprises an image encoder, prompt encoder, and mask decoder. 
+
+Image Encoder: The image encoder is built on the pre-trained Vision Trans-former (ViT) [17], which is composed of L transformer layers, denoted FL. Given an input image x ∈ RH×W ×3, it is divided into M = H ×W/p 2 fixed-size patches. After each patch is mapped to an embedding, it is concatenated with one class token for positional encoding, and then it is fed into the transformer layers: 
+
+x0 = [ xcls ; EM (x)]  (20) 
+
+Fimg = Fi(xi−1), i = 1 , ..., L  (21) where xcls represents the class token for the global context. EM (·) represents the division of an image into M patches and the projection to the embedding. Fi(·)
+
+denotes i-th transformer layer. 
+
+Prompt Encoder: The prompt encoder maps prompts into this feature space, supporting both dense and sparse prompt inputs. Dense prompts refer to masks, which undergo convolution processing before being fused with image features. Sparse prompts can be arbitrary points, boxes, or text. 
+
+EPs = Ps(sparse ) (22) 24 Dekun.Y et al. 
+
+EPd = Pd(dense ) (23) where Ps(·) and Pd(·) represent the sparse prompt encoder and dense prompt encoder, respectively. EPs ∈ RT ×C represent sparse embedding, T denotes the number of prompter token, and C denotes the number of channels. EPd ∈ RN ×C
+
+represent dense embedding, N denotes the spatial dimension. 
+
+Mask Decoder: The masked decoder, built on ViT with only 4M parameters, is a lightweight architecture. Integrates image features and prompt features using cross-attention to output the image mask. 
+
+{Mk, c k} = D(Fimg , EPs , EPd ) (24) where Mk and ck represent mask logits and confidence, respectively. D(·) denotes Mask Decoder. 
+
+B.2 Preliminaries of Wavelet Transform 
+
+As a multi-scale and multi-directional analysis tool, wavelet transform achieves precise analysis of local variations in zooplankton by matching wavelet functions at different scales and positions with the signal. During microscopic imaging, the frequency characteristics of the same zooplankton change under different lighting conditions. Wavelet transform can accurately analyze the variations in frequency characteristics within the image through local wavelet functions, thereby cap-turing subtle structural changes such as edges and textures of zooplankton. h   
+
+> l
+> h
+> l
+> h
+> l: low pass filter
+> h: high pass filter
+> :down sampling 2
+> 2D -IDWT
+> 2D -DWT
+> : low frequency component
+> : high frequency component
+> (a)
+> (b)
+> cA cH
+> cV cD
+
+Fig. 10: Wavelet Transform Process. (a) The Multi-Scale Wavelet Transform Process. (b) The 2-Dimensional Discrete Wavelet Transform Process for Zooplankton. cA, cH, cV, and cD stand for Approximation Coefficients, Horizontal Detail Coefficients, Ver-tical Detail Coefficients, and Diagonal Detail Coefficients, respectively. 
+
+As shown in the Fig. 10(a), the discrete wavelet transform decomposes a signal into low-frequency and high-frequency components using low-pass filters, ZMIS-SAM 25 
+
+high-pass filters, and downsampling operations. In image processing, the image is regarded as a 2D discrete signal I(x, y ). The 2D discrete wavelet transform (2D-DWT) is performed by applying 1D discrete wavelet processing along the rows first and then the columns. The detailed formulas are given below: 
+
+L(x, y ) = X
+
+> k
+
+I(k, y )l[2 x − k] (25) 
+
+H(x, y ) = X
+
+> k
+
+I(k, y )h[2 x − k] (26) where L(x, y ) and H(x, y ) denote the row-wise low-frequency and high-frequency signals of the image at pixel (x, y ), respectively, and l and h correspond to the low-pass and high-pass filters, respectively. k represents the translation param-eter, and 2x denotes 2 × downsampling. Next, we apply low-pass and high-pass filtering to L and H along the col-umn direction of the image, respectively, ultimately yielding the following four frequency subbands of the image: 
+
+LL (x, y ) = X
+
+> k
+
+L(x, k )l[2 y − k] (27) 
+
+LH (x, y ) = X
+
+> k
+
+L(x, k )h[2 y − k] (28) 
+
+HL (x, y ) = X
+
+> k
+
+H(x, k )l[2 y − k] (29) 
+
+HH (x, y ) = X
+
+> k
+
+H(x, k )h[2 y − k] (30) where LL represents the low-frequency information of the image, corresponding to the overall contour structure of the zooplankton. LH , HL , and HH denote the high-frequency information in the horizontal, vertical, and diagonal directions of the image, respectively, which correspond to the detailed information such as edges of the zooplankton. As shown in the Fig. 10(b), after processing zooplankton microscopic images using the two-dimensional discrete wavelet transform, we can effectively extract the morphological structural features and edge detail features of zooplankton. This helps to compensate for the detail information lost during downsampling, thereby enhancing the model’s ability to perceive fine-grained features of zoo-plankton. 
+
+B.3 Loss function 
+
+The loss function of ZMIS-SAM is similar to those in USIS-SAM and RSPrompter. It consists of localization loss LR, classification loss LC , bounding box loss LB ,and segmentation loss LS , and the overall loss function is as follows. 
+
+LR = β1LC + θ1LB (31) 26 Dekun.Y et al. 
+
+LT = αLR + β2LC + θ2LB + λLS (32) where α, β1, β2, θ1, θ2 and λ denote the weight of each loss function in the total loss. Here, the weight of each loss function is set to 1.0. LR denotes the region proposal loss in the RPN head, which consists of classification loss and bounding box loss. LC denotes the cross-entropy loss, which is used to calculate the loss value between the ground-truth class and the predicted class. LB denotes the SmoothL1Loss, which is used to calculate the loss value between the predicted bounding box and the ground-truth bounding box. LS denotes the binary cross-entropy loss, which is used to calculate the loss value between the predicted segmentation mask and the ground-truth mask. 
+
+B.4 Evaluation metrics 
+
+We adopt mask Average Precision (AP), which is frequently used in a series of instance segmentation models such as Mask R-CNN, as the metric to evaluate model performance, including mAP , AP 50 , and AP 75 under different Intersection over Union (IoU) thresholds. The AP can be measured by calculating the area under the precision-recall curve. 
+
+P recision = T P T P + F P  (33) 
+
+Recall = T P T P + F N  (34) 
+
+AP =
+
+Z 10
+
+P (r), dr  (35) where T P , F P , and F N denote the True Positive, False Positive, and False Negative, respectively. P (r) denotes the precision at a recall of r.
+
+## C More ablation experiments of ZMIS-SAM 
+
+C.1 Effectiveness of the SA and IA in ZM-ViT 
+
+We conduct an ablation study to evaluate the effectiveness of the Shape Adapter (SA) and Intensity Adapter (IA) in ZM-ViT, with results summarized in Tab. 5. The SA is designed to steer the SAM encoder toward morphological structures of zooplankton, while the IA helps it adapt to channel-wise intensity distribu-tions in microscopic images. Experimental results confirm that both adapters consistently improve segmentation performance. As shown in Tab. 5, incorpo-rating only SA or IA raises mAP by 0.8% and 0.6%, respectively. When both SA and IA are used together, mAP increases from 70.4% to 71.9%, demonstrating that explicitly modeling zooplankton shape characteristics and intensity patterns ZMIS-SAM 27 
+
+effectively enhances SAM’s instance segmentation accuracy on zooplankton mi-croscopy images.                            
+
+> Table 5: Ablation study of SA and IA.
+> SA IA mAP AP 50 AP 75
+> 70.4 91.7 75.8
+> ✓71.2 93.5 76.9
+> ✓71.0 92.0 77.3
+> ✓✓71.9 93.1 79.0
+> Table 6: Ablation study of optimal number of MConvBlocks in the NFAM.
+> n mAP AP 50 AP 75
+> 172.2 93.5 78.0 272.3 93.6 79.4 473.0 94.1 79.8
+> 672.7 94.2 79.1
+
+C.2 Optimal Number of MConvBlocks in the NFAM 
+
+We systematically evaluate how the number of MConvBlocks in the NFAM mod-ule affects the instance segmentation performance of ZMIS-SAM, with full results provided in Tab. 6. The role of the MConvBlock is to extract multi-scale infor-mation from the aggregated features, thereby enhancing model robustness. We experiment with four values of n: 1, 2, 4, and 6. As shown in Tab. 6, when n=1, the mAP reaches 72.2%. Performance improves gradually as n increases, peak-ing at n=4. At n=6, both mAP and AP 75 are slightly lower than those at n=4, while only AP 50 is marginally higher by 0.1%, which falls within the range of normal variation. Based on these results, we select n=4 as the optimal number of MConvBlocks in the NFAM module. 
+
+C.3 Effectiveness of the WM2FE 
+
+WM2FE is a dynamic and learnable method based on the wavelet transform. We incorporate it into the USIS-SAM and train on the USIS10K, mAP is further improved after incorporating WM2FE (Tab. 7).                    
+
+> Table 7: The validated of WM2FE on the USIS10K dataset. Model Epoch Size mAP AP 50 AP 75 AP sAP mAP l
+> USIS-SAM 24 512*512 34.6 51.7 39.1 11.5 27.7 38.6 +WM2FE 24 512*512 35.4(+0.8) 52.6(+0.9) 40.7(+1.6) 8.7 27.6 40.2(+1.6)
+
+C.4 Parameter analysis of the model 
+
+As shown in the Tab. 8, we conduct a detailed analysis of the parameter quan-tities of each module in ZMIS-SAM. In the image encoder of ZMIS-SAM, from the eighth layer to the final layer, the original ViT blocks are replaced by ZM-ViT every two layers. Consequently, ZMIS-SAM contains 13 ZM-ViT blocks, 13 SA modules, 26 IA modules, and 13 NFAM modules in total. The number of trainable parameters for each SA, IA, and NFAM module are 1.65M, 1.23M, and 28 Dekun.Y et al. 
+
+4.65M, respectively. Further analysis in Tab. 5 shows that, by introducing two lightweight adapters (SA and IA) compared with the original SAM, ZMIS-SAM improves the instance segmentation metrics mAP , AP 50 , and AP 70 by 1.5%, 1.4%, and 3.2%, respectively. The WM2FE module has the smallest number of parameters and has a negligible impact on the overall trainable parameters. In summary, ZMIS-SAM enhances the instance segmentation accuracy of zooplank-ton microscopic images while maintaining a controllable increase in trainable pa-rameters. Notably, under higher IoU thresholds, the model demonstrates more effective instance segmentation performance for zooplankton.          
+
+> Table 8: The parameter count of each module, where †represents the trainable pa-rameters of the module in ZMIS-SAM. SA refers to Shape Adapter, and IA refers to Intensity Adapter. NFAM refers to Neighboring Feature Aggregation Module, and WM2FE refers to Wavelet-based Multi-scale and Multi-directional Feature Enhance-ment. Module SA †IA †NFAM †WM2FE †
+> Params 21.4M 32.0M 60.0M 0.5M
+
+C.5 Analysis of Model Inference Speed 
+
+Zooplankton analysis is typically offline (not real-time). ZMIS-SAM can ade-quately process samples in laboratory environments at 3.9 FPS and does not occupy excessive GPU memory during inference (Tab. 9)                
+
+> Table 9: Model inference efficiency on the same hardware. Method FPS Latency CUDA Mem mAP AP 50 AP 75
+> RSPrompter 8.8 113.6 2596M 71.8 92.2 76.9 ZMIS-SAM 3.9 256.4 2939M 73.6(+1.8) 94.6(+2.4) 80.7(+3.8)
+
+C.6 Effectiveness analysis of each model 
+
+In this section, we further analyze the effectiveness of the three modules (ZM-ViT, NFAM, and WM2FE) through feature map visualization. As shown in Fig. 11, we can clearly observe that the features extracted by the model ex-hibit discernible refinement in both spatial structure and channel-wise response patterns after processing through ZM-ViT. This improvement stems from the dedicated roles of its two components: 1) Shape Adapter guides SAM to focus on morphological characteristics of zooplankton, thereby enhancing the model’s capacity to represent shape variations. 2) Intensity Adapter enables SAM to ZMIS-SAM 29 w/o ZM -ViT Original Image w ZM -ViT 
+
+Fig. 11: Visualize the feature map of ZM-ViT. The ZM-ViT enables SAM to learn knowledge of zooplankton. 
+
+adaptively adjust its response to channel-wise intensity distributions, more ac-curately capturing illumination variations under microscopic imaging conditions. Working synergistically, these adapters not only strengthen the model’s feature representation in key regions but also effectively suppress responses to back-ground impurities. Original Image w/o NFAM w NFAM 
+
+Fig. 12: Visualize the feature map of NFAM. The NFAM enhances the model’s ability to continuously segment slender appendages. 
+
+Fig. 12 clearly illustrates through feature visualization how the NFAM ef-fectively integrates general-purpose features extracted by the ViT layers with domain-specific features learned through ZM-ViT, establishing semantic asso-ciations between the main body structures of zooplankton and their slender appendages in the feature space. Furthermore, in the model without NFAM, the feature responses in the slender appendage regions appear significantly frag-mented and discontinuous, preventing the model from perceiving the complete anatomical structure. In contrast, the NFAM successfully captures the progres-sive feature variations along these delicate appendages, thereby substantially enhancing the model’s capability for continuous segmentation of such structures. As shown in Fig. 13, comparative feature map visualizations clearly demon-strate that incorporating the WM2FE module significantly enhances the model’s feature representation of zooplankton boundaries. Without WM2FE, the bound-ary features of Pleurobrachia globosa appear blurred and poorly localized, par-ticularly along its transparent edge structures. In contrast, the WM2FE module employs the Haar wavelet transform to extract high-frequency details along ver-tical, horizontal, and diagonal orientations, effectively compensating for the loss of fine details during upsampling. This integration of multi-directional high-30 Dekun.Y et al. 
+
+frequency information substantially strengthens the model’s capacity to repre-sent and segment complex boundary structures in zooplankton specimens. Original Image w/o WM2FE w WM2FE 
+
+Fig. 13: Visualize the feature map of WM2FE. The WM2FE focuses more on species boundaries, thus enhancing the model’s segmentation ability for boundaries. 
+
+C.7 Clear comparative visualization results 
+
+In this subsection, we present clearer visualizations compared to those shown in the main text (Fig. 14, Fig. 15, and Fig. 16). Ground Truth Mask2Former Mask R -CNN RSPrompter    
+
+> SAM+Bbox SAM+Mask USIS -SAM ZMIS -SAM (Our)
+
+Fig. 14: Visualization results of inaccurate classification cases. 
+
+## D Generalization experiments 
+
+This section evaluates the cross-domain instance segmentation performance of the proposed model. Due to the absence of publicly available instance segmen-tation datasets for zooplankton or even plankton microscopy images in general, we retrain ZMIS-SAM on commonly adopted public benchmarks originally used for SAM-based instance segmentation to validate its generalization ability across specialized domains. ZMIS-SAM 31 Ground Truth Mask2Former Mask R -CNN RSPrompter    
+
+> SAM+Bbox SAM+Mask USIS -SAM ZMIS -SAM (Our)
+
+Fig. 15: Visualization results of discontinuous segmentation of slender appendages cases. Ground Truth Mask2Former Mask R -CNN RSPrompter    
+
+> SAM+Bbox SAM+Mask USIS -SAM ZMIS -SAM (Our)
+
+Fig. 16: Visualization results of incomplete boundary segmentation cases. 32 Dekun.Y et al. 
+
+D.1 Datasets 
+
+UIIS [30] is an underwater instance segmentation dataset with a total of 4,628 images, covering 7 underwater instance categories: Fish, Reefs, Aquatic plants, Wrecks/ruins, Human divers, Robots, and Sea-floor. It was split into 3,937 train-ing images and 691 validation images. NWPU [14] is a remote sensing instance segmentation dataset consisting of 650 images in total, including 10 remote sens-ing instance categories: cars, airplanes, ships, etc. It was divided into 454 training images and 196 validation images. 
+
+D.2 Implementation Details 
+
+For fair comparison, both USIS-SAM and ZMIS-SAM use an input size of 512 ×512, an initial learning rate of 1e-4, and a batch size of 12. Following the experimen-tal setup in USIS-SAM, the models are trained for 30 epochs on UIIS and 100 epochs on NWPU. To further assess sensitivity to objects at different scales, we include three additional metrics: AP s, AP m, and AP l, evaluating performance on small, medium, and large targets, respectively. 
+
+D.3 Experiments Results 
+
+As shown in Tab. 10, ZMIS-SAM achieves mAP , AP 50 , and AP 75 scores of 34.1%, 60.9%, and 30.0% on the NWPU dataset, significantly outperforming USIS-SAM and demonstrating stronger cross-domain generalization. On the UIIS dataset, ZMIS-SAM also surpasses USIS-SAM in mAP, AP s, AP m, and AP l, with a notable 1.6% improvement in AP l, indicating its superior performance in seg-menting large objects. However, it should be noted that USIS-SAM, which is specifically designed for underwater imagery, achieves higher AP 50 and AP 75 in this domain, reflecting its specialized strength in certain localization tasks.

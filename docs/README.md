@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-08-02</span>
+      <span class="dpr-home-dashboard-kicker">2026-08-03</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 15 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 12 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>7</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>8</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>2</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>10</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-08-02 21:40:36 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-08-03 22:20:34 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,9 +62,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日精读7篇、速读8篇，聚焦视觉感知与深度估计方向。</p>
-<p>最值得看的是食物分割基准DishSeg24k和高效立体匹配WHTMix，均获9.0高分。</p>
-<p>下一步可优先关注事件立体视觉及多尺度视觉编码器，兼顾精度与效率。</p>
+<p>今日12篇推荐中，2篇精读聚焦高效视觉模型：WHTMix用Walsh-Hadamard变换提升立体深度估计效率，MixFrag为ViT设计碎片化引导的混合精度量化。最值得关注的是轻量化与加速方向，兼顾精度与资源占用。下一步可深入测试这两种方法在更大规模视觉任务上的泛化表现。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -73,12 +71,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">7 篇</strong>
+    <strong class="dpr-home-dashboard-count">2 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="DishSeg24k: A Large-Scale Benchmark for Food Segmentation with Stochastic Expert Decoding">DishSeg24k: A Large-Scale Benchmark for Food Segmentation with Stochastic Expert Decoding</span></li><li><span class="dpr-home-dashboard-paper-title" title="WHTMix: Efficient Stereo Depth Estimation via Walsh-Hadamard Token Mixing">WHTMix: Efficient Stereo Depth Estimation via Walsh-Hadamard Token Mixing</span></li><li><span class="dpr-home-dashboard-paper-title" title="Explicit Layer Modeling for Video Object Insertion and Layer Decomposition">Explicit Layer Modeling for Video Object Insertion and Layer Decomposition</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="WHTMix: Efficient Stereo Depth Estimation via Walsh-Hadamard Token Mixing">WHTMix: Efficient Stereo Depth Estimation via Walsh-Hadamard Token Mixing</span></li><li><span class="dpr-home-dashboard-paper-title" title="MixFrag: Fragility-Guided Mixed-Precision Post-Training Quantization for Vision Transformers">MixFrag: Fragility-Guided Mixed-Precision Post-Training Quantization for Vision Transformers</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">mono-depth <strong>3</strong></span><span class="dpr-home-dashboard-tag">seg <strong>2</strong></span><span class="dpr-home-dashboard-tag">matting <strong>1</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">lite-vision <strong>1</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>1</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -86,12 +84,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">8 篇</strong>
+    <strong class="dpr-home-dashboard-count">10 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Towards Ultrafast Depth Sensing Via Active Event-based Stereo Vision">Towards Ultrafast Depth Sensing Via Active Event-based Stereo Vision</span></li><li><span class="dpr-home-dashboard-paper-title" title="A Unified Stereo Geometry Estimation Framework for Disparity and Surface Normal">A Unified Stereo Geometry Estimation Framework for Disparity and Surface Normal</span></li><li><span class="dpr-home-dashboard-paper-title" title="MAViE: A Multi-scale Adaptive Vision Encoder for Fine-grained Visual Perception and Efficient Multimodal Reasoning">MAViE: A Multi-scale Adaptive Vision Encoder for Fine-grained Visual Perception and Efficient Multimodal Reasoning</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="ZMIS-SAM: Segment Anything Model Enhanced with Wavelet Transform for Zooplankton Microscopy Image Instance Segmentation">ZMIS-SAM: Segment Anything Model Enhanced with Wavelet Transform for Zooplankton Microscopy Image Instance Segmentation</span></li><li><span class="dpr-home-dashboard-paper-title" title="MonoVoc: Decoupling Geometry and Semantics for Lightweight Monocular Open-Vocabulary 3D Gaussians">MonoVoc: Decoupling Geometry and Semantics for Lightweight Monocular Open-Vocabulary 3D Gaussians</span></li><li><span class="dpr-home-dashboard-paper-title" title="SAM+D: Parameter-Efficient Dimensional Lifting of SAM-Family Models via Depth-Routed LoRA and Depth Shifting">SAM+D: Parameter-Efficient Dimensional Lifting of SAM-Family Models via Depth-Routed LoRA and Depth Shifting</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">stereo-depth <strong>3</strong></span><span class="dpr-home-dashboard-tag">lite-vision <strong>2</strong></span><span class="dpr-home-dashboard-tag">vfm <strong>2</strong></span><span class="dpr-home-dashboard-tag">seg <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">seg <strong>5</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>2</strong></span><span class="dpr-home-dashboard-tag">vfm <strong>2</strong></span><span class="dpr-home-dashboard-tag">mono-depth <strong>1</strong></span></div>
 </section>
 </div>
 

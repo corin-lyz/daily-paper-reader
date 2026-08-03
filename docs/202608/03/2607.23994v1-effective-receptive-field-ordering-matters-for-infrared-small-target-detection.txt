@@ -1,0 +1,901 @@
+Title: Effective Receptive Field Ordering Matters for Infrared Small Target Detection
+
+URL Source: https://arxiv.org/pdf/2607.23994v1
+
+Published Time: Tue, 28 Jul 2026 01:55:04 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+> JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 1
+
+# Effective Receptive Field Ordering Matters for Infrared Small Target Detection 
+
+Guoyi Zhang, Yanjin Du, Zhengyao Zhao, Tongsu Zhang, Guangsheng Xu, Siyang Chen, Xiangpeng Xu, Han Wang and Xiaohu Zhang 
+
+Abstract —In this work, we investigate a previously unexplored architectural dimension for infrared small target detection: the organization of effective receptive fields (ERFs) during feature refinement. Unlike existing approaches that primarily improve individual feature operators, we argue that ERF organization constitutes an architectural dimension independent of receptive field design itself, and formulate deep feature transformation as a progressive residual correction process, from which a theoretical framework for ERF scheduling is established. Specifically, we reveal that ERF refinement is governed by two fundamental properties: scale-frequency correspondence, which aligns different ERF scales with distinct residual frequency characteristics, and nonlinear non-commutativity, which makes different ERF orderings produce fundamentally different refinement trajectories. Together, these properties show that ERF organization, rather than ERF scale alone, governs refinement dynamics. Guided by these principles, we propose Receptive Field Ordering Network (RFONet), which realizes hierarchical ERF scheduling through a multigrid-inspired V-cycle strategy using only standard 3 × 3
+
+convolutions. RFONet achieves state-of-the-art performance on multiple benchmarks with only 1.16M parameters and over 157 FPS inference speed. Beyond empirical performance, our theoretical analysis provides theoretical guarantees for stable residual refinement under perturbations, frequency shifts, and partial occlusions, which are consistently reflected in superior noise robustness and cross-dataset generalization. Finally, our framework reformulates ERF organization as a task-dependent optimization objective, providing a principled foundation for future adaptive receptive field scheduling. 
+
+Index Terms —Infrared small target, image segmentation, effective receptive field ordering, multi-grid method. 
+
+I. I NTRODUCTION 
+
+# INFRARED small target detection (IRSTD) aims to identify targets with weak responses under complex background interference, which is critical for applications such as remote sensing, surveillance, and early warning. Early methods relied on handcrafted priors, including local contrast [1], sparsity [2], and low-rank properties [3]. Benefiting from deep learning, recent approaches have substantially advanced IRSTD by devel-oping increasingly powerful feature transformation operators, leading to remarkable improvements in feature representation and detection performance. Despite substantial progress, existing methods primarily improve individual feature operators to enhance feature repre-sentation, while their effective receptive fields (ERFs) [4] are implicitly determined by network depth, resolution changes, 
+
+Corresponding authors: Xiangpeng Xu, Han Wang and Xiaohu Zhang 
+
+All authors are with the Aircraft Visual Perception (AVP) Lab, School of Aeronautics and Astronautics, Sun Yat-sen University, Shenzhen 518107, Guangdong, China. (email:zhanggy57@mail2.sysu.edu.cn) 
+
+or module design. However, feature refinement is ultimately realized through the evolution of ERFs across successive nonlinear transformations, suggesting that refinement quality depends not only on individual operators but also on how their receptive fields are organized. Therefore, existing studies implicitly optimize receptive fields through operator design, whereas whether ERF organization itself should be explicitly optimized as an independent architectural dimension remains largely unexplored. In this work, we investigate ERF organization as a previously overlooked architectural dimension for infrared small target detection. Rather than treating ERF scales as passive con-sequences of network depth, resolution variation, or module configuration, we formulate deep feature transformation as a progressive residual refinement process and establish a theoretical framework for ERF scheduling. Our analysis reveals two fundamental properties. First, ERF refinement exhibits scale-frequency correspondence, indicating that different ERF scales preferentially refine residual components with different frequency characteristics. Second, nonlinear ERF transforma-tions are generally non-commutative, implying that different ERF orderings produce fundamentally different refinement trajectories. Together, these properties indicate that refinement performance is governed not only by ERF scale but also by how ERFs are organized throughout the refinement process. Guided by these theoretical principles, we propose Receptive Field Ordering Network (RFONet), a minimalist framework that explicitly organizes effective receptive fields during progressive feature refinement. Using only standard 3 × 3 convolutions, RFONet realizes hierarchical ERF scheduling through a V-cycle strategy inspired by multigrid optimization [5], allowing the effect of ERF organization to be isolated from architectural complexity. This design translates the proposed principles into stable scale-consistent refinement with improved robustness to perturbations, frequency shifts, and partial occlusions. Extensive experiments consistently support these theoretical predictions, demonstrating state-of-the-art accuracy together with superior robustness, cross-dataset generalization, and high computational efficiency. More importantly, our analysis suggests that the optimal ERF organization is determined by task-specific residual characteristics, motivating receptive field scheduling as a principled optimization objective rather than a heuristic architectural design choice. The contributions of this work are summarized as follows:  
+
+> •
+
+We identify ERF organization as a previously unexplored architectural principle for infrared small target detection, arXiv:2607.23994v1 [cs.CV] 27 Jul 2026 JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 2
+
+shifting the focus from individual operator design to receptive field scheduling during progressive refinement.  
+
+> •
+
+We establish a theoretical framework revealing the scale-frequency correspondence and nonlinear non-commutativity of ERF refinement, and derive its stability and robustness properties.  
+
+> •
+
+We propose RFONet, a minimalist realization of the proposed principles through hierarchical V-cycle ERF scheduling, achieving accurate, robust, and highly efficient infrared small target detection. The rest of this paper is organized as follows. Section II reviews related works; Section III presents the problem formulation and theoretical analysis; Section IV introduces RFONet; Section V reports experimental results; and Section VI concludes the paper. II. R ELATED WORK 
+
+A. Infrared Small Target Detection 
+
+With the rapid development of deep learning, data-driven methods have become the dominant paradigm for infrared small target detection [6]. Most existing studies improve detection performance by enhancing the capability of individual feature transformation operators. Representative efforts include multi-scale feature interaction (DNANet [7], UIUNet [8]), shape-biased representation learning (ISNet [9], CSRNet [10]), global dependency modeling (SRSNet [11], ISTR [12], MCFNet [13]), and prior-guided enhancement strategies based on frequency modeling, multi-task learning, foundation models, and unfold-ing mechanisms (WMRNet [14], MTMLNet [15], IRSAM [16], RPCANet ++ [17]). Despite these advances, existing methods focus on improving individual feature operators but neglect the sequential organization of receptive fields during refinement, leaving the role of ERF scheduling in detection performance largely unclear. 
+
+B. Effective Receptive Field Modeling 
+
+Effective receptive field (ERF) has been widely recognized as a key factor in contextual information aggregation [18]– [20]. Increasing ERF enables models to capture broader spatial dependencies, motivating extensive efforts to enlarge ERFs through multi-scale architectures [21], non-local operations [22], self-attention mechanisms [12], large-kernel convolutions [23], and recent state-space models such as Mamba [24]. Beyond spatial coverage, existing studies have also investigated the semantic roles of different ERF scales [25], revealing that smaller ERFs are more suitable for preserving local details, whereas larger ERFs facilitate global structural modeling [26]. Deformable convolutions [27] provide adaptive receptive fields through spatial sampling adjustment (where), yet leave the scale-wise organization of ERFs (when/how) unexplored. However, these studies mainly investigate individual ERF scales or their magnitude [28], while how multiple ERFs should be organized and scheduled during progressive feature refinement remains largely unexplored. III. P ROBLEM FORMULATION AND MOTIVATION 
+
+A. Problem Formulation 
+
+Given an infrared image, infrared small target detection aims to estimate the target map. The observed image is formulated as [29] 
+
+fD (x, y ) = fT (x, y ) + fB (x, y ) + fN (x, y ), (1) where fD , fT , fB , fN and (x, y ) are the original infrared image, the target image, the background image, the random noise image and the pixel location, respectively. A deep network can be viewed as a finite-step refinement process [30]: 
+
+F(k+1) = Φ k(F(k)), k = 0 , . . . , K − 1, (2) where F(k) denotes the intermediate representation. We for-mulate it as F(k) = T(k) + E(k), where T(k) and E(k)
+
+represent the target-related component and residual ambiguity, respectively. Thus, feature refinement aims to reduce E(k) while preserving discriminative target information. 
+
+B. Problem Analysis 
+
+Based on the above formulation, the residuals involved in feature refinement are further analyzed from the perspective of their scale-frequency characteristics. 
+
+Definition 1 (Scale-frequency Error Decomposition). Let an error signal e ∈ E be decomposed into multiple scale-frequency components e = PSs=1 es, where es denotes the error component dominated by the frequency band Ωs. We assume a scale-frequency correspondence, where finer spatial scales are associated with higher-frequency components and coarser spatial scales correspond to lower-frequency compo-nents, i.e. , si < s j ⇒ Ωsi ≻ Ωsj .
+
+Assumption 1 (Scale-selective Stable Refinement). Let Ts
+
+denote the refinement operator associated with scale s. For the residual component es dominated by frequency band Ωs,
+
+∥T s(es)∥ ≤ αs∥es∥, 0 ≤ αs < 1, while for any mismatched residual component ej (j̸ = s), ∥T s(ej )∥ ≤ βs,j ∥ej ∥, α s <βs,j < 1. Furthermore, for any two refinement operators Φk
+
+and Φs, the correction discrepancy is bounded by ∥Φk(es) −
+
+Φs(es)∥ ≤ ζk,s ∥es∥, ζ k,s < ∞.
+
+Remark. This is not a restrictive condition but a formal abstraction of two universal facts: spatial scale inherently determines frequency preference, and any two bounded neural operators have finite Lipschitz discrepancy on a compact input domain. 
+
+Theorem 1 (Scale-matched Residual Refinement). Let a residual component es correspond to frequency scale s. Given a refinement operator Φs specialized for correcting the residual component at scale s and an arbitrary mismatched opera-tor Φk (k̸ = s) applied to the same residual component, if the cross-scale interference satisfies Assumption 1, then 
+
+∥es − Φs(es)∥ ≤ ∥ es − Φk(es)∥ + ζk,s ∥es∥. Therefore, scale-matched refinement reduces the uncertainty introduced by applying an inappropriate correction operator to a residual component. JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 3
+
+Proof. For the matched refinement operator, the corrected residual is defined as 
+
+rms = es − Φs(es). (3) For a mismatched refinement operator Φk, the corresponding residual is 
+
+rus = es − Φk(es). (4) By adding and subtracting Φk(es), we have 
+
+rms = es − Φk(es) + Φ k(es) − Φs(es). (5) Applying the triangle inequality gives 
+
+∥rms ∥ ≤ ∥ rus ∥ + ∥Φk(es) − Φs(es)∥. (6) According to Assumption 1, the discrepancy between two refinement operators is bounded as 
+
+∥Φk(es) − Φs(es)∥ ≤ ζk,s ∥es∥. (7) Combining the above inequalities yields 
+
+∥rms ∥ ≤ ∥ rus ∥ + ζk,s ∥es∥, (8) which completes the proof. 
+
+Remark. Theorem 1 does not state that mismatched operators are ineffective, but only that scale mismatch introduces an additional bounded interference term, motivating scale-aware organization of refinement operators. 
+
+C. Motivation 
+
+The above analysis suggests that residual correction is essentially a scale-matching process, where the spatial char-acteristics of correction operators determine their ability to handle different error components. In deep networks, such spatial characteristics are governed by the effective receptive field [4] of feature transformations. 
+
+Definition 2 (Effective Receptive Field (ERF [4], Luo et al. NeurIPS’16)). The effective receptive field (ERF) char-acterizes the actual contribution distribution of input regions to an output response, rather than the maximum coverage defined by the theoretical receptive field. For an L-layer network, the contribution of an input position (i − p1, j − p2)
+
+to an output neuron at (i, j ) is measured by g(p1, p 2) =  
+
+> ∂Y(L)(i,j )
+> ∂X(0) (i−p1,j −p2)1
+
+. The ERF is defined as the normalized contribution distribution: ERF( p1, p 2) = g(p1,p 2)P  
+
+> q1,q 2g(q1,q 2)
+
+. The spatial distribution of ERF( p1, p 2) reflects the effective scale of information aggregation. 
+
+Property 1 (Frequency Preference Induced by ERF Scale). 
+
+Let ρσ (x) denote an ERF distribution with spatial scale 
+
+σ, where ρσ (x) = 1 
+
+> σd
+
+ρ( x 
+
+> σ
+
+), where d represents the spatial dimension. According to the Fourier scaling property, the corresponding frequency response satisfies ˆρσ (ω) = ˆ ρ(σω).Therefore, increasing ERF scale expands the spatial aggregation range and shifts the frequency response toward lower frequen-cies. Specifically, for σ2 > σ 1, the response of a larger ERF is evaluated at a higher frequency coordinate σ2∥ω∥ > σ 1∥ω∥,which results in a relatively stronger attenuation tendency Small RF  
+
+> Large RF
+> Fig. 1. Verification of Property 1. Left: original image with local pseudo-color overlays of small and large receptive field responses. Right: radial frequency spectra. Small RF preserves high frequencies; large RF attenuates them.
+
+for rapidly varying components. Hence, larger ERFs exhibit stronger low-frequency preference, whereas smaller ERFs preserve more localized high-frequency details. 
+
+Proof. The spatial scaling relationship of ERF indicates that enlarging the receptive field is equivalent to stretching its contribution distribution. According to the Fourier scaling theorem [31], 
+
+F{ ρσ (x)} = ˆ ρ(σω). (9) When σ increases, the frequency response is compressed toward the low-frequency region. 
+
+Remark. Property 1 indicates that ERF is not merely a measure of spatial coverage, but also characterizes the frequency prefer-ence of feature transformations. Specifically, as shown in Fig. 1, large ERFs facilitate broader contextual aggregation and are more suitable for correcting low-frequency residual components, whereas small ERFs preserve sensitivity to localized high-frequency variations. Therefore, different ERF scales can be interpreted as scale-specific refinement operators, providing a theoretical basis for ERF scheduling. 
+
+Property 2 (Non-commutativity of ERF-guided Refinement). 
+
+Let Φri and Φrj denote two feature transformation operators associated with different ERF scales ri and rj . For nonlinear deep networks, these ERF-guided transformations generally do not satisfy the commutative property Φri ◦ Φrj̸ = Φ rj ◦ Φri .Therefore, the ordering of ERF transformations affects the feature refinement trajectory and the final representation. 
+
+Proof. An ERF-guided transformation with scale r can be formulated as 
+
+Φr (x) = σ(Kr (x)) , (10) where Kr (·) denotes the scale-dependent aggregation operator induced by ERF r, and σ(·) represents nonlinear feature transformation. For two different ERF scales ri and rj , the corresponding aggregation operators generally satisfy 
+
+Kri̸ = Krj , (11) because they integrate information from different spatial neighborhoods. Considering two refinement orders, we obtain 
+
+Φri (Φ rj (x)) = σ(Kri (σ(Krj (x)))) , (12) and 
+
+Φrj (Φ ri (x)) = σ(Krj (σ(Kri (x)))) . (13) JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 4(a) (b) (c) (d) (e)  
+
+> Fig. 2. Qualitative verification of the non-commutativity property. Five MSHNet [32] variants are constructed by inserting HLKConv modules [33] at different locations. They contain identical operators, and parameters, differing only in the ordering of receptive field expansion. Nevertheless, their input-to-output effective receptive fields are markedly different, demonstrating that ERF ordering alone changes the refinement trajectory, consistent with Property 2.
+
+Since each transformation modifies the feature distribution for subsequent operators and ERFs operate at different spatial scales, different ordering strategies generally yield distinct intermediate representations. Therefore, 
+
+Φri ◦ Φrj (x)̸ = Φ rj ◦ Φri (x), (14) in general. 
+
+Remark. Property 2 establishes the theoretical necessity of ERF scheduling, while Fig. 2 provides qualitative evidence that different ERF orderings produce distinct effective receptive fields. 
+
+Motivation. Combining Definition 2, Property 1, Theorem 1, and Property 2, we reveal that ERF scheduling is funda-mentally a scale-frequency matching problem rather than a simple architectural design choice. Specifically, different ERF scales exhibit distinct frequency preferences, enabling scale-adaptive refinement of heterogeneous residual components. Furthermore, the non-commutative nature of nonlinear ERF-guided transformations indicates that different ERF orders produce distinct refinement trajectories and final representations. Therefore, effective ERF-based refinement depends not only on the available scales but also on their organization throughout the refinement process. This leads to a fundamental question: how should ERFs with different spatial scales be scheduled to achieve effective residual suppression? IV. M ETHODOLOGY 
+
+A. Overview Architecture 
+
+To isolate the effect of ERF organization from architectural complexity, we adopt a minimalist design principle. As shown in Fig. 3, RFONet follows a standard U-Net architecture without introducing additional feature extraction branches or task-specific modules commonly used in infrared small target detection. Each stage is constructed with the same ERFBlock, which only contains standard 3 × 3 convolutions, pooling, nearest-neighbor interpolation, normalization, and nonlinear activation. Different ERF scales are naturally induced by varying spatial resolutions through hierarchical downsampling. Therefore, RFONet serves as a controlled framework to investigate how ERFs should be organized across refinement stages, rather than relying on architectural complexity for performance improvement. 
+
+B. Simple Yet Powerful ERFBlock 
+
+Infrared small target detection requires suppressing hetero-geneous residuals, including high-frequency disturbances from noise and edges and low-frequency variations from large-scale background structures. According to Theorem 1 and Property 1, such residuals cannot be fully addressed by a single-scale operator, since different ERFs exhibit distinct frequency preferences and are specialized for refining different residual components. Therefore, ERF-based refinement should be viewed as an organization problem rather than a simple receptive field enlargement problem. Motivated by the multigrid principle, we propose the Effective Receptive Field Block (ERFBlock), which progressively schedules different ERF scales along the refinement trajectory to achieve scale-frequency matched residual refinement. By explicitly organizing ERFs during feature transformation, ERFBlock effectively suppresses heterogeneous background residuals while preserving discrimi-native small target responses. 
+
+Definition 3 (Multigrid Principle). Let {C s}Ss=1 denote a set of scale-specific correction operators, where s indexes the resolution scale. Given an error representation e(0) , the refinement process under a selected scale sequence {sk}Kk=1 
+
+is formulated as e(k+1) = ( I − C sk )e(k), k = 0 , · · · , K − 1,where Csk selectively attenuates the error components corre-sponding to scale sk. The final residual after K correction steps can be expressed as e(K) = QKk=1 (I − C sk )e(0) . Therefore, the multigrid principle aims to determine an effective scale schedul-ing strategy: {s∗
+
+> k
+
+}Kk=1 = arg min {sk }
+
+QKk=1 (I − C sk )e(0) ,where different scales cooperate to reduce heterogeneous error components. Although the above formulation is derived in the residual space, the same principle can be extended to deep feature refinement. Specifically, an ERFBlock can be interpreted as an implicit refinement operator, where different ERF scales provide scale-dependent feature transformation. Inspired by the multigrid V-cycle strategy [34], we adopt a fixed V-cycle schedule to organize ERF transitions. Compared with dynamically optimized ERF arrangements, the fixed strategy avoids introducing additional adaptive variables [35] and reduces potential interference from extra optimization freedom, thereby isolating the effect of ERF ordering itself. This design preserves the multi-scale refinement principle while enabling a clearer analysis of how receptive field organization affects infrared small target detection. 
+
+Definition 4 (V-cycle Refinement Principle). Let {C s}Ss=1 
+
+denote scale-specific correction operators with ERF size rs. A V-cycle schedule is defined as SV = {s1, · · · , s m, · · · , s 1},where rs1 < rs2 < · · · < rsm , and the corresponding refinement process is e(k+1) = ( I − C sk )e(k). The complete V-cycle operator is V = QKk=1 (I − C sk ), yielding e(K) = Ve(0) .
+
+Implementation Details. Following Definition 4, we instantiate the proposed ERF organization through a scale-scheduled resid-ual refinement mechanism. Different from conventional multi-scale designs that focus on simultaneous feature aggregation, each ERFBlock explicitly organizes receptive field transitions JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 5InitConv 
+
+... 
+
+> ×L1
+> C1
+> Downsample
+
+... 
+
+> ×L2
+> C2
+> Downsam ple
+
+... 
+
+> ×L3
+> C3
+
+...            
+
+> ×L4
+> ...
+> ×L*3
+> C3
+> ... ×L*2
+> C2
+> ...  ×L*1
+> C1
+> Up sam ple
+> Upsample
+> Out Conv
+> C4
+> ERF Block
+> ERF Block
+> ERF Block
+> ERF Block
+> ERF Block
+> ERF Block
+> ERF Block
+> ERF Block
+> ERF Block
+> ERF Block
+> ERF Block
+> ERF Block
+> ERF Block
+> ERF Block
+> Fig. 3. The overall architecture of RFONet follows the conventional U-Net framework with stacked ERFBlocks. InitConv and OutConv are implemented by two 3×3convolutions, projecting the input from 1 to C1channels and the features back to a single-channel prediction, respectively. Here, L∗
+> i=Li+ 1 . To isolate the effect of ERF organization, all ERFBlocks use the same local operator, and different ERFs are generated solely through resolution transformations.
+
+into a sequential refinement process across different spatial scales. For a maximum scale level s, the refinement trajectory is defined as 
+
+Ss = {1, 2, · · · , s − 1, s, s − 1, · · · , 2, 1}, (15) which progressively expands the contextual modeling range and subsequently returns to fine-scale refinement. Based on this trajectory, the overall ERF refinement operator is formulated as 
+
+Vs = RsK ◦ · · · ◦ R s1 , sk ∈ S s, (16) where Rsk denotes the scale-conditioned ERF refinement operator. For instance, S1 = {1}, S2 = {1, 2, 1}, and S3 =
+
+{1, 2, 3, 2, 1}. Such hierarchical scheduling enables residual correction along a progressive multi-scale refinement trajectory. Specifically, each ERF refinement operator is formulated as a residual transformation in a scale-dependent spatial domain: 
+
+Rs(X) = X + Ts(X), (17) where Ts(·) denotes the scale-conditioned residual correction operator. This formulation directly realizes the scale-matched correction principle in Theorem 1: each Rs is specialized for residual components at scale s, with cross-scale interference bounded by domain projection. To explicitly control the ERF size, Ts is implemented as 
+
+Ts = Π −1 
+
+> s
+
+◦ F ◦ Πs, (18) where Πs(·) projects the feature representation into a scale-specific spatial domain, Π−1 
+
+> s
+
+(·) restores the original resolution, and F(·) performs local feature refinement. Through different spatial projections, the same refinement function generates distinct ERF scales without introducing additional convolutional parameters, consistent with the multigrid principle of sharing refinement operators across scales [34]. In practice, the shared refinement function is implemented as 
+
+F(X) = λConv 3×3(δ(Norm( X))) , (19) where λ is a learnable modulation coefficient. The scale projection Πs(·) and inverse projection Π−1 
+
+> s
+
+(·) are realized by max pooling and nearest-neighbor interpolation with a scale factor of 2s, respectively. For an input feature map 
+
+X ∈ RC×H×W , the complete ERFBlock is formulated as a hierarchical residual refinement: 
+
+ˆX = Vs(X) + F(X), (20) 
+
+Y = X + F( ˆX). (21) By decoupling ERF scheduling from feature transformation, the proposed ERFBlock provides a controlled framework for investigating how receptive field organization influences progressive feature refinement. 
+
+Remark. Let s denote the effective stride between a feature map and the input image. Since each feature element corre-sponds to an s × s region in the input domain, the spatial scale of the ERF is proportionally enlarged by the stride factor [4]: 
+
+r(s)ERF = s · r(1) ERF . (22) Therefore, 
+
+s2 > s 1 ⇒ r(s2)ERF > r (s1)ERF , (23) indicating that down-sampling provides a simple mechanism to enlarge ERF without modifying the local operator. 
+
+Proposition 1 (ERFBlock as a Multigrid V-Cycle). Let 
+
+{V ℓ}sℓ=1 be a hierarchy of feature spaces. Define operators: 
+
+Rℓ : Vℓ → V ℓ+1 , Pℓ : Vℓ+1 → V ℓ, Sℓ : Vℓ → V ℓ,
+
+with Rs = Ps = I. Define the single-level correction: 
+
+Rℓ = I + Pℓ ◦ Sℓ ◦ Rℓ. The ERFBlock V-cycle along 
+
+Ss = {1, 2, . . . , s, . . . , 1} is: Vs = ( Qsℓ=1 Rℓ)◦
+
+Q1 
+
+> ℓ=s−1
+
+Rℓ
+
+
+
+.Expanding: Vs = R1R2 · · · R s−1 Rs Rs−1 · · · R 2R1. The classical multigrid V-cycle operator Vℓ : Vℓ → Vℓ is: 
+
+Vℓ = Sℓ, ℓ = s, S ℓ ◦ (I + Pℓ ◦ Vℓ+1 ◦ Rℓ) ◦ Sℓ, ℓ < s. 
+
+Claim: Both follow the identical recursion: Φℓ = Rℓ, ℓ =
+
+s, Rℓ ◦ Φℓ+1 ◦ R ℓ, ℓ < s . Since Vs = Φ 1 by expansion, and 
+
+V1 = Φ 1 by definition, we have Vs = V1.
+
+Theorem 2 (Scale-matched residual contraction). Consider the progressive residual refinement process of an ERF-guided network. The evolution of residual component Es at refinement stage k is formulated as E(k+1)  
+
+> s
+
+= E(k) 
+
+> s
+
+− ηsi,s Φsi (E(k) 
+
+> s
+
+) + 
+
+ξs(E(k)), where Φsi denotes the ERF correction operator with scale si, ηsi,s represents the correction strength, and 
+
+ξs(E(k)) denotes the aggregated nonlinear residual perturbation on component s, including self-interaction and cross-scale effects. Under the bounded cross-scale interference condition established in Theorem 1, there exists a local constant Ls > 0
+
+satisfying ∥ξs(E(k))∥ ≤ Ls∥E(k) 
+
+> s
+
+∥. Furthermore, assume that the scale-matched ERF correction step forms a local contraction, 
+
+i.e. , there exists a contraction coefficient ρsi,s ∈ [0 , 1) such that E(k) 
+
+> s
+
+− ηsi,s Φsi (E(k) 
+
+> s
+
+) ≤ ρsi,s ∥E(k) 
+
+> s
+
+∥. If ρsi,s +Ls < 1,then the residual refinement process is contractive and satisfies 
+
+∥E(k+1)  
+
+> s
+
+∥ ≤ (ρsi,s + Ls)∥E(k) 
+
+> s
+
+∥. Therefore, the scale-matched ERF organization guarantees stable residual attenuation under nonlinear feature transformations. JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 6
+
+Proof. According to the refinement formulation, 
+
+∥E(k+1)  
+
+> s
+
+∥ = ∥E(k) 
+
+> s
+
+− ηsi,s Φsi (E(k) 
+
+> s
+
+) + ξs(E(k))∥. (24) Applying the triangle inequality gives 
+
+∥E(k+1)  
+
+> s
+
+∥ ≤ E(k) 
+
+> s
+
+− ηsi,s Φsi (E(k) 
+
+> s
+
+) + ∥ξs(E(k))∥. (25) According to the local contraction property of the scale-matched ERF correction, 
+
+E(k) 
+
+> s
+
+− ηsi,s Φsi (E(k) 
+
+> s
+
+) ≤ ρsi,s ∥E(k) 
+
+> s
+
+∥, (26) and the bounded nonlinear perturbation satisfies 
+
+∥ξs(E(k))∥ ≤ Ls∥E(k) 
+
+> s
+
+∥. (27) Combining the above inequalities yields 
+
+∥E(k+1)  
+
+> s
+
+∥ ≤ (ρsi,s + Ls)∥E(k) 
+
+> s
+
+∥. (28) When ρsi,s + Ls < 1, the refinement process becomes a contraction mapping, indicating that the residual component decreases progressively. 
+
+Remark. Theorem 2 establishes the stability criterion of ERFBlock refinement. Stable residual attenuation is guaranteed whenever the scale-matched contraction dominates nonlinear perturbation ( ρsi,s + Ls < 1), independent of the specific operator realization. In practice, the contraction condition is implicitly enforced by the normalization layers and residual connections [36], and its validity is further supported by the stable convergence observed in our experiments. 
+
+Complexity Analysis. All ERF scales share the same refine-ment function F, yielding 
+
+PERF = P(F), ∂PERF 
+
+∂s = 0 . (29) The computational cost of the V-cycle refinement is 
+
+O(Vs) = 
+
+> K
+
+X
+
+> k=1
+
+O(Rsk ), O(Rs) = O
+
+ HW 
+
+4s C2
+
+
+
+. (30) Thus, the proposed ERF organization enlarges receptive fields with constant parameter complexity and limited computational overhead. 
+
+C. Relation to Adaptive Receptive Field Learning 
+
+Adaptive receptive field learning and RFONet optimize different architectural variables. Adaptive methods optimize the sampling geometry of individual operators [27], 
+
+y(p) = X
+
+> i∈Ω
+
+wix(p + ∆ pi), Θadaptive = {∆pi}, (31) whereas RFONet keeps local operators unchanged and opti-mizes only the ERF scheduling trajectory, 
+
+V = RsK ◦ · · · ◦ R s1 , ΘRFONet = {s1, · · · , s K }. (32) Hence, the former optimizes operator behavior , whereas the latter optimizes operator organization . For an equivalent receptive field radius R, adaptive methods enlarge the local sampling support, 
+
+|Ω| = Θ( R2), Cadaptive = Θ( HW C 2R2), (33) whereas RFONet enlarges receptive fields through hierarchical domain projection, 
+
+R = 2 sk, CRFONet = Θ 
+
+ HW 
+
+4s C2k2
+
+
+
+. (34) Therefore, Cadaptive 
+
+CRFONet 
+
+= Θ 
+
+ R4
+
+k4
+
+
+
+, (35) showing that equivalent ERFs can be obtained through fun-damentally different computational mechanisms. More im-portantly, enlarging adaptive receptive fields simultaneously enlarges the optimization space, 
+
+|Ω| = Θ( R2) = ⇒ dim(Θ adaptive ) = Θ( R2), (36) whereas 
+
+dim(Θ RFONet ) = K, (37) which is independent of the target ERF radius. Consequently, optimization difficulty increases together with ERF size for adaptive operators unless dedicated optimization techniques (e.g. , re-parameterization [37]) are introduced, whereas RFONet enlarges receptive fields by organizing refinement trajectories while preserving fixed local operators. Therefore, adaptive receptive field learning and ERF organization should be viewed as complementary optimization paradigms rather than alternative implementations for enlarging receptive fields. 
+
+D. Loss Function 
+
+To handle the severe imbalance between target and back-ground pixels, the Soft-IoU loss is adopted to optimize the predicted confidence map: 
+
+LIoU = 1 −
+
+P 
+
+> i,j
+
+Xi,j Yi,j 
+
+P 
+
+> i,j
+
+Xi,j + Yi,j − Xi,j Yi,j 
+
+, (38) where X and Y denote the predicted confidence map and ground truth, respectively. In addition, an ℓ1 sparsity regular-ization is introduced to constrain false activations: 
+
+L = LIoU + λ∥X∥1, (39) where λ is the regularization coefficient, set to 0.1. V. E XPERIMENT 
+
+A. Experimental Setup 1) Dataset: We evaluate our method on four widely used IRSTD benchmarks: NUDT-SIRST [7], IRSTD-1K [9], SIRST [38], and SIRST-Aug [39]. NUDT-SIRST contains 1,327 images with a standard 50:50 split, IRSTD-1K includes 1,000 real-world images with an 80:20 split, and SIRST provides 427 images. SIRST-Aug further expands SIRST to 9,070 images through augmentation with 8,525 training and 545 testing samples. Following official protocols, all experiments use a fixed input resolution of 256 × 256 .
+
+2) Evaluation Metrics: For evaluation, we employ both pixel-level and target-level metrics. Specifically, intersection over union (IoU) and the F -measure ( F1) are used for pixel-level accuracy evaluation, while the probability of detection (Pd) and false alarm rate ( Fa) are adopted to assess target-level detection performance. JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 7
+
+TABLE I DETECTION RESULTS ACHIEVED BY DIFFERENT SOTA METHODS . T HE BEST AND SECOND RESULTS ARE IN RED AND BLUE , RESPECTIVELY . T HE METRICS CONSIDERED INCLUDE M IOU ( 10 −2 ), F1 (10 −2 ), Pd (10 −2 ), Fa (10 −5 ), T IMES (256 × 256 WITH BATCHSIZE 1). Methods Venue IRDST-1K NUDT-SIRST SIRST SIRST-Aug Params Times(s) IoU F1 Pd Fa IoU F1 Pd Fa IoU F1 Pd Fa IoU F1 Pd Fa (M) 3080TI ISNet [9] CVPR’22 63.00 77.29 88.66 5.52 87.05 93.08 96.83 4.05 66.96 80.20 96.33 9.85 71.10 83.11 97.66 30.33 0.967 0.0270 DNANet [7] TIP’23 62.23 76.72 92.44 5.64 87.73 93.47 97.67 5.52 73.12 84.48 100.0 10.26 70.56 82.74 96.56 36.49 4.697 0.0437 UIUNet [8] TIP’23 63.08 77.36 92.10 6.09 88.94 94.15 95.23 1.53 72.15 83.82 98.16 7.90 70.76 82.88 96.70 34.30 50.54 0.0541 AGPCNet [39] TAES’23 60.44 75.34 90.72 6.10 85.02 91.90 97.88 4.34 68.19 81.08 99.08 12.09 72.07 83.77 98.62 29.39 12.36 0.1173 IRSAM [16] ECCV’24 63.58 77.74 92.10 4.21 87.85 93.53 99.05 3.21 67.97 80.93 99.08 8.34 74.70 85.52 99.03 25.94 12.33 0.0131 FreqFusion [40] TPAMI’24 55.00 70.97 94.50 8.70 83.19 90.82 98.52 6.70 58.92 74.15 93.58 10.20 59.79 74.83 92.71 27.00 35.99 0.0209 MSHNet [32] CVPR’24 64.83 78.67 92.78 7.14 75.96 86.34 95.23 8.28 64.64 78.52 98.16 15.66 71.93 83.67 99.03 32.06 4.065 0.0483 DRPCANet [41] TGRS’25 64.14 78.15 92.09 17.92 94.16 96.99 98.41 2.553 75.52 86.05 99.08 3.730 76.50 86.69 98.62 30.60 1.169 0.0101 
+
+PConv [42] AAAI’25 64.25 78.23 93.81 6.10 81.69 89.92 98.62 6.60 58.90 74.14 94.50 9.60 70.93 82.99 98.21 36.20 4.064 0.0486 UKAN [43] AAAI’25 56.61 72.30 92.10 7.90 80.23 89.03 98.31 7.60 62.82 77.17 96.33 9.00 66.25 79.70 94.50 26.80 9.384 0.0225 RSFUNet [44] TNNLS’25 54.64 70.67 92.44 8.40 92.35 96.02 98.73 2.30 61.13 75.87 95.41 11.40 72.24 83.88 98.07 36.20 1.678 0.1982 nnWNet [45] CVPR’25 60.43 75.33 96.22 9.20 91.01 95.29 98.73 2.00 60.96 75.75 95.41 12.30 71.91 83.66 98.35 30.20 7.041 0.0223 SRSNet [11] TIP’25 54.95 70.93 90.03 5.90 91.76 95.70 99.05 2.50 58.38 73.72 95.41 11.60 67.84 80.84 94.64 27.20 0.733 0.1086 SENet [46] TIP’25 43.95 61.06 80.75 2.41 57.96 73.38 91.00 4.31 48.40 65.30 90.40 1.497 70.43 82.65 99.17 3.281 152.6 0.0238 FDConv [47] CVPR’25 57.47 73.00 93.13 6.20 91.94 95.80 96.30 1.70 57.27 72.83 96.33 10.80 70.57 82.75 98.76 28.00 1.476 0.0826 TherNet [48] TPAMI’25 49.15 65.90 95.19 14.39 67.20 80.38 97.46 14.92 37.79 54.86 94.50 46.69 61.31 76.01 97.80 29.62 84.06 0.0870 CSSAM [49] TPAMI’26 49.82 66.51 90.24 8.29 57.72 73.19 95.13 2.72 75.98 86.35 98.10 0.506 73.98 85.04 99.59 0.608 230.0 0.0285 RPCANet ++ [17] TPAMI’26 64.93 78.73 89.70 4.35 94.39 97.12 98.41 1.34 74.76 85.47 100.0 10.77 74.89 85.44 98.76 28.00 2.915 0.0471 GBNet [50] TIP’26 46.65 63.62 91.40 2.665 76.74 86.64 98.09 0.685 60.37 75.29 95.43 2.210 72.86 84.30 99.31 1.506 77.10 0.0500 DHiF [51] TCSVT’26 60.25 75.20 90.38 3.609 78.31 87.83 96.51 4.858 65.27 78.99 94.30 4.267 69.87 82.26 99.45 18.36 4.050 0.0485 MCFNet [13] TIP’26 63.38 77.58 89.00 2.274 91.39 95.50 98.31 1.232 65.75 79.33 97.34 6.400 75.28 85.90 99.17 5.412 10.98 0.0454 NS-FPN [52] CVPR’26 61.29 76.00 89.69 3.844 80.65 89.29 96.93 3.645 64.89 78.71 95.06 6.273 74.66 85.49 99.17 8.553 4.332 0.0252 RFONet Ours’26 72.14 83.82 92.26 4.18 95.23 97.56 98.94 1.278 77.99 87.63 95.45 5.382 75.93 86.32 98.76 2.228 1.160 0.0063 
+
+3) Implementation Details: The network is implemented in PyTorch 1.8.2 and trained with Adam on an NVIDIA A100 GPU using a learning rate of 1 × 10 −4, poly decay, batch size 8, and 800 epochs. Images are normalized to [0,1]. 
+
+B. Comparison with State-of-the-Arts 1) Quantitative Evaluation: IRSTD-1K exhibits pronounced multi-scale target characteristics, with 18% of targets occupying areas of (0, 10] pixels, 46% falling within (10, 40] pixels, 27% within (40, 100] pixels, and 9% exceeding 100 pixels. SIRSTAUG mainly consists of typical small targets, where 97% of targets have pixel areas within (0, 10]. NUDT-SIRST presents a broader cross-scale distribution, with 25% of targets occupying (0, 10] pixels, 44% within (10, 40] pixels, and 30% within (40, 100] pixels, while containing few extremely large targets. In the SIRST dataset, 55% of targets have pixel areas in the (0, 10] range, while the remaining targets are relatively evenly distributed across other scales. 
+
+Proposition 2 (Multi-scale Target Response Coverage of V-cycle). Let Ts denote the target component at spatial scale 
+
+s within the ERF hierarchy, and let Φk be the ERFBlock with scale k. Define the response gain as gk,s = ∥Φk (Ts)∥∥Ts∥ .Consistent with the scale-frequency correspondence established in Property 1, the scale-aligned operator provides the largest expected response: E[gs,s ] > E[gk,s ], k̸ = s. For a single-scale organization with fixed scale f̸ = s, Gsingle = E[gf,s ].In contrast, the V-cycle trajectory SV = {1, 2, . . . , S, . . . , 1}
+
+covers all ERF scales. Hence, Gvc = E [max k∈S V gk,s ] ≥
+
+E[gs,s ] > G single . Therefore, V-cycle guarantees that each target scale encounters its scale-aligned ERF transformation, avoiding the scale limitation of fixed single-scale refinement. 
+
+Proof. Since s ∈ S V , we have 
+
+max 
+
+> k∈S V
+
+gk,s ≥ gs,s . (40) 0.00000 0.00005 0.00010 0.00015 0.00020 0.00025 
+
+> False Positive Rate (FPR)
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> True Positive Rate (TPR)
+> DNANet
+> SENet
+> DHiF
+> MSHNet
+> UIUNet
+> DRPCANet
+> RPCANet++
+> GBNet
+> MCFNet
+> NSFPN
+> Ours
+
+Fig. 4. ROC curves of our RFONet and other approaches on IRSTD-1k. 
+
+Taking expectations and applying Property 1 yields 
+
+Gvc ≥ E[gs,s ] > E[gf,s ] = Gsingle . (41) Thus, V-cycle provides a larger achievable response gain than any scale-mismatched single-scale organization. 
+
+Remark. Proposition 2 theoretically indicates that the V-cycle-based ERF organization enables comprehensive coverage of multi-scale target responses through hierarchical receptive field refinement. As reported in Tab. I, the proposed method consistently achieves superior performance on four multi-scale target benchmarks, despite requiring only 1.16M parameters. In particular, the remarkable performance on IRDST-1K, which contains the most challenging scale variations, further demon-strates the effectiveness of the proposed ERF scheduling strategy in capturing targets across different spatial scales. This empirical evidence is consistent with the theoretical analysis JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 8
+
+and highlights the advantage of V-cycle ERF organization in achieving parameter-efficient multi-scale representation learning. To further verify this, we present the ROC curves in Fig. 4, evaluated on the IRSTD-1k dataset, where our approach achieves the best AUC score. 
+
+2) Qualitative Evaluation: Infrared targets generally present diverse spatial scales and are often partially occluded in real-world scenarios. To investigate the robustness of the proposed ERF organization under such conditions, we first establish a theoretical analysis (Corollary 1) showing that V-cycle refinement preserves scale-consistent target responses despite moderate occlusion. Qualitative comparisons are then provided to validate this property in challenging occluded scenes. 
+
+Corollary 1 (Occlusion Robustness of V-cycle ERF Re-finement). Assume that the infrared imaging process before saturation follows the additive model 
+
+X = T + B + ϵ, (42) where T , B, and ϵ denote the target response, background, and noise, respectively. Under partial occlusion, the observation becomes 
+
+Xo = M ⊙ T + B + ϵ, (43) where M ∈ [0 , 1] denotes the occlusion mask. For compact targets, the dominant frequency characteristics are governed by target scale. Moderate occlusion mainly suppresses response magnitude while approximately maintaining the scale-frequency correspondence: 
+
+E[gs,s (To)] > E[gk,s (To)] , k̸ = s, (44) where To = M ⊙ T . According to Proposition 2, the V-cycle trajectory SV = {1, 2, . . . , S, . . . , 1} contains the scale-aligned ERF operator for any target scale s. Hence, 
+
+E
+
+
+
+max 
+
+> k∈S V
+
+gk,s (To)
+
+
+
+≥ E[gs,s (To)] . (45) Therefore, V-cycle ERF refinement preserves scale-consistent target responses under partial occlusion by ensuring that the scale-aligned operator remains available, thereby avoiding degradation that would arise from a fixed mismatched scale. As shown in Fig. 5, the proposed method demonstrates superior performance across various challenging scenarios. It effectively adapts to targets of varying sizes, signal-to-clutter ratios and occluded scenes. 
+
+C. Analysis on Noise Tolerance 
+
+To evaluate robustness under degraded imaging condi-tions, we conduct noise tolerance analysis. Considering that Gaussian-like noise increases with infrared detector sensitivity degradation, we adopt the NoisySIRST dataset [53] with different noise levels to simulate low-quality imaging scenarios. Furthermore, we introduce the Parameter Contribution Ratio (PCR), PCR = mIoU /Params( M ), to evaluate parameter efficiency by measuring the performance gain per parameters. 
+
+Proposition 3 (Perturbation Stability of V-cycle ERF Refinement). Consider a V-cycle ERF refinement sequence                                            
+
+> TABLE II ANALYSIS ON NOISE TOLERANCE
+> Methods σn= 10 σn= 20 σn= 30
+> IoU(%) ↑PCR ↑IoU(%) ↑PCR ↑IoU(%) ↑PCR ↑
+> DHiF 64.99 16.04 64.12 15.83 63.57 15.69 GBNet 59.02 0.765 52.09 0.675 50.21 0.651 MCFNet 67.18 6.118 62.44 5.686 61.95 5.642 NS-FPN 64.98 15.00 64.17 14.81 64.12 14.80
+> RFONet 74.17 63.93 73.33 63.21 69.13 59.59
+
+{r1, r 2, . . . , r K }, where the finest-scale operator rf is repeat-edly applied in a single-scale refinement scheme. Let Jrk and 
+
+Jf denote the Jacobian matrices of the corresponding ERF transformations. If ∥Jrk ∥2 ≤ ∥ Jf ∥2, k = 1 , . . . , K , then the accumulated perturbation amplification of the V-cycle satisfies QKk=1 (1 + ∥Jrk ∥2) ≤ (1 + ∥Jf ∥2)K . This condition reflects that fine-scale operators have larger local sensitivity, while larger ERFs suppress perturbations through broader context aggregation. Hence, progressive ERF scaling mitigates the accumulation of local perturbations. 
+
+Proof. According to first-order perturbation analysis, the pertur-bation propagation through the refinement sequence is bounded by 
+
+∥∆E(K)∥ ≤ 
+
+> K
+
+Y
+
+> k=1
+
+(1 + ∥Jrk ∥2)∥∆E(0) ∥. (46) Under the condition ∥Jrk ∥2 ≤ ∥ Jf ∥2, each refinement stage satisfies 
+
+1 + ∥Jrk ∥2 ≤ 1 + ∥Jf ∥2. (47) Taking the product over all refinement stages yields 
+
+> K
+
+Y
+
+> k=1
+
+(1 + ∥Jrk ∥2) ≤ (1 + ∥Jf ∥2)K . (48) Hence, the V-cycle refinement produces a smaller worst-case perturbation amplification bound compared with repeatedly applying the finest-scale operator. 
+
+Remark. Proposition 3 indicates that robustness does not originate from simply enlarging ERFs, but from organizing ERFs along the refinement trajectory. The V-cycle schedule progressively introduces contextual constraints, allowing struc-tured residuals to be preserved while reducing inconsistent responses caused by random perturbations. As reported in Tab. II, increasing noise intensity leads to apparent performance degradation for most competing methods, while the proposed method exhibits remarkable stability under severe noise conditions. Notably, the superior PCR performance indicates that the proposed model achieves enhanced robustness under a limited parameter budget. This empirical finding aligns well with Proposition 3, which theoretically demonstrates that the V-cycle-based ERF scheduling strategy improves feature refinement stability by progressively integrating multi-scale contextual information and suppressing noise-induced perturbations. Consequently, the experimental results provide further evidence supporting the effectiveness of ERF ordering for improving robustness against noisy interference. JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 9Input Ours  SENet GBNet CSSAM RPCANet++                               
+
+> Fig. 5. Visualization comparison of detection results between Ours and the other models across various challenging scenarios. Correct detections, false alarms, and missed detections are indicated by red, yellow, and green bounding boxes, respectively. TABLE III CROSS -D ATASET GENERALIZATION EVALUATION .Methods IRDST-1K(Train) NUDT-SIRST(Test) NUDT-SIRST(Train) IRDST-1K(Test) IoU(%) Pd(%) IoU(%) Pd(%) DNANet 50.4 84.8 42.0 85.2 ISNet 44.3 75.9 25.9 86.5 UIUNet 45.0 83.6 44.4 91.2
+> MSHNet 46.3 77.1 40.5 89.6 RPCANet ++ 21.2 64.8 16.8 75.6 RFONet 61.3 91.9 54.4 93.3
+
+D. Cross-Dataset Generalization Evaluation 
+
+To evaluate cold-start capability, we conduct cross-dataset generalization experiments without additional training. This set-ting simulates practical scenarios where target-specific data are unavailable and evaluates whether the learned representations capture transferable target-background characteristics. 
+
+Proposition 4 (Frequency-shift Sensitivity of ERF Organiza-tion). Assume that the domain variation between two infrared datasets is reflected by a bounded shift of the residual frequency distribution: ∥∆w∥1 ≤ δ, where ∆w = wtarget − wsource . For a fixed initial residual decomposition {Es}Ss=1 , the attenuation coefficient Γs(A) determines the remaining error of each frequency component after applying an ERF organization strategy A. The sensitivity to the domain shift satisfies 
+
+|∆L(A)| ≤ ∥∆w∥1 max s (Γ s(A)∥Es∥), where Γs(A) =QKk=1 (1 − ηsk ,s ) denotes the residual attenuation coefficient of frequency component s, and ηsk ,s represents the correction strength of the k-th ERF operator for this frequency component. A single-scale ERF organization imposes a fixed frequency bias, leaving out-of-range residual components insufficiently suppressed. By progressively combining multiple ERF scales, the V-cycle organization achieves complementary frequency attenuation. Under the same initial residual decomposition, the worst-case residual sensitivity satisfies max s (Γ s(Avc )∥Es∥) ≤
+
+max s (Γ s(Asingle )∥Es∥), where Asingle denotes a repeated single-scale refinement. Therefore, the V-cycle ERF organiza-tion exhibits lower sensitivity to bounded frequency distribution shifts. 
+
+Proof. According to the residual refinement formulation, the remaining error after applying an ERF organization strategy 
+
+A can be decomposed into different frequency components: 
+
+L(A, w ) = X
+
+> s
+
+wsΓs(A)∥Es∥. (49) When the residual frequency distribution changes from wsource 
+
+to wtarget = wsource + ∆ w, the corresponding variation of the refinement error is 
+
+∆L = L(A, w + ∆ w) − L (A, w )= X
+
+> s
+
+∆wsΓs(A)∥Es∥. (50) Taking the absolute value and applying Hölder’s inequality gives 
+
+|∆L| ≤ X
+
+> s
+
+|∆ws|Γs(A)∥Es∥≤ ∥ ∆w∥1 max  
+
+> s
+
+(Γ s(A)∥Es∥) .
+
+(51) JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 10 
+
+Under a fixed residual decomposition, the sensitivity is bounded by max s Γs(A)∥Es∥. Single-scale refinement preserves larger residual responses for mismatched frequencies, whereas V-cycle reduces the maximum term through multi-scale attenuation: 
+
+max  
+
+> s
+
+(Γ s(Avc )∥Es∥) ≤ max  
+
+> s
+
+(Γ s(Asingle )∥Es∥) . (52) Therefore, under bounded frequency distribution shifts, the V-cycle ERF organization achieves lower refinement sensitivity than a fixed single-scale organization. 
+
+Remark. The proposition 4 does not claim that V-cycle univer-sally eliminates all frequency components. Instead, it reveals that organizing multiple ERF scales reduces the dependence on any specific frequency preference, thereby improving the stability under domain-dependent residual distribution changes. As shown in Tab. III, our method achieves superior cross-dataset generalization. The improvement stems from the V-cycle ERF organization, which continuously integrates multi-scale receptive fields within each ERFBlock and enables adaptive residual refinement across scales. By contrast, existing methods usually introduce large ERFs only in isolated modules, lacking systematic scale transitions. Interestingly, RPCANet ++ [17] preserves an almost invariant ERF size throughout the network, which limits its ability to capture diverse residual patterns. These empirical findings further validate Proposition 4, which establishes that ERF organizations with adaptive multi-scale refinement achieve improved generalization by alleviating sensitivity to residual distribution variations. 
+
+E. Ablation Study 
+
+Theorem 3 (Existence of Optimal Refinement Depth). 
+
+Consider a progressive ERF refinement process with refinement depth K. The accumulated refinement objective is formulated as L(K) = ∥E(0) ∥ − Smax (1 − ρK ) + Dmax (1 − e−βK ),where 0 < ρ < 1 characterizes the diminishing residual reduction brought by iterative refinement, and β > 0 controls the saturation rate of the representation distortion introduced by excessive refinement. If β < − ln ρ, then there exists a finite optimal refinement depth K∗ minimizing L(K).
+
+Proof. The derivative of L(K) with respect to the refinement depth is 
+
+dL(K)dK = Smax ln ρ · ρK + Dmax βe −βK . (53) Since 0 < ρ < 1, we have ln ρ < 0. Let A = Smax | ln ρ|, B =
+
+Dmax β. Then the derivative can be rewritten as 
+
+dL(K)dK = −Aρ K + Be −βK . (54) The stationary point satisfies Be −βK = Aρ K . Using ρK =
+
+eK ln ρ, we obtain e−K(β+ln ρ) = AB , which gives 
+
+K∗ = ln( B/A )
+
+β + ln ρ . (55) A finite positive solution requires β + ln ρ < 0, i.e. , β < − ln ρ.Therefore, ρK vanishes faster than e−βK , making L′(K)                                                
+
+> TABLE IV THE EFFECTIVENESS OF THE PROPOSED ERFB LOCK
+> Module Variants Params IRSTD-1K (M) IoU(%) ↑F1(%) ↑Pd(%) ↑Fa(×10 −5)↓
+> Vanilla ResUNet 31.4 64.56 78.44 88.66 2.03 w. ERFBlock 1.16 72.14 83.82 92.26 4.18 TABLE V THE EFFECTIVENESS OF V-CYCLE STRATEGY
+> Module Variants IRSTD-1K IoU(%) ↑F1(%) ↑Pd(%) ↑Fa(×10 −5)↓
+> Small →Large 68.17 81.07 92.29 12.4 Large →Small 67.15 80.35 92.59 11.9 V-cycle Strategy 72.14 83.82 92.26 4.18
+
+initially negative and eventually positive. Hence, K∗ is the unique minimizer. The second derivative at K∗ is 
+
+L′′ (K∗) = Be −βK ∗
+
+(− ln ρ − β). (56) According to the condition β < − ln ρ, we have − ln ρ−β > 0,and therefore 
+
+L′′ (K∗) > 0. (57) This confirms that the stationary point corresponds to a local minimum, which completes the proof. 
+
+Remark. Theorem 3 does not imply that deeper refinement always introduces degradation. Instead, it reveals a trade-off between diminishing residual reduction and saturated representation distortion. Therefore, the optimal number of ERF refinement stages is inherently task-dependent rather than universally fixed. Based on this observation, our ablation studies investigate both the effectiveness of the proposed V-cycle-inspired ERF scheduling and the selection of appropriate refinement depths and related hyperparameters. 
+
+1) The Effectiveness of The Proposed ERFBlock: As shown in Tab. IV and Fig. 6, replacing the basic building blocks of the vanilla U-Net with the proposed ERFBlocks consis-tently improves the detection performance, demonstrating the effectiveness of the proposed ERFBlock in enhancing feature refinement. 
+
+2) The Effectiveness of V-cycle Strategy: To verify the effectiveness of the proposed V-cycle strategy, we construct two variants with monotonic ERF schedules, namely increasing-order and decreasing-order ERF organizations. As shown in Tab. V, these results demonstrate that the performance gain does not originate from simply introducing multi-scale receptive fields, but from explicitly organizing ERF transitions during progressive refinement. This result demonstrates that a single-direction scale transition is insufficient to fully exploit the potential of multi-scale ERF refinement. Specifically, both increasing-order and decreasing-order strategies can be regarded as incomplete V-cycle trajectories, where the ERF evolution is restricted to only one direction and lacks complementary refinement across different spatial scales. In contrast, the V-cycle organization enables bidirectional scale traversal, allowing residual components to interact with multiple ERF scales during progressive refinement. This observation is consistent with Proposition 2, where the complete scale coverage of V-cycle JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 11 1.0           
+
+> 0.5
+> 0.0 0.5 1.0
+> 1.0
+> 0.5
+> 0.0 0.5 1.0
+> 0.6 0.8 1.0 1.2 1.4 1.6
+> Loss
+> 1.0 0.5 0.0 0.5 1.0
+> 1.00
+> 0.75
+> 0.50
+> 0.25
+> 0.00 0.25 0.50 0.75 1.00
+> 0.6400
+> 0.7200
+> 0.8000
+> 0.8800
+> 0.9600
+> 1.0400
+> 1.1200
+> 1.2000
+> 1.2800
+> 1.3600
+> 1.4400
+> 1.4400
+> 1.5200
+> 1.5200
+> 1.6000
+> 1.6000
+> 1.6000
+> 1.6800
+> 1.6800
+> 1.7600
+> 1.7600
+> 0.575 0.700 0.825 0.950 1.075 1.200 1.325 1.450 1.575 1.700
+> 1.0 0.5 0.0 0.5 1.0 1.0 0.5 0.0 0.5 1.0 0.6 0.8 1.0 1.2 1.4 1.6
+> Loss
+> 1.0 0.5 0.0 0.5 1.0 1.00 0.75 0.50 0.25 0.00 0.25 0.50 0.75 1.00
+> 0.6400
+> 0.7200
+> 0.8000
+> 0.8800
+> 0.9600
+> 1.0400
+> 1.1200
+> 1.1200
+> 1.1200
+> 1.2000
+> 1.2000
+> 1.2000
+> 1.2800
+> 1.2800
+> 1.2800
+> 1.3600
+> 1.3600
+> 1.4400
+> 1.4400
+> 1.5200
+> 1.5200
+> 1.6000
+> 1.6800
+> 0.550 0.675 0.800 0.925 1.050 1.175 1.300 1.425 1.550 1.675
+> (a) 3D Loss Landscape w/o V-cycle (b) 2D Loss Landscape w/o V-cycle (d) 2D Loss Landscape w. V-cycle (c) 3D Loss Landscape w. V-cycle
+
+Fig. 6. Loss landscape [54] visualization before and after incorporating the V-cycle scheduling. The proposed V-cycle strategy transforms the loss landscape from a rugged, high-curvature surface to a flatter and more structured topology, indicating improved optimization stability and generalization. The smoother gradients also facilitate more consistent convergence across different initializations. TABLE VI THE EFFECTIVENESS OF RESIDUAL LEARNING 
+
+Module Variants IRSTD-1K IoU(%) ↑ F1(%) ↑ Pd(%) ↑ Fa(×10 −5) ↓
+
+w/o Residual 64.29 78.26 91.92 17.1 w. Residual 72.14 83.82 92.26 4.18 TABLE VII ADAPTIVE RECEPTIVE FIELD VERSUS ERF O RGANIZATION 
+
+Module Variants IRSTD-1K IoU(%) ↑ F1(%) ↑ Pd(%) ↑ Fa(×10 −5) ↓
+
+w. RFAConv 63.00 77.30 94.09 45.2 w. DCNv4 65.83 79.40 90.91 21.4 w. V-cycle 72.14 83.82 92.26 4.18 V-cycle + DCNv4 73.21 84.53 95.66 1.83 
+
+provides more robust responses for targets with diverse spatial characteristics. 
+
+3) The Effectiveness of Residual Learning: Tab. VI reports the performance comparison with and without residual learning. Removing the residual connection leads to a significant performance degradation, demonstrating the importance of residual refinement in ERFBlock. This degradation can be attributed to the fact that directly stacking ERF transformations without identity preservation may progressively attenuate high-frequency target details, especially when large ERFs are involved, due to their stronger contextual aggregation capability. In contrast, the residual formulation preserves the original target representation while introducing multi-scale contextual refinement, thereby preventing excessive information smoothing during ERF transitions. This result also supports the theoretical analysis that residual learning maintains target response during multi-scale ERF refinement by providing a stable information-preserving pathway. 
+
+4) Adaptive Receptive Field versus ERF Organization: To further analyze the difference between adaptive receptive field learning and the proposed ERF organization, we formulate their adaptation spaces. As shown in Tab. VII, the proposed V-cycle based receptive field organization consistently surpasses the variant that abandons the scheduling and replaces all convolutional operations with DCNv4 [27] or RFAConv [55]. This comparison demonstrates that adaptive receptive field learning alone, without explicit multi-scale ordering, is in-sufficient for effective residual refinement. To further probe 
+
+TABLE VIII HYPERPARAMETERS DISCUSSION 
+
+Hyperparameters IRSTD-1K IoU(%) ↑ F1(%) ↑ Pd(%) ↑ Fa(×10 −5) ↓
+
+C = 8 67.52 80.61 90.91 14.7 
+
+C = 16 72.14 83.82 92.26 4.18 
+
+C = 32 66.82 80.11 92.93 11.1 L = 1 68.60 81.38 91.58 11.7 L = 2 72.14 83.82 92.26 4.18 L = 3 67.12 80.32 92.26 15.4 Stage = 2 64.94 78.74 91.92 17.6 Stage = 3 72.14 83.82 92.26 4.18 Stage = 4 68.45 81.27 91.25 13.6 V-cycle (s = 1) 70.25 82.52 93.60 8.12 V-cycle (s = 2) 72.14 83.82 92.26 4.18 V-cycle (s = 3) 71.62 83.46 91.58 7.96 
+
+the relationship between the two paradigms, we integrate DCNv4 into the V-cycle trajectory of RFONet. The resulting model yields clear performance gains over the plain RFONet, confirming that adaptive spatial sampling and ERF scheduling are not competing but complementary. Specifically, the V-cycle furnishes a structured, frequency-aware refinement pathway, while DCNv4 provides flexible geometric adjustments along that pathway. Their combination leads to superior detection accuracy, validating the orthogonal nature of receptive field organization and operator-level adaptivity. 
+
+5) Hyperparameters Discussion: Finally, we investigate the influence of several key hyperparameters, including the number of stages, the base channel dimension (C), the number of ERFBlocks per stage (L), and the V-cycle scale parameter (s) in Eq. (16). Following the standard U-Net configuration, we maintain the channel expansion and block allocation strategies as ( Ci = 2 Ci−1) and ( Li = Li−1), respectively. The corresponding ablation results are reported in Tab. VIII. 
+
+F. Limitations 
+
+Theorem 4 (Task-dependent Optimal ERF Organization). 
+
+Let a task Di contain residual components with different frequency distributions: Ei = P
+
+s Ei,s , where Ei,s denotes the residual component associated with frequency band Ωs.Given an ERF organization strategy A = {s1, · · · , s K }, the residual after refinement can be characterized as Ji(A) = P
+
+s wi,s Γs(A)∥Ei,s ∥, where wi,s denotes the importance of frequency component s in task Di, and Γs(A) = QKk=1 (1 −JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 12 
+
+ηsk ,s ) represents the residual attenuation induced by the ERF organization. If two tasks Da and Db possess different residual frequency distributions, i.e. , wa,s ̸ = wb,s , and different ERF organizations provide non-identical attenuation patterns, then their optimal ERF organizations are generally task-dependent: A∗ 
+
+> a
+
+= arg min A Ja(A), A∗ 
+
+> b
+
+= arg min A Jb(A),and A∗
+
+> a
+
+̸ = A∗ 
+
+> b
+
+in general. Therefore, there is no universally optimal ERF organization independent of task characteristics. 
+
+Proof. For task Di, the optimal ERF organization is obtained by 
+
+A∗ 
+
+> i
+
+= arg min 
+
+> A
+
+X
+
+> s
+
+wi,s Γs(A)∥Ei,s ∥. (58) Consider two tasks Da and Db. Their optimization objectives are 
+
+Ja(A) = X
+
+> s
+
+wa,s Γs(A)∥Ea,s ∥, (59) and 
+
+Jb(A) = X
+
+> s
+
+wb,s Γs(A)∥Eb,s ∥. (60) Because different ERF organizations generate different frequency-dependent attenuation: 
+
+Γs(Ap)̸ = Γ s(Aq ), (61) the relative advantage of an ERF organization depends on the weights of different residual components. Assume a universal optimal organization A∗ exists for both tasks. Then A∗ must simultaneously minimize 
+
+X
+
+> s
+
+wa,s Γs(A)∥Ea,s ∥ (62) and X
+
+> s
+
+wb,s Γs(A)∥Eb,s ∥. (63) However, different tasks impose distinct preferences on residual frequency components, leading to task-dependent optimal ERF trade-offs. Therefore, the optimal ERF organization is inherently coupled with the frequency composition of task-specific residual errors. 
+
+Remark. Theorem 4 reveals an important limitation of the current work. Although we demonstrate that ERF ordering plays a critical role in progressive residual refinement, this work does not attempt to identify a universally optimal ERF organization. Instead, the theorem indicates that the optimal ERF scheduling is inherently coupled with the residual frequency distribution of each task. Therefore, incorporating ERF organization into neural architecture search (NAS) [56] provides a promising direction for automatically discovering task-adaptive refinement strategies [57]. However, searching over ERF scales, ordering patterns, repetition numbers, and diverse implementation forms (e.g. , convolution-based, attention-based, or adaptive receptive field modulation mechanisms) constitutes a high-dimensional combinatorial optimization problem, which is generally NP-hard [58]. Efficiently exploring this task-dependent ERF design space remains an open problem. VI. C ONCLUSION 
+
+In this work, we revisit infrared small target detection from the perspective of effective receptive field (ERF) organization. We demonstrate that ERF scheduling is an independent architectural factor beyond receptive field enlargement, and reveal its frequency-selective and non-commutative properties through theoretical analysis. Based on these insights, we propose RFONet with V-cycle ERF scheduling to validate the effectiveness of organized receptive field refinement. Our analysis further indicates that optimal ERF organization is task-dependent, opening a new direction for adaptive architecture design. REFERENCES [1] J. Li, X. Wang, H. Zhao, and Y. Zhong, “Learning a cross-modality anomaly detector for remote sensing imagery,” IEEE Transactions on Image Processing , vol. 33, pp. 6607–6621, 2024. [2] Y. Chen, Z. Wang, and X. Bai, “Fuzzy sparse subspace clustering for infrared image segmentation,” IEEE Transactions on Image Processing ,vol. 32, pp. 2132–2146, 2023. [3] H. Zhu, H. Ni, S. Liu, G. Xu, and L. Deng, “Tnlrs: Target-aware non-local low-rank modeling with saliency filtering regularization for infrared small target detection,” IEEE Transactions on Image Processing , vol. 29, pp. 9546–9558, 2020. [4] W. Luo, Y. Li, R. Urtasun, and R. Zemel, “Understanding the effective receptive field in deep convolutional neural networks,” Advances in neural information processing systems , vol. 29, 2016. [5] J. Jia, Y. J. Lee, and I. Ojeda-Ruiz, “An efficient k-way constrained normalized cut and its connection to algebraic multigrid method,” IEEE Transactions on Image Processing , vol. 35, pp. 4453–4466, 2026. [6] R. Li, W. An, Y. Wang, X. Ying, Y. Dai, L. Wang, M. Li, Y. Guo, and L. Liu, “Probing deep into temporal profile makes the infrared small target detector much better,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 48, no. 8, pp. 10 157–10 175, 2026. [7] B. Li, C. Xiao, L. Wang, Y. Wang, Z. Lin, M. Li, W. An, and Y. Guo, “Dense nested attention network for infrared small target detection,” IEEE Transactions on Image Processing , vol. 32, pp. 1745–1758, 2023. [8] X. Wu, D. Hong, and J. Chanussot, “Uiu-net: U-net in u-net for infrared small object detection,” IEEE Transactions on Image Processing , vol. 32, pp. 364–376, 2023. [9] M. Zhang, R. Zhang, Y. Yang, H. Bai, J. Zhang, and J. Guo, “Isnet: Shape matters for infrared small target detection,” in 2022 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2022, pp. 867–876. [10] F. Lin, K. Bao, Y. Li, D. Zeng, and S. Ge, “Learning contrast-enhanced shape-biased representations for infrared small target detection,” IEEE Transactions on Image Processing , vol. 33, pp. 3047–3058, 2024. [11] B. Nian, F. Tang, J. Ding, J. Yang, Z. Zheng, S. Kevin Zhou, and W. Liu, “Srs: Siamese reconstruction-segmentation network based on dynamic-parameter convolution,” IEEE Transactions on Image Processing , vol. 34, pp. 6318–6330, 2025. [12] F. Liu, C. Gao, F. Chen, D. Meng, W. Zuo, and X. Gao, “Infrared small and dim target detection with transformer under complex backgrounds,” 
+
+IEEE Transactions on Image Processing , vol. 32, pp. 5921–5932, 2023. [13] X. Zhu, F. Qin, C. Wang, J. Fan, F. Lin, J. Bai, C. Zhang, and D. Zhang, “Progressive fusion of multi-scale mamba context and local detail priors for infrared small target detection,” IEEE Transactions on Image Processing , vol. 35, pp. 6557–6571, 2026. [14] M. Zhang, X. Li, J. Guo, Y. Li, and X. Gao, “Wmrnet: Wavelet mamba with reversible structure for infrared small target detection,” 
+
+IEEE Transactions on Image Processing , vol. 34, pp. 8229–8242, 2025. [15] B. Yang, F. Li, S. Zhao, W. Wang, J. Luo, H. Pu, M. Zhou, and Y. Pi, “Mtmlnet: Multi-task mutual learning network for infrared small target detection and segmentation,” IEEE Transactions on Image Processing ,vol. 34, pp. 4414–4425, 2025. [16] M. Zhang, Y. Wang, J. Guo, Y. Li, X. Gao, and J. Zhang, “Irsam: Advancing segment anything model for infrared small target detection,” in Computer Vision – ECCV 2024 , pp. 233–249. [17] F. Wu, Y. Dai, T. Zhang, Y. Ding, J. Yang, M.-M. Cheng, and Z. Peng, “Rpcanet ++ : Deep interpretable robust pca for sparse object segmentation,” IEEE Transactions on Pattern Analysis and Machine Intelligence , pp. 1–18, 2026. JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 13 
+
+[18] Z. Liang, Y. Wang, L. Wang, J. Yang, Y. Guo, L. Liu, S. Zhou, and W. An, “Diving into epipolar transformers for light field super-resolution and disparity estimation,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 48, no. 7, pp. 8726–8743, 2026. [19] Z. Jin, Y. Qiu, K. Zhang, H. Li, and W. Luo, “Mb-taylorformer v2: Improved multi-branch linear transformer expanded by taylor formula for image restoration,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 47, no. 7, pp. 5990–6005, 2025. [20] S. Li, Y. A. Farha, Y. Liu, M.-M. Cheng, and J. Gall, “Ms-tcn++: Multi-stage temporal convolutional network for action segmentation,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 45, no. 6, pp. 6647–6658, 2023. [21] Y. Chen, X. Yuan, J. Wang, R. Wu, X. Li, Q. Hou, and M.-M. Cheng, “Yolo-ms: Rethinking multi-scale representation learning for real-time object detection,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 47, no. 6, pp. 4240–4252, 2025. [22] Y.-H. Wu, S.-C. Zhang, Y. Liu, L. Zhang, X. Zhan, D. Zhou, J. Feng, M.-M. Cheng, and L. Zhen, “Low-resolution self-attention for semantic segmentation,” IEEE Transactions on Pattern Analysis and Machine Intelligence , 2025. [23] Y. Zhang, X. Ding, and X. Yue, “Scaling up your kernels: Large kernel design in convnets toward universal representations,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 47, no. 12, pp. 11 692– 11 707, 2025. [24] T. Dao and A. Gu, “Transformers are SSMs: Generalized models and efficient algorithms through structured state space duality,” in 
+
+International Conference on Machine Learning (ICML) , 2024. [25] G. Wu, J. Jiang, K. Jiang, X. Liu, and L. Nie, “Dswinir: Rethinking window-based attention for image restoration,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 48, no. 4, pp. 4350–4366, 2026. [26] Q. Hou, C.-Z. Lu, M.-M. Cheng, and J. Feng, “Conv2former: A simple transformer-style convnet for visual recognition,” IEEE Transactions on Pattern Analysis and Machine Intelligence , 2024. [27] Y. Xiong, Z. Li, Y. Chen, F. Wang, X. Zhu, J. Luo, W. Wang, T. Lu, H. Li, Y. Qiao et al. , “Efficient deformable convnets: Rethinking dynamic and sparse operator for vision applications,” in Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , 2024, pp. 5652– 5661. [28] Y. Kim, S. Han, and N. Kwak, “From local to global to mechanistic: An ierf-centered unified framework for interpreting vision models,” IEEE Transactions on Pattern Analysis and Machine Intelligence , pp. 1–17, 2026. [29] C. Gao, D. Meng, Y. Yang, Y. Wang, X. Zhou, and A. G. Hauptmann, “Infrared patch-image model for small target detection in a single image,” 
+
+IEEE Transactions on Image Processing , vol. 22, no. 12, pp. 4996–5009, 2013. [30] R. Liu, S. Cheng, Y. He, X. Fan, Z. Lin, and Z. Luo, “On the convergence of learning-based iterative methods for nonconvex inverse problems,” 
+
+IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 42, no. 12, pp. 3027–3039, 2020. [31] Z. Huang, Z. Zhang, C. Lan, Z.-J. Zha, Y. Lu, and B. Guo, “Adaptive frequency filters as efficient global token mixers,” in ICCV , 2023. [32] Q. Liu, R. Liu, B. Zheng, H. Wang, and Y. Fu, “Infrared small target detection with scale and location sensitivity,” in Proceedings of the IEEE/CVF Computer Vision and Pattern Recognition , 2024. [33] G. Zhang, G. Xu, S. Chen, H. Wang, and X. Zhang, “Learning dynamic local context representations for infrared small target detection,” IEEE Transactions on Geoscience and Remote Sensing , vol. 63, pp. 1–13, 2025. [34] Z. Zhang, K. Chen, K. Tang, and Y. Duan, “Fast multi-grid methods for minimizing curvature energies,” IEEE Transactions on Image Processing ,vol. 32, pp. 1716–1731, 2023. [35] Y. Han, G. Huang, S. Song, L. Yang, H. Wang, and Y. Wang, “Dynamic neural networks: A survey,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 44, no. 11, pp. 7436–7456, 2022. [36] T. Liu, M. Chen, M. Zhou, S. Du, E. Zhou, and T. Zhao, “Towards un-derstanding the importance of shortcut connections in residual networks,” in Advances in Neural Information Processing Systems , vol. 32, 2019. [37] G. Xu, G. Zhang, L. Ye, S. Gan, X. Zhang, and X. Yang, “Optimizing local-global dependencies for accurate 3d human pose estimation,” IEEE Transactions on Circuits and Systems for Video Technology , vol. 35, no. 12, pp. 12 306–12 316, 2025. [38] Y. Dai, Y. Wu, F. Zhou, and K. Barnard, “Attentional local contrast networks for infrared small target detection,” IEEE Transactions on Geoscience and Remote Sensing , vol. 59, no. 11, pp. 9813–9824, 2021. [39] T. Zhang, L. Li, S. Cao, T. Pu, and Z. Peng, “Attention-guided pyramid context networks for detecting infrared small target under complex background,” IEEE Transactions on Aerospace and Electronic Systems ,vol. 59, no. 4, pp. 4250–4261, 2023. [40] L. Chen, Y. Fu, L. Gu, C. Yan, T. Harada, and G. Huang, “Frequency-aware feature fusion for dense image prediction,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 46, no. 12, pp. 10 763– 10 780, 2024. [41] Z. Xiong, F. Zhou, F. Wu, S. Yuan, M. Fu, Z. Peng, J. Yang, and Y. Dai, “Drpca-net: Make robust pca great again for infrared small target detection,” IEEE Transactions on Geoscience and Remote Sensing ,vol. 63, pp. 1–16, 2025. [42] J. Yang, S. Liu, J. Wu, X. Su, N. Hai, and X. Huang, “Pinwheel-shaped convolution and scale-based dynamic loss for infrared small target detection,” in Proceedings of the AAAI Conference on Artificial Intelligence , vol. 39, no. 9, 2025, pp. 9202–9210. [43] C. Li, X. Liu, W. Li, C. Wang, H. Liu, Y. Liu, Z. Chen, and Y. Yuan, “U-kan makes strong backbone for medical image segmentation and generation,” in Proceedings of the AAAI conference on artificial intelligence , vol. 39, no. 5, 2025, pp. 4652–4660. [44] Z. Sun, H. Wang, Q. Xie, Y. Zheng, and D. Meng, “Rsf-conv: Rotation-and-scale equivariant fourier parameterized convolution for retinal vessel segmentation,” IEEE Transactions on Neural Networks and Learning Systems , vol. 36, no. 9, pp. 16 549–16 563, 2025. [45] Y. Zhou, L. Li, L. Lu, and M. Xu, “nnwnet: Rethinking the use of transformers in biomedical image segmentation and calling for a unified evaluation benchmark,” in Proceedings of the Computer Vision and Pattern Recognition Conference , 2025, pp. 20 852–20 862. [46] C. Hao, Z. Yu, X. Liu, J. Xu, H. Yue, and J. Yang, “A simple yet effective network based on vision transformer for camouflaged object and salient object detection,” IEEE Transactions on Image Processing , vol. 34, pp. 608–622, 2025. [47] L. Chen, L. Gu, L. Li, C. Yan, and Y. Fu, “Frequency dynamic convolution for dense image prediction,” in Proceedings of the Computer Vision and Pattern Recognition Conference , 2025, pp. 30 178–30 188. [48] J. Chen, S. Shu, C. Meng, and X. Bai, “Thernet: Thermal segmentation network harnessing physical properties,” IEEE Transactions on Pattern Analysis and Machine Intelligence , 2025. [49] R. Cong, Z. Chen, H. Fang, S. Kwong, and W. Zhang, “Breaking barriers, localizing saliency: A large-scale benchmark and baseline for condition-constrained salient object detection,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 48, no. 4, pp. 4167–4183, 2026. [50] X. Wang, F. Yao, G. Zhong, Q. Cai, S. Wang, and J. T.-Y. Kwok, “Gbnet: Gated boundary-aware network for camouflaged object detection,” IEEE Transactions on Image Processing , vol. 35, pp. 5297–5310, 2026. [51] R. Li, C. Xiao, Q. Yin, W. An, N. Chen, X. Ying, M. Li, and Y. Wang, “Dynamic high-frequency convolution for infrared small target detection,” 
+
+IEEE Transactions on Circuits and Systems for Video Technology , vol. 36, no. 6, pp. 7676–7680, 2026. [52] M. Yuan, D. Meng, Z. Xi, T. Zhao, S. Zhao, Y. Dai, and X. Wei, “Seeing through the noise: Improving infrared small target detection and segmentation from noise suppression perspective,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,2026, pp. 27 783–27 792. [53] Y. Dai, P. Pan, Y. Qian, Y. Li, X. Li, J. Yang, and H. Wang, “Pick of the bunch: Detecting infrared small targets beyond hit-miss trade-offs via selective rank-aware attention,” IEEE Transactions on Geoscience and Remote Sensing , vol. 62, pp. 1–15, 2024. [54] H. Li, Z. Xu, G. Taylor, C. Studer, and T. Goldstein, “Visualizing the loss landscape of neural nets,” in Neural Information Processing Systems ,2018. [55] X. Zhang, C. Liu, T. Song, D. Yang, Y. Ye, K. Li, and Y. Song, “Rfaconv: Receptive-field attention convolution for improving convolutional neural networks,” Pattern Recognition , vol. 176, p. 113208, 2026. [56] X. Zheng, L. Zhang, B. Chen, M. Wang, F. Chao, C. Wu, S. Wang, R. Ji, and Y. Tian, “Good performance estimation strategies are all you need in neural architecture search,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 48, no. 3, pp. 2398–2412, 2026. [57] F.-L. Fan, M. Wang, H.-C. Dong, J. Ma, and T. Zeng, “No one-size-fits-all neurons: Task-based neurons for artificial neural networks,” IEEE Transactions on Pattern Analysis and Machine Intelligence , pp. 1–8, 2026. [58] S. Lee, “Np-hardness of minimizing neurons in two-hidden-layer relu neural networks,” IEEE Transactions on Pattern Analysis and Machine Intelligence , pp. 1–9, 2026.

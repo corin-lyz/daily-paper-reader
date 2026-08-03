@@ -1,0 +1,1243 @@
+Title: Training-Free Entity-Level Few-Shot Segmentation of Remote Sensing Images with Advection Refinement
+
+URL Source: https://arxiv.org/pdf/2607.29278v1
+
+Published Time: Mon, 03 Aug 2026 00:46:01 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+# Training-Free Entity-Level Few-Shot Segmentation of Remote Sensing Images with Advection Refinement 
+
+## Xueting Bai, Huan Ni ∗
+
+School of Remote Sensing and Geomatics Engineering, Nanjing University of Information Science and Technology, Nanjing 210044, China. nih@nuist.edu.cn 
+
+Abstract 
+
+Existing cross-domain few-shot segmentation approaches suf-fer from high training costs due to source-domain episodic training and pixel-wise dense prediction, while often produc-ing fragmented and noisy predictions. To overcome these is-sues, we propose a training-free entity-level few-shot segmen-tation framework for remote sensing images with advection refinement. Specifically, we first leverage SAM3’s generic ge-ometric priors to generate category-agnostic entity primitives. By reformulating few-shot inference from pixel-level predic-tion to entity-level reasoning, foreground and background pro-totypes are constructed and combined with dense textual se-mantic responses from SAM3 to build a multi-modal seman-tic potential field. Furthermore, an advection equation-based semantic refinement mechanism is introduced to propagate category-aware information across both feature and similarity spaces, enhancing semantic continuity and suppressing local texture noise. Extensive experiments on multiple remote sens-ing datasets demonstrate that the proposed framework effec-tively mitigates domain shift and local noise, substantially im-proving SAM3’s adaptation capability for remote sensing few-shot segmentation without additional training. Our code will be publicly available at https://github.com/yu-ni1989/ELFSS-AR. 
+
+## Introduction 
+
+Few-shot segmentation (FSS) aims to predict dense object masks for query images using one or a few support images with pixel-level annotations (Shaban et al. 2017). Existing studies mainly follow the episodic training paradigm (Snell, Swersky, and Zemel 2017). Considerable efforts have been devoted to improving segmentation performance from vari-ous perspectives, including prototype refinement (Wang et al. 2019; Tian et al. 2022; Luo et al. 2024; Fan et al. 2022), matching calibration (Peng et al. 2023; Karimi and Poullis 2025; Zou et al. 2025), classifier adaptation (Lu et al. 2023), and category bias suppression (Lang et al. 2022). Recently, foundation segmentation models, such as SAM (Kirillov et al. 2023), which possess strong capabilities in generic object generation, have also been introduced into FSS to enhance object localization (Xu et al. 2025; Shi et al. 2026). However, when significant feature distribution discrepancies exist be-tween the source and target domains, conventional FSS meth-ods often exhibit limited cross-domain generalization ability. 
+
+> ∗
+
+Corresponding author. 
+
+To address this issue, Cross-Domain Few-Shot Segmentation (CDFSS) further investigates how a small number of target-domain support samples can alleviate domain shift (Lei et al. 2022). Existing approaches mainly focus on target-domain adaptation (Nie et al. 2024; Herzog 2024), domain-invariant feature learning (Su et al. 2024; Tong et al. 2025), matching calibration (Li et al. 2025c; Liu et al. 2025b), and prompt generation based on foundation models (He et al. 2024). Although these methods have achieved promising progress, most of them still rely on supervised training in the source domain and incur substantial training costs. Moreover, these methods generally perform pixel-wise prediction, which of-ten leads to unstable matching and inconsistent intra-region responses under complex scale variations, spectral discrep-ancies, and high-frequency texture interference commonly encountered in remote sensing imagery. Benefiting from large-scale pretraining on massive image-mask pairs and vision-language corpora, multimodal foun-dation models possess category-agnostic region modeling, prompt interaction, and zero-shot transfer capabilities (Kir-illov et al. 2023; Ravi et al. 2025; Carion et al. 2026). Building upon these advantages, recent multimodal frame-works have further explored multimodal prompt interac-tion (Zou et al. 2023; Liu et al. 2025a), unified modeling across various segmentation tasks (Zhang et al. 2023; Li et al. 2025a), and pixel-level prediction (Lai et al. 2024; Rasheed et al. 2024; Ren et al. 2024). Among them, training-free open-vocabulary semantic segmentation (OVSS) meth-ods directly exploit frozen vision-language models for dense prediction through local vision-language alignment (Zhou, Loy, and Dai 2022), self-attention and cross-modal propaga-tion (Wang, Mei, and Yuille 2025; Lan et al. 2025a; Shao et al. 2025; Hajimiri, Ayed, and Dolz 2025), multi-level fea-ture fusion (Yang et al. 2025; Shi, Dong, and Xu 2025), external visual priors (Lan et al. 2025b), feature restora-tion (Li et al. 2025b), and attention reconstruction (Niu et al. 2026), thereby improving remote sensing domain adapta-tion. These approaches provide a promising low-cost solu-tion for domain transfer without additional model training. Nevertheless, since these foundation models are primarily pretrained on natural images and generic vision-language corpora, they lack dedicated modeling for the unique char-acteristics of remote sensing imagery, including bird’s-eye viewpoints, significant scale variations, densely distributed 
+
+Preprint arXiv:2607.29278v1 [cs.CV] 31 Jul 2026 Table 1: Comparison between ELFSS-AR and representative FSS, CDFSS, foundation model-based FSS, and training-free OVSS methods. Symbols ✓, △, and × denote fully supported, partially supported, and unsupported, respectively.                       
+
+> Framework Representative Methods Training-Free Entity-Level Inference Physics-Inspired Refinement Multimodal Prompting
+> FSS PANet (Wang et al. 2019), PFENet++ (Luo et al. 2024)
+> ××××
+> CDFSS DR-Adapter (Su et al. 2024), DATO (Li et al. 2025c)
+> ××××
+> Foundation model-based FSS APSeg (He et al. 2024), BPNet (Shi et al. 2026)
+> ×△×△
+> Training-free OVSS SCLIP (Wang, Mei, and Yuille 2025), ProxyCLIP (Lan et al. 2025b)
+> ✓××✓
+> ELFSS-AR (Ours) ELFSS-AR (Ours) ✓✓✓✓
+
+small objects, and complex spectral-textural patterns. In ad-dition, text-driven zero-shot prediction is highly sensitive to prompt design. Official category names provided by existing remote sensing datasets are often highly specialized, making them difficult for current foundation models to interpret. As a result, SAM3 achieves only an mIoU of 8.33% on the GID-15 (Gaofen Image Dataset with 15 categories) dataset (Tong et al. 2020). Therefore, adaptive methods specifically tailored to remote sensing data distributions are urgently needed. To address the above challenges, we propose training-free entity-level few-shot segmentation of remote sensing images with advection refinement (ELFSS-AR). Built upon the con-cept segmentation capability and generic region modeling ability of SAM3, ELFSS-AR constructs a multimodal se-mantic potential field by jointly exploiting domain-specific visual information from the support images, category-level textual semantics, and the category-agnostic entity structures extracted from the query image, requiring only one or a few target-domain support images. Furthermore, a semantic advection refinement mechanism is introduced to progres-sively refine both query features and multi-source semantic responses based on a two-dimensional advection equation. The effectiveness analysis of semantic advection refinement is provided in the Technical Supplement , which has been uploaded as a separate document. Finally, by extending con-ventional FSS and CDFSS from pixel-wise dense predic-tion to entity-level semantic inference, the proposed frame-work effectively improves the adaptation capability of SAM3 to remote sensing data distributions without updating any model parameters. Table 1 summarizes the characteristics of ELFSS-AR in comparison with existing methods. 
+
+## Methods 
+
+Overall Framework 
+
+The overall architecture of ELFSS-AR is illustrated in Fig. 1. ELFSS-AR adopts SAM3 as the feature extraction back-bone and first generates a set of category-agnostic entity primitives, extending the conventional pixel-wise inference paradigm of few-shot segmentation to entity-level inference. Subsequently, visual and textual features are jointly inte-grated to construct a multimodal semantic potential field. Based on this semantic potential field, an advection equation is introduced to progressively refine both the feature space and the semantic response space. Finally, using the few-shot segmentation in entity-level, the final segmentation results are produced. 
+
+Category-Agnostic Entity Primitive Generation 
+
+Remote sensing objects generally exhibit strong spatial con-tinuity, with pixels belonging to the same object sharing highly consistent semantics. Conventional pixel-wise predic-tion is easily affected by local texture variations and spectral fluctuations, often resulting in local holes and fragmented misclassifications within homogeneous regions. In contrast, aggregating semantic information over spatially continuous regions effectively alleviates these issues. Motivated by this observation, the proposed method exploits the generic re-gion modeling capability of SAM3 to partition the query im-age into a set of category-agnostic entity primitives. These entity primitives replace individual pixels as the basic in-ference units, thereby transforming few-shot segmentation from dense pixel-wise prediction into entity-level semantic inference. Specifically, the automatic mask generation module of SAM3 first produces a set of candidate masks together with their corresponding quality scores. Candidate regions with excessively small areas are discarded, and the remaining masks are ranked in descending order according to their qual-ity scores. To resolve the widespread overlap and inclusion relationships among candidate masks, a confidence-priority greedy exclusive assignment strategy is adopted. Pixels that have already been assigned to higher-confidence entities are progressively removed from subsequent candidate masks, and only the remaining valid regions satisfying the mini-mum area constraint are retained as entity primitives. Af-ter all candidate masks have been processed, the remaining unassigned pixels are merged into a residual entity primitive. Consequently, the resulting entity primitives are spatially disjoint while jointly covering the entire query image. Entity primitives generated from candidate masks inherit the corre-sponding SAM3 quality scores, whereas the residual entity primitive is assigned a quality score of zero. These category-agnostic entity primitives provide only spatial and geometric priors, while their semantic categories are determined dur-
+
+> Preprint
+
+Figure 1: Overview of the proposed Training-Free Entity-Level Few-Shot Segmentation framework with Advection Refinement (ELFSS-AR). The proposed framework first generates category-agnostic entity primitives, and then integrates support prototypes with textual semantics to construct a multimodal semantic potential field. Guided by the advection equation, the query features and multi-source similarity responses are progressively refined, followed by entity-level classification to produce the final segmentation results. ing the subsequent entity-level semantic inference stage. The details of category-agnostic entity primitive generation are presented in Technical Supplement .
+
+Multimodal Semantic Potential Field Construction 
+
+After generating the category-agnostic entity primitives, we construct a category-aware continuous semantic potential field for each target category by integrating target-domain support samples and category text prompts. The semantic potential field serves as the guidance signal for the subse-quent semantic advection refinement. For category c, the k-th support image I(c,k ) 
+
+> s
+
+is first en-coded by the frozen SAM3 backbone to obtain the visual fea-ture map F (c,k ) 
+
+> s
+
+∈ RD×H×W , where D denotes the feature dimension. Given the corresponding binary support mask 
+
+M (c,k ) 
+
+> s
+
+, masked average pooling followed by L2 normaliza-tion is performed over the foreground region of each support image. The foreground prototype of category c is then com-puted as 
+
+P fg  
+
+> c
+
+= Norm 
+
+"
+
+1
+
+K
+
+> K
+
+X
+
+> k=1
+
+Norm 
+
+P 
+
+> px ∈Ωs
+
+M (c,k ) 
+
+> s
+
+(px )F (c,k ) 
+
+> s
+
+(px )
+
+P 
+
+> px ∈Ωs
+
+M (c,k ) 
+
+> s
+
+(px ) + ε
+
+!# 
+
+,
+
+(1) 
+
+where Ωs denotes the pixel domain of the support image, 
+
+ε is a small constant introduced for numerical stability, and 
+
+Norm( ·) denotes L2 normalization. Similarly, replacing the foreground mask M (c,k ) 
+
+> s
+
+with its complementary background mask 1−M (c,k ) 
+
+> s
+
+yields the back-ground prototype P bg  
+
+> c
+
+. The foreground prototype represents the characteristic visual appearance of the target category, whereas the background prototype captures the visual char-acteristics of non-target regions relative to that category. For the category text prompt tc, the frozen text encoder of SAM3 extracts its semantic embedding as 
+
+ec = Norm( Et(tc)) , (2) where Et(·) denotes the frozen text encoder of SAM3. The query image Iq together with the category prompt tc is then fed into SAM3 to obtain the category-conditioned query fea-ture map F cq ∈ RD×H×W , as well as the dense text seman-tic response map R(txt ,0)  
+
+> c
+
+generated by the internal vision-language alignment branch of SAM3. For each query pixel px ∈ Ωq , the cosine similarities between the query feature F cq (px ) and the foreground and background prototypes are respectively computed as 
+
+R(fg ,0)  
+
+> c
+
+(px ) = F cq (px )⊤P fg 
+
+> c
+
+∥F cq (px )∥2 ∥P fg  
+
+> c
+
+∥2
+
+, (3) and 
+
+R(bg ,0)  
+
+> c
+
+(px ) = F cq (px )⊤P bg 
+
+> c
+
+∥F cq (px )∥2 ∥P bg  
+
+> c
+
+∥2
+
+. (4) Based on the foreground, background, and textual seman-tic responses, the feature-level semantic potential field for category c is defined as 
+
+U Fc (px ) = ˜U Fc (px ) − min 
+
+> z∈Ωq
+
+˜U Fc (z)max 
+
+> z∈Ωq
+
+˜U Fc (z) − min 
+
+> z∈Ωq
+
+˜U Fc (z) + ε , (5) where 
+
+˜U Fc (px ) = λF
+
+> fg
+
+R(fg ,0)  
+
+> c
+
+(px ) − λF
+
+> bg
+
+R(bg ,0)  
+
+> c
+
+(px )+ λF
+
+> txt
+
+R(txt ,0)  
+
+> c
+
+(px ). (6) Here, λF 
+
+> fg
+
+= 1 .20 , λF 
+
+> bg
+
+= 0 .75 , λF 
+
+> txt
+
+= 0 .05 , and ε is a small positive constant introduced to avoid division by zero. The 
+
+Preprint resulting semantic potential field U Fc ∈ [0 , 1] H×W jointly encodes foreground attraction, background suppression, and textual semantic information for category c, and serves as the basis for constructing the category-aware semantic velocity field in the subsequent semantic advection refinement. 
+
+Semantic Advection Refinement 
+
+After constructing the category-aware multimodal seman-tic potential field, we introduce a two-dimensional advec-tion equation to perform lightweight spatial advection on the query visual features and multi-source semantic responses. The proposed refinement propagates category-related infor-mation in a directionally controlled manner by exploiting the spatial gradients of the semantic potential field. 
+
+Query Feature Advection Refinement Let Dx and Dy
+
+denote the finite-difference operators along the horizontal and vertical directions, respectively. For a two-dimensional field Z, the horizontal finite-difference operator is defined as 
+
+DxZ(x, y ) = 
+
+
+
+Z(x + 1 , y ) − Z(x, y ), x = 1 ,Z(x + 1 , y ) − Z(x − 1, y )2 , 1 < x < W q ,Z(x, y ) − Z(x − 1, y ), x = Wq ,
+
+(7) where Wq denotes the width of the query image. The vertical operator Dy applies the same finite difference scheme as Dx,but along the orthogonal direction. Based on the feature-level semantic potential field U Fc ,we construct the normalized semantic velocity field vFc = vFc,x , v Fc,y 
+
+, where 
+
+vFc,x = − DxU Fc (x, y )
+
+p(DxU Fc )2 + ( Dy U Fc )2 + ε , (8) and 
+
+vFc,y = − Dy U Fc (x, y )
+
+p(DxU Fc )2 + ( Dy U Fc )2 + ε . (9) Let F (t) 
+
+> q,c
+
+denote the query feature after the t-th iteration, with the initialization F (0)  
+
+> q,c
+
+= F cq . The feature evolution is assumed to satisfy the following two-dimensional advection equation: 
+
+∂F q,c 
+
+∂t + vFc,x 
+
+∂F q,c 
+
+∂x + vFc,y 
+
+∂F q,c 
+
+∂y = 0 . (10) At the l-th iteration, the feature-level semantic potential field U F, (l) 
+
+> c
+
+is recomputed from the current query feature 
+
+F (l) 
+
+> q,c
+
+. The directional derivative of the semantic potential along the fixed velocity field is computed as 
+
+dF, (l) 
+
+> c
+
+= vFc,x DxU F, (l) 
+
+> c
+
++ vFc,y Dy U F, (l) 
+
+> c
+
+, (11) The semantic directional gate is then defined as 
+
+GF, (l) 
+
+> c
+
+= 1
+
+
+
+dF, (l) 
+
+> c
+
+< 0
+
+
+
+, (12) where 1(·) denotes the indicator function, which equals 1
+
+if dF, (l) 
+
+> c
+
+< 0, and 0 otherwise. The gate is activated only when the current transport direction enhances the semantic response of class c, thereby suppressing advection updates that deviate from the desired semantic direction. Then, the above equation is numerically solved using the explicit Euler scheme. The intermediate feature obtained at the (l + 1) -th iteration is computed as 
+
+˜F (l+1)  
+
+> q,c
+
+= F (l) 
+
+> q,c
+
+− δF GF, (l)
+
+> c
+
+
+
+vFc,x DxF (l) 
+
+> q,c
+
++ vFc,y Dy F (l)
+
+> q,c
+
+
+
+,
+
+(13) where δF denotes the feature-advection time step, which is empirically set to 0.06 throughout the experiments. To limit the update magnitude while preserving the orig-inal feature structure, a residual interpolation strategy is adopted: 
+
+F (l+1)  
+
+> q,c
+
+= Norm ch 
+
+h
+
+(1 − γF )F (l) 
+
+> q,c
+
++ γF ˜F (l+1) 
+
+> q,c
+
+i
+
+, (14) where γF controls the feature-advection strength, and 
+
+Norm ch (·) denotes channel-wise L2 normalization per-formed independently at each spatial location. In all ex-periments, we set γF = 0 .18 . After NF iterations, the re-fined query feature is obtained as ¯F cq = F (NF ) 
+
+> q,c
+
+, where the number of feature-advection iterations is empirically fixed to 
+
+NF = 2 .
+
+Multi-Source Response Advection Refinement Al-though the first-stage advection has propagated category-related information within the high-dimensional visual fea-ture space, the recomputed foreground, background, and tex-tual responses may still contain isolated activations or lo-cal discontinuities caused by imperfect local matching and spatial sampling artifacts. Therefore, the second-stage re-finement operates directly on the low-dimensional semantic response maps, transforming the implicit feature-space ad-justment into explicit semantic response correction, thereby further improving the spatial continuity and consistency of the multi-source semantic responses. After completing query feature advection refinement, the cosine similarities between the refined query feature ¯F cq and the foreground and background prototypes are recomputed following Eqs. (3)–(4), yielding the refined foreground and background response maps, denoted by ˆRfg  
+
+> c
+
+(x) and ˆRbg  
+
+> c
+
+(x),respectively. The textual response is obtained from the dense vision-language alignment branch of SAM3, denoted by R(txt ,0)  
+
+> c
+
+. To make its numerical range consistent with the cosine similarity responses, the textual response is linearly mapped from [0 , 1] 
+
+to [−1, 1] whenever necessary, resulting in the normalized text response ˆRtxt  
+
+> c
+
+. For each response type u ∈ { fg , bg , txt },the feature-refined response is used as the initial condition of the response-level advection process, namely, Ru, (0)  
+
+> c
+
+= ˆRuc .Based on these responses, the response-level semantic po-tential field U Rc (x) is constructed following the same for-mulation as Eqs. (5)–(6). Similarly, using the response-level semantic potential field U Rc , the normalized response-level semantic velocity field vRc =  vRc,x , v Rc,y 
+
+ is computed in the same manner as Eqs. (8)–(9). Analogous to Eq. (10), the response evolution is modeled 
+
+> Preprint
+
+by the following two-dimensional advection equation: 
+
+∂R uc
+
+∂t +vRc,x 
+
+∂R uc
+
+∂x +vRc,y 
+
+∂R uc
+
+∂y = 0 , u ∈ { fg , bg , txt }. (15) We further introduce response-specific semantic direc-tional gating similar to Eqs. (11-12). Then, the above equa-tion is discretized using the same explicit Euler scheme as Eq. (13). Let ˜Ru, (l+1)  
+
+> c
+
+denote the intermediate response ob-tained at the (l+1) -th iteration. To limit the update magnitude while maintaining the numerical stability of the response range, residual interpolation followed by value clipping is performed: 
+
+Ru, (l+1)  
+
+> c
+
+= min 
+
+n
+
+1, max 
+
+h
+
+−1, (1 − γR)Ru, (l) 
+
+> c
+
++ γR ˜Ru, (l+1) 
+
+> c
+
+io 
+
+.
+
+(16) Here, γR controls the response-advection strength and is empirically set to γR = 0 .18 .After NR iterations, the original response and the advection-refined response are linearly fused as 
+
+¯Ruc = ρ ˆRuc + (1 − ρ)Ru, (NR) 
+
+> c
+
+, u ∈ { fg , bg , txt }, (17) where ρ denotes the retention weight of the original response and is empirically set to ρ = 0 .50 .
+
+Entity-Level Semantic Inference 
+
+After semantic advection refinement, category-agnostic en-tity primitives are treated as the minimum segmentation units for region-level multi-class inference. For each entity prim-itive gi and target category c, the refined foreground, back-ground, and textual semantic responses are first aggregated within the entity region as 
+
+μui,c =
+
+P
+
+> x∈Ωq
+
+¯Ruc (x) gi(x)
+
+P 
+
+> x∈Ωq
+
+gi(x) + ε , u ∈ { fg , bg , txt }, (18) where Ωq denotes the pixel domain of the query image. The average response-level semantic potential within the entity primitive is defined as 
+
+μsem  
+
+> i,c
+
+=
+
+P 
+
+> x∈Ωq
+
+U Rc (x) gi(x)
+
+P 
+
+> x∈Ωq
+
+gi(x) + ε . (19) To incorporate local contextual information, the entity primitive is first morphologically dilated, and its original interior is subsequently removed to obtain a ring-shaped con-textual region, denoted by gctx  
+
+> i
+
+. The corresponding contex-tual support is computed as 
+
+μctx  
+
+> i,c
+
+=
+
+P
+
+> x∈Ωq
+
+¯Rbg  
+
+> c
+
+(x)gctx  
+
+> i
+
+(x)
+
+P 
+
+> x∈Ωq
+
+gctx  
+
+> i
+
+(x) + ε −
+
+P
+
+> x∈Ωq
+
+¯Rfg  
+
+> c
+
+(x)gctx  
+
+> i
+
+(x)
+
+P 
+
+> x∈Ωq
+
+gctx  
+
+> i
+
+(x) + ε .
+
+(20) Based on the above intermediate quantities, the fused se-mantic score of entity primitive gi with respect to category 
+
+c is computed as 
+
+zi,c = wfg 
+
+μfg  
+
+> i,c
+
++ 1 2 − wbg 
+
+μbg  
+
+> i,c
+
++ 1 2 + wtxt 
+
+μtxt  
+
+> i,c
+
++ 1 2+ wsem μsem  
+
+> i,c
+
++ wsam ssam  
+
+> i
+
++ wctx 
+
+μctx  
+
+> i,c
+
++ 1 2 .
+
+(21) 
+
+Figure 2: Segmentation results under the 5-shot setting. Here, wfg = 1 .25 , wbg = 1 .35 , wtxt = 0 .03 , wsem = 0 .25 ,
+
+wsam = 0 .01 , wctx = 0 .01 .The category confidence Pi,c is then computed using a sig-moid function taking zi,c as input. For each entity primitive, the category with the highest confidence score is selected as its predicted label: 
+
+c∗ 
+
+> i
+
+= arg max  
+
+> c∈{ 1,...,C }
+
+Pi,c . (22) Finally, the predicted category label is assigned to all pixels covered by the corresponding entity primitive, producing the final semantic segmentation map of the query image. 
+
+## Experiment 
+
+To comprehensively evaluate the effectiveness of the pro-posed method across different sensors, spatial resolutions, and complex land-cover scenarios, extensive experiments are conducted on five representative and highly challenging re-mote sensing semantic segmentation datasets, including GID (Tong et al. 2020), Five-Billion-Pixels (FBP) (Tong, Xia, and Zhu 2023), Potsdam (Rottensteiner et al. 2014), Vaihingen (Rottensteiner et al. 2014), and iSAID (Waqas Zamir et al. 2019). For all dataset, the official category names are directly adopted as the textual prompts, the mean Intersection over Union (mIoU) and Boundary IoU (BIoU) are adopted as the evaluation metrics. The detailed experimental settings are presented in Technical Supplement .
+
+Results 
+
+To provide a more realistic evaluation of the proposed frame-work, we compare ELFSS-AR with three representative cat-egories of methods, including conventional FSS, CDFSS, and training-free OVSS. As reported in Table 2 and Ta-ble 3, ELFSS-AR consistently achieves substantially higher segmentation accuracy than all competing approaches. For example, under the 5-shot setting, ELFSS-AR achieves an average mIoU of 36.37%, outperforming the best competing method, IFA, by 10.13 percentage points. For training-free OVSS methods, when categories cor-respond to common scene concepts, such as building and 
+
+road , whose semantics are well represented in natural-image vision-language corpora, these methods generally achieve 
+
+> Preprint
+
+Table 2: Cross-domain few-shot segmentation results under training on the PASCAL (Everingham et al. 2015) source domain. The best results are highlighted in bold. Method Category Potsdam Vaihingen iSAID GID-15 Five-Billion-Pixels Average 1-shot 5-shot 1-shot 5-shot 1-shot 5-shot 1-shot 5-shot 1-shot 5-shot 1-shot 5-shot PANet (Wang et al. 2019) FSS 37.08 42.40 35.69 40.85 13.63 13.65 11.34 14.05 7.19 10.63 20.99 24.32 PFENet (Tian et al. 2022) 23.96 24.20 19.03 20.38 9.09 9.92 8.42 10.26 6.65 8.72 13.43 14.70 SSP (Fan et al. 2022) 36.34 42.68 41.58 42.65 15.75 19.22 11.58 14.45 7.51 10.17 22.55 25.83 IFA (Nie et al. 2024) CDFSS 36.52 42.96 39.92 42.67 16.02 19.68 12.79 15.01 7.95 10.9 22.64 26.24 ICPD (Jiang et al. 2025) 33.28 36.73 36.11 38.56 15.30 16.10 12.68 14.58 7.26 9.36 20.93 23.07 FSSAM (Xu et al. 2025) Foundation-based FSS 23.53 24.13 27.86 31.65 7.89 7.68 8.87 8.94 5.13 7.23 14.66 15.93              
+
+> ELFSS-AR (Ours) Training-free CD-FSS 52.35 59.34 55.44 61.33 20.76 21.85 16.77 24.40 13.16 14.91 31.70 36.37
+
+Table 3: Comparison with training-free open-vocabulary semantic segmentation methods. All training-free OVSS methods use only the official category names as textual prompts. With all SAM3 parameters frozen, our method additionally uses one or five target-domain support images and their corresponding masks for each category. The best results are highlighted in bold. Method Setting Potsdam Vaihingen iSAID GID-15 Five-Billion-Pixels Average MaskCLIP (Zhou, Loy, and Dai 2022) Training-free OVSS 26.54 24.80 5.61 18.73 14.07 17.95 ClearCLIP (Lan et al. 2025a) Training-free OVSS 26.29 22.01 5.53 19.52 13.56 17.38 SCLIP (Wang, Mei, and Yuille 2025) Training-free OVSS 27.13 22.72 5.25 19.45 13.33 17.58 ResCLIP (Yang et al. 2025) Training-free OVSS 27.02 23.39 5.09 18.95 14.79 17.85 SAM3 (Carion et al. 2026) Training-free OVSS 49.19 38.28 6.37 8.33 5.30 21.49              
+
+> ELFSS-AR (Ours) 1-shot 52.35 55.44 20.76 16.77 13.16 31.70
+> 5-shot 59.34 61.33 21.85 24.40 14.91 36.37
+
+satisfactory performance. However, on datasets such as GID-15 and FBP, which contain domain-specific remote sens-ing categories and fine-grained semantic classes, their per-formance degrades substantially. In particular, SAM3 per-forms worse than the CDFSS methods, which employs only a lightweight backbone, as well as several conventional FSS methods. In contrast, ELFSS-AR consistently achieves sig-nificantly higher accuracy on these challenging datasets. Fur-thermore, the qualitative results in Fig. 2 under the 5-shot set-ting show that ELFSS-AR produces more complete object regions with more spatially coherent internal responses. 
+
+Ablation Study 
+
+Table 4 presents the ablation study of all the components of ELFSS-AR. SAM3 is adopted as the baseline. To demon-strate the effectiveness of the proposed entity-level FSS, we further construct a conventional pixel-level FSS on top of SAM3, as reported in the second row of the table. The last row corresponds to the complete ELFSS-AR. It can be ob-served that each proposed component consistently improves the segmentation performance when incorporated into the baseline. Moreover, comparing the second and third rows shows that the entity-level FSS significantly outperforms its pixel-level counterpart, highlighting the importance of ex-tending semantic inference from the pixel level to the entity level. The accuracy curves with respect to mIoU and BIoU are presented in Fig. 3. 
+
+Entity-Level FSS Enhances Regional Structural Consis-tency By exploiting the generic region modeling capabil-ity of SAM3, the proposed method partitions the query im-age into a set of category-agnostic entity primitives that are spatially exclusive and collectively cover the entire image. 
+
+Figure 3: Accuracy curves of the ablation study under the 5-shot setting. These entity primitives replace individual pixels as the basic units for semantic inference, thereby improving intra-object consistency while preserving the geometric boundaries of land-cover objects. As illustrated in Fig. 4, pixel-level pre-diction tends to produce local false responses and fragmented segmentation in regions with complex textures. In contrast, introducing entity primitives yields substantially more coher-ent predictions within the same object, significantly reducing internal holes and fragmented artifacts. In the fourth column, the pixel-level FSS misclassifies local texture variations, such as building chimneys and shadows, as vehicles, accompanied by scattered noisy predictions. These issues are effectively alleviated by the proposed entity-level FSS, as demonstrated in the fifth column. 
+
+Feature Advection Strengthens Category-Aware Repre-sentations In the semantic advection refinement, a two-dimensional advection equation transports semantic infor-mation within the query feature space. In this procedure, features belonging to the same object mutually reinforce one 
+
+Preprint Figure 4: Visualization of the ablation study under the 5-shot setting. Table 4: Ablation study of different components under the 5-shot setting. Both mIoU and Boundary IoU (BIoU) are reported.                                       
+
+> Configuration Vaihingen iSAID GID-15 mIoU BIoU mIoU BIoU mIoU BIoU SAM3 38.28 30.98 6.37 4.17 8.33 5.77 SAM3+PLFSS 49.87 28.73 16.27 7.24 20.55 6.42 SAM3+ELFSS 59.44 40.48 19.52 8.32 23.07 10.82 SAM3+ELFSS+FA 60.21 41.27 20.66 8.54 23.82 12.67
+> ELFSS-AR 61.33 42.56 21.85 9.51 24.40 13.71
+
+another, whereas responses inconsistent with the foreground category are gradually suppressed. Consequently, the refined query features exhibit more compact intra-class distributions as shown in the comparison between the feature maps before and after advection in Fig. 5. 
+
+Response Advection Stabilizes Semantic Inference The semantic advection is further applied to the multi-source similarity response space, allowing high-confidence seman-tic responses to propagate toward neighboring regions along the semantic potential field while suppressing isolated false activations. As illustrated in the last two columns of Fig. 4, response advection produces substantially more coherent se-mantic responses within the same entity, correcting local noise and category ambiguities in the predictions. 
+
+## Conclusion 
+
+In this paper, we presented ELFSS-AR, a training-free frame-work built upon SAM3 for CDFSS. ELFSS-AR extends con-ventional pixel-level prediction to entity-level semantic in-ference and introduces advection equations to refine both the feature and response spaces. By exploiting only a few la-
+
+Figure 5: Category-wise feature maps before and after ad-vection refinement under the 5-shot setting. beled support samples from the target domain together with class-specific text prompts, the proposed method effectively segments target-domain images without additional model training. Extensive experiments demonstrate that ELFSS-AR significantly outperforms existing FSS, CDFSS, and training-free OVSS methods, validating the effectiveness of both entity-level FSS and semantic advection refinement. De-spite its superior performance, ELFSS-AR still leaves room for further improvement. In particular, the reliability of en-tity primitive construction could be further enhanced. Future work will therefore investigate more robust entity generation strategies to improve the stability and generalization capabil-ity of the proposed framework. 
+
+Preprint References 
+
+Carion, N.; Gustafson, L.; Hu, Y.-T.; Debnath, S.; Hu, R.; Coll-Vinent, D. S.; Ryali, C.; Alwala, K. V.; Khedr, H.; Huang, A.; Lei, J.; Ma, T.; Guo, B.; Kalla, A.; Marks, M.; Greer, J.; Wang, M.; Sun, P.; Rädle, R.; Afouras, T.; Mavroudi, E.; Xu, K.; Wu, T.-H.; Zhou, Y.; Momeni, L.; HAZRA, R.; Ding, S.; Vaze, S.; Porcher, F.; Li, F.; Li, S.; Kamath, A.; Cheng, H. K.; Dollar, P.; Ravi, N.; Saenko, K.; Zhang, P.; and Feichtenhofer, C. 2026. SAM 3: Segment Anything with Concepts. In The Fourteenth International Conference on Learning Representations .Everingham, M.; Eslami, S. M. A.; Van Gool, L.; Williams, C. K. I.; Winn, J.; and Zisserman, A. 2015. The Pascal Visual Object Classes Challenge: A Retrospective. International Journal of Computer Vision , 111(1): 98–136. Fan, Q.; Pei, W.; Tai, Y.-W.; and Tang, C.-K. 2022. Self-support Few-Shot Semantic Segmentation. In Avidan, S.; Brostow, G.; Cissé, M.; Farinella, G. M.; and Hassner, T., eds., Computer Vision – ECCV 2022 , 701–719. Cham: Springer Nature Switzerland. ISBN 978-3-031-19800-7. Hajimiri, S.; Ayed, I. B.; and Dolz, J. 2025. Pay Attention to Your Neighbours: Training-Free Open-Vocabulary Semantic Segmentation. In 2025 IEEE/CVF Winter Conference on Applications of Computer Vision (WACV) , 5061–5071. He, W.; Zhang, Y.; Zhuo, W.; Shen, L.; Yang, J.; Deng, S.; and Sun, L. 2024. APSeg: Auto-Prompt Network for Cross-Domain Few-Shot Semantic Segmentation. In 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 23762–23772. Herzog, J. 2024. Adapt Before Comparison: A New Per-spective on Cross-Domain Few-Shot Segmentation. In 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 23605–23615. Jiang, Z.; Yuan, Y.; Ma, D.; Wang, Q.; and Yuan, Y. 2025. Implicit CLIP Prior Decoupling for Few-Shot Remote Sens-ing Image Segmentation. IEEE Transactions on Geoscience and Remote Sensing , 63: 1–13. Karimi, A.; and Poullis, C. 2025. DSV-LFS: Unifying LLM-Driven Semantic Cues with Visual Features for Robust Few-Shot Segmentation. In 2025 IEEE/CVF Conference on Com-puter Vision and Pattern Recognition (CVPR) , 4584–4594. Kirillov, A.; Mintun, E.; Ravi, N.; Mao, H.; Rolland, C.; Gustafson, L.; Xiao, T.; Whitehead, S.; Berg, A. C.; Lo, W.-Y.; Dollár, P.; and Girshick, R. 2023. Segment Anything. In 2023 IEEE/CVF International Conference on Computer Vision (ICCV) , 3992–4003. Lai, X.; Tian, Z.; Chen, Y.; Li, Y.; Yuan, Y.; Liu, S.; and Jia, J. 2024. LISA: Reasoning Segmentation via Large Language Model. In 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 9579–9589. Lan, M.; Chen, C.; Ke, Y.; Wang, X.; Feng, L.; and Zhang, W. 2025a. ClearCLIP: Decomposing CLIP Representations for Dense Vision-Language Inference. In Leonardis, A.; Ricci, E.; Roth, S.; Russakovsky, O.; Sattler, T.; and Varol, G., eds., 
+
+Computer Vision – ECCV 2024 , 143–160. Cham: Springer Nature Switzerland. ISBN 978-3-031-72970-6. Lan, M.; Chen, C.; Ke, Y.; Wang, X.; Feng, L.; and Zhang, W. 2025b. ProxyCLIP: Proxy Attention Improves CLIP for Open-Vocabulary Segmentation. In Leonardis, A.; Ricci, E.; Roth, S.; Russakovsky, O.; Sattler, T.; and Varol, G., eds., Computer Vision – ECCV 2024 , 70–88. Cham: Springer Nature Switzerland. ISBN 978-3-031-73113-6. Lang, C.; Cheng, G.; Tu, B.; and Han, J. 2022. Learning What Not to Segment: A New Perspective on Few-Shot Segmen-tation. In 2022 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 8047–8057. Lei, S.; Zhang, X.; He, J.; Chen, F.; Du, B.; and Lu, C.-T. 2022. Cross-Domain Few-Shot Semantic Segmentation. In Avidan, S.; Brostow, G.; Cissé, M.; Farinella, G. M.; and Has-sner, T., eds., Computer Vision – ECCV 2022 , 73–90. Cham: Springer Nature Switzerland. ISBN 978-3-031-20056-4. Li, F.; Zhang, H.; Sun, P.; Zou, X.; Liu, S.; Li, C.; Yang, J.; Zhang, L.; and Gao, J. 2025a. Segment and Recognize Anything at Any Granularity. In Leonardis, A.; Ricci, E.; Roth, S.; Russakovsky, O.; Sattler, T.; and Varol, G., eds., 
+
+Computer Vision – ECCV 2024 , 467–484. Cham: Springer Nature Switzerland. ISBN 978-3-031-73195-2. Li, K.; Liu, R.; Cao, X.; Bai, X.; Zhou, F.; Meng, D.; and Wang, Z. 2025b. SegEarth-OV: Towards Training-Free Open-Vocabulary Segmentation for Remote Sensing Images. In 2025 IEEE/CVF Conference on Computer Vision and Pat-tern Recognition (CVPR) , 10545–10556. Li, Z.; Wang, Y.; Li, W.; Zhang, T.; and Liu, X. 2025c. Dual-Agent Optimization framework for Cross-Domain Few-Shot Segmentation. In 2025 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 9849–9859. Liu, Y.; Yin, Y.; Jing, C.; Zhu, M.; Chen, H.; Xi, Y.; Feng, B.; Wang, H.; Li, S.; and Shen, C. 2025a. Unified Open-World Segmentation with Multi-Modal Prompts. In 2025 IEEE/CVF International Conference on Computer Vision (ICCV) , 21557–21567. Liu, Y.; Zou, Y.; Li, Y.; and Li, R. 2025b. The Devil is in Low-Level Features for Cross-Domain Few-Shot Segmentation. In 
+
+2025 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 4618–4627. Lu, Z.; He, S.; Li, D.; Song, Y.-Z.; and Xiang, T. 2023. Prediction Calibration for Generalized Few-Shot Semantic Segmentation. IEEE Transactions on Image Processing , 32: 3311–3323. Luo, X.; Tian, Z.; Zhang, T.; Yu, B.; Tang, Y. Y.; and Jia, J. 2024. PFENet++: Boosting Few-Shot Semantic Segmen-tation With the Noise-Filtered Context-Aware Prior Mask. 
+
+IEEE Transactions on Pattern Analysis and Machine Intelli-gence , 46(2): 1273–1289. Nie, J.; Xing, Y.; Zhang, G.; Yan, P.; Xiao, A.; Tan, Y.-P.; Kot, A. C.; and Lu, S. 2024. Cross-Domain Few-Shot Segmentation via Iterative Support-Query Correspondence Mining. In 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 3380–3390. Niu, X.; Zhao, M.; Jiang, D.; Wu, Y.; and Su, B. 2026. ReAttnCLIP: Training-Free Open-Vocabulary Remote Sens-ing Image Segmentation via Re-defined Attention in CLIP. 
+
+> Preprint
+
+In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 24980–24989. Peng, B.; Tian, Z.; Wu, X.; Wang, C.; Liu, S.; Su, J.; and Jia, J. 2023. Hierarchical Dense Correlation Distillation for Few-Shot Segmentation. In 2023 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 23641– 23651. Rasheed, H.; Maaz, M.; Shaji, S.; Shaker, A.; Khan, S.; Cholakkal, H.; Anwer, R. M.; Xing, E.; Yang, M.-H.; and Khan, F. S. 2024. GLaMM: Pixel Grounding Large Multi-modal Model. In 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 13009–13018. Ravi, N.; Gabeur, V.; Hu, Y.-T.; Hu, R.; Ryali, C.; Ma, T.; Khedr, H.; Rädle, R.; Rolland, C.; Gustafson, L.; Mintun, E.; Pan, J.; Alwala, K. V.; Carion, N.; Wu, C.-Y.; Girshick, R.; Dollar, P.; and Feichtenhofer, C. 2025. SAM 2: Segment Anything in Images and Videos. In The Thirteenth Interna-tional Conference on Learning Representations .Ren, Z.; Huang, Z.; Wei, Y.; Zhao, Y.; Fu, D.; Feng, J.; and Jin, X. 2024. PixelLM: Pixel Reasoning with Large Multi-modal Model. In 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 26364–26373. Rottensteiner, F.; Sohn, G.; Gerke, M.; Wegner, J. D.; Bre-itkopf, U.; and Jung, J. 2014. Results of the ISPRS benchmark on urban object detection and 3D building reconstruction. 
+
+ISPRS Journal of Photogrammetry and Remote Sensing , 93: 256–271. Shaban, A.; Bansal, S.; Liu, Z.; Essa, I.; and Boots, B. 2017. One-Shot Learning for Semantic Segmentation. In Tae-Kyun Kim, G. B., Stefanos Zafeiriou; and Mikolajczyk, K., eds., Proceedings of the British Machine Vision Conference (BMVC) , 167.1–167.13. BMVA Press. ISBN 1-901725-60-X. Shao, T.; Tian, Z.; Zhao, H.; and Su, J. 2025. Explore the Potential of CLIP for Training-Free Open Vocabulary Se-mantic Segmentation. In Leonardis, A.; Ricci, E.; Roth, S.; Russakovsky, O.; Sattler, T.; and Varol, G., eds., Com-puter Vision – ECCV 2024 , 139–156. Cham: Springer Nature Switzerland. ISBN 978-3-031-73016-0. Shi, G.; Wu, Y.; Zhu, W.; Wang, T.; Zhang, H.; Li, B.; and Lu, T. 2026. Bayesian Decomposition and Semantic Completion for Few-shot Semantic Segmentation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 12354–12363. Shi, Y.; Dong, M.; and Xu, C. 2025. Harnessing Vision Foun-dation Models for High-Performance, Training-Free Open Vocabulary Segmentation. In 2025 IEEE/CVF International Conference on Computer Vision (ICCV) , 23487–23497. Snell, J.; Swersky, K.; and Zemel, R. 2017. Prototypical net-works for few-shot learning. Advances in neural information processing systems , 30. Su, J.; Fan, Q.; Pei, W.; Lu, G.; and Chen, F. 2024. Domain-Rectifying Adapter for Cross-Domain Few-Shot Segmenta-tion. In 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 24036–24045. Tian, Z.; Zhao, H.; Shu, M.; Yang, Z.; Li, R.; and Jia, J. 2022. Prior Guided Feature Enrichment Network for Few-Shot Segmentation. IEEE Transactions on Pattern Analysis and Machine Intelligence , 44(2): 1050–1065. Tong, J.; Ma, R.; Zou, Y.; Chen, G.; Li, Y.; and Li, R. 2025. Adapter Naturally Serves as Decoupler for Cross-Domain Few-Shot Semantic Segmentation. In Forty-second Interna-tional Conference on Machine Learning .Tong, X.-Y.; Xia, G.-S.; Lu, Q.; Shen, H.; Li, S.; You, S.; and Zhang, L. 2020. Land-cover classification with high-resolution remote sensing images using transferable deep models. Remote Sensing of Environment , 237: 111322. Tong, X.-Y.; Xia, G.-S.; and Zhu, X. X. 2023. Enabling country-scale land cover mapping with meter-resolution satellite imagery. ISPRS Journal of Photogrammetry and Remote Sensing , 196: 178–196. Wang, F.; Mei, J.; and Yuille, A. 2025. SCLIP: Rethink-ing Self-Attention for Dense Vision-Language Inference. In Leonardis, A.; Ricci, E.; Roth, S.; Russakovsky, O.; Sat-tler, T.; and Varol, G., eds., Computer Vision – ECCV 2024 ,315–332. Cham: Springer Nature Switzerland. ISBN 978-3-031-72664-4. Wang, K.; Liew, J. H.; Zou, Y.; Zhou, D.; and Feng, J. 2019. PANet: Few-Shot Image Semantic Segmentation With Pro-totype Alignment. In 2019 IEEE/CVF International Confer-ence on Computer Vision (ICCV) , 9196–9205. Waqas Zamir, S.; Arora, A.; Gupta, A.; Khan, S.; Sun, G.; Shahbaz Khan, F.; Zhu, F.; Shao, L.; Xia, G.-S.; and Bai, X. 2019. isaid: A large-scale dataset for instance segmentation in aerial images. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition workshops , 28– 37. Xu, Q.; Zhu, L.; Liu, X.; Lin, G.; Long, C.; Li, Z.; and Zhao, R. 2025. Unlocking the Power of SAM 2 for Few-Shot Segmentation. In Forty-second International Conference on Machine Learning .Yang, Y.; Deng, J.; Li, W.; and Duan, L. 2025. ResCLIP: Residual Attention for Training-free Dense Vision-language Inference. In 2025 IEEE/CVF Conference on Computer Vi-sion and Pattern Recognition (CVPR) , 29968–29978. Zhang, H.; Li, F.; Zou, X.; Liu, S.; Li, C.; Yang, J.; and Zhang, L. 2023. A Simple Framework for Open-Vocabulary Segmentation and Detection. In 2023 IEEE/CVF Interna-tional Conference on Computer Vision (ICCV) , 1020–1031. Zhou, C.; Loy, C. C.; and Dai, B. 2022. Extract Free Dense Labels from CLIP. In Avidan, S.; Brostow, G.; Cissé, M.; Farinella, G. M.; and Hassner, T., eds., Computer Vision – ECCV 2022 , 696–712. Cham: Springer Nature Switzerland. ISBN 978-3-031-19815-1. Zou, T.; Xiong, S.; Yao, R.; and Rong, Y. 2025. Balanc-ing Conservatism and Aggressiveness: Prototype-Affinity Hybrid Network for Few-Shot Segmentation. In 2025 IEEE/CVF International Conference on Computer Vision (ICCV) , 20561–20571. Zou, X.; Yang, J.; Zhang, H.; Li, F.; Li, L.; Wang, J.; Wang, L.; Gao, J.; and Lee, Y. J. 2023. Segment Everything Every-
+
+> Preprint
+
+where All at Once. In Thirty-seventh Conference on Neural Information Processing Systems .
+
+## Appendix A: Details of Category-Agnostic Entity Primitive Generation 
+
+Remote-sensing objects generally exhibit strong spatial con-tinuity: pixels within the same geographic region tend to share consistent semantic labels, whereas category transi-tions mainly occur along object boundaries. Accordingly, the semantic label map can be approximately modeled as a piecewise-constant function over spatially continuous re-gions. Conventional pixel-wise independent prediction is susceptible to local textures, spectral fluctuations, and do-main shifts, often resulting in spatially scattered responses within homogeneous regions. Let the prediction response of pixel x for class c be 
+
+Sc(x) = μc(x) + ϵc(x), (23) where μc(x) denotes the underlying semantic response and 
+
+ϵc(x) represents a local perturbation. For an object region A,its region-level response is defined as 
+
+¯Sc(A) = 1
+
+|A|
+
+X
+
+> x∈A
+
+Sc(x). (24) Assuming that the perturbations within the region are ap-proximately independent and have variance σ2, we have 
+
+Var  ¯Sc(A) = σ2
+
+|A| , (25) which indicates that region-level aggregation reduces the variance of local perturbations and improves intra-region semantic consistency. Motivated by this observation, we ex-ploit the generic geometric prior of SAM3 to partition the query image Iq into a set of category-agnostic entities that are spatially exclusive and collectively cover the entire image, thereby extending few-shot segmentation from pixel-level in-ference to entity-level inference. Given a query image Iq , we first employ the automatic mask generation mechanism of SAM3 to perform full-image inference using densely sampled point prompts. This pro-cess produces N initial candidate masks together with their corresponding quality scores: 
+
+Rq = {(rn, s sam  
+
+> n
+
+)}Nn=1 , rn ∈ { 0, 1}H×W , (26) where rn denotes the n-th binary candidate mask and ssam  
+
+> n
+
+∈
+
+R is the corresponding quality score predicted by SAM3. Let 
+
+Ωq denote the pixel domain of the query image. The area of a candidate mask is defined as 
+
+Area( r) = X
+
+> x∈Ωq
+
+r(x). (27) Small candidate masks produced during automatic mask generation are often induced by local textures, high-frequency noise, or boundary perturbations. Because such regions contain only a limited number of pixels, their aggre-gated responses tend to exhibit relatively high variance and low semantic stability. To suppress these trivial candidate regions, we introduce a minimum area threshold θarea = 10 
+
+and obtain the filtered candidate set 
+
+Rfq = {(rn, s sam  
+
+> n
+
+) ∈ R q | Area( rn) ≥ θarea } . (28) Suppose that N ′ candidate masks remain after filtering. We sort them in descending order according to their SAM3 qual-ity scores and define a permutation π satisfying 
+
+ssam  
+
+> π(1)
+
+≥ ssam  
+
+> π(2)
+
+≥ · · · ≥ ssam  
+
+> π(N′)
+
+. (29) Since the candidate masks automatically generated by SAM3 often exhibit substantial containment and overlap, directly classifying these overlapping masks would allow the same pixel to participate in multiple entity-level decisions, leading to ambiguous semantic assignments. We therefore adopt a confidence-prioritized greedy exclusive assignment strategy to transform the overlapping candidate masks into spatially disjoint entity primitives. Let A(j) ⊆ Ωq denote the set of pixels that have already been assigned after processing the first j candidate masks, and let G(j) denote the resulting set of entity primitives. The process is initialized as 
+
+A(0) = ∅, G(0) = ∅. (30) For the j-th candidate mask rπ(j) in the sorted sequence, its effective region after removing the already assigned pixels is defined as 
+
+ˆrπ(j) = rπ(j) \ A(j−1) . (31) The occupied pixel set and the entity primitive set are then updated according to the area of the effective region: 
+
+A(j) =
+
+A(j−1) ∪ ˆrπ(j), Area  ˆrπ(j)
+
+ ≥ θarea ,A(j−1) , Area  ˆrπ(j)
+
+ < θ area , (32) and 
+
+G(j) =
+
+G(j−1) ∪ ˆrπ(j) , Area  ˆrπ(j)
+
+ ≥ θarea ,
+
+G(j−1) , Area  ˆrπ(j)
+
+ < θ area . (33) To control the computational cost, we set the maximum number of entity primitives to Nmax = 500 . The above procedure terminates when all candidate masks have been processed or when the number of valid entity primitives reaches Nmax − 1. Let J denote the termination step. The pixels that remain unassigned are grouped into a residual entity primitive: 
+
+gres = Ω q \ A(J). (34) The residual primitive participates in the subsequent entity-level semantic inference together with the other entity prim-itives, and its overall class is determined by aggregating the multi-source semantic responses within the region. The final entity primitive set is therefore defined as 
+
+Gq =
+
+G(J) ∪ { gres }, Area( gres ) > 0,
+
+G(J), Area( gres ) = 0 . (35) Consequently, the final set of entity primitives can be writ-ten as 
+
+Gq = {gi}Li=1 , L ≤ Nmax . (36) 
+
+> Preprint
+
+These entity primitives are pairwise disjoint and collectively cover the entire query image: 
+
+
+
+gi ∩ gj = ∅, i̸ = j, 
+
+> L
+
+[
+
+> i=1
+
+gi = Ω q . (37) The entity primitives generated from the sorted candi-date masks inherit the corresponding SAM3 quality scores, whereas the quality score of the residual entity primitive is set to zero. These category-agnostic primitives provide only spatial and geometric support; their semantic labels are deter-mined during the subsequent entity-level semantic inference stage. 
+
+## Appendix B: Experimental Settings 
+
+Datasets 
+
+To comprehensively evaluate the performance of the pro-posed method across different sensors, spatial resolutions, and complex land-cover scenarios, we conduct experiments on five representative and challenging remote-sensing se-mantic segmentation datasets. For all datasets, the official class names are directly used as text prompts. 
+
+1) GID Dataset. The GID dataset (Tong et al. 2020) is a large-scale high-resolution remote-sensing dataset con-structed from Gaofen-2 (GF-2) satellite imagery. Each image has a spatial size of 6800 × 7200 pixels and a spatial reso-lution of 4 m. GID consists of two subsets: the large-scale classification set, GID-5, and the fine-grained land-cover set, GID-15. GID-5 contains five land-cover categories, includ-ing built-up , farmland , forest , meadow , and water . GID-15 further divides the land-cover types into 15 fine-grained cat-egories, such as paddy field , irrigated land , dry cropland ,
+
+garden land , and arbor forest . At a spatial resolution of 4 m, land-cover regions often exhibit substantial intra-class spec-tral heterogeneity. Consequently, training-free segmentation based on direct feature matching is prone to producing ran-dom noise and isolated fragmented predictions within ho-mogeneous regions. This problem is particularly severe on GID-15, where the visual similarity among fine-grained cat-egories is high and the number of classes is relatively large. Under such conditions, multimodal vision foundation mod-els relying on generic text prompts, such as SAM3, gener-ally exhibit limited recognition accuracy. Evaluations on this dataset therefore not only verify the adaptive refinement ca-pability of semantic advection in suppressing feature noise, smoothing land-cover regions, and correcting isolated false predictions, but also demonstrate the domain adaptability obtained by combining the geometric entity extraction capa-bility of SAM3 with few-shot semantic inference in highly confusing fine-grained remote-sensing scenarios. 
+
+2) Five-Billion-Pixels Dataset. The Five-Billion-Pixels (FBP) dataset (Tong, Xia, and Zhu 2023) is a high-resolution remote-sensing benchmark designed for large-scale fine-grained land-cover classification. It is constructed from Gaofen-2 satellite imagery with a spatial resolution of 4 m and covers more than 50 ,000 km 2 across China, providing over five billion pixel-level annotations. The dataset adopts a highly detailed category system containing 24 land-cover classes, posing a substantial challenge to the ability of a model to transfer general semantic priors to complex fine-grained spatial patterns. In our experiments, FBP is treated as an unseen target domain. Its large semantic gap and consider-able distribution shift are used to evaluate the cross-domain robustness of the proposed method. In particular, this dataset allows us to examine the effectiveness of entity-level geo-metric constraints and semantic advection refinement in sup-pressing out-of-domain noise and recovering fine-grained land-cover regions. 
+
+3) Potsdam Dataset. The Potsdam dataset (Rottensteiner et al. 2014), released by the International Society for Pho-togrammetry and Remote Sensing (ISPRS), is a widely used high-resolution aerial image benchmark. It has a spatial res-olution of 0.5 m and contains four spectral bands, namely red, green, blue, and near-infrared. Potsdam includes densely distributed buildings, roads, vehicles, and low vegetation, thereby imposing stringent requirements on entity-boundary delineation and small-object recognition. In our experiments, Potsdam is regarded as an unseen target domain. Under the substantial spatial-resolution gap and cross-city landscape variation, this dataset is used to evaluate the ability of entity-level geometric constraints to preserve fine object bound-aries, as well as the cross-domain generalization capability of semantic advection refinement in suppressing intra-class noise and enhancing the representation of small targets. 
+
+4) Vaihingen Dataset. The Vaihingen dataset (Rotten-steiner et al. 2014) is another high-resolution aerial remote-sensing benchmark released by ISPRS. It has a spatial res-olution of 0.9 m and contains five major land-cover cate-gories: impervious surface , building , low vegetation , tree ,and car . Unlike Potsdam, which provides standard RGB im-agery, Vaihingen adopts a near-infrared–red–green (IR-R-G) band combination, resulting in a pronounced spectral distri-bution discrepancy. In our experiments, Vaihingen is treated as an unseen target domain to specifically assess the cross-domain few-shot segmentation capability of the proposed method under heterogeneous spectral-band configurations and substantial sensor-induced appearance shifts. 
+
+5) iSAID Dataset. The iSAID dataset (Waqas Zamir et al. 2019) is a large-scale aerial image instance segmentation benchmark derived from the DOTA dataset. It contains 2,806 multi-source high-resolution images with spatial resolutions ranging from 0.1 m to 4 m, mainly due to differences in ac-quisition platforms. The dataset covers 15 object categories, including ship , harbor , ground track field , and bridge . It is characterized by substantial scale variation, densely dis-tributed objects, and numerous small targets with complex geometric structures. Because of its extreme multi-scale vari-ation and crowded spatial layouts, iSAID constitutes a partic-ularly challenging evaluation scenario. It is employed to as-sess the ability of entity-level few-shot segmentation and se-mantic advection refinement to achieve robust cross-domain representation and accurate segmentation under severe scale changes and dense-object interference. 
+
+> Preprint
+
+Metrics 
+
+To quantitatively evaluate the performance of the proposed method on the cross-domain few-shot segmentation task, we adopt the mean Intersection over Union (mIoU) as the pri-mary evaluation metric. It is defined as the average Intersec-tion over Union (IoU) over all foreground classes: 
+
+mIoU = 1
+
+C
+
+> C
+
+X
+
+> c=1
+
+TP( c)TP( c) + FP( c) + FN( c) , (38) where C denotes the number of foreground classes, and 
+
+TP( c), FP( c), and FN( c) represent the numbers of true positive, false positive, and false negative pixels for class c,respectively. To further evaluate the segmentation quality around object boundaries, we additionally report the Boundary Intersection over Union (BIoU), which computes the IoU within a narrow band surrounding the ground-truth boundary of each class: 
+
+BIoU = 1
+
+C
+
+> C
+
+X
+
+> c=1
+
+TP b(c)TP b(c) + FP b(c) + FN b(c) , (39) where TP b(c), FP b(c), and FN b(c) denote the numbers of true positive, false positive, and false negative pixels within the boundary region of class c, respectively. The boundary width is typically defined as a fixed proportion of the image diagonal. Following the standard setting, the default ratio is set to 0.02 in all experiments. 
+
+Implementation Details 
+
+The proposed method is implemented based on the PyTorch deep learning framework. All experiments are conducted on a workstation equipped with four NVIDIA GeForce RTX 3090 GPUs, each with 24 GB of memory. Since the pro-posed framework is training-free, no source-domain train-ing, target-domain fine-tuning, or parameter optimization is performed throughout the entire experimental process. All parameters of SAM3 remain frozen during inference, and FP16 mixed-precision inference is adopted to improve com-putational efficiency. All input images are uniformly cropped into patches of 512 × 512 pixels. Following the standard few-shot segmentation protocol, both 1-shot and 5-shot settings are evaluated, where one or five support images from the target domain are provided for each class to segment the cor-responding query image. For all datasets, the text prompts are directly constructed from the official class names without any manual prompt engineering. 
+
+## Appendix C: Theoretical Analysis of the Effectiveness of Semantic Advection Refinement 
+
+ELFSS-AR extends conventional few-shot segmentation (FSS) from pixel-level prediction to entity-level prediction. Its ability to alleviate the noise and fragmentation inherent in pixel-level predictions is therefore straightforward. Con-sequently, the effectiveness analysis of ELFSS-AR mainly focuses on the semantic advection refinement module. In the main paper, the effectiveness of semantic advection refine-ment has already been validated experimentally through the ablation studies. Here, we further provide a theoretical analy-sis of its effectiveness. For clarity and brevity, we present the theoretical analysis only for the query feature advection re-finement process. The analysis for the multi-source response advection refinement process follows the same principles and is therefore omitted. 
+
+Proposition 1 : The feature advection discretization update of the form 
+
+˜F (l+1)  
+
+> q,c
+
+= F (l) 
+
+> q,c
+
+− δF
+
+
+
+vFc,x DxF (l) 
+
+> q,c
+
++ vFc,y Dy F (l)
+
+> q,c
+
+
+
+(40) transports feature information from locations with high se-mantic confidence to locations with low semantic confidence. 
+
+Proof : Consider the first-order Taylor expansion of the feature field F (l) 
+
+> q,c
+
+around a spatial position px :
+
+F (l)
+
+> q,c
+
+ px − δF vFc (px ) =F (l) 
+
+> q,c
+
+(px )
+
+− δF
+
+ vFc (px ) · ∇  F (l) 
+
+> q,c
+
+(px )+ O(δ2 
+
+> F
+
+).
+
+(41) The feature advection discretization can be written in the compact form 
+
+˜F (l+1)  
+
+> q,c
+
+(px ) = F (l) 
+
+> q,c
+
+(px )−δF
+
+ vFc (px ) · ∇  F (l) 
+
+> q,c
+
+(px ). (42) Comparing Eqs. (41) and (42), while neglecting the second-order term, yields 
+
+˜F (l+1)  
+
+> q,c
+
+(px ) ≈ F (l)
+
+> q,c
+
+ px − δF vFc (px ) . (43) Equation (43) indicates that the feature at position px in the (l + 1) -th iteration is inherited from the feature located at px − δF vFc (px ) in the previous iteration. Next, we analyze the relationship between px −δF vFc (px )
+
+and px . According to the definition in the main paper, vFc (px )
+
+is the velocity at position px , which is computed as the normalized negative gradient of the multimodal semantic potential field. The semantic potential is defined as 
+
+˜U Fc (px ) = λF
+
+> fg
+
+R(fg ,0)  
+
+> c
+
+(px ) − λF
+
+> bg
+
+R(bg ,0)  
+
+> c
+
+(px )+ λF
+
+> txt
+
+R(txt ,0)  
+
+> c
+
+(px ), (44) where λF
+
+> fg
+
+, λF
+
+> bg
+
+, and λF 
+
+> txt
+
+are positive constants. Conse-quently, the semantic potential becomes larger when the foreground response R(fg ,0)  
+
+> c
+
+and textual response R(txt ,0) 
+
+> c
+
+are high while the background response R(bg ,0)  
+
+> c
+
+is low, indi-cating a higher semantic confidence at px . By the property of gradients, the positive gradient direction points toward increasing semantic confidence. Furthermore, 
+
+px − δF vFc (px ) = px − δF
+
+
+
+− ∇U Fc (px )
+
+∥∇ U Fc (px )∥ + ε
+
+
+
+= px + δF
+
+∇U Fc (px )
+
+∥∇ U Fc (px )∥ + ε .
+
+(45) Equation (45) shows that the source location px −
+
+δF vFc (px ) lies in the positive gradient direction of the se-mantic potential relative to px , and therefore corresponds to a 
+
+> Preprint
+
+location with higher semantic confidence. Consequently, the feature advection discretization update propagates feature in-formation from regions with higher semantic confidence to regions with lower semantic confidence. 
+
+Proposition 2 : The semantic directional gating mecha-nism together with the discretized advection update (de-scribed in the Query Feature Advection Refinement section of the main paper) guarantees that the semantic confidence encoded by the semantic potential field is non-decreasing throughout the advection process. 
+
+Poof : According to the discretized two-dimensional ad-vection equation, 
+
+˜F (l+1)  
+
+> q,c
+
+= F (l) 
+
+> q,c
+
+− δF
+
+
+
+vFc,x DxF (l) 
+
+> q,c
+
++ vFc,y Dy F (l)
+
+> q,c
+
+
+
+, (46) the candidate feature increment is 
+
+∆F = −δF
+
+
+
+vFc,x DxF (l) 
+
+> q,c
+
++ vFc,y Dy F (l)
+
+> q,c
+
+
+
+= −δF vFc · ∇ F (l) 
+
+> q,c
+
+.
+
+(47) The semantic potential U Fc can be regarded as a function of the query feature, while the query feature itself is a spatial function of the position px . Performing a first-order Taylor expansion of U Fc (F (l+1)  
+
+> q,c
+
+) around F (l) 
+
+> q,c
+
+yields 
+
+U Fc (F (l+1)  
+
+> q,c
+
+) = U Fc (F (l) 
+
+> q,c
+
++ ∆ F )= U Fc (F (l) 
+
+> q,c
+
+) + 
+
+D
+
+∇F U Fc (F (l) 
+
+> q,c
+
+), ∆F
+
+E
+
++ O(δ2 
+
+> F
+
+)= U Fc (F (l) 
+
+> q,c
+
+) − δF
+
+D
+
+∇F U Fc (F (l) 
+
+> q,c
+
+), vFc · ∇ F (l)
+
+> q,c
+
+E
+
++ O(δ2 
+
+> F
+
+)
+
+≈ U Fc (F (l) 
+
+> q,c
+
+) − δF
+
+D
+
+∇F U Fc (F (l) 
+
+> q,c
+
+), vFc · ∇ F (l)
+
+> q,c
+
+E
+
+.
+
+(48) 
+
+By the chain rule, 
+
+D
+
+∇F U Fc (F (l) 
+
+> q,c
+
+), vFc · ∇ F (l)
+
+> q,c
+
+E
+
+= vFc · ∇ U Fc (F (l) 
+
+> q,c
+
+)= vFc,x DxU F, (l) 
+
+> c
+
++ vFc,y Dy U F, (l)
+
+> c
+
+= dF, (l) 
+
+> c
+
+.
+
+(49) Substituting Eq. (49) into Eq. (48) gives 
+
+U Fc (F (l+1)  
+
+> q,c
+
+) ≈ U Fc (F (l) 
+
+> q,c
+
+) − δF dF, (l) 
+
+> c
+
+. (50) 
+
+δF > 0 is a small positive constant. Therefore, equa-tion (50) shows that the semantic potential increases after one advection step if and only if 
+
+dF, (l) 
+
+> c
+
+< 0. (51) Indeed, when dF, (l) 
+
+> c
+
+< 0, the increment −δF dF, (l) 
+
+> c
+
+is strictly positive, leading to 
+
+U Fc (F (l+1)  
+
+> q,c
+
+) > U Fc (F (l) 
+
+> q,c
+
+). (52) Therefore, the semantic confidence represented by the se-mantic potential is enhanced after the current advection step. For this reason, the semantic directional gate is defined in the main paper as 
+
+GF, (l) 
+
+> c
+
+= 1
+
+
+
+dF, (l) 
+
+> c
+
+< 0
+
+
+
+, (53) where 1(·) denotes the indicator function, which equals 1 if 
+
+dF, (l) 
+
+> c
+
+< 0, and 0 otherwise. Consequently, only candidate advection updates that in-crease the semantic potential are accepted, whereas updates that would decrease the semantic confidence are discarded. Therefore, throughout the iterative discretization of the ad-vection equation, the semantic confidence encoded by the semantic potential field is guaranteed to be non-decreasing. 
+
+Preprint
