@@ -1,0 +1,686 @@
+Title: Breaking the Horizontal Prior: From Long-Tailed Orientation Bias to Roll-Robust Monocular Depth Estimation
+
+URL Source: https://arxiv.org/pdf/2608.00678v1
+
+Published Time: Tue, 04 Aug 2026 00:42:12 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# Breaking the Horizontal Prior: From Long-Tailed Orientation Bias to Roll-Robust Monocular Depth Estimation 
+
+Kaihua Tang 1 Ziqing Xia 1∗ Xiaoxu Zheng 2 Xiaoxue Zhang 2 Michael Bi Mi 2
+
+Zhan Xu 2 Dave Zhenyu Chen 2
+
+> 1
+
+Tongji University 2Huawei Technologies Ltd. 
+
+Abstract 
+
+Despite recent advances in Monocular Depth Estimation, state-of-the-art depth foundation models remain vulnerable to robustness issues. Particularly, even slight camera rolls can result in substantial degradation in depth estimations. We at-tribute this problem to a previously overlooked phenomenon, termed the Horizontal Prior , which is a manifestation of long-tailed distribution bias: most training images are cap-tured in approximately horizontal orientations due to human visual preferences and photographic habits. While intuitive remedies such as re-balanced data augmentation and horizon leveling provide partial improvements, they fail to fully ad-dress the issue. In this paper, we introduce Invariant Depth Constraint (ID-Constraint), a training-time supervision strat-egy that improves roll robustness by fine-tuning and jointly regularizing the depth backbone with a series of geometric and spatial reasoning tasks. These auxiliary objectives encourage the backbone to learn rotation-stable, depth-relevant repre-sentations, while the auxiliary prediction heads are discarded after training, leaving the original inference architecture un-changed. Extensive experiments on five benchmark datasets across four roll settings demonstrate the effectiveness of the proposed method. 1
+
+Introduction 
+
+Monocular Depth Estimation (MDE) (Ming et al. 2021; Arampatzakis et al. 2023) is a fundamental problem in com-puter vision with broad downstream applications (Yan et al. 2024; Guo et al. 2025; Liu et al. 2025; Hurtado, Mohan, and Valada 2025). Recent advances in visual foundation mod-els (Radford et al. 2021; Dosovitskiy 2020; Oquab et al. 2024; Zhai et al. 2023) and generative diffusion models (Croitoru et al. 2023; Xu et al. 2025; Ke et al. 2024) have led to notable improvements in MDE performance. However, in real-world scenarios where images are often casually captured with mo-bile devices, these models tend to exhibit significant robust-ness degradation. In particular, even slight camera shake can cause substantial instability in the estimated depth maps, as illustrated in Figure 1(a), leading to noticeable artifacts in downstream applications, as shown in Figure 2. This sensitiv-ity to minor perturbations severely undermines the practical applicability of state-of-the-art MDE models. 
+
+> 1
+
+Code Link: https://github.com/KaihuaTang/Horizontal-Prior 
+
+> ∗
+
+Corresponding author. (b) Random real -world images and their     
+
+> inferred h orizons
+> (c) The average depth map of 20,000
+> random real -world images
+> (d) Long -tailed distribution of the
+> absolute roll angle
+> Roll Angle Range (5=[0 °,5 °), 10=[5 °, 10 °), etc.)
+> Number of samples  in 20,000 random images
+> (a)Degradation in depth predictions
+> caused by the horizontal prior
+
+Figure 1: Investigating the Horizontal Prior: (a) images with non-horizontal orientations exhibit substantial degradation in depth predictions; (b) randomly sampled images demonstrate that the visual data are mostly horizontal; (c) the average depth map and (d) the long-tailed distribution of absolute roll angle of 20K random real-world images further provides qualitative and quantitative evidence of the Horizontal Prior. In this paper, we attribute the observed robustness issue in Figure 2 to the Horizontal Prior , which is a manifestation of the long-tailed distribution bias in MDE. As shown in Figure 1(b), we randomly sample several real-world images from the large-scale SA-1B dataset (Kirillov et al. 2023) and observe that their inferred horizons are all approximately hor-izontal. To obtain statistically meaningful evidence, we fur-ther sample 20,000 random images and estimate their depth maps together with their absolute roll magnitudes. The av-erage depth map and long-tailed roll distribution shown in Figure 1(c,d) further support the existence of the horizontal arXiv:2608.00678v1 [cs.CV] 1 Aug 2026 AGS -Mesh  Reconstruction Using DAv2  AGS -Mesh  Reconstruction Using ID -Constraint       
+
+> AGS -Mesh Reconstruction Using DAv2 AGS -Mesh Reconstruction Using ID -Constraint
+> Mobile Photography
+> ……
+> Input Frames
+> MDE Model
+> (e.g., DAv2 / ID -Constraint )
+> Scene  Reconstruction
+> unprofessional, shaking
+
+Figure 2: 3D reconstruction flaws caused by the horizontal prior in real-world applications. prior. This bias arises from professional photography conven-tions and inherent human perceptual preferences (Hansen and Essock 2004; Luo et al. 2003). However, in practice, perfect horizontal alignment is rarely achieved. Handheld camera shake, intentional motion, and cinematic transitions inevitably lead to a long-tailed distribution of roll magni-tudes. Consequently, MDE models trained on such biased data exhibit substantial performance degradation when en-countering underrepresented non-horizontal inputs. To address this robustness issue induced by the horizon-tal prior, two intuitive approaches can be considered: re-balanced data augmentation and horizon leveling. These cor-respond respectively to re-balanced training (He, Yang, and Qi 2021; Tang et al. 2022; Kang et al. 2020) and training-free adjustment (Menon et al. 2021; Tang, Huang, and Zhang 2020) methods in long-tailed classification (Zhang et al. 2023). Specifically, the former attempts to re-balance the training distribution of image roll angles through data aug-mentation. Although this approach can partially alleviate ro-bustness issues caused by the horizontal prior, it also in-troduces new challenges for feature learning, as reported in prior long-tailed learning studies (Kang et al. 2020; Tang, Huang, and Zhang 2020). In particular, directly applying re-balancing to MDE training data may exacerbate the domain gap between DINOv2 pretraining (Oquab et al. 2024) and MDE fine-tuning distributions. Horizon leveling represents another potential remedy, which seeks to rotate images to achieve horizontal alignment. While conceptually straight-forward, this process is far from trivial. Commercial so-lutions (Stimm, Schwartz, and Thorn 2022) typically rely on auxiliary hardware sensors ( e.g. , six-axis IMU) for ori-entation estimation (Ahmad et al. 2013). In contrast, purely algorithmic methods (Workman, Zhai, and Jacobs 2016) suf-fer from substantial alignment errors, ranging from 25.90 ◦
+
+to 47.94 ◦ on average as reported in Table 1, which already leads to significant degradation in MDE performance. To address these limitations, we propose a novel algorithm that enhances the robustness of MDE models by leverag-ing rotation-invariant auxilliary tasks. Recent studies (Danier et al. 2025) have shown that the performance of existing MDE models is positively correlated with the capability of their vision backbones to capture depth cues, which are assessed through a series of geometric and spatial reasoning tasks. We notice that a subset of these tasks are inherently rotation-invariant, suggesting that foundation vision models such as DINOv2 (Oquab et al. 2024) have implicitly learned depth-related invariant representations. Building on this insight, we hypothesize that encouraging the model to rely more on such invariant features during depth prediction can naturally mit-igate the robustness issues induced by the horizontal prior. However, the existing benchmark (Danier et al. 2025) primar-ily focuses on region-level predictions and lacks fine-grained, pixel-level supervision. To bridge this gap, we introduce two additional pixel-level supervision tasks to reinforce feature learning at finer resolutions. We therefore propose the Invari-ant Depth Constraint (ID-Constraint), which employs auxil-iary heads and losses to promote rotation-invariant feature learning. These auxiliary heads are removed during infer-ence, introducing no additional computational overhead. In our experiments, we systematically investigate the ro-bustness degradation caused by the horizontal prior and evaluate the effectiveness of the proposed algorithms across five benchmark datasets: DIODE (Vasiljevic et al. 2019), ScanNet (Dai et al. 2017), ETH3D (Schops et al. 2017), KITTI (Geiger, Lenz, and Urtasun 2012), and NYUv2 (Sil-berman et al. 2012). To facilitate detailed analysis, we de-fine four test settings based on absolute roll angles: Hori-zontal ( 0◦), Shaking [ 0◦, 15 ◦], Rolling [ 0◦, 45 ◦], and Tip-ping [ 0◦, 90 ◦], where Horizontal corresponds to the standard MDE evaluation setting. Since roll angles beyond 90 ◦ are ex-tremely rare and can be losslessly mapped back to this valid range via a 90 ◦ rotation, our experiments focus on these four representative intervals. Experimental results demonstrate that both ViT-based and diffusion-based MDE models suffer from substantial performance degradation as the horizon-tal roll increases, highlighting the severity of the horizontal prior. Although two intuitive solutions can only partially mit-igate this issue, our proposed ID-Constraint achieves consis-tently better results on non-horizontal tail cases, significantly enhancing model robustness across diverse orientations. The main contributions of this paper are threefold: 1) we present the first systematic investigation of the Horizontal Prior and demonstrate that it arises from a long-tailed dis-tributional bias in MDE; 2) we propose ID-Constraint to mitigate the Horizontal Prior through roll-robust supervi-sion during training; 3) we establish a new benchmark for distribution-aware depth estimation, comprising 5 datasets evaluated under 4 distinct roll settings; 4) extensive experi-ments demonstrate that our approach outperforms previous state-of-the-art MDE methods in terms of rolling robustness. 
+
+Related Work 
+
+Monocular depth estimation. MDE (Zhao et al. 2020; Ma-soumian et al. 2022; Lin et al. 2025a) is a fundamental task that aims to predict the depth value of each pixel from a sin-gle image. Early approaches can be broadly categorized into three groups. The first group relies on hand-crafted features and geometric priors for depth inference (Sturm and Triggs 1996; Zhang et al. 2025) but often suffer from poor gener-alization in complex, real-world environments. The second group employs CNN-based end-to-end training, which has achieves significant progress but remains constrained by the availability of large-scale, high-quality annotated data (Yao et al. 2020; Cho et al. 2021). The third group enhances model performance by incorporating auxiliary supervision such as semantic segmentation and surface normal prediction (Ke et al. 2024; Eigen and Fergus 2015). Recent advances in visual foundation models, including self-supervised vision backbones (Oquab et al. 2024; He et al. 2020) and diffusion-based architectures (Rombach et al. 2022; Peebles and Xie 2023), have driven a new wave of advances in MDE (Yang et al. 2024a; Birkl, Wofk, and Müller 2023; Ke et al. 2024). In particular, Depth Anything V2 (DAv2) (Yang et al. 2024b), supported by large-scale high-quality synthetic datasets (Yao et al. 2020; Wang et al. 2020), has pushed depth fidelity to unprecedented levels. However, despite these remarkable achievements, existing MDE models remain vulnerable to small image perturbations, revealing a persistent robustness challenge in MDE. 
+
+Long-tailed distribution. Research on long-tailed distribu-tions has primarily focused on classification tasks (Zhang et al. 2023; Kang et al. 2020; Tang, Huang, and Zhang 2020). In such settings, object occurrence naturally follows a long-tailed distribution (Liu et al. 2019), resulting in significant disparities in sample density and learning difficulty across classes. Consequently, models trained on these imbalanced datasets typically achieve lower accuracy and recall on tail (rare) classes. Conventional approaches to long-tailed clas-sification can be broadly categorized into two groups: data augmentation (Hu et al. 2020; Tang et al. 2022) and distribu-tion adjustment (Tang, Huang, and Zhang 2020; Menon et al. 2021). Data augmentation methods aim to re-balance the class distribution during training, often by re-sampling (Kim, Jeong, and Shin 2020) or generating synthetic tail-class sam-ples (Yin et al. 2019). In contrast, distribution adjustment methods adopt training-free strategies that calibrate model predictions during inference (Menon et al. 2021; Zhang et al. 2022), thereby improving recognition of under-represented classes. In MDE, prior studies on data distribution have pri-marily examined the depth distribution (Yu et al. 2024; Zhan et al. 2025). To the best of our knowledge, our work is the first to identify the horizontal prior issue, revealing a new source of long-tailed bias in MDE. 
+
+Method 
+
+Preliminaries and Baseline Methods 
+
+An MDE model aims to predict a dense depth map Dp ∈
+
+RH×W from a single image I ∈ RC×H×W , where C denotes the number of RGB channels, H and W represent the height and width of the input image, respectively. Recent works can be broadly categorized into diffusion-based generative mod-els (Ke et al. 2024; Xu et al. 2025) and ViT-based feedforward models (Yang et al. 2024b; He et al. 2025). The latter, rep-resented by Depth Anything V2 (DAv2) (Yang et al. 2024b), currently demonstrates superior performance. Therefore, our algorithms are developed based on ViT-based MDE models that employ a fine-tuned DINOv2 (Oquab et al. 2024; Doso-vitskiy 2020) backbone to extract multi-level feature maps 
+
+{Fi} = ViT (I), where each Fi ∈ RCi× Hp × Wp denotes the output feature map at level i from the ViT encoder, Ci is the ViT Encoder        
+
+> Input Images
+> … …
+> DPT Head
+> Output Depths
+> ID Heads
+> Head 1
+> Head j
+> ……
+> ID Losses
+> BCE Loss
+> Yes/No
+> L1 Loss
+> |−|
+> |−|
+
+Figure 3: The proposed ID-Constraint with auxiliary ID Heads to enhance the roll-robust feature learning. number of channels, and p represents the patch size. A DPT decoder head (Ranftl, Bochkovskiy, and Koltun 2021) is then applied to these feature maps to directly generate the final depth map, Dp = DPT ({Fi}).To accelerate the training process, we adopt the distillation pipeline from Distill Any Depth (DistillAD) (He et al. 2025) as our baseline. This approach requires fewer data and less training iterations while achieving performance comparable to DAv2 (Yang et al. 2024b). The distillation loss is defined as follows: 
+
+Ldistill = 1
+
+M
+
+> M
+
+X
+
+> i=1
+
+N (Dp)i − N (Dt)i , (1) where N (·) denotes the normalization function, M is the number of valid pixels, and Dt represents the depth map predicted by the teacher model, i.e. , DAv2 in our experi-ments. In this paper, we adopt global normalization as the normalization strategy used in Ldistill , which is defined as 
+
+N (D) = D−med (D) 
+
+> 1
+> M
+> PMi=1 |Di−med (D)|
+
+, where med (·) denotes the median value of all valid pixels in a depth map. We also adopt the gradient matching loss Lgm used in MiDaS (Ranftl et al. 2022; Birkl, Wofk, and Müller 2023) and DAv2, making the final loss function for our re-implemented baseline L = Ldistill + Lgm . Following the widely adopted scale- and shift-invariant formulation (Yang et al. 2024b), the predicted depth map Dp is transformed into an affine-invariant inverse depth space prior to loss computation. Note that DAv2 and DistillAD have not released their training and evaluation code, so we have to re-implement both methods. 
+
+The Horizontal Prior 
+
+Definition. The horizontal prior refers to the phenomenon whereby naturally collected real-world images tend to be captured in approximately horizontal orientations, resulting in a long-tailed distribution of absolute roll angles, as illus-trated in Figure 1. Consequently, the depth estimation error for a rolled image Iθ with the roll angle θ > 0◦ is signifi-cantly larger than that of the corresponding horizontal image 
+
+I0, as evidenced by the experimental results in Table 2. To address this robustness challenge, two intuitive ap-proaches can be considered: (1) re-balanced augmentation and (2) horizon leveling: 
+
+1) Re-balanced augmentation. Following the re-balanced augmentation in long-tailed classification tasks (Hu Stage Number Activation L1 loss COS loss Angle Error ( ◦)Stage-1 tanh ✓ 45.69 Stage-1 tanh ✓ 47.94 Stage-2 none ✓ ✓ 28.53 Stage-2 none ✓ 40.41 Stage-2 none ✓ 46.32 Stage-2 tanh ✓ ✓ 29.49 Stage-2 tanh ✓ 31.99 Stage-2 tanh ✓ 25.90 
+
+Table 1: Experimental results of roll-angle prediction models under different configurations. et al. 2020), we can directly augment each image by uniformly sampling an angle θ ∈ [−90 ◦, 90 ◦] and rotating the image accordingly in MDE. To prevent the model from learning shortcut cues from padded boundaries, a random center crop is simultaneously applied, uniformly preserving from 40% to 100% of the original image size. 
+
+2) Horizon leveling. Commercial horizon-leveling solu-tions typically rely on hardware sensors to estimate the cam-era rolling angle, and then rotate and crop the image to restore horizontal alignment. However, such sensor measurements are unavailable for large-scale image datasets. We therefore estimate the roll angle directly from the image. We develop a two-stage training framework with data denoising. In stage one, we treat most images as horizontally aligned due to horizontal prior and use the applied rotation angle θ as su-pervision. Since those originally tilted images introduce label noise, we have errors above 45 .69 ◦ at this stage on our test set. Inspired by prior denoising methods (Northcutt, Jiang, and Chuang 2021; Yi et al. 2022), we assume that samples with larger prediction errors are more likely to be non-horizontal. We therefore remove half of highest-error samples and re-train on the cleaned subset as stage two. As shown in Table 1, denoised data substantially improves most models, reducing the best error to 25 .90 ◦. Finally, each image is rotated by its predicted roll angle to restore horizontal alignment. 
+
+Limitations of intuitive approaches. However, both intu-itive remedies have clear limitations. Re-balanced augmen-tation can disrupt feature learning. Because DINOv2 was pretrained without such augmentation, it may enlarge the domain gap between pretraining and finetuning data. Mean-while, horizon leveling is limited by inaccurate roll-angle estimation: even mild rotations of [0 ◦, 15 ◦] cause substan-tial degradation, while the best angle predictor still has an average error of 25 .90 ◦.
+
+Invariant Depth Constraint 
+
+To address the above limitations, we propose the Invari-ant Depth Constraint (ID-Constraint), which encourage the model to learn depth-relevant features that remain invariant under rotation. Inspired by Danier et al. (2025), which shows that advances in MDE largely arise from implicitly learning human-like depth cues such as elevation, occlusion, and per-spective, we note that several of these tasks are inherently rotation-invariant and can therefore mitigate the horizontal prior. Accordingly, we adopt four region-level supervision tasks and further introduce two pixel-level supervision tasks as invariant depth constraints for fine-grained feature learn-ing. Detailed examples are provided in the Appendix. 
+
+Region-level constraints. We select four region-level tasks from the original DepthCues benchmark (Danier et al. 2025) whose predictions remain consistent under rotation, i.e. , they are rotation-invariant: (1) Light and shadow , which re-quires identifying whether a shadow belongs to an object; 
+
+(2) Occlusion , which determines whether an object is par-tially blocked or not; (3) Size , which infers the relative size of two objects; and (4) Texture gradient , which estimates the relative depth of two regions from the degree of texture compression. All these tasks are formulated as binary clas-sifications constraints. Each task is trained with a BCE loss and predicted by Yj = Head j (ViT (Iθ ), {Mk}), where Yj
+
+denotes the output of task j, Head j (·) represents the cor-responding prediction head following (Danier et al. 2025), 
+
+{Mk} represents the object masks, which can be either a single-object mask Ma or a dual-object pair {Ma, M b}, and 
+
+θ is a random augmentation angle for input image Iθ .
+
+Pixel-level constraints. As shown in Figure 4, MDE models exhibit substantially degraded local geometric understand-ing on rolled images. We therefore introduce two pixel-level tasks, (5) Local Peak and (6) Local Slope , to capture rotation-invariant local geometry and support fine-grained feature learning. The local peak map measures convex and concave structures by subtracting each pixel’s depth from the mean valid depth within a 5 × 5 neighborhood, implemented with a handcrafted convolution kernel. The local slope map computes the mean absolute depth gradient along four direc-tions. These two maps are formulated as follows, with visual examples provided in the Appendix: 
+
+Zp = ( Dt ⊗ K1)/(M vp ⊗ K1) − Dt, (2) 
+
+Zs = 14
+
+X
+
+> d
+
+( Dt ⊗ Kd ), (3) where Zp, Z s ∈ RH×W denote the local peak and lo-cal slope maps, respectively, ⊗ represents the convolu-tion operation, K1 is a 5 × 5 kernel filled with ones, 
+
+Kd ∈ { K↓, K →, K ↘, K ↙} are 5 × 5 directional slope-detection convolution kernels, and M vp ∈ { 0, 1}H×W de-notes the valid-pixel mask. A shared DPT head, Ypixel =
+
+Head pixel (ViT (Iθ )) , serves as the prediction head for both tasks, and then supervised by {Zpθ , Z sθ } using L1 loss, where 
+
+Zpθ and Zsθ denote the rotated versions of the horizontal peak and slope maps Zp and Zs computed from I0.
+
+Training Strategy. Building on the auxiliary tasks described above, we fine-tune the DAv2 backbone with a set of Invariant Depth heads and corresponding losses, termed ID Heads and ID Losses, as illustrated in Figure 3. During training, the ViT encoder is jointly optimized using the ID and MDE losses to promote roll-invariant feature representations. At inference, the ID Heads are discarded, preserving the enhanced robust-ness without introducing additional computational overhead. Method Horizontal ( 0◦) Shaking [ 0◦, 15 ◦] Rolling [ 0◦, 45 ◦] Tipping [ 0◦, 90 ◦]
+
+AbsRel ↓ δ1 ↑ AbsRel ↓ δ1 ↑ AbsRel ↓ δ1 ↑ AbsRel ↓ δ1 ↑
+
+Marigold * (Ke et al. 2024) 0.130 0.886 0.146 0.859 0.171 0.814 0.200 0.765 GenPercept * (Xu et al. 2025) 0.130 0.891 0.143 0.869 0.164 0.830 0.185 0.794 DAv2 * (Yang et al. 2024b) 0.096 0.922 0.109 0.906 0.119 0.895 0.127 0.883 DistillAD * (He et al. 2025) 0.099 0.920 0.113 0.900 0.124 0.889 0.131 0.878 (ours) Baseline 0.100 0.920 0.113 0.901 0.125 0.887 0.135 0.873 (ours) Re-balanced Aug 0.104 0.918 0.111 0.904 0.114 0.901 0.119 0.897 (ours) Horizon Leveling 0.100 0.920 0.108 0.910 0.110 0.907 0.112 0.905 (ours) ID-Constraint 0.099 0.920 0.103 0.916 0.104 0.915 0.106 0.913 
+
+Table 2: Experimental results of state-of-the-art MDE models and the proposed algorithms under four roll settings. Results for each setting are averaged across five benchmarks. Superscript * indicates results evaluated using our reimplemented evaluation code. ↓ denotes lower values are better, while ↑ denotes higher values are better. Bold and underline indicates the best and second best results, respectively. 
+
+Experiments 
+
+Implementation Details 
+
+Training Details. Following DistillAD (He et al. 2025), we train our MDE baselines on 200,000 unlabeled real-world images from the SA-1B (Kirillov et al. 2023) dataset. For ID-Constraint, we sample 20,000 images from SA-1B as pixel-level constraint data. As to the region-level constraint tasks, we collect 4,716 training samples for light and shadow, 24,402 samples for occlusion, and 1,986 and 4,000 samples for size and texture gradient, respectively, following the orig-inal DepthCues benchmark (Danier et al. 2025). The MDE losses are applied to all samples described above. We use the state-of-the-art MDE model DAv2 (Yang et al. 2024b) as the teacher to produce pseudo-depth labels for horizontal images. We also adopt the same input pre-processing strategy from DistillAD, where each input image is resized and cropped to 
+
+560 × 560 and then normalized before prediction. We utilize the AdamW (Loshchilov and Hutter 2017) optimizer with different learning rates for ViT encoder ( 5 × 10 −6) and ID heads or DPT head ( 5×10 −5). The DPT head is re-initialized before MDE distillation training. We train all MDE models and ID-Constraint models for 1 epoch with a batch size of 8, and roll-angle prediction models for 5 epochs with a batch size of 64. The ID losses are directly added to the final loss with weight 1.0. For roll-angle prediction models, the train-ing loss is L1 loss or cosine similarity (COS) loss. 
+
+Model details. For MDE models, we adopt DAv2 with ViT-Large encoder as the distillation teacher, and the student model chooses the same encoder and outputs 4 feature maps at layers 4, 11, 17, and 23. For ID-Constraint finetuning, all region-level prediction heads are implemented following (Danier et al. 2025) and pixel-level prediction head is a DPT head with smaller hidden dimension 128. The roll-angle pre-diction models use a ViT-Small backbone with a prediction head composed of an attention pooling, a 1D batch norm, two linear layers, and an optional tanh activation. Instead of directly predicting angles, we predict a 2D vector, cos (θ)
+
+and sin (θ), as they are inherently normalized. The rolling angle θ can be converted back from the predicted 2D vector. 
+
+Evaluation Settings 
+
+We evaluate all models on five benchmark datasets: DIODE (Vasiljevic et al. 2019), ScanNet (Dai et al. 2017), ETH3D (Schops et al. 2017), KITTI (Geiger, Lenz, and Ur-tasun 2012), and NYUv2 (Silberman et al. 2012). During implementation, we observed that each test dataset requires a distinct pre-processing step to determine valid pixels. How-ever, neither DAv2 (Yang et al. 2024b) nor DistillAD (He et al. 2025) have released their evaluation code. Therefore, our evaluation pipeline is based on GenPercept (Xu et al. 2025), which may introduce minor inconsistencies between our reproduced results and those reported in the original pa-pers. Furthermore, both DAv2 and DistillAD, as well as our models, are evaluated and produce outputs in the disparity (inverse-depth) space, whereas Marigold (Ke et al. 2024) and GenPercept (Xu et al. 2025) operate in the depth space. Following prior work (Yang et al. 2024b; He et al. 2025; Xu et al. 2025), the predicted depth maps adopt scale- and shift-invariance transformation before evaluation. To better evaluate the robustness degradation induced by the horizontal prior, we define four roll settings: Hori-zontal ( 0◦), Shaking [ 0◦, 15 ◦], Rolling [ 0◦, 45 ◦], and Tip-ping [ 0◦, 90 ◦]. Among them, Horizontal ( 0◦) corresponds to the conventional test setting without manual rotation, while Shaking, Rolling, and Tipping represent three rolling levels, where each image is rotated by an angle uniformly sampled within the specified range. For fair comparisons, the random seed is fixed across all evaluations. For roll-angle prediction evaluation, we use the same five benchmark datasets under the Tipping scenario. For all depth evaluations, we adopt two commonly used metrics for quantitative assessment: mean absolute relative error (AbsRel) and δ1 accuracy, where lower AbsRel and higher δ1 indicate better performance. 
+
+Experimental results 
+
+Comparisons with state-of-the-art methods. Existing state-of-the-art (SOTA) MDE methods can be broadly cate-gorized into two groups: diffusion-based and ViT-based ap-proaches. In our experiments, we evaluate four representative models: Marigold (Ke et al. 2024) and GenPercept (Xu et al. Method DIODE ScanNet ETH3d KITTI NYUv2 AbsRel ↓ δ1 ↑ AbsRel ↓ δ1 ↑ AbsRel ↓ δ1 ↑ AbsRel ↓ δ1 ↑ AbsRel ↓ δ1 ↑                                                                                    
+
+> Marigold *(Ke et al. 2024) 0.337 0.705 0.133 0.832 0.129 0.842 0.246 0.613 0.125 0.854 GenPercept *(Xu et al. 2025) 0.337 0.715 0.113 0.871 0.114 0.877 0.225 0.633 0.103 0.895 DAv2 *(Yang et al. 2024b) 0.268 0.736 0.078 0.938 0.075 0.941 0.118 0.873 0.069 0.957 DistillAD *(He et al. 2025) 0.271 0.735 0.079 0.939 0.080 0.932 0.124 0.863 0.074 0.952 (ours) Baseline 0.279 0.732 0.085 0.923 0.082 0.929 0.124 0.863 0.074 0.950 (ours) Re-balanced Aug 0.263 0.748 0.058 0.967 0.068 0.957 0.115 0.877 0.062 0.967 (ours) Horizon Leveling 0.262 0.745 0.061 0.958 0.057 0.967 0.087 0.927 0.061 0.962 (ours) ID-Constraint 0.255 0.753 0.051 0.971 0.051 0.972 0.086 0.931 0.055 0.971
+
+Table 3: Experimental results of state-of-the-art MDE models and the proposed algorithms under the hardest Tipping [ 0◦, 90 ◦]setting. Superscript * indicates results evaluated using our reimplemented evaluation code. 2025) as diffusion-based methods, and DAv2 (Yang et al. 2024b) and DistillAD (He et al. 2025) as ViT-based feedfor-ward methods. As shown in Table 2, all four existing SOTA methods suffer from the long-tailed bias introduced by the horizontal prior, with their performance consistently degrad-ing as the roll range increases. In contrast, both intuitive solutions and ID-Constraint approaches exhibit robustness against this bias. Among them, ID-Constraint achieves the best performance across the Shaking, Rolling, and Tipping settings. Its slightly lower accuracy than DAv2 in the Hor-izontal setting is primarily attributed to the weaker perfor-mance of our reimplemented baseline. For individual bench-mark, we report detailed results on all five datasets under the Tipping scenario in Table 3, and the observations remain consistent. The proposed ID-Constraint outperforms existing SOTA methods and other solutions in both metrics. To better illustrate the robustness issues introduced by the horizontal prior, we present an example of MDE predictions from all methods under the four roll settings in Figure 4. All existing SOTA models fail to accurately recover the depth around the table legs as the rolling angle increases. It is worth noting that PromptDA (Lin et al. 2025b) is not an MDE method, because it requires a low-resolution ground-truth depth map as input, making it a depth super-resolution model. Nevertheless, even with this model, the table boundaries still become noticeably blurred in the Tipping condition, further highlighting the challenge posed by the horizontal prior. 
+
+Ablation studies. To assess the impact of the re-balanced augmentation, horizon leveling, and the region-/pixel-level losses in the proposed ID-Constraint, we conduct a compre-hensive ablation study under the most challenging Tipping [0◦, 90 ◦] setting in Table 4. Since ID-Constraint requires re-balanced augmentation for invariant feature learning, re-balanced augmentation is used as the default setting for ID-Constraint. Meanwhile, horizon leveling can be regarded as a training-free adjustment, and can be applied on top of all previous settings to further enhance the robustness of the models. As to the region and pixel constraints, we conduct ablation study on each group, both components improve per-formance over the baseline. In particular, pixel constraints provide a higher performance gain when individually evalu-ated. Note that we did not exhaustively evaluate all possible                                 
+
+> Re-balanced Aug Horizon Leveling Region Losses Pixel Losses ID-Constraint AbsRel ↓δ1↑
+> 0.135 0.873
+> ✓0.119 0.897
+> ✓✓✓✓0.114 0.903
+> ✓0.112 0.905
+> ✓✓0.110 0.909
+> ✓✓✓✓0.108 0.910
+> ✓✓✓✓0.107 0.912
+> ✓✓✓✓✓0.106 0.913
+
+Table 4: Ablation study analyzing the impact of each module under the most challenging Tipping setting. Reported results are averaged across five benchmarks. 6 task combinations, as this would result in 26 − 1 = 63 
+
+distinct experimental settings. 
+
+Further analyses 
+
+To better understand the horizontal prior problem, we also conduct the following additional analyses. 
+
+The prevalence of the horizontal prior problem. Since the horizontal prior problem originates at the data level, both diffusion-based pipelines and ViT-based feedforward pipelines are affected. As a result, as shown in Figure 4, all previous MDE models fail to distinguish the table legs under severe Tipping conditions. Interestingly, even PromptDA (Lin et al. 2025b), which takes a low-resolution ground-truth depth map as input, still produces noticeably blurred edges around the table legs, suggesting that the hor-izontal prior problem can even affect non-MDE models. 
+
+Investigating more fine-grained roll-angle intervals. To analyze model performance under finer roll-angle intervals, we plot the averaged results at every 15 ◦ interval across the five benchmark datasets in Figure 5. Within the range of [0◦, 60 ◦], model performance gradually degrades as the roll angle increases, but an unexpected improvement appears near 
+
+90 ◦. This rebound occurs because a small portion of photos taken by cameras or smartphones fail to undergo horizontal correction. This phenomenon does not appear in Figure 1(d), because we manually rotate those images with roll angles Horizontal  Shaking  (15 °) Rolling (45 °) Tipping (90 °)
+
+Image  GenPercept  Marigold  PromptDA  DAv2  DistillAD  ID -Constraint Figure 4: Qualitative comparisons of existing state-of-the-art MDE models and the proposed and ID-Constraint, on a real-world indoor image under four roll settings. Note that PromptDA takes an additional low-resolution ground-truth depth map as input. The bottom-left grayscale images visualize the absolute error maps corresponding to their respective horizontal depth predictions. GenPercept, Marigold, and PromptDA produce outputs in the depth space, while the remaining output in the disparity space. 0.84                        
+
+> 0.85
+> 0.86
+> 0.87
+> 0.88
+> 0.89
+> 0.9
+> 0.91
+> 0.92
+> 0.93
+> [0, 0] [0, 15] [15, 30] [30, 45] [45, 60] [60, 75] [75, 90]
+> DAv2 DistillAD
+> Baseline Base (Crop)
+> Re-balance H Level
+> ID-Constraint
+> 0.08
+> 0.09
+> 0.1
+> 0.11
+> 0.12
+> 0.13
+> 0.14
+> 0.15
+> 0.16
+> [0, 0] [0, 15] [15, 30] [30, 45] [45, 60] [60, 75] [75, 90]
+> DAv2 DistillAD
+> Baseline Base (Crop)
+> Re-balance H Level
+> ID-Constraint
+> Metrics :AbsRel ↓Merics :𝜹 𝟏 ↑
+> Fine -grained roll -angle intervals Fine -grained roll -angle intervals
+
+Figure 5: The averaged results across five benchmarks on fine-grained roll intervals. H Level means horizon leveling. greater than 45 ◦ for alignment. 
+
+The impact of image resolution. In general, since the ViT input is resized so that its shorter side becomes 560, larger original images tend to produce less accurate depths. There-fore, as the image rotates from the horizontal position to 
+
+45 ◦, its effective resolution gradually increases, which also leads to performance degradation. To verify that the hori-zontal prior problem is not solely an artifact of resolution changes, we introduce a Base (Crop) setting in Figure 5, where each rotated image is cropped to match the original resolution. As shown, although the performance improves slightly with cropping, the overall downward trend remains consistent with that of the baseline. 
+
+Real-world deployment and practical significance. Our in-vestigation into the Horizontal Prior problem was motivated by a practical downstream applications (Figure 2). Specif-ically, in a mobile-captured real-world indoor scene recon-struction project, we often observed blurred boundaries. Our further diagnostic analysis reveals that these artifacts arise from inaccurate depth, because existing MDE models ( e.g. ,DAv2 in our previous framework) have inherent sensitivity to roll-angle perturbations, which can be alleviated by the proposed method. 
+
+Conclusion 
+
+In this paper, we identify the horizontal prior problem in MDE for the first time, providing a new perspective on how long-tailed data distributions introduce bias in depth estima-tion. We explore two intuitive solutions, re-balanced aug-mentation and horizon leveling, which partially alleviate this issue. To further enhance robustness, we propose the In-variant Depth Constraint (ID-Constraint), a feature-learning framework that applies four region-level and two pixel-level supervision losses with prediction heads to the ViT encoder. These auxiliary heads are discarded at inference, introducing no additional computational cost. ID-Constraint achieves the best overall performance across five benchmarks and three out of four roll settings. We believe that our work sheds new light on the robustness of MDE and offers new insights into generalization research across other related tasks. 
+
+Acknowledgement 
+
+This work was supported by the Fundamental Research Funds for the Central Universities at Tongji University under Grant No. 22120260376. 
+
+References 
+
+Ahmad, N.; Ghazilla, R. A. R.; Khairi, N. M.; and Kasi, V. 2013. Reviews on Various Inertial Measurement Unit (IMU) Sensor Applications. International Journal of Signal Processing Systems , 1(2): 256–262. Arampatzakis, V.; Pavlidis, G.; Mitianoudis, N.; and Papa-markos, N. 2023. Monocular depth estimation: A thorough review. IEEE Transactions on Pattern Analysis and Machine Intelligence , 46(4): 2396–2414. Birkl, R.; Wofk, D.; and Müller, M. 2023. MiDaS v3.1 – A Model Zoo for Robust Monocular Relative Depth Estimation. 
+
+arXiv preprint arXiv:2307.14460 .Cho, J.; Min, D.; Kim, Y.; and Sohn, K. 2021. Diml/cvl rgb-d dataset: 2m rgb-d images of natural indoor and outdoor scenes. arXiv preprint arXiv:2110.11590 .Croitoru, F.-A.; Hondru, V.; Ionescu, R. T.; and Shah, M. 2023. Diffusion models in vision: A survey. IEEE trans-actions on pattern analysis and machine intelligence , 45(9): 10850–10869. Dai, A.; Chang, A. X.; Savva, M.; Halber, M.; Funkhouser, T.; and Nießner, M. 2017. Scannet: Richly-annotated 3d reconstructions of indoor scenes. In Proceedings of the IEEE conference on CVPR , 5828–5839. Danier, D.; Aygün, M.; Li, C.; Bilen, H.; and Mac Aodha, O. 2025. DepthCues: Evaluating monocular depth perception in large vision models. In Proceedings of the CVPR Conference ,20049–20059. Dosovitskiy, A. 2020. An image is worth 16x16 words: Transformers for image recognition at scale. arXiv preprint arXiv:2010.11929 .Eigen, D.; and Fergus, R. 2015. Predicting depth, surface normals and semantic labels with a common multi-scale con-volutional architecture. In Proceedings of the IEEE ICCV ,2650–2658. Geiger, A.; Lenz, P.; and Urtasun, R. 2012. Are we ready for autonomous driving? the kitti vision benchmark suite. In 
+
+2012 CVPR , 3354–3361. IEEE. Guo, H.; Zhu, H.; Peng, S.; Lin, H.; Yan, Y.; Xie, T.; Wang, W.; Zhou, X.; and Bao, H. 2025. Multi-view reconstruction via sfm-guided monocular depth estimation. In CVPR , 5272– 5282. Hansen, B. C.; and Essock, E. A. 2004. A horizontal bias in human visual processing of orientation and its correspon-dence to the structural components of natural scenes. Journal of vision , 4(12): 5–5. He, K.; Fan, H.; Wu, Y.; Xie, S.; and Girshick, R. 2020. Momentum contrast for unsupervised visual representation learning. In Proceedings of the IEEE/CVF conference on CVPR , 9729–9738. He, R.; Yang, J.; and Qi, X. 2021. Re-distributing biased pseudo labels for semi-supervised semantic segmentation: A baseline investigation. In Proceedings of the IEEE/CVF ICCV , 6930–6940. He, X.; Guo, D.; Li, H.; Li, R.; Cui, Y.; and Zhang, C. 2025. Distill Any Depth: Distillation Creates a Stronger Monocular Depth Estimator. arXiv preprint arXiv: 2502.19204 .Hu, X.; Jiang, Y.; Tang, K.; Chen, J.; Miao, C.; and Zhang, H. 2020. Learning to segment the tail. In Proceedings of the IEEE/CVF conference on CVPR , 14045–14054. Hurtado, J. V.; Mohan, R.; and Valada, A. 2025. Panoptic-depth forecasting. In 2025 IEEE International Conference on Robotics and Automation (ICRA) , 01–07. IEEE. Kang, B.; Xie, S.; Rohrbach, M.; Yan, Z.; Gordo, A.; Feng, J.; and Kalantidis, Y. 2020. Decoupling representation and classifier for long-tailed recognition. ICLR .Ke, B.; Obukhov, A.; Huang, S.; Metzger, N.; Daudt, R. C.; and Schindler, K. 2024. Repurposing Diffusion-Based Image Generators for Monocular Depth Estimation. In CVPR .Kim, J.; Jeong, J.; and Shin, J. 2020. M2m: Imbalanced classification via major-to-minor translation. In Proceedings of the IEEE/CVF conference on CVPR , 13896–13905. Kirillov, A.; Mintun, E.; Ravi, N.; Mao, H.; Rolland, C.; Gustafson, L.; Xiao, T.; Whitehead, S.; Berg, A. C.; Lo, W.-Y.; Dollár, P.; and Girshick, R. 2023. Segment Anything. 
+
+arXiv:2304.02643 .Lin, H.; Chen, S.; Liew, J. H.; Chen, D. Y.; Li, Z.; Shi, G.; Feng, J.; and Kang, B. 2025a. Depth Anything 3: re-covering the visual space from any views. arXiv preprint arXiv:2511.10647 .Lin, H.; Peng, S.; Chen, J.; Peng, S.; Sun, J.; Liu, M.; Bao, H.; Feng, J.; Zhou, X.; and Kang, B. 2025b. Prompting Depth Anything for 4K Resolution Accurate Metric Depth Estimation. In CVPR .Liu, X.; Sun, X.; Xie, H.; Li, Z.; Li, R.; and Zhang, S. 2025. Multi-view Consistent 3D Panoptic Scene Understanding. In Proceedings of the AAAI Conference on Artificial Intelli-gence , volume 39, 5613–5621. Liu, Z.; Miao, Z.; Zhan, X.; Wang, J.; Gong, B.; and Yu, S. X. 2019. Large-scale long-tailed recognition in an open world. In Proceedings of the IEEE/CVF conference on CVPR , 2537– 2546. Loshchilov, I.; and Hutter, F. 2017. Decoupled weight decay regularization. arXiv preprint arXiv:1711.05101 .Luo, J.; Crandall, D.; Singhal, A.; and Gray, R. T. 2003. Psychophysical study of image orientation perception. In 
+
+Human Vision and Electronic Imaging VIII , volume 5007, 364–377. SPIE. Masoumian, A.; Rashwan, H. A.; Cristiano, J.; Asif, M. S.; and Puig, D. 2022. Monocular depth estimation using deep learning: A review. Sensors , 22(14): 5353. Menon, A. K.; Jayasumana, S.; Rawat, A. S.; Jain, H.; Veit, A.; and Kumar, S. 2021. Long-tail learning via logit adjust-ment. ICLR .Ming, Y.; Meng, X.; Fan, C.; and Yu, H. 2021. Deep learning for monocular depth estimation: A review. Neurocomputing ,438: 14–33. Northcutt, C.; Jiang, L.; and Chuang, I. 2021. Confident learning: Estimating uncertainty in dataset labels. Journal of Artificial Intelligence Research , 70: 1373–1411. Oquab, M.; Darcet, T.; Moutakanni, T.; Vo, H.; Szafraniec, M.; Khalidov, V.; Fernandez, P.; Haziza, D.; Massa, F.; El-Nouby, A.; Assran, M.; Ballas, N.; Galuba, W.; Howes, R.; Huang, P.-Y.; Li, S.-W.; Misra, I.; Rabbat, M.; Sharma, V.; Synnaeve, G.; Xu, H.; Jegou, H.; Mairal, J.; La-batut, P.; Joulin, A.; and Bojanowski, P. 2024. DI-NOv2: Learning Robust Visual Features without Supervi-sion. arXiv:2304.07193. Peebles, W.; and Xie, S. 2023. Scalable diffusion models with transformers. In Proceedings of the IEEE/CVF ICCV ,4195–4205. Radford, A.; Kim, J. W.; Hallacy, C.; Ramesh, A.; Goh, G.; Agarwal, S.; Sastry, G.; Askell, A.; Mishkin, P.; Clark, J.; et al. 2021. Learning transferable visual models from natural language supervision. In International conference on machine learning , 8748–8763. PmLR. Ranftl, R.; Bochkovskiy, A.; and Koltun, V. 2021. Vision transformers for dense prediction. In Proceedings of the IEEE/CVF ICCV , 12179–12188. Ranftl, R.; Lasinger, K.; Hafner, D.; Schindler, K.; and Koltun, V. 2022. Towards Robust Monocular Depth Esti-mation: Mixing Datasets for Zero-Shot Cross-Dataset Trans-fer. IEEE Transactions on Pattern Analysis and Machine Intelligence , 44(3). Ren, X.; Turkulainen, M.; Wang, J.; Seiskari, O.; Melekhov, I.; Kannala, J.; and Rahtu, E. 2025. Ags-mesh: Adaptive gaussian splatting and meshing with geometric priors for in-door room reconstruction using smartphones. In 2025 Inter-national Conference on 3D Vision (3DV) , 1080–1090. IEEE. Rombach, R.; Blattmann, A.; Lorenz, D.; Esser, P.; and Om-mer, B. 2022. High-Resolution Image Synthesis With Latent Diffusion Models. In Proceedings of the IEEE/CVF Confer-ence on CVPR , 10684–10695. Schops, T.; Schonberger, J. L.; Galliani, S.; Sattler, T.; Schindler, K.; Pollefeys, M.; and Geiger, A. 2017. A multi-view stereo benchmark with high-resolution images and multi-camera videos. In Proceedings of the IEEE confer-ence on CVPR , 3260–3269. Silberman, N.; Hoiem, D.; Kohli, P.; and Fergus, R. 2012. In-door segmentation and support inference from rgbd images. In ECCV , 746–760. Springer. Stimm, D.; Schwartz, K. W.; and Thorn, J. L. 2022. Sys-tems and methods for horizon leveling videos. GoPro, Inc. (US11336832B1) .Sturm, P.; and Triggs, B. 1996. A factorization based algo-rithm for multi-image projective structure and motion. In 
+
+ECCV , 709–720. Springer. Tang, K.; Huang, J.; and Zhang, H. 2020. Long-tailed classi-fication by keeping the good and removing the bad momen-tum causal effect. NeurIPS , 33: 1513–1524. Tang, K.; Tao, M.; Qi, J.; Liu, Z.; and Zhang, H. 2022. Invari-ant feature learning for generalized long-tailed classification. In ECCV , 709–726. Springer. Vasiljevic, I.; Kolkin, N.; Zhang, S.; Luo, R.; Wang, H.; Dai, F. Z.; Daniele, A. F.; Mostajabi, M.; Basart, S.; Walter, M. R.; et al. 2019. Diode: A dense indoor and outdoor depth dataset. 
+
+ICCV .Wang, W.; Zhu, D.; Wang, X.; Hu, Y.; Qiu, Y.; Wang, C.; Hu, Y.; Kapoor, A.; and Scherer, S. 2020. Tartanair: A dataset to push the limits of visual slam. In 2020 IEEE/RSJ Interna-tional Conference on Intelligent Robots and Systems (IROS) ,4909–4916. IEEE. Workman, S.; Zhai, M.; and Jacobs, N. 2016. Horizon Lines in the Wild. In Wilson, R. C.; Hancock, E. R.; and Smith, W. A. P., eds., Proceedings of the British Machine Vision Conference (BMVC) , 20.1–20.12. BMVA Press. Xu, G.; Ge, Y.; Liu, M.; Fan, C.; Xie, K.; Zhao, Z.; Chen, H.; and Shen, C. 2025. What Matters When Repurposing Diffusion Models for General Dense Perception Tasks? In 
+
+ICLR .Yan, L.; Yan, P.; Xiong, S.; Xiang, X.; and Tan, Y. 2024. Monocd: Monocular 3d object detection with complemen-tary depths. In CVPR , 10248–10257. Yang, L.; Kang, B.; Huang, Z.; Xu, X.; Feng, J.; and Zhao, H. 2024a. Depth anything: Unleashing the power of large-scale unlabeled data. In Proceedings of the IEEE/CVF conference on CVPR , 10371–10381. Yang, L.; Kang, B.; Huang, Z.; Zhao, Z.; Xu, X.; Feng, J.; and Zhao, H. 2024b. Depth Anything V2. In NeurIPS .Yao, Y.; Luo, Z.; Li, S.; Zhang, J.; Ren, Y.; Zhou, L.; Fang, T.; and Quan, L. 2020. Blendedmvs: A large-scale dataset for generalized multi-view stereo networks. In Proceedings of the IEEE/CVF conference on CVPR , 1790–1799. Yi, X.; Tang, K.; Hua, X.-S.; Lim, J.-H.; and Zhang, H. 2022. Identifying hard noise in long-tailed sample distribution. In 
+
+ECCV , 739–756. Springer. Yin, X.; Yu, X.; Sohn, K.; Liu, X.; and Chandraker, M. 2019. Feature transfer learning for face recognition with under-represented data. In Proceedings of the IEEE/CVF conference on CVPR , 5704–5713. Yu, S.; Wang, Y.; Zhuge, Y.; Wang, L.; and Lu, H. 2024. Dme: Unveiling the bias for better generalized monocular depth estimation. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 38, 6817–6825. Zhai, X.; Mustafa, B.; Kolesnikov, A.; and Beyer, L. 2023. Sigmoid loss for language image pre-training. In Proceed-ings of the IEEE/CVF ICCV , 11975–11986. Zhan, M.; Zhang, L.; Chu, X.; and Wang, B. 2025. Vis-taDepth: Frequency Modulation With Bias Reweighting For Enhanced Long-Range Depth Estimation. arXiv preprint arXiv:2504.15095 .Zhang, Y.; Hooi, B.; Hong, L.; and Feng, J. 2022. Self-supervised aggregation of diverse experts for test-agnostic long-tailed recognition. NeurIPS , 35: 34077–34090. Zhang, Y.; Kang, B.; Hooi, B.; Yan, S.; and Feng, J. 2023. Deep long-tailed learning: A survey. IEEE transactions on pattern analysis and machine intelligence , 45(9): 10795– 10816. Zhang, Z.; Zhang, Y.; Li, Y.; and Wu, L. 2025. Review of monocular depth estimation methods. Journal of Electronic Imaging , 34(2): 020901–020901. Zhao, C.; Sun, Q.; Zhang, C.; Tang, Y.; and Qian, F. 2020. Monocular depth estimation based on deep learning: An overview. Science China Technological Sciences , 63(9): 1612–1627. 
+
+Appendix 
+
+This supplementary material provides the following addi-tional information: (B) extended dataset details; (C) a more in-depth analysis of the long-tailed roll angle distribution; (D) additional experimental details and results; and (E) ad-ditional qualitative visualizations. 
+
+Extended Dataset Details 
+
+Training Datasets 
+
+In this paper, all MDE models are trained on 200,000 un-labeled SA-1B (Kirillov et al. 2023) images using pseudo depth labels generated by DAv2 (Yang et al. 2024b). Invariant Depth Constraint (ID-Constraint) are trained with additional a subset of the DepthCues benchmark (Danier et al. 2025) to-gether with 20,000 SA-1B samples. For those 200,000 MDE training data, Invariant Depth Losses (ID Losses) are re-moved with weight 0.0. Detailed configurations and proce-dures of each training dataset are provided below: 
+
+1) SA-1B (Kirillov et al. 2023) : The full SA-1B dataset contains 11M diverse real-world images, distributed across 1,000 zipped files. Due to computational con-straints, we follow DistillAD (He et al. 2025) to sample 20 files, sa_000000.tar, sa_000050.tar, sa_000100.tar, ..., sa_000950.tar, resulting in 200,000 training images. For baseline training, we apply only random cropping and RGB normalization. For re-balanced angle augmentation, we uni-formly sample an augmentation angle from −90 ◦ to 90 ◦,while keeping 10% none augmented samples during train-ing. 
+
+1) DepthCues (Danier et al. 2025) : The original DepthCues benchmark includes six task settings. For train-ing our proposed ID-Constraint, we use four of them: light–shadow, occlusion, size, and texture–gradient. Because these subsets have different data scales, we upsample the light–shadow, size, and texture–gradient subsets by factors of 
+
+5×, 10 ×, and 5×, respectively. We further apply re-balanced angle augmentation to all upsampled data. Eventually, the ef-fective number of ID-Constraint training samples per epoch is approximately 107,842. We visualize examples of both region-level supervision tasks and the proposed pixel-level supervision tasks in Figure 6. (a) Examples of region -level supervision tasks                                                                                                                                            
+
+> (b) Examples of pixel -level supervision tasks
+> (1) Light and shadow
+> Task : Does shadow A
+> belong to object B ?
+> Task : Is object A
+> partially occluded ?
+> (2) Occlusion
+> Task : Is object A
+> larger than object B ?
+> (3) Size (4) Texture gradient
+> Task : Is region A
+> closer than region B ?
+> (5) Local peak
+> (6) Local slope
+> 11111
+> 11111
+> 11111
+> 11111
+> 11111
+> ⨂/
+> Kernel Depth Kernel Valid Mask
+> −
+> Depth
+> =
+> 11111
+> 11111
+> 11111
+> 11111
+> 11111
+> ⨂
+> 110-1-1
+> 110-1-1
+> 110-1-1
+> 110-1-1
+> 110-1-1
+> 11111
+> 11111
+> 00000
+> -1-1-1-1-1
+> -1-1-1-1-1
+> 01111
+> -10111
+> -1-1011
+> -1-1-101
+> -1-1-1-10
+> 11110
+> 1110-1
+> 110-1-1
+> 10-1-1-1
+> 0-1-1-1-1
+> ||⨂,,,=
+> A set of directional slope detection kernels Depth
+> 𝑚𝑒𝑎𝑛
+
+Figure 6: (a) Examples of four region-level constraint super-vision tasks whose prediction labels remain consistent under rotation. (b) Examples of two pixel-level constraint super-vision tasks that compute rotation-invariant local peaks of depth and average absolute slopes in 4 directions. 
+
+Evaluation Benchmarks 
+
+We evaluate our models on five standard MDE benchmarks: DIODE (Vasiljevic et al. 2019), ScanNet (Dai et al. 2017), ETH3D (Schops et al. 2017), KITTI (Geiger, Lenz, and Ur-tasun 2012), and NYUv2 (Silberman et al. 2012). During implementation, we observed that existing state-of-the-art methods report results only on valid pixels. Following this convention, we first apply the provided validity masks of each dataset to filter out invalid depth regions, and then use the minimum and maximum depth thresholds to further filter and clamp depth values, consistent with the open-source GenPer-cept codebase (Xu et al. 2025). Besides, if an image contains fewer than 100 valid pixels, we treat it as corrupted and ex-clude it from evaluation. All rotations and resizing of depth maps and masks in preprocessing use nearest-neighbor in-terpolation to ensure valid-pixel integrity. The above dataset preprocessing might be different from DAv2 (Yang et al. 2024b) and DistillAD (He et al. 2025), as they don’t release their evaluation code yet. The detailed dataset sizes and valid depth ranges for each benchmark are provided as follows: 
+
+• DIODE (Vasiljevic et al. 2019) : DIODE includes both indoor and outdoor scenes. After filtering with the validity masks, the test set contains 771 valid samples, with a valid depth range of [0 .6, 350] .
+
+• ScanNet (Dai et al. 2017) : ScanNet is a widely used indoor reconstruction dataset. After validity filtering, it contains 800 valid test samples, with a depth range of 
+
+[1 × 10 −3, 10] .
+
+• ETH3D (Schops et al. 2017) : ETH3D provides high-resolution images with sparse depth annotations. After filtering, the test set contains 454 valid samples, with a valid depth range of [1 × 10 −5, ∞).• KITTI (Geiger, Lenz, and Urtasun 2012) : KITTI is an outdoor dataset collected for autonomous driving, featur-ing images with a large field of view and therefore a very wide aspect ratio. After applying validity filtering, the test set contains 652 valid samples, with a valid depth range of [1 × 10 −5, 80] .
+
+• NYUv2 (Silberman et al. 2012) : NYUv2 consists of indoor scenes. After validity filtering, it includes 654 valid test samples, with a valid depth range of [1 × 10 −3, 10] .All evaluation samples are downloaded from the data links provided by GenPercept (Xu et al. 2025). 
+
+Roll Angle Distribution Analysis 
+
+To examine the distribution of absolute roll angles in real-world images, we apply our best roll-angle prediction model in Table 1 of the main paper to 20,000 SA-1B samples and visualize the resulting distribution in Figure 7(a). During this process, we observed that a subset of images appears tipped due to incorrect post-processing, leading to a small suspicious peak near 90 ◦. Since all of our angle prediction models reduce the absolute prediction error to below 48 ◦,we can reliably correct these anomalies by applying a 90 ◦
+
+rotation to the affected samples. After this pre-alignment, the distribution is transformed into the one shown in Figure 7(b), which we adopt as the true underlying training distribution used in the main paper. Based on the above analysis, we can now better interpret the fine-grained roll-angle interval results shown in Figure 5 of the main paper and the detailed version in Figure 8. Without horizon leveling, most methods exhibit a noticeable performance bump near 90 ◦, which directly corresponds to the suspicious peak in the training distribution around the same angle. In contrast, methods that incorporate horizon leveling, e.g. , our proposed ID-Constraint approach, show an almost monotonic performance drop as the rolling angle increases. This pattern demonstrates that MDE performance is strongly correlated with the underlying data distribution, underscoring the severity of the horizontal prior bias in cur-rent MDE models. 
+
+Additional Experimental Details 
+
+Experimental Environments 
+
+All experiments are conducted in a Python 3.12, PyTorch 2.7, and TorchVision 0.22 environment, using a single A100-SXM4-80GB GPU. 
+
+Implementation Details of Figure 2 in the Main Paper 
+
+The motivation of this paper is because we observe severe degradation in our real-world commercial application using estimated depth to reconstruct the scene, where we found rolled frames cause edge blurs. Therefore, we found the hor-izontal prior problem. Due to the confidentiality agreement of the commercial project, I can only share part of the infor-mation here. We adopt the AGS-Mesh reconstruction (Ren et al. 2025) that used a low-resolution sensor depth from mobile phone to recover the absolute scale and shift of the output. Since this setting is not normal MDE (more like a depth super-resolution task), therefore, we didn’t add more results in the main paper. 
+
+Implementation Details 
+
+In this subsection, we are going to introduce the detailed implementation of the Invariant Depth Heads (ID Heads). ID Heads fall into two categories: region-level classification heads and pixel-level regression heads. The implementation of the classification heads follows (Danier et al. 2025). All heads take the multi-level feature maps {Fi} extracted by ViT (I) as input. The architectures of the ID Heads are de-tailed as follows: 
+
+Light and shadow: This task requires two object features to determine their belonging relationship. We first concate-nate the multi-level inputs {Fi} and pass them through a linear layer followed by bilinear upsampling to match the spatial resolution of the object masks Ma and Mb,where Ma, M b ∈ { 0, 1}H×W . We denote this process as 
+
+U P ({Fi}). We then compute object-wise pooled features by masking and averaging over valid pixels. The final prediction is obtained as Ylight-shadow = MLP (   
+
+> PH×WMa⊙U P ({Fi})
+> PH×WMa
+
+−   
+
+> PH×WMb⊙U P ({Fi})
+> PH×WMb
+
+), where the MLP consists of two lin-ear layers with a GELU activation between them, the output 
+
+Ylight-shadow is a binary classification score. 
+
+Occlusion: This task takes a single object as input and pre-dicts whether it is occluded. Similar to the previous head, we apply an upsampling module U P ({Fi}) to obtain the upsampled feature map. The final prediction is computed as Yocclusion = MLP (   
+
+> PH×WMa⊙U P ({Fi})
+> PH×WMa
+
+), where the MLP consists of two linear layers with a GELU activation, and 
+
+Yocclusion is the binary classification output. 
+
+Size: This task requires two object features to determine their relative size, i.e. , which object is larger. The decoder head shares the same structure as the light–shadow head, but with independently learned parameters. The final output Ysize is a binary classification score. 
+
+Texture gradient: This task takes two pointer regions as input and predicts their relative depth, i.e. , which point lies farther from the camera. The decoder head follows the same architecture as the light–shadow and size heads, but with separately learned parameters. The final output Ytexture-grad is the binary classification output. 
+
+Local peak and local slope: For the local peak and local slope tasks, the ground-truth supervision consists of pixel-level peak maps and slope maps. Consequently, we adopt a DPT head (Ranftl, Bochkovskiy, and Koltun 2021) as the task decoder, similar to the depth-prediction head. To reduce computational overhead, we set the hidden feature dimen-sion of the DPT head to 128. We use the same decoder head to generate both outputs: Ylocal-ps = DPT ({Fi}), where 
+
+Ylocal-ps ∈ R5×H×W . Among the five channels, one corre-sponds to the local peak prediction, and the remaining four correspond to local slope predictions along different direc-tions. The final local-slope value is computed as the absolute average of the four directional slope outputs. (b) The pre -aligned distribution of 
+
+absolute roll angle   
+
+> Roll Angle Range (5=[0 °,5 °), 10=[5 °, 10 °), etc.)
+> Number of samples  in 20,000 random images
+> Roll Angle Range (5=[0 °,5 °), 10=[5 °, 10 °), etc.)
+> Number of samples  in 20,000 random images
+
+(a) The original distribution of absolute 
+
+roll angle Figure 7: Distribution of absolute roll angles across 20,000 SA-1B samples. (a) The original distribution without any processing. (b) The pre-aligned distribution after applying a one-time 90 ◦ rotation to samples whose detected roll angle exceeds 45 ◦.                                                                                                       
+
+> Method DIODE ScanNet ETH3d KITTI NYUv2 AbsRel ↓δ1↑AbsRel ↓δ1↑AbsRel ↓δ1↑AbsRel ↓δ1↑AbsRel ↓δ1↑
+> Marigold *(Ke et al. 2024) 0.279 0.776 0.072 0.946 0.068 0.956 0.137 0.821 0.061 0.958 GenPercept *(Xu et al. 2025) 0.297 0.764 0.062 0.959 0.073 0.951 0.130 0.841 0.058 0.963 DAv2 *(Yang et al. 2024b) 0.245 0.762 0.042 0.979 0.043 0.983 0.077 0.944 0.044 0.979
+> DistillAD *(He et al. 2025) 0.246 0.758 0.046 0.978 0.050 0.977 0.074 0.943 0.047 0.977 (ours) Baseline 0.252 0.756 0.046 0.977 0.045 0.981 0.077 0.943 0.047 0.977 (ours) Re-balanced Aug 0.251 0.758 0.049 0.977 0.058 0.973 0.083 0.937 0.051 0.977 (ours) Horizon Leveling 0.252 0.756 0.046 0.977 0.045 0.981 0.077 0.943 0.047 0.977 (ours) ID-Constraint 0.251 0.757 0.045 0.977 0.043 0.981 0.077 0.944 0.047 0.977
+
+Table 5: Experimental results of state-of-the-art MDE models and the proposed algorithms under the Horizontal ( 0◦) setting. Superscript * indicates results evaluated using our reimplemented evaluation code. 
+
+Experimental Results 
+
+In the main paper, due to space constraints, we report detailed results for the five benchmarks only under the most challeng-ing Tipping [ 0◦, 90 ◦] setting. In this subsection, we provide the full benchmark results for other remaining three settings: Horizontal ( 0◦), Shaking [ 0◦, 15 ◦], and Rolling [ 0◦, 45 ◦]. As shown in Table 5, 6, and 7, DAv2 (Yang et al. 2024b), Distil-lAD (He et al. 2025) and Marigold (Ke et al. 2024) sometimes achieve stronger performance under the Horizontal and parts of the Shaking setting. Note that Horizontal is the conven-tional setting commonly adopted in prior work. Since their training code is not publicly released, we are unable to repro-duce these results under our reimplemented training setup. In our own codebase, our proposed ID-Constraint approaches consistently outperform or remain competitive with our re-implemented baseline across all settings. This demonstrates that the proposed methods do not degrade performance in the Horizontal or Shaking settings when trained under the same conditions, confirming their robustness across a wide range of rolling angles. To analyze how different roll angles affect model per-formance, Figure 8 reports results on all five datasets across seven fine-grained angle intervals: [ 0◦, 0◦], [ 0◦, 15 ◦], [15 ◦, 30 ◦], [ 30 ◦, 45 ◦], [ 45 ◦, 60 ◦], [ 60 ◦, 75 ◦], and [ 75 ◦, 90 ◦]. A notable observation is a performance bump near 90 ◦. This effect arises from several interacting factors: (1) Training distribution. Without horizon leveling, the training data it-self exhibits a local distribution peak near 90 ◦, which natu-rally leads to the performance increase in surrounding angles. A more in-depth analysis of the underlying causes of this lo-cal distribution peak is presented in Section . (2) Resolution change due to rotation. Rotating an image from 0◦ to 45 ◦ in-creases its spatial resolution. Under a fixed number of patches in the ViT backbone, larger images compress more pixels into each patch, making depth prediction inherently more difficult. To isolate this effect, we introduce a Base (Crop) setting, where each rotated image is center-cropped to retain the same pixel numbers as the original image. Although Base Method DIODE ScanNet ETH3d KITTI NYUv2 AbsRel ↓ δ1 ↑ AbsRel ↓ δ1 ↑ AbsRel ↓ δ1 ↑ AbsRel ↓ δ1 ↑ AbsRel ↓ δ1 ↑                                                                                    
+
+> Marigold *(Ke et al. 2024) 0.294 0.758 0.089 0.917 0.080 0.939 0.161 0.758 0.069 0.950 GenPercept *(Xu et al. 2025) 0.306 0.752 0.081 0.929 0.080 0.944 0.149 0.793 0.064 0.956 DAv2 *(Yang et al. 2024b) 0.250 0.755 0.049 0.972 0.051 0.976 0.115 0.881 0.049 0.977
+> DistillAD *(He et al. 2025) 0.252 0.750 0.053 0.970 0.059 0.969 0.122 0.871 0.053 0.974 (ours) Baseline 0.256 0.751 0.053 0.968 0.055 0.971 0.118 0.874 0.051 0.975 (ours) Re-balanced Aug 0.253 0.757 0.047 0.977 0.056 0.973 0.119 0.866 0.052 0.976 (ours) Horizon Leveling 0.259 0.748 0.059 0.959 0.056 0.969 0.080 0.939 0.053 0.970 (ours) ID-Constraint 0.254 0.754 0.049 0.972 0.049 0.975 0.080 0.941 0.049 0.974
+
+Table 6: Experimental results of state-of-the-art MDE models and the proposed algorithms under the Shaking [ 0◦, 15 ◦] setting. Superscript * indicates results evaluated using our reimplemented evaluation code.                                                                                                        
+
+> Method DIODE ScanNet ETH3d KITTI NYUv2 AbsRel ↓δ1↑AbsRel ↓δ1↑AbsRel ↓δ1↑AbsRel ↓δ1↑AbsRel ↓δ1↑
+> Marigold *(Ke et al. 2024) 0.319 0.729 0.110 0.878 0.108 0.889 0.198 0.682 0.091 0.918 GenPercept *(Xu et al. 2025) 0.326 0.725 0.094 0.908 0.095 0.915 0.190 0.697 0.081 0.933 DAv2 *(Yang et al. 2024b) 0.257 0.748 0.064 0.956 0.065 0.958 0.118 0.877 0.060 0.969 DistillAD *(He et al. 2025) 0.261 0.744 0.068 0.953 0.073 0.951 0.125 0.866 0.066 0.963 (ours) Baseline 0.267 0.742 0.071 0.945 0.073 0.948 0.121 0.869 0.064 0.964 (ours) Re-balanced Aug 0.258 0.753 0.051 0.973 0.062 0.964 0.115 0.875 0.057 0.972 (ours) Horizon Leveling 0.262 0.745 0.060 0.957 0.056 0.968 0.084 0.934 0.056 0.966 (ours) ID-Constraint 0.255 0.754 0.051 0.971 0.050 0.973 0.084 0.935 0.051 0.973
+
+Table 7: Experimental results of state-of-the-art MDE models and the proposed algorithms under the Rolling [ 0◦, 45 ◦] setting. Superscript * indicates results evaluated using our reimplemented evaluation code. (Crop) performs slightly better than the baseline, it follows the same overall trend, confirming that the horizontal prior is not an artifact of resolution changes. In addition, among all five benchmarks in Figure 8, a special case arises with the KITTI. As an outdoor autonomous-driving dataset, KITTI images have a very wide aspect ratio and large field of view, leading to more severe resolution distortion during rotation. Even Base (Crop) cannot fully compensate because aggres-sive cropping removes too much valid content. Consequently, as shown in Figure 8(d), only methods that explicitly apply horizon leveling maintain stable performance trends, making KITTI the most challenging benchmark in our experiments. 
+
+Discussion and Analysis 
+
+Definition of roll robustness. We define roll robustness of a MDE model f as f (Tθ (I)) ≈ Tθ (f (I)) (θ-robust) under in-plane transform Tθ> 0◦ . Degradation is measured by depth metrics. For Dataset averaged results: DAv2’s AbsRel ↓ rises 
+
+0.096 → 0.127 (degrade 32% ) and δ1↑ falls 0.922 → 0.883 
+
+(degrade 3.9 pts) between Horizontal and Tipping. For in-dividual image tail case: (Figure 1(a) in the main paper, 
+
+θ = 45 ◦): AbsRel ↓ degrades 45 .7% (0.138 → 0.201 ), δ1↑
+
+degrades 8.7 pts ( 0.869 → 0.782 ) in scale and shift invariant domain, which are far worse than the average, confirming the severity. 
+
+Motivation of choosing our two pixel-level tasks. We chose local peak/slope because both are dense, local, affine-depth compatible, and rotation-invariant. Note that Surface nor-mals also have potential but not a direct replacement here. A normal vector is equivariant (not invariant) under image roll because its components rotate with the image coordinate system. 
+
+Computational tradeoff analysis. The proposed ID-Constraint adds zero inference parameters (auxiliary head only used during training). The only additional inference cost is horizon leveling, which adopts a ViT-S predictor ( ∼21M) and +15.4 ms latency on one A100 with batch size 1. 
+
+Confidence level analysis. We further added Paired Bootstrap Confidence Intervals to assess statistical re-liability, where ID-Constraint vs. Aug+level (95% CI) has ∆δ1 = +0 .004 [0 .0026 , 0.0052] , ∆AbsRel =
+
+−0.004 [ −0.0047 , −0.0031] on Tipping with 1K per-image bootstrap. 
+
+Statistical grounding of long-tailed rolling bias. The exis-tence of horizontal prior rests on three independent pieces of evidence: 1) natural photographic data and averaged depth map in Figure 1 in the main paper; 2) multiple MDE models degrade when controlled roll increases; 3) the fine-grained roll analysis shows model behavior correlated with roll distri-bution. In addition, we also manually check those tail images and confirm they are genuinely tilted despite the 25 .9◦ error. 
+
+Stronger orientation estimation. we adapted a recent method PerspectiveFields on our test data: mean roll error improves from 25 .9◦ to 18 .7◦, yet, it is still far worse than 0.71                   
+
+> 0.72
+> 0.73
+> 0.74
+> 0.75
+> 0.76
+> 0.77
+> [0, 0] [0, 15] [15, 30] [30, 45] [45, 60] [60, 75] [75, 90]
+> DAv2 DistillAD
+> Baseline Base (Crop)
+> Re-balance H Level
+> ID-Constraint
+> 0.24
+> 0.25
+> 0.26
+> 0.27
+> 0.28
+> 0.29
+> 0.3
+> [0, 0] [0, 15] [15, 30] [30, 45] [45, 60] [60, 75] [75, 90]
+> DAv2 DistillAD
+> Baseline Base (Crop)
+> Re-balance H Level
+> ID-Constraint
+
+Metrics : AbsRel  ↓
+
+Merics : 𝜹 𝟏 ↑
+
+Fine -grained roll -angle intervals 
+
+Fine -grained roll -angle intervals 
+
+(a) DIODE benchmark                   
+
+> 0.88
+> 0.9
+> 0.92
+> 0.94
+> 0.96
+> 0.98
+> 1
+> [0, 0] [0, 15] [15, 30] [30, 45] [45, 60] [60, 75] [75, 90]
+> DAv2 DistillAD
+> Baseline Base (Crop)
+> Re-balance H Level
+> ID-Constraint
+> 0.03
+> 0.04
+> 0.05
+> 0.06
+> 0.07
+> 0.08
+> 0.09
+> 0.1
+> 0.11
+> [0, 0] [0, 15] [15, 30] [30, 45] [45, 60] [60, 75] [75, 90]
+> DAv2 DistillAD
+> Baseline Base (Crop)
+> Re-balance H Level
+> ID-Constraint
+
+Metrics : AbsRel  ↓
+
+Merics : 𝜹 𝟏 ↑
+
+Fine -grained roll -angle intervals 
+
+Fine -grained roll -angle intervals 
+
+(b) ScanNet benchmark                   
+
+> 0.88
+> 0.9
+> 0.92
+> 0.94
+> 0.96
+> 0.98
+> 1
+> [0, 0] [0, 15] [15, 30] [30, 45] [45, 60] [60, 75] [75, 90]
+> DAv2 DistillAD
+> Baseline Base (Crop)
+> Re-balance H Level
+> ID-Constraint
+> 0.03
+> 0.04
+> 0.05
+> 0.06
+> 0.07
+> 0.08
+> 0.09
+> 0.1
+> 0.11
+> [0, 0] [0, 15] [15, 30] [30, 45] [45, 60] [60, 75] [75, 90]
+> DAv2 DistillAD
+> Baseline Base (Crop)
+> Re-balance H Level
+> ID-Constraint
+
+Metrics : AbsRel  ↓
+
+Merics : 𝜹 𝟏 ↑
+
+Fine -grained roll -angle intervals 
+
+Fine -grained roll -angle intervals 
+
+(c) ETH3D benchmark                   
+
+> 0.8
+> 0.82
+> 0.84
+> 0.86
+> 0.88
+> 0.9
+> 0.92
+> 0.94
+> 0.96
+> 0.98
+> [0, 0] [0, 15] [15, 30] [30, 45] [45, 60] [60, 75] [75, 90]
+> DAv2 DistillAD
+> Baseline Base (Crop)
+> Re-balance H Level
+> ID-Constraint
+> 0.06
+> 0.08
+> 0.1
+> 0.12
+> 0.14
+> 0.16
+> [0, 0] [0, 15] [15, 30] [30, 45] [45, 60] [60, 75] [75, 90]
+> DAv2 DistillAD
+> Baseline Base (Crop)
+> Re-balance H Level
+> ID-Constraint
+
+Metrics : AbsRel  ↓
+
+Merics : 𝜹 𝟏 ↑
+
+Fine -grained roll -angle intervals 
+
+Fine -grained roll -angle intervals 
+
+(d) KITTI benchmark                   
+
+> 0.92
+> 0.93
+> 0.94
+> 0.95
+> 0.96
+> 0.97
+> 0.98
+> 0.99
+> [0, 0] [0, 15] [15, 30] [30, 45] [45, 60] [60, 75] [75, 90]
+> DAv2 DistillAD
+> Baseline Base (Crop)
+> Re-balance H Level
+> ID-Constraint
+> 0.04
+> 0.05
+> 0.06
+> 0.07
+> 0.08
+> 0.09
+> 0.1
+> [0, 0] [0, 15] [15, 30] [30, 45] [45, 60] [60, 75] [75, 90]
+> DAv2 DistillAD
+> Baseline Base (Crop)
+> Re-balance H Level
+> ID-Constraint
+
+Metrics : AbsRel  ↓
+
+Merics : 𝜹 𝟏 ↑
+
+Fine -grained roll -angle intervals 
+
+Fine -grained roll -angle intervals 
+
+(e) NYUv2 benchmark Figure 8: Experiments on fine-grained roll angle intervals for each benchmark. H Level stands for horizon leveling. the results reported in its original paper. We notice that they only evaluate roll estimation on GSV street dataset, which is a “highly constrained setting” (narrow roll range). Those cluttered indoor images in our dataset are much harder. 
+
+Qualitative Visualizations 
+
+Qualitative results on Depth Anything 3. Recently, a new state-of-the-art MDE model, Depth Anything 3 (DA3), has been released, demonstrating strong performance over ex-isting methods. Therefore, we provide a qualitative analysis generated by their online demo in this section. As shown in Figure 9, even this powerful state-of-the-art MDE model still exhibits robustness issues induced by the horizontal prior under the Rolling and Tipping settings, resulting in blurred boundaries around table legs and human shapes. This further demonstrates the importance of our study. 
+
+Additional qualitative analyses. To further understand how different MDE models and the depth super-resolution model PromptDA (Lin et al. 2025b) behave under various rolling conditions, we provide five additional visualization examples and notice several interesting observations: (1) PromptDA (Lin et al. 2025b) is more susceptible to the Shaking and Rolling settings, even when provided with an additional low-resolution depth input. This is likely due to its training data being less diverse than that of DAv2 (Yang et al. 2024b), resulting in worse robustness. (2) More accu-rate roll-angle predictions lead to better ID-Constraint per-formance. For example, small prediction errors, e.g. , below 
+
+2◦ in Figure 14 under the Tipping setting, yield strong ID-Constraint performance, whereas large errors, e.g. , over 45 ◦
+
+in Figure 13, noticeably degrade performance. (3) ViT-based methods using the disparity space tend to be more robust than diffusion-based methods operating in depth space. Horizontal  Shaking (15 °) Roll ing (45 °) Tipping (90 °) 
+
+> Qualitative results on
+
+Depth Anything 3 still reveal persistent robustness issues stemming from the horizontal prior Figure 9: Qualitative analysis of the recently released Depth Anything 3, the current state-of-the-art model in MDE. Depth maps are generated from its huggingface online demo. The fuzzy boundaries observed under the Rolling and Tipping settings further confirm the persistent robustness issues induced by the horizontal prior. Horizontal  Shaking  (15 °) Roll ing  (45 °) Tipping (90 °)
+
+Image  GenPercept  Marigold  PromptDA  DAv2  DistillAD  ID -Constraint 
+
+Figure 10: Qualitative comparisons of existing state-of-the-art MDE models and the proposed algorithms. The bottom-left grayscale images visualize the absolute error maps corresponding to their respective horizontal depth predictions. GenPercept, Marigold, and PromptDA produce outputs in the depth space, while the remaining output in the disparity space. Horizontal  Shaking  (15 °) Roll ing  (45 °) Tipping (90 °)
+
+Image  GenPercept  Marigold  PromptDA  DAv2  DistillAD  ID -Constraint Figure 11: Qualitative comparisons of existing state-of-the-art MDE models and the proposed algorithms. The bottom-right grayscale images visualize the absolute error maps corresponding to their respective horizontal depth predictions. GenPercept, Marigold, and PromptDA produce outputs in the depth space, while the remaining output in the disparity space. Horizontal  Shaking  (15 °) Rolling (45 °) Tipping (90 °)
+
+Image  GenPercept  Marigold  PromptDA  DAv2  DistillAD  ID -Constraint Figure 12: Qualitative comparisons of existing state-of-the-art MDE models and the proposed algorithms. The bottom-right grayscale images visualize the absolute error maps corresponding to their respective horizontal depth predictions. GenPercept, Marigold, and PromptDA produce outputs in the depth space, while the remaining output in the disparity space. Horizontal  Shaking  (15 °) Roll ing  (45 °) Tipping (90 °)
+
+Image  GenPercept  Marigold  PromptDA  DAv2  DistillAD  ID-Constraint Figure 13: Qualitative comparisons of existing state-of-the-art MDE models and the proposed algorithms. The bottom-right grayscale images visualize the absolute error maps corresponding to their respective horizontal depth predictions. GenPercept, Marigold, and PromptDA produce outputs in the depth space, while the remaining output in the disparity space. Horizontal  Shaking  (15 °) Roll ing  (45 °) Tipping (90 °)
+
+Image  GenPercept  Marigold  PromptDA  DAv2  DistillAD  ID -Constraint Figure 14: Qualitative comparisons of existing state-of-the-art MDE models and the proposed algorithms. The bottom-left grayscale images visualize the absolute error maps corresponding to their respective horizontal depth predictions. GenPercept, Marigold, and PromptDA produce outputs in the depth space, while the remaining output in the disparity space.
