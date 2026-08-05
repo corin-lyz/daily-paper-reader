@@ -1,0 +1,641 @@
+Title: iFAN: Inference-Aware Learning for Plain Mask Transformers
+
+URL Source: https://arxiv.org/pdf/2608.03216v1
+
+Published Time: Wed, 05 Aug 2026 00:44:35 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# iFAN: Inference-Aware Learning for Plain Mask Transformers 
+
+## Fang Li 1∗, Yu He 1∗, Haoyang Tong 1,2 , Lichen Ma 1,3 , Jingling Fu 1, Wenxiao Fan 1,4 , Tongxuan Liu 1,Luohang Liu 1, Ke Zhang 1, Junshi Huang 1†
+
+> 1
+
+JD.com 2Beijing Institute of Technology 3Xi’an Jiaotong University 4University of Chinese Academy of Sciences 
+
+{lifang0273, heyu2579, junshi.huang}@gmail.com 
+
+Abstract 
+
+Query-based mask transformers assemble segmentation out-puts through pixel-wise competition among query predictions of the final layer, yet this inference process is not explicitly op-timized during training. We identify two key mismatches: the query with the highest probability–mask score does not neces-sarily produce the most accurate mask, and final-layer decod-ing may discard superior predictions from intermediate layers. To address these issues, we propose Inference-Aware Learn-ing ( iFAN ), a general training framework for plain mask trans-formers. iFAN introduces Adjusted Probability-Mask Rank-ing (APMR), which aligns query competition with predicted mask quality and suppresses high-confidence but inaccurate competitors. We further employ Cross-Layer Self-Distillation (CLSD) to transfer stronger intermediate predictions to the fi-nal layer. The ranking and distillation objectives are training-only, while inference retains efficient final-layer decoding. Experiments on COCO, ADE20K, and Cityscapes demon-strate consistent improvements across panoptic, instance, and semantic segmentation, as well as across different architec-tures, backbone scales, and input resolutions. Overall, iFAN improves performance by an average of 1.20 PQ, 1.30 AP, and 0.63 mIoU, with negligible additional parameters, FLOPs and inference latency. 
+
+## Introduction 
+
+Query-based segmentation has become a promising frame-work for semantic, instance, and panoptic segmenta-tion (Wang et al. 2021; Yu et al. 2022; Jain et al. 2023; Shahabodini et al. 2026). Unlike conventional approaches that classify each pixel using a fixed set of prediction headers, modern mask transformers segment an image with a set of learnable queries. Each query independently predicts a class distribution together with a corresponding mask, and the fi-nal segmentation result is obtained by a competition among these query-wise prediction maps during output assembly (Li et al. 2023b). This query-based formulation is naturally com-patible with Vision Transformers (ViTs) (Dosovitskiy et al. 2020), since image tokens and query tokens can be processed within the same attention framework. Recent encoder-only methods further show that, based on strong pre-training back-bones such as DINOv2 (Oquab et al. 2024), a plain ViT can support segmentation by simply injecting queries into its later layers without bells and whistles (Kerssies et al. 2025). 
+
+> ∗
+
+These authors contributed equally. 
+
+> †
+
+Corresponding author. Final Layer                            
+
+> 53 classes best
+> 39.8%
+> Layer L-1
+> 45 classes best
+> 33.8%
+> Layer L-2
+> 27 classes best
+> 20.3%
+> Layer L-3
+> 8 classes best
+> 6.0%
+> The final layer does not always produce the best query
+> 64.45%
+> Query
+> Disagreement
+> 29.27%
+> High Prob -Mask
+> Low IoU
+> “Max -IoU ”
+> Max -prob -mask
+> Ground Truth
+> GT
+> When “Max -IoU Queries” Lose
+> Highest probability -mask score can select a low -IoU query during inference
+> When Intermediate Layers are Better
+> Example 1: Traffic light Example 2: kite
+> Worse Segment
+
+Figure 1: We study the performance of mask transformer on COCO val2017 among queries and layers with ground truth masks. Top: the max-prob-mask query (blue) is selected to generate the mask result of target object while achieving inferior performance than the oracle result of “ max-IoU ”query (red), which incurs 64 .45% suboptimal result. Bottom: the distribution of “ max-IoU ” query across layers. A better query can be found in intermediate layer (star indicates max IoU), which can provide self-distillation information. In this paper, we rethink the inference process of mask transformers and identify the limitations of widely used max-prob-mask strategy (Cheng, Schwing, and Kirillov 2021). In this strategy, each query predicts a class distribution and a class-agnostic foreground probability mask, which are then combined to determine the pixel-wise segments. However, the mask predicted by each query is isolated with class pre-diction and thus lacks global information of object, e.g. , the object shape and contour (Ke et al. 2022). Consequently, the predicted class may be inconsistent with the predicted mask (Hu et al. 2023). For example, in the traffic-light case arXiv:2608.03216v1 [cs.CV] 4 Aug 2026 of Fig. 1, although the max-prob-mask strategy predicts the correct category, the resulting segmentation covers only the most salient regions of the traffic light. For the object with-out a consistent shape, such as kite in Fig. 1, query-based models hardly predict the whole region. Based on the infer-ence results of a mask transformer (Kerssies et al. 2025) on COCO val2017 (Lin et al. 2014), we find that 64.45% of the segmentation results selected by max-prob-mask strategy are different from their theoretical upper-bound counterparts by “max-IoU” strategy. With a strict threshold, 29.27% of the results exhibit high prob-mask scores while low IoUs. We claim that these suboptimal results are induced by the incomplete competition strategy of probability-mask pairs (Cheng, Schwing, and Kirillov 2021). To address this issue, we introduce a global mask quality score for each query to adjust the probability-mask score map for segmentation pre-diction. However, mask-quality calibration alone cannot fully suppress high-scoring yet inaccurate competitors. Hungarian matching determines the optimal assignment at each iteration but does not preserve query identities across training: a query may switch repeatedly between the states of matched fore-ground and unmatched background (Li et al. 2023a; Liu et al. 2023; Zhang et al. 2022). Importantly, unmatched queries are supervised only by no-object classification, without explicit suppression of their mask responses (Cheng et al. 2022). They may retain plausible knowledge of foreground mask from previous iterations, causing multiple plausible masks for the same object. These plausible masks pose strong com-petition during inference, motivating us to introduce an ex-plicit cross-query ranking objective (Pu et al. 2023). Specif-ically, for each foreground target, we identify the unmatched queries with high probability of target class yet low mask overlap as hard negatives. We then introduce a pairwise rank-ing objective that encourages the matched query to produce a higher probability-mask score than that of negatives. To stabilize the learning of classification and mask prediction, we only use the gradient of ranking loss w.r.t mask quality to update the model parameters. Most mask transformers use only the output of final layer to produce segmentation predictions, even if the auxiliary supervision is provided at intermediate layers. We analyze the segmentation results generated by the last several layers of a mask transformer (Kerssies et al. 2025). As shown in Figure 1, only 39.8% of ground-truth targets obtain their best predictions at the final layer, while the penultimate layer achieves comparable overall performance. Simply ag-gregating the predictions of multiple layers can improve per-formance, but it also introduces additional post-processing complexity and computational costs. Instead, we propose to extract high-quality information from preceding layers to supervise the final layer while keeping the inference strat-egy unchanged. Therefore, the Cross-Layer Self-Distillation (CLSD) is integrated in the training stage to distill high-quality intermediate-layer information by the final layer while keeping the inference stage unchanged (Zhang et al. 2019; Wang et al. 2024). In summary, we upgrade the training framework of mask transformers motivated by the deficiencies of segmentation inference, which thus refers to as inference-aware learning task. Our main contributions are summarized as follows: 
+
+• We adjust the probability-mask scoring criterion with a global quality score to address the deficiency of inference. In addition, we employ object-oriented ranking task to produce more discriminative prediction scores. 
+
+• We fully exploit the useful information contained in dif-ferent layers of mask transformers and propose a self-distillation strategy that improves the predictions of the final layer without additional inference cost. 
+
+• Across multiple mask-transformer architectures and datasets, iFAN consistently improves panoptic, instance, and semantic segmentation, achieving average gains of 1.20 PQ, 1.30 AP, and 0.63 mIoU, respectively, with vir-tually no additional inference overhead. 
+
+## Related Work 
+
+Query-Based and Quality-Aware Segmentation 
+
+DETR introduced object queries and bipartite set pre-diction for detection (Carion et al. 2020). MaskFormer and Mask2Former extend this formulation to segmenta-tion through class–mask prediction (Cheng, Schwing, and Kirillov 2021; Cheng et al. 2022), while OneFormer and Mask DINO develop it for universal segmentation and joint detection–segmentation modeling (Jain et al. 2023; Li et al. 2023b). EoMT and PMT further inserts segmentation queries directly into the late blocks of a pre-trained ViT (Kerssies et al. 2025; Cavagnero et al. 2026). Despite their architectural differences, these methods must assemble unordered class– mask predictions into a final output, making the reliability of the probability-mask score central to query competition. Quality estimation and ranking improve prediction relia-bility. Mask Scoring R-CNN calibrates instance scores with predicted mask IoU (Huang et al. 2019); Panoptic Seg-Former combines classification and segmentation quality to resolve mask overlaps (Li et al. 2022); and Rank-DETR learns quality-aware ranking for detection queries (Pu et al. 2023). These methods focus on instance-score calibration, inference-time overlap handling, or box-level ranking. Ad-justed Probability-Mask Ranking (APMR) instead optimizes the pixel-wise competition of mask-transformer inference. It learns a soft-IoU-supervised mask-quality score, constructs an adjusted probability-mask score map, and ranks each matched query above hard unmatched competitors within its target region. Its ranking gradients update only the qual-ity branch, preserving the original classification and mask objectives. 
+
+Intermediate Supervision and Self-Distillation 
+
+Intermediate supervision applies annotation-based objec-tives before the final output. Deeply-Supervised Nets intro-duced auxiliary hidden-layer losses (Lee et al. 2015), while query-based segmenters supervise intermediate class and mask predictions (Li et al. 2022). MP-Former further pro-motes mask consistency across decoder layers (Zhang et al. 2023). These approaches improve intermediate predictions or their evolution, but do not explicitly transfer a better inter-mediate probability-mask prediction to the final layer. Self-distillation transfers knowledge between predictions within a training process, as exemplified by Be Your Own Teacher (Zhang et al. 2019). For set prediction, DETRDistill uses a pre-trained teacher to transfer matched logits, features, and query priors, whereas OD-DETR uses an exponential-moving-average teacher (Chang et al. 2023; Wu, Sun, and Li 2024). Cross-Layer Self-Distillation (CLSD) requires nei-ther. For each target, it selects the intermediate matched query with the highest soft-IoU and retains it only when it outperforms the final prediction. CLSD then distills its adjusted probability-mask score map ˆS through a one-sided objective, transferring useful intermediate knowledge while retaining final-layer-only inference. 
+
+## Method 
+
+In this section, we introduce the details of Inference-Aware Learning (iFAN) as illustrated in Fig. 2. Based on the plain mask transformer, we adjust the predicted probability-mask map by mask quality and Probability-Mask Ranking strategy, promoting the distinction of final predictions from matched queries and unmatched queries. To further acquire the knowl-edge of intermediate layers, the Cross-Layer Self-Distillation is injected into our framework for the promotion of matched queries. Those strategies motivated by the deficiencies in in-ference stage improve the performance of mask transformer, composing the framework of Inference-Aware Learning. 
+
+Preliminaries 
+
+Given an input image I ∈ RH×W , the mask transformer predicts N probability-mask pairs 
+
+ˆy = {(ˆ pi, ˆMi)}Ni=1 (1) where the pair (ˆ pi, ˆMi) is the prediction result from i-th query. ˆpi ∈ [0 , 1] K+1 is the class-probability distribution over K foreground classes and the no-object class ∅. ˆMi
+
+is the mask probability map of the foreground, which is usually class-agnostic. Similarly, the ground-truth segments are represented as 
+
+y = {(ci, M i)|ci ∈ { 1, . . . , K }, M i ∈ { 0, 1}H×W }N gt 
+
+> i=1
+
+(2) During training, the Hungarian matching algorithm as-signs each ground-truth to a unique query by minimizing the matching cost between pairs of query predictions and ground-truths. The learning tasks on the matched pairs in-clude object classification and foreground mask prediction. Unmatched queries are usually considered as background with only the supervision of no-object classification. The inference stage follows a slightly different decision rule. Since queries may predict overlapping masks of objects, the segmentation assembly strategy must assign each pixel to one of the N predicted probability-mask pairs according to the maximal probability-mask score of object class and object-agnostic mask. 
+
+Adjusted Probability-Mask Ranking 
+
+The standard segmentation assembly constructs the segmen-tation result based on the pixel-wise competition among probability-mask responses, without considering the holistic reliability of the predicted mask. Therefore, we introduce a lightweight shared quality head to estimate the global mask quality ˆqi of the i-th query, resulting in the prediction tu-ple (ˆ qi, ˆpi, ˆMi). The quality head consists of a single linear layer followed by a sigmoid function, and its parameters are shared across all queries and prediction layers, introducing only negligible parameter overhead. The ground-truth of ˆqi
+
+for matched queries is the soft_IoU of predicted mask ˆMi
+
+and its corresponding ground-truth segmentation mask, and is set as 0 for unmatched queries. In the training stage, the BCE loss is integrated into the segmentation task for the learning of mask quality, comprising the augmented seg-mentation loss, and the unmatched queries with high class probability are selected as hard negatives. To complement global information in segmentation com-petition, we integrate predicted quality into probability-mask and obtain the adjusted probability-mask pair ((ˆ qi ∗
+
+ˆpi)γ , ˆMi), where γ is set to 2 to enhance discrimination in the high-score range. Together with the hard mining strategy, the adjusted score (ˆ qi ∗ ˆpi)γ can suppress the plausible result of unmatched queries induced by modest predicted masks. With the adjusted probability-mask pair, we introduce an object-oriented ranking objective to directly model the segmentation competition between matched and unmatched queries. This objective requires that the adjusted probability-mask score of matched query should be notably higher than that of unmatched queries over the foreground region of target. Given target object (ck, M k) and the adjusted probability-mask pair of matched query ((ˆ qi ∗ ˆpi)γ , ˆMi),the probability-mask score map of i-th query for k-th target object is formulated as 
+
+ˆSi = (ˆ qi ∗ ˆpi(ck)) γ ∗ ˆMi (3) where ˆpi(ck) is the ck-th value of ˆpi. Similarly, denoting by the probability-mask score map of unmatched query for k-th target object ˆSj = ((ˆ qj ∗ ˆpj (ck)) γ , ˆMj ), the ranking loss between the score maps of matched query ˆSi and unmatched query ˆSj with respect to k-th target object is formulated as: 
+
+L′rank = 1
+
+|Mk|
+
+X(softplus 
+
+ ˆSj − ˆSi
+
+
+
+∗ Mk), (4) Then, the overall ranking loss Lrank is the average of L′rank 
+
+over all target objects and their corresponding hard neg-atives. In our implementation, we select the top NH un-matched queries according to the order of ˆSj . Softplus pro-vides smooth gradients to continuously enlarge the score gap between matched queries and hard negatives. The gradi-ents with respect to ˆp and ˆM are detached to prevent over-suppression of the class probabilities and mask predictions. 
+
+Cross-Layer Self-Distillation 
+
+During training, predictions from multiple layers receive aux-iliary supervision, whereas inference only retains the predic-tion of final layer. Although cascaded supervision allows dif-ferent layers to capture complementary information, valuable 𝐺𝑇 !
+
+Adjusted Prob -Mask of Query 𝒊   
+
+> …
+> 𝐺𝑇 !
+> …
+> 𝐿  − 3
+> 𝐿  − 2
+> 𝑖
+> 𝐿
+> Mask Module Quality Module
+
+ViT Encoder                 
+
+> Quality 𝑞 "Class 𝑝 "Mask 𝑀 "
+> Adjusted
+> Score
+> SG
+> Input Image
+> Adjusted
+> Prob -Mask 𝑆 '"
+> Unmatched Query 𝑗
+> Ranking loss
+> ℒ!"#$ =𝑠𝑜𝑓𝑡𝑝𝑙𝑢𝑠 𝑆 -%−𝑆 -&∗𝑀 $
+
+Prob -Mask Ranking 𝐺𝑇 #
+
+𝐿 − 3
+
+𝐿 − 2
+
+𝐿 − 1
+
+𝐿      
+
+> Distillation loss
+> ℒ!"#$"%% (𝑆 $"$∗,𝑆 $"&)
+> Teacher Query Selection
+> 𝑖
+
+Cross Layer 
+
+Self Distillation 
+
+𝑙 ∗
+
+## …                          
+
+> SG
+> image token
+> query token
+> teacher query
+> IoU : 0.71
+> 𝑆 ̅:0.72
+> increase 𝑠 ̂&suppress 𝑠 ̂%
+> low 𝑆 'high 𝑆 '
+> Hungarian match then 𝑎𝑟𝑔𝑚𝑎𝑥 (𝐼𝑜𝑈 )IoU 𝑖 >𝑚 but prob -mask 𝑆 '"<𝑆 ''
+> Matched Query 𝑖
+> IoU: 0.89
+> 𝑆 ̅:0.57
+> 𝐺𝑇 #
+
+## …
+
+## ×           
+
+> 𝑗 :index of unmatched query
+> 𝑖 :index of matched query
+> 𝑘 :index of ground -truth
+
+Figure 2: Overview of iFAN. APMR addresses the query-wise mismatch by learning mask quality, calibrating the scores used for assembly, and ranking a matched query above high-evidence unmatched query. CLSD addresses the layer-wise mismatch by selecting a stronger teacher query from an intermediate layer and transferring its assembled evidence to the final layer. At inference, the adjusted-prob-mask is only computed for final layer. The APMR ranking objective and CLSD are training-only. intermediate representations may not be fully preserved in later layers(Liu et al. 2023; Zhang et al. 2023), as illustrated in Fig. 1. Therefore, we propose the strategy of Cross-Layer Self-Distillation (CLSD) to extract high-quality intermediate knowledge as teacher supervision for the final layer. For a target object (ck, M k), the Hungarian matching al-gorithm is applied at each ℓ layer, where ℓ ∈ [L − 4, L ] and L
+
+is the index of final layer. Let iℓ denotes the index of matched query at ℓ-th layer, which may be different in various layers. Among all matched queries in intermediate layers, we select the layer with the highest soft IoU as the teacher candidate: 
+
+ℓ⋆ = arg max 
+
+> L−3≤ℓ<L
+
+soft_IoU ( Mk, ˆMiℓ ). (5) Considering that iℓ∗
+
+-th query (at ℓ∗-layer) and iL-th query (at L-layer) are all matched queries of target object (ck, M k)
+
+at different layers, we select the real teacher supervision if the soft_IoU ( Mk, ˆMiℓ∗ ) of iℓ∗
+
+-th query (at ℓ∗-layer) is better than that of iL-th query (at L-layer). In this way, we design the loss function of Cross-Layer Self-Distillation for target object (ck, M k):
+
+L′distill = 1
+
+|Mk|
+
+X h 
+
+(sg ( ˆSiℓ∗ ) − ˆSiL ) ∗ Mk
+
+i
+
+> +
+
+(6) where [·]+ = max(0 , ·) and sg (·) denotes the stop-gradient operator. The hinge function is activated when the “soft_IoU-qualified” teacher provides stronger adjusted probability-mask score map than that of final layer. Analogously, the overall distillation loss Ldistill is average of L′distill over all target objects. Note that CLSD applied on training stage brings no additional cost in inference. 
+
+Training and Inference 
+
+The overall objective combines the augmented segmentation loss with adjusted probability-mask ranking loss and self-distillation loss 
+
+L = Laug _seg + λrank Lrank + λdistill Ldistill . (7) where Laug _seg is the augmented segmentation loss, in-cluding object classification, pixel-wise mask prediction, Dice and proposed mask-quality regression losses. The coefficients λrank and λdistill balance the contributions of probability-mask score ranking and cross-layer self-distillation objectives, which are set to 0.1 and 0.4, respec-tively. The epoch-dependent coefficient λdistill gradually ac-tivates selective depth distillation after an initial warm-up stage and anneals near convergence stage, mitigating the influence of unreliable early teachers and avoiding exces-sive constraints on the final representation. During infer-ence, we extract the adjusted probability-mask score map 
+
+ˆSi = ( ˆ qi ∗ max ( ˆ pi)) γ ∗ ˆMi for i-th query at the final layer for segmentation competition. 
+
+## Experiments 
+
+Experimental Setup 
+
+Datasets and metrics. We evaluate iFAN on panoptic, instance, and semantic segmentation. COCO val2017 (Lin et al. 2014) is used for panoptic and instance segmentation, Method Backbone Pre-training Params COCO val2017 (Lin et al. 2014) ADE20K val (Zhou et al. 2017) Input GFLOPs FPS PQ Input GFLOPs FPS PQ Mask2Former † Swin-L IN21K 216M 800 2 868 24 57.8 640 2 – 33 48.1 kMaX-DeepLab ConvNeXt-L IN21K 232M 1281 2 – – 58.0 1281 2 1302 – 50.9 OneFormer † DiNAT-L IN21K 223M 800 2 736 20 58.0 1280 2 1369 10 53.5 c
+
+MaskDINO † Swin-L IN21K 223M 800 2 1326 14 58.3 – – – –OneFormer+ViT-P † DiNAT-L IN21K 309M 1024 2 1013 8 58.0 1280 2 1955 3 54.0 c
+
+Mask2Former ‡ ViT-AL ‡ DINOv2 349M 640 2 830 29 57.1 640 2 830 29 51.8 c
+
+Mask2Former ‡ ViT-AL ‡ DINOv2 354M 1280 2 4817 10 59.7 1280 2 4817 10 53.0 c
+
+Mask2Former ‡ ViT-Adapter-g ‡ DINOv2 1209M 640 2 2510 20 57.7 640 2 2510 20 52.6 c
+
+Mask2Former ‡ ViT-Adapter-g ‡ DINOv2 1216M 1280 2 13790 6 59.9 1280 2 13790 6 54.2 c
+
+PMT ViT-L DINOv3 357M 640 2 767 141 56.1 640 2 767 141 49.4 ‡
+
+PMT-iFAN ViT-L DINOv3 357M 640 2 767 141 56.7 ↑0.6 640 2 767 141 50.7 ↑1.3
+
+PMT ViT-L DINOv3 357M 1280 2 4925 29 58.1 1280 2 4925 29 50.5 ‡
+
+PMT-iFAN ViT-L DINOv3 357M 1280 2 4925 29 58.6 ↑0.5 1280 2 4925 29 53.0 ↑3.0
+
+EoMT ViT-L DINOv2 316M 640 2 669 128 56.0 640 2 669 128 50.6 c
+
+EoMT-iFAN ViT-L DINOv2 316M 640 2 669 128 57.0 ↑1.0 640 2 669 128 52.2 ↑1.6
+
+> c
+
+EoMT ViT-L DINOv2 322M 1280 2 4146 30 58.3 1280 2 4146 30 51.7 c
+
+EoMT-iFAN ViT-L DINOv2 322M 1280 2 4146 30 58.8 ↑0.5 1280 2 4146 30 53.9 ↑2.2
+
+> c
+
+EoMT ViT-G DINOv2 1164M 640 2 2261 55 57.0 640 2 2261 55 51.3 c
+
+EoMT-iFAN ViT-G DINOv2 1164M 640 2 2261 55 57.8 ↑0.8 640 2 2261 55 52.7 ↑1.4
+
+> c
+
+EoMT ViT-G DINOv2 1171M 1280 2 12712 12 59.2 1280 2 12712 12 52.8 c
+
+EoMT-iFAN ViT-G DINOv2 1171M 1280 2 12712 12 59.6 ↑0.4 1280 2 12712 12 53.9 ↑1.1
+
+> c
+
+Table 1: Panoptic segmentation on COCO val2017 and ADE20K val . Blue rows apply iFAN to the corresponding PMT or EoMT baseline; ↑ gives the absolute PQ improvement. † denotes shortest-side resizing, ‡ re-implementation, and c COCO panoptic pre-training. Parameters, GFLOPs, and FPS in iFAN rows follow the matched baseline under shared-configuration accounting rather than an independent efficiency measurement. ADE20K val (Zhou et al. 2017) for panoptic and semantic segmentation, and Cityscapes val (Cordts et al. 2016) for se-mantic segmentation. Following the evaluation protocols, we report Panoptic Quality (PQ) (Kirillov et al. 2019), mask Av-erage Precision (AP) (Lin et al. 2014), and mean Intersection over Union (mIoU) (Everingham et al. 2010), respectively. 
+
+Implementation We implement iFAN on two plain mask-transformer baselines: EoMT (Kerssies et al. 2025) uses DINOv2-pretrained ViT-S/B/L/G backbones, while PMT (Cavagnero et al. 2026) uses DINOv3-pretrained ViT-L. Models are trained on two NVIDIA B200 GPUs with a batch size of 4, using mixed-precision training and AdamW (Loshchilov and Hutter 2017). We use an initial learning rate of 10 −4, layer-wise learning-rate decay of 0.8, and polynomial learning-rate decay with a power of 0.9. Training lasts 12 epochs on COCO, 31 epochs on ADE20K, and 56 epochs on Cityscapes. We set the number of hard negatives NH to 10. CLSD starts at epoch 4 and is linearly annealed thereafter. Unless stated otherwise, all ablations use EoMT-iFAN with ViT-L and 640 2 inputs on COCO. 
+
+Main Results 
+
+iFAN on different benchmarks. As shown in Table 1, iFAN consistently improves plain mask transformers with virtually no additional parameters, FLOPs, or inference over-head. On average, it improves PMT by 0.55 PQ on COCO and 2.15 PQ on ADE20K, and improves EoMT by 0.68 PQ and 1.58 PQ, respectively. Compared with more complex meth-ods, iFAN also provides a strong accuracy–efficiency trade-off. PMT-iFAN achieves 141 FPS at (640 2) resolution, while the strongest EoMT-iFAN reaches 59.6 PQ on COCO and 53.9 PQ on ADE20K, only 0.3 PQ below the best reported results. These results show that iFAN approaches state-of-the-art performance while preserving the efficiency of plain mask transformers. As shown in Table 3, iFAN consistently improves instance segmentation with virtually no additional inference overhead. On COCO, it improves PMT by an average of 1.1 AP and EoMT by 1.5 AP, with the strongest EoMT result increas-ing from 48.8 to 50.6 AP. These results demonstrate that iFAN effectively enhances instance-level recognition across different plain mask-transformer architectures. As shown in Table 2, iFAN also yields consistent gains in semantic segmentation. It improves EoMT by 0.3 mIoU on Cityscapes and 0.6 mIoU on ADE20K, while improving PMT by 0.9 mIoU on ADE20K and 0.7 mIoU on Cityscapes. These improvements show that iFAN generalizes well across segmentation tasks, model architectures, and datasets while preserving the efficiency of plain mask transformers. Method Backbone Pre-training Params Cityscapes val (Cordts et al. 2016) ADE20K val (Zhou et al. 2017) Input GFLOPs FPS mIoU Input GFLOPs FPS mIoU Mask2Former † Swin-L IN21K 216M 1024 × 2048 – 14 83.3 640 2 – 33 56.1 MaskDINO † Swin-L IN21K 223M – – – – 640 2 – – 56.6 OneFormer † ConvNeXt-XL IN21K 373M 1024 × 2048 775 7 83.6 640 2 607 21 57.4 OneFormer † DiNAT-L IN21K 223M 1024 × 2048 450 14 83.1 896 2 678 19 58.1 kMaX-DeepLab ConvNeXt-L IN21K 232M 1025 × 2049 1673 – 83.5 – – – –Mask2Former ViT-L DINOv2 – 896 × 1792 – – 84.8 896 2 – – 59.4 OneFormer+ViT-P ‡ DiNAT-L ‡ IN21K 309M – – – – 1280 2 1955 5 59.9 c
+
+Mask2Former ‡ ViT-AL ‡ DINOv2 351M 1024 2 5200 7 84.5 512 2 910 21 58.9 PMT ViT-L DINOv3 357M 1024 2 5113 27 83.1 ‡
+
+512 2 823 128 58.5 PMT-iFAN ViT-L DINOv3 357M 1024 2 5113 27 83.8 ↑0.7 512 2 823 128 59.4 ↑0.9
+
+EoMT ViT-L DINOv2 319M 1024 2 4350 25 84.2 512 2 721 92 58.4 EoMT-iFAN ViT-L DINOv2 319M 1024 2 4350 25 84.5 ↑0.3 512 2 721 92 59.0 ↑0.6
+
+Table 2: Semantic segmentation on Cityscapes and ADE20K val . Blue rows apply iFAN to the corresponding PMT or EoMT baseline, and ↑ gives the absolute mIoU improvement. † denotes ADE20K shortest-side resizing, ‡ re-implementation, and c
+
+COCO panoptic pre-training. PMT and EoMT use DINOv3- and DINOv2-pretrained backbones, respectively. Efficiency for windowed methods includes all crops; iFAN rows follow the matched baseline under shared-configuration accounting. 
+
+Method Backbone Params Input FPS AP OneFormer † DiNAT-L 223M 800 2 20 49.2 Mask2Former † Swin-L 216M 800 2 24 50.1 MaskDINO † DiNAT-L 223M 800 2 14 52.3 OneFormer+ViT-P † DiNAT-L 309M 1024 2 4 49.5 Mask2Former ‡ ViT-AL ‡ 349M 640 2 29 47.6 Mask2Former ‡ ViT-AL ‡ 354M 1280 2 10 51.4 PMT ViT-L 357M 640 2 141 45.4 PMT-iFAN ViT-L 357M 640 2 141 46.6 ↑1.2
+
+PMT ViT-L 357M 1280 2 29 48.8 PMT-iFAN ViT-L 357M 1280 2 29 50.6 ↑1.8
+
+EoMT ViT-L 316M 640 2 128 44.8 EoMT-iFAN ViT-L 316M 640 2 128 46.0 ↑1.2
+
+EoMT ViT-L 322M 1280 2 30 48.8 EoMT-iFAN ViT-L 322M 1280 2 30 50.6 ↑1.8
+
+Table 3: Instance segmentation on COCO val2017 . Blue rows apply iFAN to the corresponding PMT or EoMT base-line, and ↑ gives the absolute AP improvement. † denotes shortest-side resizing and ‡ re-implementation. PMT and EoMT use DINOv3- and DINOv2-pretrained backbones, respectively. Parameters and FPS in iFAN rows follow the matched baseline under shared-configuration accounting. 
+
+Hyperparameter Sensitivity 
+
+Figure 3 evaluates the sensitivity of iFAN with EoMT-L and PMT-L to the loss weights of the APMR and CLSD ob-jectives. Both models remain robust across a broad range of hyperparameter values. We therefore adopt representa-tive values within the stable regions, namely λrank = 0 .10 
+
+and λdistill = 0 .40 , and keep them fixed across all datasets, 0.025 0.05 0.10 0.15 0.20 0.40 0.80         
+
+> λrank
+> 56.4
+> 56.5
+> 56.6
+> 56.7
+> 56.8
+> 56.9
+> 57.0
+> PQ  56.76
+> 56.86
+> 56.96
+> 56.90
+> 56.79
+> 56.74
+> 56.69
+> 56.52
+> 56.65
+> 56.72
+> 56.67
+> 56.63
+> 56.58
+> 56.47
+> EoMT-iFAN
+> PMT-iFAN 0.05 0.10 0.20 0.30 0.40 0.50 0.80
+> λdistill
+> 56.4
+> 56.5
+> 56.6
+> 56.7
+> 56.8
+> 56.9
+> 57.0
+> PQ  56.76 56.79
+> 56.86
+> 56.90
+> 56.96
+> 56.88
+> 56.73
+> 56.49
+> 56.57
+> 56.66 56.68
+> 56.72 56.74
+> 56.55
+> EoMT-iFAN
+> PMT-iFAN
+
+Figure 3: Hyperparameter sensitivity. Left: sensitivity to the APMR weight λrank . Right: sensitivity to the CLSD weight λdistill . Each loss weight is varied independently with ViT-L and 640 2 inputs, while all other settings are fixed. Filled markers indicate the selected values. backbones, input resolutions, and segmentation tasks. 
+
+Ablation Studies 
+
+Overall Ablation. Table 4(a) isolates the global mask-quality score, APMR, and CLSD. The EoMT baseline ob-tains 56.00 PQ. Adding mask-quality learning yields 56.43 PQ; further introducing ranking raises performance to 56.68 PQ, whereas combining quality learning with CLSD obtains 56.54 PQ. The complete iFAN model achieves 57.00 PQ. Thus, ranking suppresses competitive unmatched queries within the final prediction set, while CLSD transfers bet-ter adjusted probability-mask responses from intermediate layers to the final layer. 
+
+Ablation on Cross-Layer Self-Distillation. Table 4(b) studies best-teacher selection (BT) and ˆS-map distilla-tion. Without self-distillation, the model obtains 56.00 PQ. Naively distilling soft-IoU from the preceding layer reduces the result to 55.96 PQ, indicating that the immediately pre-ceding layer is not always a reliable teacher. Selecting the (a) Overall module ablation 
+
+Quality APMR CLSD PQ 
+
+× × × 56.00 
+
+✓ × × 56.43 
+
+✓ ✓ × 56.68 
+
+✓ × ✓ 56.54 
+
+✓ ✓ ✓ 57.00 (b) CLSD component analysis 
+
+Ldistill BT ˆS Distill. PQ 
+
+× × × 56.00 
+
+✓ × × 55.96 
+
+✓ ✓ × 56.39 
+
+✓ × ✓ 56.02 
+
+✓ ✓ ✓ 56.54 
+
+Table 4: Overall iFAN and CLSD ablations on COCO 
+
+val2017 using ViT-L at 640 2. In (a), Quality denotes the global mask-quality branch. In (b), a checkmark under BT selects the intermediate teacher with the highest soft-IoU (Eq. (5)), whereas a cross fixes the teacher to the layer im-mediately preceding the final layer. A checkmark under ˆS
+
+Distill. denotes distillation of the adjusted probability-mask score map ˆS, whereas a cross distills soft-IoU. Query    
+
+> Disagreement
+> High Prob-Mask
+> (Low IoU)
+> 0%
+> 15%
+> 30%
+> 45%
+> 60%
+> 75%
+> Percentage (%)
+> 64.45%
+> 29.27% 27.49%
+> 11.50%
+> Baseline
+> Ours L-3 L-2 L-1 Final
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Number of classes best at each layer
+> 8
+> 27
+> 45
+> 53
+> 1
+> 15
+> 19
+> 98
+> Intermediate layers
+> Baseline: 80/133
+> Baseline
+> Ours
+
+Figure 4: Inference diagnostics on COCO val2017 . Left: disagreement between the max-prob-mask and max-IoU 
+
+queries, together with the frequency of high probability-mask scores paired with low IoU. Right: the numbers of classes whose optimal prediction is produced by an intermediate or the final layer. Both panels compare EoMT with iFAN. intermediate teacher with the highest soft-IoU according to Eq. (5) increases the result to 56.39 PQ, while using the adjusted probability-mask score map ˆS with the preceding-layer teacher gives 56.02 PQ. Combining best-teacher selec-tion with ˆS-map distillation reaches 56.54 PQ, 0.58 points above naive distillation and 0.15 points above best-teacher se-lection alone. Teacher selection therefore removes the main source of noisy cross-layer supervision, and ˆS-map distilla-tion provides an additional benefit by transferring the same score map used for inference-time competition. Figure 4 (right) provides a depth-wise diagnostic. For EoMT, the final layer is optimal for 53 of the 133 classes, whereas an intermediate layer is optimal for the remaining 80. With CLSD, the number of final-layer-optimal classes increases to 98 and the intermediate-layer count decreases to 35. This shift indicates that CLSD more effectively preserves useful intermediate predictions in the final layer. 
+
+Ablation on Adjusted Probability-Mask Ranking. Ta-ble 5(a) incrementally evaluates the ranking design. Adding the ranking objective to the 56.00-PQ baseline reaches 56.39 PQ. Computing the ranking loss on the adjusted probability-mask score map ˆS further improves PQ to 56.45. Finally, 
+
+(a) APMR component analysis 
+
+Lrank ˆS Ranking SG PQ 
+
+× × × 56.00 
+
+✓ × × 56.39 
+
+✓ ✓ × 56.45 
+
+✓ ✓ ✓ 56.68 (b) Effect of model size 
+
+Size Params EoMT iFAN ViT-S 24M 44.7 46.3 
+
+ViT-B 93M 50.6 51.8 
+
+ViT-L 316M 56.0 57.0 
+
+ViT-G 1164M 57.0 57.8 
+
+Table 5: APMR and model-size ablations on COCO. The variants in (a) cumulatively enable the APMR loss, its com-putation on the adjusted probability-mask score map ˆSi,and stop-gradient (SG) on the class-probability and mask branches. Panel (a) uses EoMT with ViT-L at 640 2; panel (b) uses 640 2 inputs and DINOv2 pre-training and reports PQ. stopping the ranking gradients to the class-probability and mask branches, so that this objective updates the global qual-ity score, yields 56.68 PQ. This final 0.23-point gain supports the design choice in the APMR section: ranking should cal-ibrate the quality used in segmentation competition without disrupting the original classification and mask objectives. The left panel of Figure 4 is consistent with the ablation. iFAN reduces the disagreement rate between the max-prob-mask and max-IoU queries from 64.45% to 27.49%, and reduces the proportion of high probability-mask scores with low IoU from 29.27% to 11.50%. APMR therefore makes the query selected for inference more consistent with the query that best overlaps the target. 
+
+Effect of model size. Table 5(b) evaluates EoMT-iFAN from ViT-S to ViT-G. iFAN improves all backbones by 1.6, 1.2, 1.0, and 0.8 PQ, respectively. The gain decreases as the backbone scales, suggesting that smaller models leave more probability-mask competition errors for iFAN to correct; the improvement remains consistent even for ViT-G. 
+
+## Conclusion 
+
+We presented iFAN, an inference-aware learning framework for plain mask transformers that improves both query compe-tition and cross-layer knowledge transfer. APMR augments the probability-mask score with global mask quality and ex-plicitly ranks matched queries above hard unmatched com-petitors, making inference-time query selection more con-sistent with mask quality. CLSD identifies a better inter-mediate prediction for each target and distills its adjusted probability-mask score map to the final layer, without requir-ing multi-layer inference. Experiments on COCO, ADE20K, and Cityscapes show consistent improvements across panop-tic, instance, and semantic segmentation, two plain mask-transformer baselines, multiple backbone sizes, and different input resolutions. Diagnostic results further show that iFAN reduces the disagreement between the max-prob-mask and max-IoU queries from 64.45% to 27.49%, while increasing the number of classes for which the final layer achieves the best performance from 53 to 98. These substantial improve-ments provide direct evidence that iFAN effectively alleviates cross-query competition and preserves valuable intermediate information in the final predictions. References 
+
+Carion, N.; Massa, F.; Synnaeve, G.; Usunier, N.; Kirillov, A.; and Zagoruyko, S. 2020. End-to-end object detection with transformers. In European conference on computer vision , 213–229. Springer. Cavagnero, N.; Norouzi, N.; Dubbelman, G.; and de Geus, D. 2026. PMT: Plain Mask Transformer for Image and Video Segmentation with Frozen Vision Encoders. arXiv preprint arXiv:2603.25398 .Chang, J.; Wang, S.; Xu, H.-M.; Chen, Z.; Yang, C.; and Zhao, F. 2023. Detrdistill: A universal knowledge distil-lation framework for detr-families. In Proceedings of the IEEE/CVF international conference on computer vision ,6898–6908. Cheng, B.; Misra, I.; Schwing, A. G.; Kirillov, A.; and Gird-har, R. 2022. Masked-attention mask transformer for univer-sal image segmentation. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition ,1290–1299. Cheng, B.; Schwing, A.; and Kirillov, A. 2021. Per-pixel classification is not all you need for semantic segmenta-tion. Advances in neural information processing systems ,34: 17864–17875. Cordts, M.; Omran, M.; Ramos, S.; Rehfeld, T.; Enzweiler, M.; Benenson, R.; Franke, U.; Roth, S.; and Schiele, B. 2016. The cityscapes dataset for semantic urban scene understand-ing. In Proceedings of the IEEE conference on computer vision and pattern recognition , 3213–3223. Dosovitskiy, A.; Beyer, L.; Kolesnikov, A.; Weissenborn, D.; Zhai, X.; Unterthiner, T.; Dehghani, M.; Minderer, M.; Heigold, G.; Gelly, S.; et al. 2020. An image is worth 16x16 words: Transformers for image recognition at scale. arXiv preprint arXiv:2010.11929 .Everingham, M.; Van Gool, L.; Williams, C. K.; Winn, J.; and Zisserman, A. 2010. The pascal visual object classes (voc) challenge. International journal of computer vision ,88(2): 303–338. Hu, J.; Chen, C.; Cao, L.; Zhang, S.; Shu, A.; Jiang, G.; and Ji, R. 2023. Pseudo-label alignment for semi-supervised instance segmentation. In Proceedings of the IEEE/CVF international conference on computer vision , 16337–16347. Huang, Z.; Huang, L.; Gong, Y.; Huang, C.; and Wang, X. 2019. Mask scoring r-cnn. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition ,6409–6418. Jain, J.; Li, J.; Chiu, M. T.; Hassani, A.; Orlov, N.; and Shi, H. 2023. Oneformer: One transformer to rule universal image segmentation. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , 2989–2998. Ke, L.; Danelljan, M.; Li, X.; Tai, Y.-W.; Tang, C.-K.; and Yu, F. 2022. Mask transfiner for high-quality instance seg-mentation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 4412–4421. Kerssies, T.; Cavagnero, N.; Hermans, A.; Norouzi, N.; Averta, G.; Leibe, B.; Dubbelman, G.; and De Geus, D. 2025. Your vit is secretly an image segmentation model. In 
+
+Proceedings of the computer vision and pattern recognition conference , 25303–25313. Kirillov, A.; He, K.; Girshick, R.; Rother, C.; and Dollár, P. 2019. Panoptic segmentation. In Proceedings of the IEEE/CVF conference on computer vision and pattern recog-nition , 9404–9413. Lee, C.-Y.; Xie, S.; Gallagher, P.; Zhang, Z.; and Tu, Z. 2015. Deeply-supervised nets. In Artificial intelligence and statistics , 562–570. Pmlr. Li, F.; Zhang, H.; Liu, S.; Guo, J.; Ni, L. M.; and Zhang, L. 2023a. Dn-detr: Accelerate detr training by introducing query denoising. IEEE Transactions on Pattern Analysis and Machine Intelligence , 46(4): 2239–2251. Li, F.; Zhang, H.; Xu, H.; Liu, S.; Zhang, L.; Ni, L. M.; and Shum, H.-Y. 2023b. Mask dino: Towards a unified transformer-based framework for object detection and seg-mentation. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , 3041–3050. Li, Z.; Wang, W.; Xie, E.; Yu, Z.; Anandkumar, A.; Alvarez, J. M.; Luo, P.; and Lu, T. 2022. Panoptic segformer: Delving deeper into panoptic segmentation with transformers. In 
+
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , 1280–1289. Lin, T.-Y.; Maire, M.; Belongie, S.; Hays, J.; Perona, P.; Ramanan, D.; Dollár, P.; and Zitnick, C. L. 2014. Microsoft coco: Common objects in context. In European conference on computer vision , 740–755. Springer. Liu, S.; Ren, T.; Chen, J.; Zeng, Z.; Zhang, H.; Li, F.; Li, H.; Huang, J.; Su, H.; Zhu, J.; et al. 2023. Detection transformer with stable matching. In Proceedings of the IEEE/CVF In-ternational Conference on Computer Vision , 6491–6500. Loshchilov, I.; and Hutter, F. 2017. Decoupled weight decay regularization. arXiv preprint arXiv:1711.05101 .Oquab, M.; Darcet, T.; Moutakanni, T.; Vo, H.; Szafraniec, M.; Khalidov, V.; Fernandez, P.; Haziza, D.; Massa, F.; El-Nouby, A.; et al. 2024. Dinov2: Learning robust visual fea-tures without supervision. Transactions on Machine Learn-ing Research Journal .Pu, Y.; Liang, W.; Hao, Y.; Yuan, Y.; Yang, Y.; Zhang, C.; Hu, H.; and Huang, G. 2023. Rank-DETR for high quality object detection. Advances in Neural Information Processing Systems , 36: 16100–16113. Shahabodini, S.; Mansoori, M.; Bayatmakou, F.; Abouei, J.; Plataniotis, K.; and Mohammadi, A. 2026. The Missing Point in Vision Transformers for Universal Image Segmentation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 6314–6324. Wang, H.; Zhu, Y.; Adam, H.; Yuille, A.; and Chen, L.-C. 2021. Max-deeplab: End-to-end panoptic segmentation with mask transformers. In Proceedings of the IEEE/CVF con-ference on computer vision and pattern recognition , 5463– 5474. Wang, Y.; Li, X.; Weng, S.; Zhang, G.; Yue, H.; Feng, H.; Han, J.; and Ding, E. 2024. Kd-detr: Knowledge distillation for detection transformer with consistent distillation points sampling. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 16016–16025. Wu, S.; Sun, L.; and Li, Q. 2024. OD-DETR: online distil-lation for stabilizing training of detection transformer. arXiv preprint arXiv:2406.05791 .Yu, Q.; Wang, H.; Qiao, S.; Collins, M.; Zhu, Y.; Adam, H.; Yuille, A.; and Chen, L.-C. 2022. k-means Mask Trans-former. In European conference on computer vision , 288– 307. Springer. Zhang, H.; Li, F.; Liu, S.; Zhang, L.; Su, H.; Zhu, J.; Ni, L.; and Shum, H.-Y. 2022. Dino: Detr with improved denoising anchor boxes for end-to-end object detection. In The eleventh international conference on learning representations .Zhang, H.; Li, F.; Xu, H.; Huang, S.; Liu, S.; Ni, L. M.; and Zhang, L. 2023. Mp-former: Mask-piloted transformer for image segmentation. In Proceedings of the IEEE/CVF con-ference on computer vision and pattern recognition , 18074– 18083. Zhang, L.; Song, J.; Gao, A.; Chen, J.; Bao, C.; and Ma, K. 2019. Be your own teacher: Improve the performance of convolutional neural networks via self distillation. In 
+
+Proceedings of the IEEE/CVF international conference on computer vision , 3713–3722. Zhou, B.; Zhao, H.; Puig, X.; Fidler, S.; Barriuso, A.; and Torralba, A. 2017. Scene parsing through ade20k dataset. In 
+
+Proceedings of the IEEE conference on computer vision and pattern recognition , 633–641. Supplementary Material 
+
+More ablation 
+
+Figure 5 evaluates the sensitivity to the number of hard neg-atives NH and the weighting exponent γ. Performance re-mains consistently strong for NH ∈ [7 , 15] . Similarly, vary-ing γ from 0.5 to 3 results in only a 0.18 PQ difference. The setting γ = 2 effectively suppresses low-valued responses while avoiding the excessive attenuation caused by a larger exponent. We therefore use NH = 10 and γ = 2 as the default settings. 1 5 7 10 15 20         
+
+> Number of hard negatives NH
+> 56.7
+> 56.8
+> 56.9
+> 57.0
+> PQ
+> 56.69
+> 56.75
+> 56.90
+> 56.96
+> 56.87 56.85 0.5 11.5 22.5 3
+> γ
+> 56.7
+> 56.8
+> 56.9
+> 57.0
+> PQ
+> 56.79
+> 56.85
+> 56.91
+> 56.96 56.97
+> 56.85
+
+Figure 5: Hyperparameter sensitivity on COCO panop-tic segmentation. Left: performance remains stable across a broad range of NH . Right: γ balances the suppression of low-valued responses against the preservation of use-ful responses. Filled markers denote the selected settings, 
+
+NH = 10 and γ = 2 .
+
+Detailed PMT and EoMT Results 
+
+Tables 6–8 We provide more detailed results of EoMT, PMT, and iFAN for panoptic, semantic, and instance segmentation. For the PMT ViT-L 1280 results reported in the main paper, there was a transcription error. The correct results are the ones provided in the appendix. 
+
+Score–Quality Alignment in Query Competition 
+
+This section details the query-wise diagnostic summarized in Fig.1 (top) of the Introduction. It tests whether the query-level score that determines probability-mask competition is consistent with the actual mask quality of that query, thereby isolating the inference mismatch targeted by Ad-justed Probability-Mask Ranking (APMR). 
+
+Protocol. We evaluate EoMT and EoMT-iFAN on all 5,000 images of COCO val2017 . For a given image, let 
+
+{(cj , M j )}Ngt  
+
+> j=1
+
+denote its ground-truth segments, where cj
+
+and Mj are the class label and binary mask of segment j.Query i outputs a class-probability distribution ˆpi over the foreground classes and the no-object class ∅, together with a soft mask ˆMi ∈ [0 , 1] H×W . Let ˆci = arg max c ˆpi(c) denote its predicted class. We first compute its soft-IoU with every ground-truth segment: 
+
+sij = soft_IoU ( ˆMi, M j ) (8) The sums are taken over all image pixels; unlike thresholded IoU, Eq. (8) retains the predicted mask probabilities. To exclude queries with essentially no spatial support on any annotated segment, we define the evaluated query set as 
+
+Qeval =
+
+
+
+i ˆci̸ = ∅, max 
+
+> 1≤j≤Ngt
+
+sij > 0.01 
+
+
+
+. (9) This initial overlap test is class-agnostic and serves only as a candidate filter. It does not select the ground-truth segment used to define mask quality. For each i ∈ Q eval , let Ji = {j | cj = ˆ ci} be the set of ground-truth segments whose class matches the predicted class of query i. We define the query’s reference mask qual-ity as 
+
+ui =
+
+(max 
+
+> j∈J i
+
+sij , Ji̸ = ∅,
+
+0, Ji = ∅. (10) Hence, ui is the best soft-IoU that query i attains with any ground-truth segment of its predicted class. Overlap with a ground-truth segment of a different class cannot increase 
+
+ui. Unlike one-to-one Hungarian assignment, this diagnos-tic comparison is many-to-one: multiple queries may use the same ground-truth segment as their best class-consistent reference. It therefore measures the class-consistent mask quality of every retained competing query without tying the analysis to its training-time assignment. For EoMT, the query-level competition score is the predicted-class confidence 
+
+rEoMT  
+
+> i
+
+= max  
+
+> c̸=∅
+
+ˆpi(c). (11) For iFAN, the corresponding score incorporates the predicted global mask quality, 
+
+riFAN  
+
+> i
+
+= ˆ qi max  
+
+> c̸=∅
+
+ˆpi(c). (12) The adjusted probability-mask score map used by iFAN is therefore ˆSi = ( riFAN  
+
+> i
+
+)2 ˆMi. Because squaring is monotonic for these non-negative scores, it does not change the pairwise ordering or the identity of the highest-scoring query. 
+
+Metrics. We report five complementary measurements: 
+
+Pairwise ordering accuracy (higher is better): For every pair of retained queries from the same image with |ui −uk| >
+
+0.05 , this metric checks whether their competition scores have the same ordering as their reference mask qualities. It reports the percentage of such pairs for which the higher-quality query also has the higher score. 
+
+Top-query accuracy (higher is better): For each eligible image, we identify the retained query with the largest compe-tition score and the retained query with the largest reference mask quality. This metric reports the percentage of images for which these two selections identify the same query. 
+
+Top-query conflict (lower is better): Let ir =arg max i∈Q eval ri be the highest-scoring retained query. A conflict is counted when its quality is more than 0.05 below the best available quality, i.e., max i∈Q eval ui − uir > 0.05 .The metric is the percentage of eligible images containing such a conflict. Table 6: Detailed panoptic segmentation results for PMT and EoMT on COCO val2017 and ADE20K val . th and st denote things and stuff, respectively. ∆PQ compares each iFAN model with its matched baseline. Blue rows denote iFAN. Parameters, GFLOPs, and FPS in iFAN rows follow the matched baseline under shared-configuration accounting; “–” indicates that a metric is unavailable. Method Dataset Backbone Input Params GFLOPs FPS PQ RQ SQ PQ th RQ th SQ th PQ st RQ st SQ st ∆PQ PMT COCO ViT-L 640 2 357M 767 141 56.1 67.0 82.9 61.5 73.0 83.6 48.1 58.0 81.7 –PMT-iFAN COCO ViT-L 640 2 357M 767 141 56.7 67.2 83.5 62.3 73.5 84.2 48.2 57.6 82.4 +0.6 
+
+PMT COCO ViT-L 1280 2 357M 4925 29 58.1 68.7 83.7 64.6 75.7 84.8 48.3 58.1 81.9 –PMT-iFAN COCO ViT-L 1280 2 357M 4925 29 58.6 69.0 84.1 65.0 76.0 85.1 48.9 58.4 82.7 +0.5 
+
+EoMT COCO ViT-L 640 2 316M 669 128 56.0 67.2 82.5 61.2 73.1 83.1 48.2 58.2 81.5 –EoMT-iFAN COCO ViT-L 640 2 316M 669 128 57.0 68.0 83.0 62.1 73.7 83.6 49.3 59.3 82.1 +1.0 
+
+EoMT COCO ViT-L 1280 2 322M 4146 30 58.3 69.0 83.5 64.7 75.9 84.7 48.6 58.6 81.8 –EoMT-iFAN COCO ViT-L 1280 2 322M 4146 30 58.8 69.5 83.8 65.2 76.5 84.7 49.2 58.9 82.4 +0.5 
+
+EoMT COCO ViT-G 640 2 1164M 2261 55 57.0 68.2 82.7 62.6 74.5 83.5 48.6 58.8 81.4 –EoMT-iFAN COCO ViT-G 640 2 1164M 2261 55 57.8 68.8 83.2 63.5 75.4 83.8 49.1 58.8 82.4 +0.8 
+
+EoMT COCO ViT-G 1280 2 1171M 12712 12 59.2 69.8 83.8 66.0 77.2 85.1 48.8 58.8 81.8 –EoMT-iFAN COCO ViT-G 1280 2 1171M 12712 12 59.6 70.4 83.9 66.3 77.6 85.0 49.6 59.5 82.3 +0.4 
+
+PMT ADE20K ViT-L 640 2 357M 767 141 49.4 58.9 82.7 48.3 57.9 82.3 52.0 60.8 83.5 –PMT-iFAN ADE20K ViT-L 640 2 357M 767 141 50.7 – – 50.4 – – 51.2 – – +1.3 
+
+PMT ADE20K ViT-L 1280 2 357M 4925 29 50.5 59.6 83.2 50.5 59.6 83.7 51.4 59.6 82.3 –PMT-iFAN ADE20K ViT-L 1280 2 357M 4925 29 53.0 – – 53.7 – – 51.6 – – +2.5 
+
+EoMT ADE20K ViT-L 640 2 316M 669 128 50.6 59.9 82.4 49.7 59.2 82.2 52.3 61.5 82.8 –EoMT-iFAN ADE20K ViT-L 640 2 316M 669 128 52.2 62.0 81.3 51.8 61.9 81.9 53.1 62.1 80.1 +1.6 
+
+EoMT ADE20K ViT-L 1280 2 322M 4146 30 51.7 60.4 82.5 52.0 61.2 82.5 51.0 58.9 82.6 –EoMT-iFAN ADE20K ViT-L 1280 2 322M 4146 30 53.9 63.2 84.6 53.7 63.3 84.1 54.1 62.9 85.5 +2.2 
+
+EoMT ADE20K ViT-G 640 2 1164M 2261 55 51.3 60.7 83.3 50.5 59.9 82.6 53.0 62.3 84.6 –EoMT-iFAN ADE20K ViT-G 640 2 1164M 2261 55 52.7 62.3 83.2 52.3 62.2 83.1 53.6 62.7 83.4 +1.4 
+
+EoMT ADE20K ViT-G 1280 2 1171M 12712 12 52.8 61.3 84.0 52.7 61.6 83.9 52.6 60.8 84.1 –EoMT-iFAN ADE20K ViT-G 1280 2 1171M 12712 12 53.9 63.0 84.3 54.0 63.2 83.8 53.7 62.6 85.1 +1.1 
+
+Table 7: Detailed semantic segmentation results for PMT and EoMT on Cityscapes and ADE20K val . Block −k gives the validation mIoU predicted from the k-th block counted backward from the final block. ∆mIoU compares each iFAN model with its matched baseline. Blue rows denote iFAN, and “–” indicates that a metric was not logged for that configuration. Method Dataset Backbone Input Params GFLOPs FPS mIoU Block −1 Block −2 Block −3 Block −4 ∆mIoU EoMT Cityscapes ViT-L 1024 2 319M 4350 25 84.2 – – – – –EoMT-iFAN Cityscapes ViT-L 1024 2 319M 4350 25 84.5 84.5 84.4 82.6 74.3 +0.3 
+
+PMT ADE20K ViT-L 512 2 357M 823 128 58.5 – – – – –PMT-iFAN ADE20K ViT-L 512 2 357M 823 128 59.4 – – – – +0.9 
+
+EoMT ADE20K ViT-L 512 2 319M 721 92 58.4 – – – – –EoMT-iFAN ADE20K ViT-L 512 2 319M 721 92 59.0 58.5 58.2 57.5 14.1 +0.6 
+
+Table 8: Detailed local instance segmentation results for PMT and EoMT on COCO val2017 . ∆AP compares each iFAN model with its matched baseline; EoMT deltas are computed from the unrounded records before rounding. Blue rows denote iFAN. Parameters and FPS in iFAN rows follow the matched baseline under shared-configuration accounting. Method Backbone Input Params FPS AP AP 50 AP 75 AP S AP M AP L Epoch ∆AP PMT ViT-L 640 2 357M 141 45.4 69.5 48.2 21.0 50.9 72.3 11 –PMT-iFAN ViT-L 640 2 357M 141 46.6 69.8 50.2 21.7 51.2 72.5 10 +1.2 
+
+EoMT ViT-L 640 2 316M 128 44.8 69.3 47.4 19.7 50.6 72.2 – –EoMT-iFAN ViT-L 640 2 316M 128 46.0 69.7 48.9 20.4 50.6 71.9 – +1.2 
+
+PMT ViT-L 1280 2 357M 29 49.3 73.5 53.5 28.7 53.9 72.9 11 –PMT-iFAN ViT-L 1280 2 357M 29 50.6 74.0 55.1 28.8 54.6 72.8 10 +1.3 
+
+EoMT ViT-L 1280 2 322M 30 48.8 73.5 52.5 27.4 54.1 72.1 – –EoMT-iFAN ViT-L 1280 2 322M 30 50.6 74.2 54.8 29.6 54.7 72.9 – +1.8 
+
+High-score low-quality rate (lower is better): Among re-tained queries with ri ≥ 0.8, this metric reports the per-centage whose reference mask quality satisfies ui < 0.5. It measures how often a highly confident competitor neverthe-Table 9: Score–quality alignment on COCO val2017 . All images are evaluated. “Change” denotes iFAN minus EoMT; percentage changes are in percentage points.                   
+
+> Metric EoMT iFAN Change Pairwise ordering accuracy (%) 76.07 79.42 +3.35 Top-query accuracy (%) 35.55 72.51 +36.96 Top-query conflict (%) 64.45 27.49 -36.96 High-score low-quality rate (%) 29.27 11.5 -17.8 Mask-quality gap 0.1070 0.0591 -0.0479
+
+less has poor class-consistent mask quality. 
+
+Mask-quality gap (lower is better): For each eligible image, we compute max i∈Q eval ui − uir , namely the quality lost by selecting the highest-scoring query instead of the best-quality retained query. We report its average over eligible images; a value of zero indicates no quality loss. 
+
+Results and interpretation. Pairwise ordering accuracy increases from 76.07% to 79.42%. The effect is larger at the top of the ranking: top-query accuracy increases from 35.55% to 72.51%, top-query conflict decreases from 64.45% to 27.49%, and the average mask-quality gap de-creases from 0.1070 to 0.0591. The high-score low-quality rate also decreases from 29.27% to approximately 11.5%. APMR therefore improves the high-score region that deter-mines which query dominates probability-mask competition. The statistics contain 72,619 valid queries and 1,474 eligible images for EoMT, and 72,209 queries and 1,473 images for iFAN; the small count difference results from applying the candidate criterion independently to each model. 
+
+Qualitative Segmentation Results 
+
+Figures 6, 7, and 8 show representative iFAN predictions for panoptic, instance, and semantic segmentation. Each row presents the input image, ground truth, and standalone pre-diction. These examples complement, rather than replace, the benchmark comparisons. Input Images GT Prediction Figure 6: Qualitative results for panoptic segmentation. Each row shows an input image, ground truth, and the standalone prediction. The examples contain complex street layouts with large stuff regions and multiple thing instances, including vehicles, pedestrians, traffic signs, and roadside objects. Input Images GT Prediction Figure 7: Qualitative results for instance segmentation. The three columns show the input image, the ground truth, and the standalone instance masks. The selected scenes emphasize dense arrangements, substantial occlusion, scale variation, and adjacent instances with similar appearance. Input Images GT Prediction Figure 8: Qualitative results for semantic segmentation. Each row presents the input image, the ground truth, and the standalone prediction. The examples cover diverse indoor and outdoor scenes and illustrate coherent region assignment around objects with different shapes, scales, and surrounding context.

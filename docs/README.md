@@ -41,7 +41,7 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-08-04</span>
+      <span class="dpr-home-dashboard-kicker">2026-08-05</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
     <strong class="dpr-home-dashboard-count">共 15 篇</strong>
@@ -51,7 +51,7 @@
     <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>7</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>8</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-08-04 22:34:39 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-08-05 22:33:55 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,9 +62,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日精读7篇、速读8篇，其中两篇深度估计论文获9.0高分，最受关注。</p>
-<p>WHTMix提出高效立体匹配新思路，另一篇则打破水平先验提升滚动姿态下单目深度估计鲁棒性。</p>
-<p>建议优先精读这两篇高分工作，速读部分可留意卫星影像立体匹配与MLLM显著目标检测方向。</p>
+<p>今日精选15篇论文，其中7篇精读、8篇速读，重点聚焦开放词汇语义分割与高效立体匹配。</p>
+<p>最值得关注的是10分工作《Perceptual Anchoring》以原型引导文本校准实现免训练分割，以及9分《WHTMix》用Walsh-Hadamard混合提升立体深度估计效率。</p>
+<p>建议优先阅读这两篇高分论文，其余速读可关注注意力剪枝与多模态自监督方向，后续持续追踪视觉-语言模型结合3D证据的进展。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -76,9 +76,9 @@
     <strong class="dpr-home-dashboard-count">7 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="WHTMix: Efficient Stereo Depth Estimation via Walsh-Hadamard Token Mixing">WHTMix: Efficient Stereo Depth Estimation via Walsh-Hadamard Token Mixing</span></li><li><span class="dpr-home-dashboard-paper-title" title="Breaking the Horizontal Prior: From Long-Tailed Orientation Bias to Roll-Robust Monocular Depth Estimation">Breaking the Horizontal Prior: From Long-Tailed Orientation Bias to Roll-Robust Monocular Depth Estimation</span></li><li><span class="dpr-home-dashboard-paper-title" title="GIFT: Geometry-Invariant Fine-Tuning for Non-Lambertian Monocular Depth Estimation">GIFT: Geometry-Invariant Fine-Tuning for Non-Lambertian Monocular Depth Estimation</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Perceptual Anchoring: Prototype-Guided Text Calibration for Training-free Open-Vocabulary Semantic Segmentation">Perceptual Anchoring: Prototype-Guided Text Calibration for Training-free Open-Vocabulary Semantic Segmentation</span></li><li><span class="dpr-home-dashboard-paper-title" title="WHTMix: Efficient Stereo Depth Estimation via Walsh-Hadamard Token Mixing">WHTMix: Efficient Stereo Depth Estimation via Walsh-Hadamard Token Mixing</span></li><li><span class="dpr-home-dashboard-paper-title" title="XiDepth: a Lightweight and Efficient Network for Self-supervised Monocular Depth Estimation">XiDepth: a Lightweight and Efficient Network for Self-supervised Monocular Depth Estimation</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">mono-depth <strong>3</strong></span><span class="dpr-home-dashboard-tag">seg <strong>2</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>2</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">seg <strong>3</strong></span><span class="dpr-home-dashboard-tag">vfm <strong>2</strong></span><span class="dpr-home-dashboard-tag">mono-depth <strong>1</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>1</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -89,9 +89,9 @@
     <strong class="dpr-home-dashboard-count">8 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="SeasonStereo: Robust Dense Stereo Matching for Multi-Date Satellite Imagery via Generative AI">SeasonStereo: Robust Dense Stereo Matching for Multi-Date Satellite Imagery via Generative AI</span></li><li><span class="dpr-home-dashboard-paper-title" title="Is It Time for the Renaissance of Salient Object Detection in the Era of MLLMs?">Is It Time for the Renaissance of Salient Object Detection in the Era of MLLMs?</span></li><li><span class="dpr-home-dashboard-paper-title" title="SSR: Similarity-Shift Refinement for Training-Free Object-Centric Masks">SSR: Similarity-Shift Refinement for Training-Free Object-Centric Masks</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Interpretability-Guided Soft Pruning of Attention Heads in Vision Transformers">Interpretability-Guided Soft Pruning of Attention Heads in Vision Transformers</span></li><li><span class="dpr-home-dashboard-paper-title" title="PixVL: Self-Supervised Training of Pixel-Level MLLMs via a Unified Mask--Text Consistency Cycle">PixVL: Self-Supervised Training of Pixel-Level MLLMs via a Unified Mask--Text Consistency Cycle</span></li><li><span class="dpr-home-dashboard-paper-title" title="Distill What RGB Can Recover: Privileged 3D Evidence for RGB-Only Vision-Language Models">Distill What RGB Can Recover: Privileged 3D Evidence for RGB-Only Vision-Language Models</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">lite-vision <strong>3</strong></span><span class="dpr-home-dashboard-tag">seg <strong>2</strong></span><span class="dpr-home-dashboard-tag">depth-refine <strong>1</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>1</strong></span><span class="dpr-home-dashboard-tag">vfm <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">lite-vision <strong>3</strong></span><span class="dpr-home-dashboard-tag">seg <strong>2</strong></span><span class="dpr-home-dashboard-tag">matting <strong>1</strong></span><span class="dpr-home-dashboard-tag">mono-depth <strong>1</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>1</strong></span></div>
 </section>
 </div>
 
