@@ -1,0 +1,678 @@
+Title: URNet: A Unified Reparameterized Network for Efficient RGB-D Semantic Segmentation
+
+URL Source: https://arxiv.org/pdf/2608.05671v1
+
+Published Time: Fri, 07 Aug 2026 00:35:40 GMT
+
+Number of Pages: 9
+
+Markdown Content:
+# URNet: A Unified Reparameterized Network for Efficient RGB-D Semantic Segmentation 
+
+# Guoan Xu 
+
+University of Technology Sydney Sydney, New South Wales, Australia Guoan.Xu@student.uts.edu.au 
+
+# Zhengxue Wang 
+
+Nanjing University of Science and Technology Nanjing, China zxwang@njust.edu.cn 
+
+# Yang Xiao 
+
+University of Technology Sydney Sydney, New South Wales, Australia Yang.Xiao-2@student.uts.edu.au 
+
+# Ligeng Chen 
+
+Honor Device Co., Ltd. Beijing, China chenlg@smail.nju.edu.cn 
+
+# Guangwei Gao ∗
+
+Nanjing University of Science and Technology Nanjing, China csggao@gmail.com 
+
+# Dongchen Zhu 
+
+Shanghai Institute of Microsystem and Information Technology, CAS Shanghai, China dchzhu@mail.sim.ac.cn 
+
+## Abstract 
+
+Previous RGB-D semantic segmentation methods commonly em-ploy dual encoders to separately process RGB and depth inputs, followed by dedicated modules for cross-modal feature fusion. How-ever, such designs often inadequately capture depth representations and consequently limit effective cross-modal interaction, while the additional encoder branch introduces redundant computation that hinders lightweight execution. To tackle these challenges, we pro-pose URNet, a Unified Reparameterized RGB-D Network that per-forms simultaneous multi-modal feature extraction and cross-modal fusion within a single encoder. Specifically, we adopt a reparameter-ization strategy to compact the network architecture and facilitate fast inference. Within each Reparameterized Block (RepBlock), a Linear Gated Attention (LGA) module is introduced to fully exploit complementary RGB and depth cues across different feature scales. Furthermore, considering that decoder design has been relatively underexplored in existing RGB-D segmentation models, we develop a concise yet effective universal decoder, termed the Pyramid Merg-ing Decoder (PMD). Extensive experiments on multiple RGB-D segmentation benchmarks demonstrate that URNet achieves state-of-the-art performance while maintaining high efficiency. Code will be available at https://github.com/Wild-Stephen/URNet. 
+
+## CCS Concepts 
+
+• Computing methodologies → Image segmentation .
+
+## Keywords 
+
+RGB-D Segmentation, cross-modal interaction, reparameterization strategy, high efficiency 
+
+ACM Reference Format: 
+
+Guoan Xu, Zhengxue Wang, Yang Xiao, Ligeng Chen, Guangwei Gao, and Dongchen Zhu. 2026. URNet: A Unified Reparameterized Network  
+
+> ∗Corresponding author.
+> This work is licensed under a Creative Commons Attribution 4.0 International License.
+> MM ’26, Rio de Janeiro, Brazil
+> ©2026 Copyright held by the owner/author(s). ACM ISBN 979-8-4007-2213-4/2026/11 https://doi.org/10.1145/3767308.3835247
+
+for Efficient RGB-D Semantic Segmentation. In Proceedings of the 34th ACM International Conference on Multimedia (MM ’26), November 10–14, 2026, Rio de Janeiro, Brazil. ACM, New York, NY, USA, 9 pages. https: //doi.org/10.1145/3767308.3835247 
+
+## 1 Introduction 
+
+RGB-D semantic segmentation performs pixel-wise scene parsing by jointly exploiting RGB images and depth measurements. While RGB inputs convey rich appearance cues such as color and texture, depth maps encode geometric structure and spatial relationships, serving as an essential complement under adverse conditions. Most existing approaches [ 23 , 30 , 33 ] adopt a dual-encoder de-sign that decouples feature extraction and cross-modal interaction. Typically, RGB and depth features are extracted using pretrained encoders on the ImageNet dataset, after which cross-modal fusion is carried out at selected encoder stages through specialized modules. As shown in Figure 1, although effective in practice, this framework suffers from three notable limitations: inadequate depth feature modeling due to RGB-pretrained encoders, insufficient cross-modal interaction caused by sparse fusion stages, and excessive redun-dancy introduced by duplicated feature extraction branches. Certain limitations have been partially mitigated in prior works [ 3,11 , 36 , 37 ]. DPLNet [ 8 ] substituted the depth encoder with multi-modal prompt generation modules, thereby reducing the compu-tational burden of the depth branch. However, these modules are only introduced at a limited number of RGB encoder stages, which restricts the effectiveness of cross-modal fusion. GeminiFusion [ 14 ]adopted a pixel-level multi-modal fusion scheme designed to retain representations obtained from uni-modal learning, where fusion is restricted to matched tokens across modalities. Nevertheless, the limited scope of interaction constrains the effectiveness of multi-modal integration. To enable cross-modal interaction during en-coding, StitchFusion [ 17 ] proposed a multi-directional Modality Adapter (MoA) that transfers information across pretrained en-coders at multiple scales. While the repeated bidirectional fusion operations incur considerable computational cost, limiting the over-all lightweight property and slowing down inference. To effectively address the aforementioned limitations, we pro-pose URNet, a lightweight and efficient RGB-D semantic segmenta-tion framework for robotic perception. As illustrated in Figure 2, arXiv:2608.05671v1 [cs.CV] 6 Aug 2026 MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil Guoan Xu et al. Layer 3 Layer 15 RGB-D imgs Predicton 
+
+> RGB-D RGB
+> Encoder
+> ...
+> ...
+> ...
+> ...
+> ...
+> ...
+> A
+> B
+
+Figure 1: Feature visualization at different network stages (Layers 3, 15, and prediction) for models using RGB-D inputs but different pretraining schemes. Group A adopts a unified encoder pretrained on RGB-D, while Group B initializes both RGB and depth branches from RGB-pretrained models. 
+
+URNet is built upon a unified RGB-D encoder composed of multiple stacked blocks, each of which jointly performs multi-modal feature extraction and cross-modal interaction. Inspired by DFormer [ 34 ]and DFormer-v2 [ 35 ], we revisit the design of RGB-D pretraining and develop a dedicated pretraining framework that directly oper-ates on paired RGB images and corresponding depth images, em-bedding cross-modal interactions within each encoder block. This design naturally alleviates the mismatch between pretraining and fine-tuning inputs, while enabling dense RGB–depth interaction throughout the backbone instead of restricting fusion to a limited number of stages. URNet is trained in two phases: large-scale RGB-D ImageNet-1k pretraining and RGB-D segmentation benchmark fine-tuning. Specifically, we rethink the role of reparameteriza-tion in RGB-D architectures and design a Reparameterized Block (RepBlock ) for fast inference, in which a novel fusion mechanism, termed Linear Gated Attention ( LGA ), is introduced to effectively integrate RGB and depth features. Furthermore, most existing net-works underestimate the impact of the segmentation decoder and just use the MLP or HAM. In contrast, we introduce a lightweight 
+
+Pyramid Merging Decoder ( PMD ), which yields significant perfor-mance improvements while maintaining a slight computational burden. Our main contributions can be summarized as follows: 
+
+• We propose URNet, a unified RGB-D pretraining framework that produces four robust RGB-D pretrained models at differ-ent scales, enabling transferable and efficient representation learning for a wide range of RGB-D downstream tasks. 
+
+• We introduce a lightweight yet effective architectural design, including the proposed RepBlock for efficient RGB–D in-teraction and the Pyramid Merging Decoder (PMD) for parameter-efficient multi-scale feature aggregation, 
+
+• We assess URNet on NYUDepth V2 and SUN-RGBD datasets, where it achieves competitive performance against state-of-the-art methods while maintaining a more compact archi-tectural design. 
+
+## 2 Related Works 2.1 Pretrained vision backbones 
+
+Early progress in visual representation learning was CNN back-bones such as ResNets [ 13 ], providing strong inductive biases for local and hierarchical feature modeling. More recently, Vision Trans-formers [ 9] and hierarchical transformer backbones (e.g., Swin Transformer [ 19 ], PVT [ 25 ], SCASeg [ 31 ] and SegFormer [ 29 ]) have shown strong global context modeling ability for dense prediction, albeit with increased computational and memory cost, especially at high resolutions. To improve efficiency, recent works explore hybrid and lightweight backbones that combine convolution with atten-tion mechanisms, such as XCiT [ 1], S2AFormer [ 32 ], RepViT [ 24 ], and iFormer [ 38 ], which reduce token redundancy for practical deployment. Nevertheless, when applied to multi-modal inputs, these models often suffer from feature conflicts across modalities. This issue pri-marily arises because they are predominantly pretrained on large-scale RGB datasets. When encountering heterogeneous modalities such as depth, the pretrained encoders tend to provide inadequate depth feature modeling, leading to suboptimal cross-modal repre-sentation learning. DFormer [ 34 ] provides an insightful perspective by leveraging paired RGB-D data to pretrain a unified RGB-D backbone. This strat-egy effectively alleviates the modality bias inherent in RGB-only pretraining and enables more consistent cross-modal representa-tion learning. However, it largely overlooks the role of task-specific decoders, whose design is crucial for fully exploiting pretrained rep-resentations in downstream dense prediction tasks. Motivated by these observations, we propose a more efficient framework that fur-ther enhances computational efficiency while explicitly considering the importance of decoder design. 
+
+## 2.2 RGB-D semantic segmentation 
+
+In practical scenarios, factors such as low illumination, motion blur, and texture ambiguity often degrade the discriminative power of RGB cues, limiting their effectiveness in segmentation tasks. To mitigate these limitations, depth information has been introduced as a complementary modality, which provides explicit geometric cues about scene structure. This paradigm, commonly referred to as RGB-D semantic segmentation, leverages multi-modal sensing to enhance scene understanding. A common strategy in current RGB-D segmentation research is to employ dual-stream architectures and devise elaborate fusion schemes to integrate RGB and depth features learned by indepen-dently pretrained encoders. Approaches such as CMX [ 36 ], Gem-iniFusion [ 14 ], AsymFormer [ 10 ], and Sigma [ 23 ] exemplify this paradigm by adaptively merging modality-specific representations at the fusion level before the decoder. These backbones are pre-trained exclusively on large-scale RGB datasets and subsequently adapted to paired RGB-D inputs during fine-tuning. This inconsis-tency between the pretraining setting and the multi-modal input at deployment introduces a pronounced representation distribution shift, which can undermine effective cross-modal feature alignment. Inspired by the recent advances of DFormer [ 34 ], which demon-strate that pretraining a unified RGB-D model can significantly improve robustness, we followed the same principle and further URNet: A Unified Reparameterized Network for Efficient RGB-D Semantic Segmentation MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil RGB                            
+
+> Stem
+> Depth
+> Stem
+> Decoder
+> Seg Head
+> �×�×3
+> RGB
+> �×�×1
+> Depth
+> Prediction
+> Cls Head
+> ...
+> [CLS: dog, cat,
+> bird...]
+> GT
+> Loss
+> RGB
+> Depth
+> Unified RGB-D
+> Encoder
+> Load pretrained
+> weight
+> Token Mixer
+> Channel Mixer
+> Token Mixer
+> Channel Mixer
+> LGA
+> ��
+> ���
+> ���
+> 3×3,DW 1×1,DW 1×7,DW
+> 7×1,DW
+> ��+1
+> ���+1
+> ���
+> ��
+> 3×3,DW
+> Inference
+> Train
+> ImageNet
+> RGB-Depth pairs
+
+Enc 
+
+Rep 
+
+Block            
+
+> ×��
+> �2�+1×�2�+1×��
+> �×�×�
+> NYUDepth V2/
+> SUN-RGBD/...
+
+... ... 
+
+... ... 
+
+(a) Training Phase I (b) Training Phase II        
+
+> ��
+> ���
+> ��
+> �
+> ��
+> 푃표표�  ┠
+> Conv 3×3푆 ┠�표 簀 퐸�푒�푒 ┠ −푤  푒
+> multiplication
+> SENet
+> Concatenate
+> Trainable
+> Fintuning
+
+Figure 2: Overview of the training pipeline and backbone architecture of URNet. (a) Phase-I pretraining on ImageNet-based RGB-D data. (b) Phase-II fine-tuning on NYUDepth and so on, to adapt the pretrained representations to task-specific distributions. RGB         
+
+> Stem
+> Depth
+> Stem
+> Decoder
+> Seg Head
+> �×�×3
+> RGB
+> �×�×1
+> Depth
+> Prediction
+> Cls Head
+
+... 
+
+[CLS: dog, cat, 
+
+bird...] 
+
+GT 
+
+Loss 
+
+> RGB
+> Depth
+
+Unified RGB-D 
+
+Encoder 
+
+Load pretrained 
+
+weight                    
+
+> Token Mixer
+> Channel Mixer
+> Token Mixer
+> Channel Mixer
+> LGA
+> ��
+> ���
+> ���
+> 3×3,DW 1×1,DW 1×7,DW
+> 7×1,DW
+> ��+1
+> ���+1
+> ���
+> ��
+> 3×3,DW
+> Inference
+> Train
+
+ImageNet 
+
+RGB-Depth pairs 
+
+Enc 
+
+Rep 
+
+Block 
+
+× ��          
+
+> �2�+1×�2�+1×��
+> �×�×�
+
+NYUDepth V2/ 
+
+SUN-RGBD/... 
+
+... ... 
+
+... ... 
+
+(a) Training Phase I (b) Training Phase II 
+
+��
+
+> ���
+
+��
+
+> �
+
+��       
+
+> 푃표표�  蒀
+> Conv 3×3푆 蒀�표 虠 퐸�푒�푒 蜠 −푤  푒
+> multiplication
+> SENet
+> Concatenate
+
+Trainable 
+
+Fintuning 
+
+(a) The Proposed Reparameterized block (RepBlock) architecture. RGB                            
+
+> Stem
+> Depth
+> Stem
+> Decoder
+> Seg Head
+> �×�×3
+> RGB
+> �×�×1
+> Depth
+> Prediction
+> Cls Head
+> ...
+> [CLS: dog, cat,
+> bird...]
+> GT
+> Loss
+> RGB
+> Depth
+> Unified RGB-D
+> Encoder
+> Load pretrained
+> weight
+> Token Mixer
+> Channel Mixer
+> Token Mixer
+> Channel Mixer
+> LGA
+> ��
+> ���
+> ���
+> 3×3,DW 1×1,DW 1×7,DW
+> 7×1,DW
+> ��+1
+> ���+1
+> ���
+> ��
+> 3×3,DW
+> Inference
+> Train
+> ImageNet
+> RGB-Depth pairs
+
+Enc 
+
+Rep 
+
+Block            
+
+> ×��
+> �2�+1×�2�+1×��
+> �×�×�
+> NYUDepth V2/
+> SUN-RGBD/...
+
+... ... 
+
+... ... 
+
+(a) Training Phase I (b) Training Phase II         
+
+> ��
+> ���
+> ��
+> �
+> ��
+> 푃표표�  蒀
+> Conv 3×3푆 蒀�표 虠 퐸�푒�푒 蜠 −푤  푒
+> multiplication
+> SENet
+> Concatenate
+> Trainable
+> Fintuning
+
+(b) Internal design of the LGA for RGB–depth feature interaction. 
+
+Figure 3: Detailed structure of the RepBlock with Linear Gated Attention (LGA). 
+
+aimed to reduce parameter redundancy while enhancing cross-modal feature integration, leading to a more efficient and robust RGB-D framework. 
+
+## 3 Methodology 
+
+Figure 2 illustrates the pipeline of URNet, which follows an en-coder–decoder architecture and is trained in two phases: RGB-D ImageNet-1k pretraining as shown in Figure 2(a), and fine-tuning on two RGB-D benchmarks with a lightweight decoder as depicted in Figure 2(b). 
+
+## 3.1 Hierarchical Encoder 
+
+Overall Architecture. The encoder of URNet adopts a multi-stage design composed of stacked RepBlocks. Specifically, these blocks are grouped into four hierarchical levels 𝐿 1, 𝐿 2, 𝐿 3, 𝐿 4, where 𝐿 𝑛 
+
+denotes the number of blocks in the 𝑛 𝑡ℎ stage. In the Phase I, given an RGB image 𝐼 𝑟𝑔𝑏 ∈ R 𝐻 ×𝑊 ×3 and its corresponding depth map 
+
+𝐼 𝑑 ∈ R 𝐻 ×𝑊 ×1, the two modalities are initially processed indepen-dently through parallel stem layers, each composed of four 3 × 3
+
+convolutional layers with a stride of 2. The features are then fed into four successive stages for thorough feature extraction and fusion, producing multi-scale feature maps at resolutions of 1/4,
+
+1/8, 1/16 , and 1/32 of the original input size. In phase II, the visual features extracted by the pretrained RGB-D encoder are passed to the decoder, which generates the final predictions. 
+
+RepBlock. Recent studies [ 20 ] indicate that the performance of ViTs largely stems from their generic token-mixer design. In-spired by RepViT [ 24 ], which leverages convolutional operations to capture global contextual information with significantly lower com-putational cost than self-attention, we redesign the token-mixer component using a parallel multi-branch structure. Specifically, three branches are employed in parallel: a 3 × 3 depthwise convolu-tion, a 1×1 depthwise convolution, and a decomposed 1×7 followed by 7 × 1 convolution. Compared with RepViT [ 24 ], this design effec-tively introduces an additional 7 × 7 receptive field, enabling richer spatial information aggregation. which can be formulated as: 
+
+𝑥 𝑟𝑔𝑏 𝑖 = 𝐶𝑜𝑛𝑣 𝑑 
+
+3×3 (𝑓 𝑟𝑔𝑏 𝑖 ) + 𝐶𝑜𝑛𝑣 𝑑 
+
+1×1 (𝑓 𝑟𝑔𝑏 𝑖 )+ 𝐶𝑜𝑛𝑣 𝑑 
+
+7×1
+
+
+
+𝐶𝑜𝑛𝑣 𝑑 
+
+1×7 (𝑓 𝑟𝑔𝑏 𝑖 )
+
+
+
++ 𝑓 𝑟𝑔𝑏 𝑖 , (1) where 𝐶𝑜𝑛𝑣 𝑑 means depthwise convolution. Owing to this reparam-eterization technique, the skip connections used during training can be removed at inference time, thereby eliminating associated computational and memory overhead. This design is particularly beneficial for deployment on resource-constrained mobile devices, as illustrated in Figure 3 (a). As depicted in Figure. 3 (b), in the middle of RepBlock, we intro-duce a Linear Gated Attention (LGA) module to perform efficient and effective fusion between RGB and depth features, as illustrated in Figure 3. Specifically, given the RGB feature 𝑥 𝑟𝑔𝑏 𝑖 and the corre-sponding depth feature 𝑥 𝑑 𝑖 at the 𝑖 𝑡ℎ stage, LGA aims to adaptively exchange and integrate complementary information between the two modalities in a lightweight manner. Specifically, both RGB and depth features are first processed independently by a pooling operation followed by a convolution layer to generate compact modality-aware descriptors. A sigmoid activation function is then MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil Guoan Xu et al. 
+
+Table 1: Detailed configurations of the proposed URNet . Stage Output Size URNet-T URNet-S URNet-B URNet-L RepBlocks Channels RepBlocks Channels RepBlocks Channels RepBlocks Channels 
+
+Stem ( 𝐻  
+
+> 4
+
+, 𝑊  
+
+> 4
+
+) - (24,24) - (28,28) - (40,40) - (40,40) 1 ( 𝐻  
+
+> 4
+
+, 𝑊  
+
+> 4
+
+) 3 (48,48) 5 (56,56) 7 (80,80) 7 (80,80) 2 ( 𝐻  
+
+> 8
+
+, 𝑊  
+
+> 8
+
+) 4 (96,96) 6 (112,112) 8 (160,160) 8 (160,160) 3 ( 𝐻  
+
+> 16
+
+, 𝑊  
+
+> 16
+
+) 6 (192,192) 18 (224,224) 21 (320,320) 36 (320,320) 4 ( 𝐻  
+
+> 32
+
+, 𝑊  
+
+> 32
+
+) 3 (384,384) 3 (448,448) 3 (640,640) 3 (640,640) 
+
+Decoder Dim 256 256 256 256 
+
+Parameters (M) 9.2 19.8 44.1 62.2 
+
+applied to produce gating signals that encode the relative impor-tance of cross-modal information. These gating signals are used to modulate the opposite modality through element-wise multipli-cation, enabling selective feature interaction while preserving the original modality characteristics. Formally, the gated fusion process can be expressed as: 
+
+𝑔 𝑟𝑔𝑏 𝑖 = 𝜎 (𝐶𝑜𝑛𝑣 3×3 (𝑃𝑜𝑜𝑙 (𝑥 𝑟𝑔𝑏 𝑖 ))) , (2) 
+
+𝑔 𝑑 𝑖 = 𝜎 (𝐶𝑜𝑛𝑣 3×3 (𝑃𝑜𝑜𝑙 (𝑥 𝑑 𝑖 ))) , (3) 
+
+ˆ𝑥 𝑟𝑔𝑏 𝑖 = 𝑥 𝑟𝑔𝑏 𝑖 + 𝑔 𝑑 𝑖 ⊙ 𝑥 𝑟𝑔𝑏 𝑖 , (4) 
+
+ˆ𝑥 𝑑 𝑖 = 𝑥 𝑑 𝑖 + 𝑔 𝑟𝑔𝑏 𝑖 ⊙ 𝑥 𝑑 𝑖 , (5) where 𝜎 (·) denotes the sigmoid function and ⊙ represents element-wise multiplication. After cross-gated interaction, the enhanced RGB and depth features are independently refined using lightweight Squeeze-and-Excitation (SE) modules to recalibrate channel-wise responses. The refined features are then concatenated along the channel dimension to form the final fused representation: 
+
+𝑚 𝑖 = 𝐶𝑜𝑛𝑐𝑎𝑡 (𝑆𝐸 ( ˆ𝑥 𝑟𝑔𝑏 𝑖 ), 𝑆𝐸 ( ˆ𝑥 𝑑 𝑖 )) . (6) Unlike quadratic token interactions based attention mechanisms, LGA performs fusion through linear, element-wise operations, re-sulting in negligible computational overhead. The symmetric cross-gating design allows RGB and depth features to mutually guide each other, enabling sufficient cross-modal interaction without in-troducing heavy attention blocks. This makes LGA particularly suitable for real-time deployment on resource-constrained devices. The channel-mixer in our model is implemented using a lightweight two-layer 1 × 1 convolutional structure. 
+
+## 3.2 Pyramid Merging Decoder (PMD) 
+
+To effectively aggregate multi-scale features while maintaining a lightweight design, we propose a Pyramid Merging Decoder (PMD), as illustrated in Figure 4. Given a set of multi-scale feature maps 
+
+𝑚 1, 𝑚 2, 𝑚 3, and 𝑚 4 extracted from the encoder, where 𝑚 1 has the highest spatial resolution and 𝑚 4 has the lowest, PMD progres-sively merges features in a top-down pyramid manner. Specifically, for each low-level feature 𝑚 𝑘 (𝑘 = 2, 3, 4), we downsample it to match the spatial resolution of its adjacent higher-level feature 
+
+𝑚 𝑘 −1 using 𝐷 (·) , and then perform element-wise addition followed by upsampling-based top-down propagation. To mitigate scale mis-match and suppress redundant information, pooling operations are Pooling  
+
+> Pooling
+> Pooling
+> Up
+> P-Pooling
+> �1
+> �2
+> �3
+> �4
+> D
+> Up
+> Up
+> D
+> D
+
+D
+
+> Downsample
+> Conv2d
+
+D
+
+> U
+> ��−1
+> ��
+> U
+> ��−2
+> ��
+> ��−1
+> �
+> ��
+> �
+> ��−1
+> �
+
+D
+
+> Downsample
+> U
+> Upsample
+> Conv2d
+> Pooling
+
+D
+
+> U
+
+��−1
+
+��
+
+��
+
+> U
+
+��−1
+
+��−1
+
+��
+
+��−2 ��−2
+
+�� ��
+
+��−1
+
+> �
+
+��
+
+> �
+
+��−1 ��−1
+
+Figure 4: Structural details of the Pyramid Merging Decoder (PMD) for efficient multi-scale feature aggregation. Table 2: Quantitative results of pretrained models on rgb-d imagenet-1k trained with 4 NVIDIA H100 GPUs. GFLOPs is measured under the resolution of 224 ×224 , “#P.”: Parameters ↓,“#Fs.”: FLOPs ↓, and “BS”: Batch Size. Method #P.(M) ↓ #Fs.(G) ↓ FPS ↑ BS Acc@1 
+
+DFormer-T 5.6 1.15 102.2 256 73.50% 
+
+URNet-T 9.2 1.35 133.2 256 76.65% 
+
+DFormer-S 19.0 3.31 86.7 128 78.21% DFormerV2-S 25.4 4.67 5.9 128 78.86% 
+
+URNet-S 19.8 3.49 105.0 128 78.95% 
+
+DFormer-B 29.8 6.01 59.9 128 80.27% DFormer-L 39.6 9.88 43.4 128 82.18% DFormerV2-B 52.6 10.19 3.8 128 82.32% 
+
+URNet-B 44.1 8.48 73.3 128 82.49% 
+
+DFormerV2-L 93.8 19.24 2.5 64 84.12% 
+
+URNet-L 62.2 11.58 37.0 64 84.35% 
+
+applied after intermediate fusion stages. This can be formulated as 
+
+𝑚 𝑐 𝑘 = 𝐶𝑜𝑛𝑣 2𝑑 3×3 (𝑚 𝑘 ), 𝑘 ∈ { 1, 2, 3, 4}, (7) where 𝐶𝑜𝑛𝑣 2𝑑 3×3 means Convolution with kernel size 3 × 3.
+
+𝑡 𝑘 = 𝑚 𝑐 𝑘 + 𝐷𝑠 (𝑡 𝑘 −1),𝑔 𝑘 = Us (𝑡 𝑘 ) , 𝑘 ∈ { 2, 3, 4}, 𝑡 1 = 𝑔 1 = 𝑚 𝑐 
+
+> 1
+
+(8) where 𝑈 𝑠 represents Upsampling and 𝐷𝑠 is downsampling. 
+
+𝑠 𝑘 = Pool (𝑠 𝑘 −1 + 𝑔 𝑘 ), 𝑘 ∈ { 2, 3, 4}, 𝑠 1 = 𝑃𝑜𝑜𝑙 (𝑔 1),𝑚 f = 𝑠 1 + 𝑠 2 + 𝑠 3 + 𝑠 4. (9) URNet: A Unified Reparameterized Network for Efficient RGB-D Semantic Segmentation MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil 
+
+This progressive merging strategy enables effective information propagation across scales while preserving computational efficiency. After multi-scale feature aggregation, a pyramid pooling (P-Pooling) module is applied to capture contextual information at different receptive fields. Finally, the pooled features are fused with the aggregated representation via a residual connection, producing the final decoder output. This can be formulated as 
+
+𝑦 = 𝑚 𝑓 + 𝑃𝑃𝑜𝑜𝑙 (𝑚 𝑓 ), (10) where 𝑃𝑃𝑜𝑜𝑙 means pyramid pooling. Owing to its simple opera-tions (upsampling, pooling, and element-wise addition), PMD intro-duces minimal parameter overhead while significantly enhancing segmentation performance. 
+
+## 4 Experiments 4.1 Datasets and implementation details 
+
+Consistent with prior RGB-D segmentation studies [ 34 ], [ 35 ], UR-Net is pretrained on RGB-D ImageNet-1k and then fine-tuned on NYUDepth V2 and SUN-RGBD. NYUDepth V2 contains 795/654 training/testing images with 40 classes, while SUN-RGBD includes 10,335 samples across 37 categories (5,285/5,050 split). Training is conducted on 4 NVIDIA H100 GPUs using a polynomial learning rate schedule with 300 epochs. During fine-tuning, we apply ran-dom flipping and scale ranging (0.5–1.75) as data augmentations. Images are resized to 480 × 640 for NYUDepth V2 and 480 × 480 for SUN-RGBD. The detailed architectural configurations for different model sizes of URNet are presented in Table 1. 
+
+## 4.2 Comparison with state-of-the-art methods 
+
+Table 2 presents the results of the training phase I, i.e., pretraining on the RGB-Depth ImageNet-1K dataset. It reports the quantitative performance of different RGB-D pretrained backbones. All models are trained under the same RGB-D setting using 4 NVIDIA H100 GPUs. Under similar model scales, URNet consistently achieves a better accuracy–efficiency trade-off than that of DFormer. For example, at the Tiny scale, URNet-T improves the Top-1 accuracy by +3.15% (76.65% vs. 73.50%) compared with DFormer-T, while in-curring only a moderate increase in parameters and FLOPs. Notably, URNet-T also runs faster in inference, achieving 133.2 FPS versus 102.2 FPS. Similar trends can be observed at the Small and Base scales. URNet-S slightly outperforms DFormer-S in Top-1 accuracy (78.95% vs. 78.21%) while maintaining comparable model complex-ity and significantly higher inference speed (105.0 FPS vs. 86.7 FPS). URNet-B further improves accuracy to 82.49%, surpassing both DFormer-B and DFormerV2-B, while achieving higher through-put. Compared with the stronger DFormerV2 variants, URNet-B achieves a similar Top-1 accuracy to DFormerV2-B (82.49% vs. 82.32%) while being over 19 × faster in inference (73.3 FPS vs. 3.8 FPS). This demonstrates that URNet offers a more efficient solu-tion for large-scale RGB-D pretraining, especially in scenarios with strict efficiency constraints. During training phase II, we conduct comparisons between UR-Net and a set of state-of-the-art and representative RGB-D semantic segmentation methods on the NYUDepthv2 and SUN-RGBD bench-marks. Quantitative results are summarized in Table 3. Early CNN-based methods built on ResNet backbones generally require heavy computation to achieve competitive performance, with FLOPs often exceeding 100G while yielding limited accuracy gains on both NYU Depth V2 and SUN-RGBD. Compared with recent DFormer-based approaches, URNet consistently gets a better accuracy–efficiency trade-off across different model scales. At the Tiny scale, URNet-T achieves comparable performance to DFormer-S while using sig-nificantly fewer parameters and FLOPs, reaching 53.2% mIoU on NYU Depth V2 and 50.6% on SUN-RGBD with only 15.4G and 19.6G FLOPs, respectively. At the Small scale, URNet-S slightly surpasses DFormerV2-S in accuracy on both datasets (56.1% vs. 56.0% on NYU Depth V2, and 51.8% vs. 51.5% on SUN-RGBD), while requir-ing fewer parameters and around 20% less computation. At the Base scale, URNet-B further improves the performance to 57.9% mIoU on NYU Depth V2 and 53.1% on SUN-RGBD, outperform-ing both DFormer-B and DFormerV2-B with notably lower FLOPs. At the Large scale, URNet-L achieves strong performance with 58.8% mIoU on NYU Depth V2 and 53.4% on SUN-RGBD. Although DFormerV2-L attains slightly lower accuracy on SUN-RGBD and comparable performance on NYU Depth V2, it requires substan-tially more computation (124.1G vs. 73.0G FLOPs), indicating that URNet-L preserves strong representation capability while avoiding the excessive computational overhead of large-scale DFormerV2 models. Overall, these results demonstrate that URNet consistently delivers competitive or superior performance under significantly reduced computational budgets, highlighting its effectiveness as an efficient RGB-D semantic segmentation backbone. The qualitative visualization results are illustrated in Figure 5 and Figure 6. 
+
+## 4.3 Ablation Studies 
+
+RGB vs. RGBD pretraining. As shown in Table 4, under identi-cal finetuning settings, RGB–D pretraining achieves 56.1% mIoU, outperforming RGB-only pretraining (54.9% mIoU) by +1.2%. This gain demonstrates that incorporating depth information during pretraining facilitates better cross-modal feature alignment and improves downstream RGB–D segmentation performance. 
+
+Effectiveness of Token Mixer. We conduct an ablation study of different token mixers on the NYUDepth V2 dataset, as shown in Table 5. Self-attention (SA) achieves the highest mIoU (53.45%), but incurs heavy computational overhead (20.89G FLOPs) and low in-ference speed (18.23 FPS). In contrast, XCiT and convolution-based mixers significantly reduce parameters and improve throughput, but suffer from clear performance drops, yielding 52.61% and 51.35% mIoU, respectively. The proposed 𝑅𝑒𝑝. token mixer provides a more favorable accuracy–efficiency trade-off. Compared with SA, 𝑅𝑒𝑝. 
+
+attains comparable accuracy (53.17% vs. 53.45%) while reducing pa-rameters from 18.40M to 9.26M and FLOPs from 20.89G to 15.35G, and improving inference speed by over 5× (100.35 vs. 18.23 FPS). Compared with XCiT and convolution-based mixers, 𝑅𝑒𝑝. achieves notably higher mIoU with competitive computational cost, demon-strating its effectiveness for efficient RGB-D semantic segmentation on NYUDepth V2. 
+
+Effectiveness of LGA. Table 6 reports the ablation study of different fusion strategies for the proposed Linear Gated Attention (LGA) on the NYUDepth V2 dataset. Using simple element-wise addition results in the lowest mIoU, indicating that naive fusion is insufficient to effectively exploit the complementary information MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil Guoan Xu et al. 
+
+Table 3: Results on NYUDepth V2 and SUN-RGBD. All the backbones are pre-trained on ImageNet-1K. Model Publication Backbone #P.(M) ↓ NYUDepth V2 SUN-RGBD Resolution GFLOPs ↓ mIoU ↑ Resolution GFLOPs ↓ mIoU ↑
+
+SGNet [5] TIP’21 ResNet-101 64.7 480 × 640 108.5 51.1% 530 × 730 151.5 48.6% SA-Gate [7] ECCV’20 ResNet-101 110.9 480 × 640 193.7 52.4% 530 × 730 250.1 49.4% CEN [27] NeurIPS’20 ResNet-101 118.2 480 × 640 618.7 51.7% 530 × 730 790.3 50.2% CEN [27] NeurIPS’20 ResNet-152 133.9 480 × 640 664.4 52.5% 530 × 730 849.7 51.1% 
+
+ShapeConv [4] CVPR’21 ResNet-101 86.8 480 × 640 124.6 51.3% 530 × 730 161.8 48.6% ESANet [22] ICRA’21 ResNet-34 31.2 480 × 640 34.9 50.3% 480 × 640 34.9 48.2% EMSANet [21] IJCNN’22 ResNet-34 46.9 480 × 640 45.4 51.0% 530 × 730 58.6 48.4% Omnivore [11] CVPR’22 Swin-T 29.1 480 × 640 32.7 49.7% - - -DFormer [34] ICLR’24 DFormer-S 18.7 480 × 640 25.6 53.6% 530 × 730 33.0 50.0% 
+
+URNet (ours) 26 UR URNet-T 9.3 480 × 640 15.4 53.2% 530 × 730 19.6 50.6% 
+
+PGDENet [40] TMM’22 ResNet-34 100.7 480 × 640 178.8 53.7% 530 × 730 229.1 51.0% TokenFusion [26] CVPR’22 MiT-B2 26.0 480 × 640 55.2 53.3% 530 × 730 71.1 50.3% TokenFusion [26] CVPR’22 MiT-B3 45.9 480 × 640 94.4 54.2% 530 × 730 122.1 51.0% MultiMAE [2] ECCV’22 ViT-B 95.2 640 × 640 267.9 56.0% 640 × 640 267.9 51.1% CMX [36] TITS’23 MiT-B2 66.6 480 × 640 67.6 54.4% 530 × 730 86.3 49.7% DCANet [3] PR’25 VMamba 123.8 480 × 640 - 53.3% 530 × 730 - 49.6% Sigma [23] WACV’25 VMamba-T 48.3 480 × 640 90.4 53.9% 480 × 640 90.4 50.0% DFormer [34] ICLR’24 DFormer-B 29.5 480 × 640 41.9 55.6% 530 × 730 54.1 51.2% 
+
+DFormerV2 [35] CVPR’25 DFormerV2-S 26.7 480 × 640 33.9 56.0% 530 × 730 43.7 51.5% URNet (ours) 26 UR URNet-S 19.8 480 × 640 28.5 56.1% 530 × 730 36.6 51.8% 
+
+CMX [36] TITS’23 MiT-B4 139.9 480 × 640 134.3 56.3% 530 × 730 173.8 52.1% CMX [36] TITS’23 MiT-B5 181.1 480 × 640 167.8 56.9% 530 × 730 217.6 52.4% CMNeXt [37] CVPR’23 MiT-B4 119.6 480 × 640 131.9 56.9% 530 × 730 170.3 51.9% DFormerV2 [35] CVPR’25 DFormerV2-B 53.9 480 × 640 67.2 57.7% 530 × 730 86.9 52.8% 
+
+DFormer [34] ICLR’24 DFormer-L 39.0 480 × 640 65.7 57.2% 530 × 730 83.3 52.5% 
+
+URNet (ours) 26 UR URNet-B 43.9 480 × 640 54.0 57.9% 530 × 730 73.2 53.1% 
+
+ECMRN [15] KBS’25 DFormer 68.6 480 × 640 - 58.1% 530 × 730 - 52.9% Sigma [23] WACV’25 VMamba-S 69.8 480 × 640 139.8 57.0% 480 × 640 139.8 52.4% DiffPixelFormer [12] TMM’25 MiT-B3 85.4 480 × 640 154.8 56.3% 530 × 730 205.7 52.8% GeminiFusion [14] ICML’24 MiT-B3 75.8 480 × 640 - 56.8% 530 × 730 - 52.7% DFormerV2 [35] CVPR’25 DFormerV2-L 95.5 480 × 640 124.1 58.4% 530 × 730 160.5 53.3% URNet (ours) 26 UR URNet-L 61.8 480 × 640 73.0 58.8% 530 × 730 94.6 53.4% NYUDepth V2 
+
+RGB Imgs Depth Imgs CMNeXt DFormer-B DFormerV2-B URNet-B (ours) 
+
+Figure 5: Qualitative comparisons on NYU-Depth V2. From left to right are RGB images, depth images, and segmentation results produced by CMNeXt [37], DFormer-B [34], DFormerV2-B [35], and URNet-B (ours). 
+
+between RGB and depth modalities. Replacing addition with chan-nel concatenation brings a modest improvement (from 51.83% to 52.32% mIoU), but at the cost of increased parameters and FLOPs. In contrast, the proposed LGA achieves a substantial performance gain on NYUDepth V2, reaching 53.17% mIoU, while even reducing computational cost compared with concatenation. This demon-strates that LGA enables more effective and efficient cross-modal interaction by dynamically re-weighting features from different modalities. For better comparison, the visualizations under different fusion methods are shown in Figure 7. URNet: A Unified Reparameterized Network for Efficient RGB-D Semantic Segmentation MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil SUN RGB-D      
+
+> RGB Imgs Depth Imgs CMNeXt DFormer-B DFormerV2-B URNet-B (ours)
+
+Figure 6: Qualitative comparisons on SUN RGB-D. From left to right are RGB images, depth images, and segmentation results produced by CMNeXt [37], DFormer-B [34], DFormerV2-B [35], and URNet-B (ours). Table 4: Comparisons between RGB vs. RGB-D pretraining under the same baseline URNet-S for NYUDepth V2. Pretrain Finetune mIoU(%) ↑    
+
+> RGB-RGB RGB-D 54.9 RGB-D ( ours )RGB-D 56.1
+
+Table 5: Ablation studies of different token mixers. SA refers to self-attention, XCiT [ 1 ] denotes cross-covariance image transformers, Conv represents convolutional operators, and Rep indicates reparameterization. Token Mixer #P.(M) ↓ #Fs.(G) ↓ FPS ↑ mIoU(%) ↑                
+
+> SA 18.40 20.89 18.23 53.45 XCiT 14.27 21.49 94.87 52.61 Conv 10.20 16.27 126.84 51.35
+> Rep. (ours) 9.26 15.35 100.35 53.17
+
+Table 6: Ablation studies of Linear Gated Attention (LGA). Fusion #P.(M) ↓ #Fs.(G) ↓ FPS ↑ mIoU(%) ↑              
+
+> Add Concat LGA
+> ✓8.55 15.35 129.09 51.83
+> ✓9.26 16.06 87.79 52.32
+> ✓9.26 15.35 100.35 53.17
+
+Table 7: Ablation studies of Pyramid Merging Decoder (PMD), MLP: Multi-Layer Perception, HAM: Hamburger. Decoder #P.(M) ↓ #Fs.(G) ↓ FPS ↑ mIoU(%) ↑              
+
+> MLP HAM PMD
+> ✓8.93 13.98 120.51 51.74
+> ✓9.52 18.40 105.40 52.78
+> ✓9.26 15.35 100.35 53.17
+
+Effectiveness of PMD. We organize an ablation study of dif-ferent decoder designs on the NYUDepth V2 dataset, as reported in Table 7. Using an MLP decoder yields the lowest performance, achieving only 51.74% mIoU, although it maintains high inference speed. Employing HAM significantly improves accuracy to 52.78% mIoU, but at the cost of a substantial increase in computational bur-den, with FLOPs rising from 13.98G to 28.40G. The proposed PMD achieves the best overall performance, reaching 53.17% mIoU, while   
+
+> (a) Add (b) Concat (c) LGA
+
+Figure 7: Visualizations under different fusion strategies.   
+
+> (a) MLP (b) HAM (c) PMD
+
+Figure 8: Qualitative comparison under different decoders. Table 8: Comparisons with Different Encoder–Decoders. Encoder #P.(M) ↓ Decoder mIoU(%) ↑                        
+
+> Sigma-T [23] 45.7 MLP 52.95 URNet-B ( ours )40.5 MLP 56.74 Sigma-T [23] 48.1 PMD 54.63 URNet-B ( ours )43.9 PMD 57.91 DFormerV2-L [35] 95.5 HAM 58.38 URNet-L ( ours )72.6 HAM 58.22 DFormerV2-L [35] 84.6 PMD 58.66 URNet-L ( ours )61.8 PMD 58.75
+
+maintaining a favorable efficiency profile. These results demon-strate that PMD effectively enhances multi-scale feature aggrega-tion while preserving high computational efficiency. For better comparison, the visualizations under different decoders are pre-sented in Figure 8. As shown in Table 8, which compares different encoder–decoder pairings under identical decoder settings. Across all decoders (MLP, PMD, and HAM), URNet consistently achieves higher mIoU with fewer parameters than prior encoders. In particular, URNet-B sur-passes Sigma-T by +3.79% mIoU (MLP) and +3.28% mIoU (PMD) while reducing parameters. Similarly, URNet-L matches or slightly outperforms DFormerV2-L across HAM and PMD decoders with MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil Guoan Xu et al. 
+
+Table 9: Quantitative comparisons on RGB-D SOD benchmarks. We use the mean absolute error ( 𝑀 ↓), max F-measure ( 𝐹 𝑚 ↑), S-measure ( 𝑆 𝑚 ↑), and max E-measure ( 𝐸 𝑚 ↑) as evaluation metrics. SPNet [39], VST [18], RD3D+ [6], SPSN [16], DFormer [34], and DFormerV2 [35]. Method Datasets DES NLPR NJU2K STERE SIP #P.(M) #F.(G) 𝑀 𝐹 𝑚 𝑆 𝑚 𝐸 𝑚 𝑀 𝐹 𝑚 𝑆 𝑚 𝐸 𝑚 𝑀 𝐹 𝑚 𝑆 𝑚 𝐸 𝑚 𝑀 𝐹 𝑚 𝑆 𝑚 𝐸 𝑚 𝑀 𝐹 𝑚 𝑆 𝑚 𝐸 𝑚                                                                                                                                                                                                                                                                                                                                                                 
+
+> SPNet 150.3 68.1 .014 .950 .945 .980 .021 .925 .927 .959 .028 .935 .925 .954 .037 .915 .907 .944 .043 .916 .894 .930 VST 83.3 31.0 .017 .940 .943 .978 .024 .920 .932 .962 .035 .920 .922 .951 .038 .907 .913 .951 .040 .915 .904 .944 RD3D+ 28.9 43.3 .017 .946 .950 .982 .022 .921 .933 .964 .033 .928 .928 .955 .037 .905 .914 .946 .046 .900 .892 .928 SPSN 37.0 100.3 .017 .942 .937 .973 .023 .917 .923 .956 .032 .927 .918 .949 .035 .909 .906 .941 .043 .910 .891 .932 HiDANet 130.6 71.5 .013 .952 .946 .980 .021 .929 .930 .961 .029 .939 .926 .954 .035 .921 .911 .946 .043 .919 .892 .927 DFormer-T 5.9 4.5 .016 .947 .941 .975 .021 .931 .932 .960 .028 .937 .927 .953 .033 .921 .915 .945 .039 .922 .900 .935 URNet-T 8.6 2.6 .015 .944 .950 .979 .021 .932 .933 .960 .029 .939 .928 .957 .035 .925 .917 .944 .038 .920 .901 .932 DFormer-S 18.5 10.1 .016 .950 .939 .970 .020 .937 .936 .965 .026 .941 .931 .960 .031 .928 .920 .951 .041 .921 .898 .931 DFormerV2-S --.014 .946 .951 .980 .021 .932 .938 .967 .025 .933 .937 .958 .031 .926 .921 .950 .038 .922 .912 .935
+> URNet-S 19.1 6.7 .013 .947 .952 .982 .021 .937 .939 .966 .026 .947 .938 .965 .030 .933 .921 .946 .037 .923 .908 .937
+> DFormer-B 29.3 16.7 .013 .957 .948 .982 .019 .933 .936 .965 .025 .941 .933 .960 .029 .931 .925 .951 .035 .932 .908 .943 DFormerV2-B --.017 .937 .943 .969 .017 .936 .939 .966 .024 .938 .950 .963 .030 .925 .926 .952 .039 .902 .931 .940
+> URNet-B 43.2 16.3 .013 .963 .950 .984 .017 .940 .928 .967 .024 .943 .931 .968 .027 .930 .927 .952 .034 .930 .912 .945
+> DFormer-L 38.8 26.2 .013 .956 .948 .980 .016 .939 .942 .971 .023 .946 .937 .964 .030 .929 .923 .952 .032 .938 .915 .950 DFormerV2-L --.017 .940 .945 .973 .016 .941 .943 .969 .024 .935 .945 .961 .029 .925 .928 .952 .038 .901 .928 .936
+> URNet-L 62.0 22.3 .012 .962 .954 .983 .015 .938 .944 .972 .023 .950 .934 .968 .028 .928 .930 .953 .033 .943 .921 .958
+
+RGB Imgs Depth Imgs Ground Truth HiDANet DFormer-B DFormerV2-B URNet-B (ours) 
+
+Figure 9: Qualitative Results of Salient Object Detection. From left to right are RGB images, depth images, ground truth and segmentation results produced by HiDANet [28], DFormer-B [34], DFormerV2-B [35], and URNet-B (ours). 
+
+substantially fewer parameters, demonstrating the strong represen-tation capacity and parameter efficiency of URNet as a plug-and-play encoder. 
+
+## 4.4 Further evaluation 
+
+RGB-D Salient Object Detection. We finetune the URNet on a curated RGB-D training set and evaluate its performance on five widely used RGB-D salient object detection benchmarks. The train-ing set contains a total of 2,195 images, including 1,485 samples from NJU2K-train and 700 samples from NLPR-train. For evalua-tion, we follow standard protocols and conduct experiments on DES, NLPR-test, NJU2K-test, STERE, and SIP, which contain 135, 300, 500, 1,000, and 929 images, respectively. As shown in Table 9, UR-Net achieves consistently competitive performance across all five RGB-D salient object detection benchmarks with a highly efficient architecture. Compared with recent large-scale RGB-D SOD models, URNet-L demonstrates a more favorable accuracy–efficiency trade-off. Despite using significantly fewer parameters and FLOPs than HiDANet [ 28 ] (62.0M, 22.3G vs. 130.6M, 71.5G), URNet-L achieves consistently better performance across all benchmarks. We report qualitative results on RGB-D salient object detection in Figure 9. The results indicate that URNet is able to generate more complete and accurate saliency maps, effectively suppressing background noise while preserving object integrity. These observations fur-ther validate the generalization capability of the proposed unified RGB-D representation across different dense prediction tasks. More ablation studies and detailed analyses can be found in Supplements. 
+
+## 5 Conclusion 
+
+In this work, we presented URNet, a lightweight yet efficient RGB-D semantic segmentation framework that jointly addresses the limi-tations of conventional RGB-pretrained encoders and costly multi-branch fusion designs. To achieve efficient inference, we introduce a RepBlock equipped with Linear Gated Attention (LGA) for effec-tive RGB–depth interaction, together with a lightweight Pyramid Merging Decoder (PMD) that significantly improves segmentation performance at minimal computational cost. Experiments on NYU Depth V2 and SUN-RGBD have demonstrated that URNet achieves competitive or superior performance with substantially reduced computational overhead, making it a practical solution for RGB-D scene understanding in resource-constrained settings. URNet: A Unified Reparameterized Network for Efficient RGB-D Semantic Segmentation MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil 
+
+## References 
+
+[1] Alaaeldin Ali, Hugo Touvron, Mathilde Caron, Piotr Bojanowski, Matthijs Douze, Armand Joulin, Ivan Laptev, Natalia Neverova, Gabriel Synnaeve, Jakob Verbeek, et al . 2021. Xcit: Cross-covariance image transformers. Advances in Neural Information Processing Systems 34 (2021), 20014–20027. [2] Roman Bachmann, David Mizrahi, Andrei Atanov, and Amir Zamir. 2022. Multi-mae: Multi-modal multi-task masked autoencoders. In Proceedings of the European Conference on Computer Vision . Springer, 348–367. [3] Lizhi Bai, Jun Yang, Chunqi Tian, Yaoru Sun, Maoyu Mao, Yanjun Xu, and Weirong Xu. 2025. DCANet: Differential convolution attention network for RGB-D se-mantic segmentation. Pattern Recognition 162 (2025), 111379. [4] Jinming Cao, Hanchao Leng, Dani Lischinski, Daniel Cohen-Or, Changhe Tu, and Yangyan Li. 2021. Shapeconv: Shape-aware convolutional layer for indoor rgb-d semantic segmentation. In Proceedings of the IEEE/CVF International Conference on Computer Vision . 7088–7097. [5] Lin-Zhuo Chen, Zheng Lin, Ziqin Wang, Yong-Liang Yang, and Ming-Ming Cheng. 2021. Spatial information guided convolution for real-time RGBD semantic segmentation. IEEE Transactions on Image Processing 30 (2021), 2313–2324. [6] Qian Chen, Zhenxi Zhang, Yanye Lu, Keren Fu, and Qijun Zhao. 2022. 3-D convolutional neural networks for RGB-D salient object detection and beyond. 
+
+IEEE Transactions on Neural Networks and Learning Systems 35, 3 (2022), 4309– 4323. [7] Xiaokang Chen, Kwan-Yee Lin, Jingbo Wang, Wayne Wu, Chen Qian, Hongsheng Li, and Gang Zeng. 2020. Bi-directional cross-modality feature propagation with separation-and-aggregation gate for RGB-D semantic segmentation. In 
+
+Proceedings of the European Conference on Computer Vision . Springer, 561–577. [8] Shaohua Dong, Yunhe Feng, Qing Yang, Yan Huang, Dongfang Liu, and Heng Fan. 2024. Efficient multimodal semantic segmentation via dual-prompt learning. In Proceedings of the IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) . IEEE, 14196–14203. [9] Alexey Dosovitskiy. 2020. An image is worth 16x16 words: Transformers for image recognition at scale. arXiv preprint arXiv:2010.11929 (2020). [10] Siqi Du, Weixi Wang, Renzhong Guo, Ruisheng Wang, and Shengjun Tang. 2024. Asymformer: Asymmetrical cross-modal representation learning for mobile plat-form real-time rgb-d semantic segmentation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . 7608–7615. [11] Rohit Girdhar, Mannat Singh, Nikhila Ravi, Laurens Van Der Maaten, Armand Joulin, and Ishan Misra. 2022. Omnivore: A single model for many visual modali-ties. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . 16102–16112. [12] Yan Gong, Jianli Lu, Yongsheng Gao, Jie Zhao, Xiaojuan Zhang, and Susanto Rahardja. 2025. DiffPixelFormer: Differential Pixel-Aware Transformer for RGB-D Indoor Scene Segmentation. arXiv preprint arXiv:2511.13047 (2025). [13] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. 2016. Deep residual learning for image recognition. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . 770–778. [14] Ding Jia, Jianyuan Guo, Kai Han, Han Wu, Chao Zhang, Chang Xu, and Xinghao Chen. 2024. GeminiFusion: Efficient Pixel-wise Multimodal Fusion for Vision Transformer. arXiv:2406.01210 [cs.CV] [15] Di Jia, Chen Zhao, Huilun Song, Huaxiu Zhang, and Wei Li. 2025. ECMRN: Efficient Cross-Modal Reparameterization Network for RGB-D Tasks via Prompt Tuning. Knowledge-Based Systems (2025), 114321. [16] Minhyeok Lee, Chaewon Park, Suhwan Cho, and Sangyoun Lee. 2022. Spsn: Superpixel prototype sampling network for rgb-d salient object detection. In 
+
+Proceedings of the European Conference on Computer Vision . Springer, 630–647. [17] Bingyu Li, Da Zhang, Zhiyuan Zhao, Junyu Gao, and Xuelong Li. 2025. Stitch-fusion: Weaving any visual modalities to enhance multimodal semantic seg-mentation. In Proceedings of the ACM International Conference on Multimedia .1308–1317. [18] Nian Liu, Ni Zhang, Kaiyuan Wan, Ling Shao, and Junwei Han. 2021. Visual saliency transformer. In Proceedings of the IEEE/CVF International Conference on Computer Vision . 4722–4732. [19] Ze Liu, Yutong Lin, Yue Cao, Han Hu, Yixuan Wei, Zheng Zhang, Stephen Lin, and Baining Guo. 2021. Swin transformer: Hierarchical vision transformer using shifted windows. In Proceedings of the IEEE/CVF International Conference on Computer Vision . 10012–10022. [20] Sachin Mehta and Mohammad Rastegari. 2021. Mobilevit: light-weight, general-purpose, and mobile-friendly vision transformer. arXiv preprint arXiv:2110.02178 
+
+(2021). [21] Daniel Seichter, Söhnke Benedikt Fischedick, Mona Köhler, and Horst-Michael Groß. 2022. Efficient multi-task rgb-d scene analysis for indoor environments. In Proceedings of the International Joint Conference on Neural Networks (IJCNN) .IEEE, 1–10. [22] Daniel Seichter, Mona Köhler, Benjamin Lewandowski, Tim Wengefeld, and Horst-Michael Gross. 2021. Efficient rgb-d semantic segmentation for indoor scene analysis. In Proceedings of the IEEE International Conference on Robotics and Automation (ICRA) . IEEE, 13525–13531. [23] Zifu Wan, Pingping Zhang, Yuhao Wang, Silong Yong, Simon Stepputtis, Katia Sycara, and Yaqi Xie. 2025. Sigma: Siamese mamba network for multi-modal semantic segmentation. In Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision (WACV) . IEEE, 1734–1744. [24] Ao Wang, Hui Chen, Zijia Lin, Jungong Han, and Guiguang Ding. 2024. Repvit: Revisiting mobile cnn from vit perspective. In Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition . 15909–15920. [25] Wenhai Wang, Enze Xie, Xiang Li, Deng-Ping Fan, Kaitao Song, Ding Liang, Tong Lu, Ping Luo, and Ling Shao. 2021. Pyramid vision transformer: A versatile back-bone for dense prediction without convolutions. In Proceedings of the IEEE/CVF International Conference on Computer Vision . 568–578. [26] Yikai Wang, Xinghao Chen, Lele Cao, Wenbing Huang, Fuchun Sun, and Yunhe Wang. 2022. Multimodal token fusion for vision transformers. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . 12186–12195. [27] Yikai Wang, Wenbing Huang, Fuchun Sun, Tingyang Xu, Yu Rong, and Junzhou Huang. 2020. Deep multimodal fusion by channel exchanging. Advances in Neural Information Processing Systems 33 (2020), 4835–4845. [28] Zongwei Wu, Guillaume Allibert, Fabrice Meriaudeau, Chao Ma, and Cédric Demonceaux. 2023. Hidanet: Rgb-d salient object detection via hierarchical depth awareness. IEEE Transactions on Image Processing 32 (2023), 2160–2173. [29] Enze Xie, Wenhai Wang, Zhiding Yu, Anima Anandkumar, Jose M Alvarez, and Ping Luo. 2021. SegFormer: Simple and efficient design for semantic segmentation with transformers. Advances in Neural Information Processing Systems 34 (2021), 12077–12090. [30] Cunlu Xu, Gang Ma, Feng Gao, Bin Wang, and Jun Liu. 2025. ADBNet: Asym-metric dual-branch network for indoor real-time RGB-D semantic segmentation. 
+
+Knowledge-Based Systems 326 (2025), 113885. [31] Guoan Xu, Jiaming Chen, Wenfeng Huang, Wenjing Jia, Guangwei Gao, and Guo-Jun Qi. 2026. SCASeg: Strip Cross-Attention for Efficient Semantic Segmentation. 
+
+IEEE Transactions on Image Processing 35 (2026), 4847–4860. [32] Guoan Xu, Wenfeng Huang, Wenjing Jia, Jiamao Li, Guangwei Gao, and Guo-Jun Qi. 2025. S2AFormer: Strip Self-Attention for Efficient Vision Transformer. IEEE Transactions on Image Processing 34 (2025), 8243–8256. [33] Guoan Xu, Yang Xiao, Guangwei Gao, Dongchen Zhu, Guo-Jun Qi, and Wen-jing Jia. 2026. RSGMamba: Reliability-Aware Self-Gated State Space Model for Multimodal Semantic Segmentation. arXiv preprint arXiv:2604.12319 (2026). [34] Bowen Yin, Xuying Zhang, Zhong-Yu Li, Li Liu, Ming-Ming Cheng, and Qibin Hou. 2024. DFormer: Rethinking RGBD Representation Learning for Semantic Segmentation. In ICLR .[35] Bo-Wen Yin, Jiao-Long Cao, Ming-Ming Cheng, and Qibin Hou. 2025. DFormerv2: Geometry Self-Attention for RGBD Semantic Segmentation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition Conference .19345–19355. [36] Jiaming Zhang, Huayao Liu, Kailun Yang, Xinxin Hu, Ruiping Liu, and Rainer Stiefelhagen. 2023. CMX: Cross-modal fusion for RGB-X semantic segmentation with transformers. IEEE Transactions on intelligent transportation systems 24, 12 (2023), 14679–14694. [37] Jiaming Zhang, Ruiping Liu, Hao Shi, Kailun Yang, Simon Reiß, Kunyu Peng, Haodong Fu, Kaiwei Wang, and Rainer Stiefelhagen. 2023. Delivering arbitrary-modal semantic segmentation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . 1136–1147. [38] Chuanyang Zheng. 2025. Iformer: Integrating ConvNet and transformer for mobile application. arXiv preprint arXiv:2501.15369 (2025). [39] Tao Zhou, Huazhu Fu, Geng Chen, Yi Zhou, Deng-Ping Fan, and Ling Shao. 2021. Specificity-preserving RGB-D saliency detection. In Proceedings of the IEEE/CVF International Conference on Computer Vision . 4681–4691. [40] Wujie Zhou, Enquan Yang, Jingsheng Lei, Jian Wan, and Lu Yu. 2022. PGDENet: Progressive guided fusion and depth enhancement network for RGB-D indoor scene parsing. IEEE Transactions on Multimedia 25 (2022), 3483–3494.
