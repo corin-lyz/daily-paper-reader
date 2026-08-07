@@ -1,0 +1,344 @@
+Title: MedSAM2-Anatomy: Training-Free Inference-Time Optimization for Musculoskeletal Segmentation
+
+URL Source: https://arxiv.org/pdf/2608.00195v1
+
+Published Time: Tue, 04 Aug 2026 00:08:28 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+# MedSAM2-Anatomy: Training-Free Inference-Time Optimization for Musculoskeletal Segmentation 
+
+# John Garcia-Henao *1 , Nicholas Bünger 1, Benedikt Herzog 1, Cindy Guerrero Toro 2, Benjamin Vella 3,Matthias Biner 4, Rico Brütsch 4, Carmen Castroviejo Fernandez 4, Felix Öttl 4, Norman Juchler 2,Armando Hoch 3, Bettina Hochreiter 4, Sven Hirsch 2, and Sebastiano Caprara 1
+
+> 1
+
+Digital Medicine Unit Team, Balgrist University Hospital, 8008 Zurich, Switzerland 
+
+> 2
+
+Research Centre for Computational Health, Zurich University of Applied Sciences (ZHAW), 8820 Wädenswil, Switzerland 
+
+> 3
+
+Hip and Pelvis Surgery Team, Balgrist University Hospital, 8008 Zurich, Switzerland 
+
+> 4
+
+Shoulder and Elbow Surgery Team, Balgrist University Hospital, 8008 Zurich, Switzerland 
+
+# Abstract 
+
+High-resolution 3D segmentation of hip and shoulder anatomy from CT and MRI is essential for surgical planning, yet frozen segmentation models often fail under domain shift. CNN-based expert models are fully automatic but lack adaptability, whereas promptable foundation models generalize better but require manual prompting. We present MedSAM2-Anatomy, a training-free inference-time optimization framework that im-proves frozen segmentation models without retraining or human interaction. A frozen expert model generates anatomical priors that are automatically converted into multiple prompt hypothe-ses for a frozen 3D foundation model. Candidate masks are fused while anatomically implausible priors are rejected. No model weights are updated and no manual prompts are required. TotalSegmentator and MedSAM2 are used as representative expert and foundation models, allowing the contribution of the inference policy to be isolated. Evaluation on the independent Balgrist-V0 CT and MRI cohorts shows that inference-time optimization increases median Dice from 0.71 to 0.92 on hip MRI and from 0.89 to 0.92 on shoulder CT, while reducing median HD95 on hip MRI from 22 .0 mm to 5.0 mm. On pub-lic TotalSegmentator benchmarks, the expert model remains strongest, indicating that the optimal fusion strategy depends on the reliability of the expert prior. These results demonstrate that training-free inference-time optimization provides a practi-cal strategy for improving frozen segmentation models without manual prompting. 
+
+# 1 Introduction 
+
+Surgical planning and morphological analysis of the hip and shoulder rely on three-dimensional models of bone anatomy re-constructed from CT and MRI. Femoroacetabular impingement (FAI) assessment requires the acetabulum and the proximal fe-
+
+> *This work was supported in part by the Digitalization Initiative of the Zurich Higher Education Institutions (DIZH) and Balgrist University Hospital through the MedTwins Agil.IT and MIRO Suite projects. Corresponding author:
+> john.garciahenao@balgrist.ch
+
+mur; posterior shoulder instability (PSI) planning requires the scapula and the humerus. These models are currently produced by manual or semi-automatic contouring of high-resolution vol-umes, which is slow, operator-dependent, and the main bottle-neck between image acquisition and a usable plan. Automatic multi-label segmentation removes that bottleneck only if it is accurate enough on the institutional imaging protocol actually used in theatre. Anatomy-specific convolutional neural networks are the es-tablished solution. U-Net [1], nnU-Net [2], and TotalSegmen-tator [3, 4] are fully automatic, require no user input, and are accurate within their training distribution. Their weakness is that their parameters are fixed once training ends. On acquisi-tion protocols, resolutions, or pathologies that differ from the training data, delineation degrades, and the only established remedy is to retrain or fine-tune on annotated target-domain data, which is precisely the annotation cost the model was meant to avoid. Promptable foundation models behave differently. SAM [5], SAM2 [6], and their medical adaptations MedSAM [7], Med-SAM2 [8], SIT-SAM [9], and SegmentAnyBone [10] transfer across modalities and anatomies without task-specific train-ing [11]. They shift the difficulty rather than remove it: for identical weights and an identical input volume, moving a prompt by a few slices can change the segmentation substan-tially, and in 3D the choice of which slices to seed is itself a design decision [12]. In practice this decision is delegated to a user. Interactive systems such as nnInteractive [13] are explicitly built around that assumption and are effective, but they make segmentation quality a function of human effort. For batch processing of an institutional cohort, or for an automated planning pipeline, a human in the loop is not a solution but the constraint to be removed. The two families therefore fail in complementary ways: con-volutional experts are automatic but brittle under domain shift, whereas foundation models are adaptable but require a human to place the prompt. Both leave the same resource unused, namely the freedom that remains in how a volume is routed 1arXiv:2608.00195v1 [eess.IV] 31 Jul 2026 through an already-trained model. This is the resource the present work exploits, and it frames our central question: how can we systematically optimise frozen state-of-the-art segmen-tation models at inference time, without retraining or requiring human interaction? 
+
+Throughout this paper, inference-time optimisation denotes the optimisation of the execution policy of frozen models rather than of their parameters. The policy comprises four compo-nents: automatic prompt generation from an anatomical prior, prompt sampling, that is how many hypotheses are explored and where, the fusion strategy that combines the resulting candi-date masks, and anatomical plausibility filtering, which decides whether a prior is admitted to the fusion at all. These choices are selected once on a target-domain cohort and then applied un-changed to every case; no gradient is computed and no weight is modified at any stage. MedSAM2-Anatomy is the concrete instance we study. It treats a frozen expert CNN not as a predictor but as a prompt generator, samples several prompt hypotheses from its out-put, propagates each through a frozen 3D foundation model, and aggregates the resulting candidates into a single mask. A plausibility test on the expert prior discards priors that cannot correspond to real anatomy before they influence the result. It is not a new segmentation architecture. Its purpose is to make the composition of frozen models a tunable object and to determine which parts of that composition matter. Two consequences of this framing govern how the study is designed. First, the objective is not to demonstrate superiority over all available segmentation methods, but to test whether inference-time optimisation systematically improves the frozen models it is given. TotalSegmentator and MedSAM2 instantiate the expert and foundation roles because they are representative, widely used, and publicly released; holding both fixed is what allows the measured differences to be attributed to the inference policy rather than to a stronger network. Second, because the policy is selected on a target domain, that domain carries the evidential weight: primary evaluation is performed on the institutional Balgrist-V0 CT and MRI cohorts with independent expert manual contours, while the public TotalSegmentator CT and MRI test sets provide secondary benchmark evaluation. Our contributions are: 1. An inference-time optimisation framework that couples a frozen expert CNN with a frozen promptable 3D founda-tion model through automatic prompt generation, multi-hypothesis propagation, mask fusion, and anatomical plau-sibility filtering, with no training, fine-tuning, or manual prompting. 2. An ablation on the institutional Balgrist-V0 cohorts that identifies the fusion layer as the inference-time component governing final segmentation quality, and selects union fusion with rejection of implausible priors over softer aggregation rules, additional prompts, and post-hoc mask repair. 3. A four-cohort evaluation for hip and shoulder anatomy on CT and MRI, with the target domain as the primary evalu-ation and two public test sets as a secondary benchmark check, which quantifies when inference-time optimisation helps and when it does not, and shows that the best fusion strategy depends on the reliability of the expert prior. 
+
+# 2 Inference-Time Optimization Frame-work 
+
+# 2.1 Problem Setting and Constraints 
+
+Let X ∈ RD×H×W be a 3D volume acquired with modality m ∈{CT , MRI } and let A = {a1, . . . , aK } be the target anatomies. The objective is a multi-label mask ˆ Y ∈ { 0, . . . , K}D×H×W .The framework is defined by what it is not allowed to do. No parameter of any model is updated, no gradient is computed, and no prompt is supplied by a user. Both constituent models are used exactly as released. All degrees of freedom therefore live outside the networks, in the execution policy that routes the volume through them. That policy has four tunable com-ponents: (i) automatic prompt generation from the anatomical prior, (ii) prompt sampling, that is the number and placement of prompt hypotheses, (iii) the fusion strategy that combines the resulting candidates, and (iv) anatomical plausibility filtering, which decides whether a prior is admitted at all. Inference-time optimisation means selecting among these components, and the selection is made once on a target-domain cohort rather than per case. The expert and foundation models are held fixed and instanti-ated with representative public checkpoints. This is deliberate: any measured difference between the composition and its indi-vidual parts is then attributable to the execution policy and not to a change of network. 
+
+# 2.2 Pipeline Overview 
+
+The pipeline has five stages, all executed at inference time. (i) A frozen expert network segments the volume and provides a coarse anatomical prior. (ii) The prior is converted automati-cally into N prompt hypotheses distributed along the structure. (iii) A frozen promptable foundation model propagates each hypothesis through the volume, producing N candidate masks. (iv) The candidates are fused into one binary mask per anatomy. (v) Priors that fail an anatomical plausibility test are rejected so that they never reach the fusion. The stages are shown in fig. 1. The two models play complementary roles. The expert is used only for localisation, which is the property that survives domain shift; the foundation model is used only for delineation, which is where the expert degrades. Neither is asked to do the part it is bad at. 
+
+# 2.3 Stage 1: Expert Prior Generation 
+
+A deterministic router maps the volume to a binary prior for each anatomy a ∈ A,
+
+Mexp a = fexp (X, a), (1) 2Figure 1: MedSAM2-Anatomy as an inference-time optimisation pipeline. A frozen expert network produces the prior Mexp a ,automatic prompt sampling turns that prior into N prompt hypotheses, a frozen foundation model propagates each hypothesis into a candidate mask {M(i) 
+
+> a
+
+}, and the fusion layer aggregates the candidates into ˆMa before multi-label merging into ˆY . All weights remain frozen; the tunable choices are the prompt budget, the fusion strategy, and the plausibility filter. where fexp is instantiated with the frozen TotalSegmentator [3] network, 
+
+fexp (X, a) ≡ TotalSegmentator a(X). (2) The prior is a spatial conditioner, not a candidate output. Its boundaries are never used directly; only its position and extent enter the pipeline. The expert runs once per scan regardless of 
+
+K.
+
+# 2.4 Stage 2: Automatic Multi-Prompt Sampling 
+
+Prompts are derived from the prior rather than from a user. We first take the extent of the prior along the longitudinal axis, 
+
+[zmin , zmax ] = BoundingBox z(Mexp a ), (3) and place N evenly spaced seed slices inside it, 
+
+S = {zi}Ni=1, zi =
+
+
+
+zmin + i (zmax − zmin )
+
+N + 1
+
+
+
+. (4) The seeds spread over the structure while avoiding its two end slices, where the cross-section is smallest and the prior least reliable. Sampling several seeds rather than one is what turns prompt selection from a fixed guess into a set of hypotheses to be explored: each zi is an independent bet on where the structure is best characterised, and the fusion layer decides afterwards which parts of those bets to keep. The placement is deterministic, so a configuration can be re-run bit-for-bit. 
+
+# 2.5 Stage 3: Frozen Foundation-Model Propa-gation 
+
+For each seed slice zi we extract 2D mask and bounding-box prompts P(Mexp a , zi) from the prior and pass them to the frozen MedSAM2 [8] model, which propagates the segmentation through the volume with bidirectional memory attention: 
+
+M(i) 
+
+> a
+
+= MedSAM2 (X, P(Mexp a , zi)) . (5) This produces N candidate masks per anatomy, each repre-senting a complete 3D segmentation generated from a differ-ent seed slice. Their variability provides a per-case measure of sensitivity to prompt-slice selection. An optional largest connected-component filter may be applied to each candidate. Computational cost scales linearly with N for each anatomy. 
+
+# 2.6 Stage 4: Fusion 
+
+The fusion layer converts the N candidates into one mask and is the inference-time component that determines final segmen-tation quality; section 3.3 quantifies this. Candidates are aggre-gated voxel-wise by thresholding the number of propagations that claim a voxel: ˆMa = I
+
+> N
+
+# ∑
+
+> i=1
+
+M(i) 
+
+> a
+
+≥ τ
+
+!
+
+, (6) where I(·) is the indicator function and τ ∈ { 1, . . . , N} sets the required consensus. We use the union rule τ = 1 . The majority rule τ = ⌈N/2⌉ is the natural default, but requiring a voxel to be claimed by half the propagations before it survives erodes boundaries and systematically under-segments thin structures; section 3.3 quantifies the cost. Fixing τ rather than tying it to 
+
+N also keeps the consensus comparable when N is varied, since 
+
+⌈N/2⌉/N is not monotonic in N.Equation (6) binarises each pass before counting. The al-ternative is to fuse the raw logit volumes L(i) 
+
+> a
+
+and threshold 3once, ˆMsoft  
+
+> a
+
+= I ∑i wi(z) L(i)
+
+> a
+
+∑i wi(z) > 0
+
+!
+
+, wi(z) = e− 
+
+> z−zi
+> σ
+> 2
+
+, (7) which preserves the distinction between a pass that is confi-dently empty and one that is merely uncertain because the slice lies far from its seed zi. Uniform weights recover the plain logit mean, while a finite σ lets the nearest-seeded pass dominate each slice. Two further operations act after fusion rather than during it: the largest-connected-component filter may be ap-plied to the fused mask instead of to each pass, and enclosed cavities may be filled and single-slice dropouts bridged by 3D morphological closing. Section 3.3 evaluates all of these against eq. (6); none is retained. 
+
+# 2.7 Stage 5: Anatomical Plausibility Filtering 
+
+Union fusion retains every voxel any pass observed, which recovers the volume that voting removes but exposes a failure mode of the expert layer. When the field of view truncates one side of a bilateral structure, the prior for the unscanned side is returned as a small sliver rather than as nothing. A track seeded inside that sliver has no true structure to lock onto and drifts onto the contralateral anatomy, and the union then keeps the drifted voxels. We therefore gate each bilateral prior on a laterality plausi-bility test. Writing ¯a for the contralateral partner of a, the prior is used only if 
+
+Mexp a ≥ ρ Mexp  
+
+> ¯a
+
+, ρ = 0.15 , (8) and the anatomy is skipped otherwise. The test is evaluated be-fore any prompting, so a rejected prior generates no hypothesis and contributes nothing to eq. (6). The threshold is not sen-sitive: observed slivers occupy 0.0003 – 0.047 of their partner while genuine pairs on whole-body scans sit near unity, so ρ
+
+falls in an empty region of the distribution. Being a relative test, it is vacuous when only one side of a pair is requested or when the partner prior is empty; it targets specifically the sliver-beside-a-complete-structure case that union fusion exposes. Filtering the prior rather than the candidate masks is a de-liberate choice. Discarding an implausible segmentation after propagation treats the symptom; rejecting the prior that pro-duced it removes the cause and saves the propagation. Sec-tion 3.3 shows that this is where the available gain lies, and that aggregating candidates more cleverly is not a substitute. 
+
+# 2.8 Multi-Label Merging 
+
+The accepted anatomy masks are written into ˆY in the order the anatomies are declared, ˆY (x) ← a for each a ∈ A with ˆMa(x) = 1, (9) so that a later structure overwrites an earlier one wherever they overlap. This last-writer rule is deterministic but performs no arbitration, which is a second reason eq. (8) is required: without it, a drifted mask silently replaces a correct label rather than merely competing with it. 
+
+# 2.9 Implementation Details 
+
+The pipeline supports isotropic resampling with nearest-neighbour back-projection after inference, but the reported configuration leaves it disabled and operates on the native voxel grid, so predictions are scored without an interpolation round trip. Intensities are windowed to [0, 255 ] for CT and clipped at the [0.5, 99 .5] percentiles for MRI. The foundation model uses the SAM2.1-Tiny backbone with the MedSAM2_latest.pt 
+
+checkpoint. All operations run in PyTorch inference_mode 
+
+with bfloat16 precision. Ball-kernel label smoothing ( r = 2 )under a 5% volume-preservation constraint is available but disabled, consistent with the finding in section 3.3 that added post-processing hurts once the fusion strategy no longer erodes boundaries. Unless stated otherwise we use N = 3 prompt slices and union fusion, τ = 1, both selected in section 3.3. Both models are loaded from public checkpoints and no weight is written at any point. Cached expert priors and pinned flags make the pipeline deterministic: re-running the 30 ablation instances under the selected configuration reproduced the ab-lation result exactly, the largest per-instance DSC difference being zero. 
+
+# 3 Experiments and Results 
+
+The experiments are organised around three questions. Which component of the inference-time execution policy actually de-termines segmentation quality (section 3.3)? Does optimising that component improve frozen models on the target domain, and does it do so without manual prompting (section 3.4)? And does a policy tuned for that domain remain compatible with established public benchmarks (section 3.5)? 
+
+# 3.1 Multi-cohort Evaluation Set 
+
+We assembled a harmonised evaluation set spanning three sources with complementary imaging modalities, label pro-tocols, and acquisition settings, covering four musculoskeletal (MSK) target structures across the hip and shoulder: the scapula, humerus, hip (os coxae)/acetabulum, and femur (fig. 2). To en-able cross-cohort comparison under a common label space, the TotalSegmentator “hip” (os coxae) bone is mapped onto the sur-gically relevant acetabulum sub-region used by our institutional protocol. The evaluation is structured as a hierarchy. The two Balgrist-V0 cohorts form the primary evaluation : they are the target domain, they carry independent expert manual annotations, and they are the cohorts on which the inference-time policy was selected. The two public TotalSegmentator test sets form a secondary evaluation of compatibility with widely used benchmarks under a policy not tuned for them. 
+
+Balgrist-V0 CT and MRI (Evaluation Set): primary tar-get domain. High-resolution institutional imaging acquired for surgical planning, with independent expert manual contours as reference. It comprises N = 24 subjects, balanced as 12 per anatomical study and split by modality. Balgrist-V0 CT (Evalu-ation Set) is the posterior shoulder instability (PSI) study, 12 4CT subjects ( 5 right, 7 left) targeting the scapula and humerus. 
+
+Balgrist-V0 MRI (Evaluation Set) is the femoroacetabular im-pingement (FAI) hip study, 12 MRI subjects ( 6 right, 6 left) targeting the acetabulum and femoral head, with the labrum additionally contoured. Because these contours were produced independently of every evaluated model, this cohort measures cross-domain generalisation to the protocol actually used in theatre. 
+
+TotalSegmentator CT (Test set): secondary public bench-mark. The publicly released TotalSegmentator model [3] is an nnU-Net trained on 1204 routine CT examinations cover-ing 104 anatomic structures. From its held-out CT test set we retained the N = 62 subjects containing the four MSK targets, yielding scapula ( 37 right, 37 left), humerus ( 28 right, 26 left), hip ( 34 right, 34 left), and femur ( 31 right, 31 left) instances. This cohort is the in-distribution CT benchmark for the expert layer of our framework. 
+
+TotalSegmentator MRI (Test set): secondary public benchmark. TotalSegmentator MRI [4] extends the frame-work to sequence-independent MRI, training an nnU-Net on 616 MRI and 527 CT examinations covering 80 structures. From its internal MRI test set we retained the N = 31 sub-jects containing the four MSK targets: scapula ( 5 right, 6 left), humerus ( 5 right, 6 left), hip ( 11 right, 9 left), and femur ( 7right, 5 left). 
+
+Reference standards of the public cohorts. The reference masks of both public test sets were created through a model-assisted annotation workflow: preliminary automatic segmenta-tions were generated and then reviewed and manually refined by expert annotators before release [3, 4]. They are therefore expert-verified anatomical references rather than raw model predictions. They do, however, follow the same annotation protocol and the same imaging distribution on which TotalSeg-mentator was trained. Strong performance by that model on these two cohorts is consequently the expected outcome, and these cohorts quantify benchmark compatibility rather than behaviour under domain shift. All inference used public checkpoints on a single workstation with an NVIDIA GeForce RTX 4090 Lap-top GPU ( 16 GB VRAM), an Intel Core Ultra 9 185H CPU ( 16 cores, 22 logical processors), and 32 GB of LPDDR5 memory. A lightweight, ready-to-use implementation of the complete inference framework is publicly available at https://github.com/BAL-DMU/ medsam2-anatomy-inference-framework . The raw insti-tutional Balgrist-V0 data remains access-restricted. 
+
+# 3.2 Baselines, Metrics, and Protocol 
+
+The two baselines are the frozen components of the frame-work, each used on its own: the anatomy-specific expert To-talSegmentator [3] and the promptable 3D foundation model MedSAM2 [8]. The comparison asks whether routing a vol-ume through both frozen models under an optimised inference policy beats querying either one directly; holding both mod-els fixed is what attributes any difference to the policy rather than to a stronger network. Both baselines were run from their public checkpoints in their standard released configuration: the volume is passed to the network and its output taken as-is, with no additional resampling or label-map smoothing and only the model’s own internal preprocessing. MedSAM2-Anatomy uses the configuration selected in section 3.3. No weights are trained or fine-tuned, and no method receives a human-supplied prompt. Performance is quantified by the Dice similarity coefficient (DSC) against the reference standard. We report the median DSC per structure because the per-instance distributions are strongly left-skewed by a small number of catastrophic baseline failures. The 95 th-percentile Hausdorff distance (HD95) and the average symmetric surface distance (ASSD) are computed alongside DSC and quoted where boundary quality is at issue. Each case carries a single expert reference, so no measured inter-reader bound is available. On the primary cohorts we therefore read DSC against the level of 0.85 conventionally taken as clinically acceptable overlap for bone structures, and refer to it as the expert acceptance threshold; on the secondary cohorts that level has no clinical interpretation, since agreement there is with a benchmark annotation protocol rather than with contours drawn for surgical planning. Instances were selected in three steps. The subjects of the four cohorts that carry the target labels (fig. 2) provide roughly 360 candidate anatomical instances. Instances with less than 50% of the target anatomy inside the field of view were ex-cluded manually as a quality-control step, leaving 288 . Sixteen of these were held out of the paired evaluation: fourteen be-cause a defect in our prior-caching harness supplied seven shoulder CT scans with another subject’s anatomical prior, which we report as a limitation, and two because a majority of the methods returned no mask, which indicates a problem with the scan or its reference. The evaluation therefore rests on 272 instances, all three methods being scored on identical cases so that every comparison is paired. Where a method returns no mask for a retained instance its DSC is counted as zero; HD95 is undefined in that case and is dropped from that single median, which affects one MedSAM2 instance on the MRI hip. On TotalSegmentator CT, HD95 saturates at the 1.50 mm voxel-spacing floor for almost every structure and method; dif-ferences there are below the resolution of the metric, so those values are reported in table 2 without ranking. The inference-time configuration was selected on a subset of the primary cohorts (section 3.3) and then applied unchanged to the complete Balgrist-V0 evaluation cohorts and to both public benchmarks. The Balgrist rows of table 2 are therefore in-sample with respect to that selection, and the two public test sets are the out-of-sample check. All results are interpreted under this hierarchy: the primary cohorts carry the evidential weight for the target-domain claim, and the secondary cohorts bound how far a policy tuned for one regime transfers to another. 
+
+# 3.3 Which Inference-Time Component Matters? 
+
+To understand which components contribute to the observed performance gain, we performed a targeted ablation on a subset 5Figure 2: Multi-cohort evaluation set for hip and shoulder segmentation on CT and MRI. Each column is one cohort under a harmonised four-structure label space (scapula, humerus, hip/acetabulum, femur): the public TotalSegmentator CT test set ( left ), the institutional Balgrist-V0 target domain combining PSI shoulder CT and FAI hip MRI ( middle ), and the public TotalSegmentator MRI test set ( right ). Top rows: representative 3D surface renderings of the shoulder (scapula, humerus) and hip (hip/acetabulum, femur) anatomies, annotated by side ( right /left ). Bottom row: stacked bar charts giving, per target structure, the number of segmented instances split by side, for TotalSegmentator CT ( N = 62 subjects), Balgrist-V0 CT and MRI ( N = 24 subjects; 12 shoulder CT and 12 hip MRI), and TotalSegmentator MRI ( N = 31 subjects). Table 1: Ablation study of the proposed inference-time optimization framework on a subset of the Balgrist-V0 evaluation set ( 15 subjects: 8 CT and 7 MRI; 30 paired anatomical instances). Panel (a) compares alternative fusion strategies while fixing the prompt budget to N = 3. Panel (b) evaluates the effect of the number of equidistant prompt slices while keeping the selected fusion strategy fixed. All configurations are evaluated on identical paired cases, and statistics are over per-instance DSC pooled across both cohorts. Median DSC is the primary model-selection criterion because it is less sensitive to occasional failed segmentations; p is a two-sided Wilcoxon signed-rank test against the reference arm of each panel. Bold indicates the best value per column within a panel and underlining the second best.                                                                                                                        
+
+> (a) Fusion strategy (prompt budget fixed at N =3)
+> Fusion strategy Description nMean Median SD Min p
+> Majority vote (baseline) Majority agreement across three prompts 30 0.8799 0.9238 0.1176 0.5422 ref. Union Accept voxels predicted by any prompt 30 0.8683 0.9217 0.1657 0.2205 0.469 Soft mean Average prediction logits before thresholding 30 0.8657 0.9087 0.1454 0.3393 0.009 Weighted soft mean Logits weighted by seed distance 30 0.8344 0.8608 0.1414 0.4265 0.003 Largest component Apply connected-component filtering after fusion 30 0.8799 0.9238 0.1176 0.5422 0.587 Hole filling Add 3D hole filling after fusion 30 0.8784 0.9209 0.1172 0.5372 0.003
+> Union +plausibility guard (selected) Union fusion, rejecting paired anatomy below 15% of its contralat-eral volume
+> 30 0.9089 0.9371 0.0770 0.6476 0.058
+> (b) Prompt budget N with the selected fusion strategy fixed
+> Prompt budget Interpretation nMean Median SD Min pN=1Original single-prompt MedSAM2 inference; no multi-prompt fusion ––––––
+> N=2Not evaluated: an even prompt budget can tie under majority voting and needs an arbitrary tie-breaking rule ––––––
+> N=3(selected) Smallest odd budget with unambiguous majority voting 30 0.9089 0.9371 0.0770 0.6476 ref.
+> N=4Additional prompt hypothesis 30 0.9001 0.9274 0.0940 0.5068 0.280
+> N=5Larger odd prompt budget 30 0.9072 0.9288 0.0625 0.7599 0.140
+> N=1denotes original single-prompt MedSAM2 and N=2was omitted because majority voting can tie with an even number of prompts; dashes mark configurations not evaluated in the ablation.
+
+6of the Balgrist-V0 evaluation set comprising 15 subjects, 8 CT and 7 MRI, corresponding to 30 paired anatomical instances. This subset was the complete evaluation data available when the ablation was conducted and was used consistently across all configurations, so every comparison is paired; neither public benchmark was used for configuration selection. Because a small number of failed segmentations can substantially reduce the arithmetic mean, median DSC is the primary criterion for selecting the inference policy, while the mean, standard devi-ation, minimum DSC, and a two-sided Wilcoxon signed-rank test provide complementary information on robustness. 
+
+Fusion strategy. Table 1(a) compares alternative strategies for combining multiple prompt-based segmentations while fix-ing the prompt budget at N = 3. Simple union fusion increases anatomical coverage, restoring the acetabulum from 0.865 to 0.985 of its reference volume, but it also propagates incorrect predictions, reducing the mean DSC from 0.8799 to 0.8683 and increasing the variability across cases. Soft-mean fusion (p = 0.009 ) and weighted averaging ( p = 0.003 ) similarly re-duce performance, indicating that voxel-wise averaging of pre-diction logits is less effective than combining complete anatom-ical hypotheses. Morphological post-processing applied after fusion yields no benefit: largest-connected-component filtering is a no-op ( p = 0.587 ) and hole filling is significantly harmful (p = 0.003 ), because these operations address local geometric artefacts rather than incorrect anatomical priors. The largest improvement is obtained by combining union fu-sion with the plausibility guard of eq. (8), which rejects one side of a paired anatomy whenever its predicted volume is less than 15% of its contralateral partner. This configuration achieves the highest mean and median DSC while substantially reducing performance variability, with the standard deviation decreasing from 0.1176 to 0.0770 . Importantly, the improvement origi-nates from correcting a small number of failed segmentations rather than from changing the majority of successful cases: the guard leaves 27 of the 30 anatomical instances unchanged and activates only when the predicted anatomy is implausibly small. On the single failure case responsible for the perfor-mance collapse, it restores the left acetabulum from 0.458 to 0.954 DSC and the left femur from 0.221 to 0.944 DSC. The guard is never activated on the public TotalSegmentator CT or MRI datasets, where both paired anatomies are consistently present, demonstrating that it does not alter normal inference. Although the improvement over the default configuration does not reach the conventional significance threshold ( p = 0.058 ), this configuration is selected because it systematically removes the lower tail of the performance distribution while preserving the remaining cases. 
+
+Prompt budget. Table 1(b) evaluates the effect of the number of automatically generated prompt slices while keeping the se-lected fusion strategy fixed. The smallest configuration, N = 1 ,corresponds to the original MedSAM2 inference from a single prompt without multi-prompt aggregation and serves as the con-ceptual baseline. A two-prompt configuration is intentionally omitted because majority voting becomes ambiguous with an even number of hypotheses, requiring an arbitrary tie-breaking rule; only odd prompt budgets were therefore considered. Equidistant prompt placement is motivated by our previous AssessNet-19 framework, in which sparse manual annotations on ten equidistant axial slices were sufficient to train 2D seg-mentation models that accurately reconstructed complete 3D anatomical volumes [14]. MedSAM2-Anatomy therefore dis-tributes its prompts uniformly along the anatomy, incorporating complementary anatomical information at low computational cost. Increasing the prompt budget beyond N = 3 provides lit-tle additional benefit. Although N = 5 slightly reduces the standard deviation and increases the minimum DSC, neither larger budget significantly improves the median DSC relative to N = 3 (Friedman χ2 = 3.20 , p = 0.20 ; pairwise p = 0.28 and p = 0.14 ). Because computational cost increases approxi-mately linearly with the number of prompt evaluations, from 16 .6 to 21 .6 minutes on the shoulder CT cohort, N = 3 provides the best trade-off between accuracy, robustness, and inference efficiency and is used throughout the remainder of the paper. These experiments demonstrate that the performance gain of MedSAM2-Anatomy is driven primarily by the inference policy rather than by increased computational effort. The most important design decision is the combination of union fusion with a lightweight plausibility guard, which selectively corrects anatomically implausible failures while leaving normal cases unchanged. Once this strategy is adopted, three equidistant prompts provide an effective balance between robustness and computational efficiency. 
+
+# 3.4 Inference-Time Optimization on the Target Domain 
+
+The primary evaluation tests the central claim: whether an optimised inference policy over frozen models recovers seg-mentation quality that neither frozen model delivers alone, on imaging acquired for surgical planning and graded against in-dependent expert annotations. It does, and by the largest margins in the study (table 2). MedSAM2-Anatomy is the best method on 7 of the 8 Balgrist structures by DSC and 6 of 8 by HD95, and attains the best cohort average on both metrics in both cohorts: average median DSC 0.9216 against 0.9146 (MedSAM2) and 0.8851 (TotalSeg-mentator) on Balgrist-V0 CT, and 0.9242 against 0.8423 and 0.7105 on Balgrist-V0 MRI. Boundary quality separates the methods more sharply than overlap does: average median HD95 on Balgrist-V0 MRI falls from 22 .04 mm for the frozen expert to 9.26 mm for the unguided foundation model and 4.99 mm for the optimised composition, a factor of 4.4 against the expert where DSC improves by a factor of only 1.3 . Since both cohorts are independent of every model’s training data, this is a gain in cross-domain generalisation obtained purely by reconfiguring how frozen models are executed. Three observations support the interpretation that this is inference-time optimisation at work rather than a stronger model. 
+
+Expert priors compensate for domain shift where the expert itself cannot. The margin widens exactly where the shift is most 7Table 2: Quantitative segmentation performance across the four evaluation cohorts, reported per target structure as the median Dice similarity coefficient (DSC, ↑) and the median 95 th-percentile Hausdorff distance (HD95 in mm, ↓). TotalSegmentator [3] is the frozen expert CNN, MedSAM2 [8] the frozen promptable foundation model, and MedSAM2-Anatomy our training-free inference-time optimisation of the two. The upper block is the primary target-domain evaluation on the two Balgrist-V0 cohorts; the lower block is the secondary public benchmark evaluation. Bold indicates the best and underline the second-best result per metric and row; tied values share a mark. All three methods are evaluated on the same 272 paired structure instances, so every value in a row rests on identical cases. The evaluation protocol is given in section 3.2. 
+
+Dataset Structure TotalSegmentator [3] MedSAM2 [8] MedSAM2-Anatomy (Ours) DSC ↑ HD95 ↓ DSC ↑ HD95 ↓ DSC ↑ HD95 ↓
+
+PRIMARY TARGET -DOMAIN EVALUATION †
+
+Balgrist-V0 CT (Evaluation Set) 
+
+PSI shoulder 
+
+Scapula (L) 0.8104 15.97 0.8777 16.31 0.8859 15.94 
+
+Scapula (R) 0.8252 9.78 0.8498 9.24 0.8481 4.50 
+
+Humerus (L) 0.9548 2.58 0.9753 1.66 0.9791 1.85 Humerus (R) 0.9498 2.29 0.9555 2.45 0.9735 2.00 Cohort average 0.8851 7.65 0.9146 7.42 0.9216 6.07 Balgrist-V0 MRI (Evaluation Set) 
+
+FAI hip 
+
+Acetabulum (L) 0.5096 34.33 0.7334 9.08 0.9119 4.47 
+
+Acetabulum (R) 0.6930 19.13 0.8851 5.13 0.8909 8.32 Femur (L) 0.8248 22.97 0.9156 9.56 0.9464 2.76 
+
+Femur (R) 0.8145 11.74 0.8351 13.28 0.9477 4.43 Cohort average 0.7105 22.04 0.8423 9.26 0.9242 4.99 
+
+SECONDARY PUBLIC BENCHMARK EVALUATION 
+
+TotalSegmentator CT (Test set) ‡
+
+Scapula (L) 0.9803 1.50 0.9113 1.50 0.9234 1.50 Scapula (R) 0.9767 1.50 0.9215 1.50 0.9312 1.50 Humerus (L) 0.9828 1.50 0.9562 1.50 0.9643 1.50 Humerus (R) 0.9851 1.50 0.9590 1.50 0.9652 1.50 Hip (L) 0.9908 1.50 0.9556 1.50 0.9627 1.50 Hip (R) 0.9913 1.50 0.9546 2.12 0.9623 1.50 Femur (L) 0.9924 1.50 0.9633 2.12 0.9717 1.50 Femur (R) 0.9924 1.50 0.9661 1.50 0.9724 1.50 
+
+Cohort average 0.9865 1.50 0.9485 1.66 0.9566 1.50 TotalSegmentator MRI (Test set) Scapula (L) 0.6641 62.41 0.5170 45.12 0.4140 35.22 
+
+Scapula (R) 0.7465 28.44 0.5150 40.31 0.6126 33.56 Humerus (L) 0.8183 7.58 0.7095 13.65 0.7230 15.25 Humerus (R) 0.8847 6.47 0.8844 3.38 0.8922 9.85 Hip (L) 0.8888 3.12 0.6445 13.64 0.6216 20.75 Hip (R) 0.9003 3.00 0.7268 11.99 0.7903 12.32 Femur (L) 0.9632 1.03 0.9564 2.17 0.9585 2.17 Femur (R) 0.9616 1.38 0.9348 4.50 0.8992 5.23 
+
+Cohort average 0.8534 14.18 0.7361 16.84 0.7389 16.79   
+
+> †Primary target-domain cohorts with independent expert manual annotations.
+> ‡HD95 saturates at the 1 .50 mm voxel-spacing floor and is not ranked.
+
+severe: +0.21 average median DSC over the frozen expert on hip MRI against +0.04 on shoulder CT. The expert remains a reliable localiser on the target domain even where its delineation degrades, and the framework consumes only that localisation. 
+
+Automatic prompt optimisation reduces prompt sensitivity. 
+
+The unguided foundation model, prompted without a validated prior, is unstable across sides: the right femur falls to 0.8351 where the left reaches 0.9156 , and it returns no mask at all on one MRI hip instance, which enters as DSC = 0 . Sampling sev-eral hypotheses from a validated prior and fusing them removes that asymmetry, taking both femora above 0 .94. 
+
+The composition is more robust than either frozen model alone. On the target domain both baselines have a structure they fail on, and they are not the same structure. Figure 3 shows the distributions behind the medians: for the acetabulum and femur the frozen expert is not merely lower on average but widely dispersed, its interquartile range spanning much of the scale and its lower whisker reaching far below its me-dian, whereas the optimised composition compresses the box towards the top and largely removes that tail. Reading the Bal-grist medians of table 2 against the expert acceptance threshold, both promptable methods clear DSC = 0.85 on all four struc-tures whereas TotalSegmentator clears it only on the humerus (0.9508 ); MedSAM2-Anatomy holds the larger margin above the threshold at every structure. 8Acetabulum Femur Humerus Scapula              
+
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> Balgrist-V0 CT and MRI (Evaluation Set) (mean DSC = 0.84)
+> Hip Femur Humerus Scapula
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> TotalSegmentator CT (Test set) (mean DSC = 0.94)
+> Hip Femur Humerus Scapula
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> TotalSegmentator MRI (Test set) (mean DSC = 0.73)
+> Dice similarity coefficient (DSC)
+> TotalSegmentator MedSAM2 MedSAM2-Anatomy (Ours) Mean Cohort mean DSC
+
+Figure 3: Per-structure DSC distributions across the primary target-domain and secondary public benchmark cohorts. Inference-time optimisation reduces low-performance outliers on Balgrist-V0, while TotalSegmentator retains the highest distributions on its public benchmarks. Rows are cohorts: the primary Balgrist-V0 evaluation sets (top) and the secondary TotalSegmentator CT and MRI test sets (middle and bottom). Boxes show the interquartile range (IQR) with the median; black diamonds indicate the mean, whiskers extend to 1.5×IQR, and individual cases are overlaid as points. Left and right instances are pooled. Dashed lines denote the cohort-wide mean DSC pooled over the three methods and the four structures, a within-cohort reference level rather than a quality criterion, and zero-valued points indicate cases in which a method returned no mask. 
+
+Two Regimes Within the Target Domain 
+
+The two studies probe opposite regimes and expose the mech-anism behind the aggregates: a severe domain shift with thin, low-contrast targets in the hip MRI study, against high bone contrast and a near-ceiling baseline in the shoulder CT study. 
+
+FAI hip (MRI). This is the most demanding setting in the benchmark and the one for which the framework was built. The frozen expert produces block-like boundaries, and its failure concentrates in the acetabulum, whose left side collapses to 0.5096 ; the optimised composition restores it to 0.9119 , the largest single-structure gain anywhere in the study. Prompting a foundation model recovers much of the deficit without any learned anatomical prior, but only the validated prior makes that recovery consistent across sides. Surface error improves by more than overlap alone suggests, median ASSD falling from 3.84 mm for the frozen expert to 1.81 mm for the unguided foundation model and 1.04 mm for the optimised composition. The top row of fig. 4 shows one such scan. 
+
+PSI shoulder (CT). Here bone contrast is high and the frozen 9expert is already near its operating ceiling, so the available head-room is small and concentrated in one structure. Almost all of the gain comes from the scapula, whose left side improves from 0.8104 to 0.8859 , whereas the humerus, already well seg-mented by every method, moves only from 0.9548 to 0.9791 ;on the right scapula the optimised composition and MedSAM2 are effectively tied ( 0.8481 against 0.8498 ). The pattern is structure-selective: the residual error sits in the thin scapular blade and the glenoid cavity, where the frozen expert’s bound-aries are least reliable, whereas the humeral shaft is already correct under every method. Boundary metrics agree and by a smaller margin, consistent with a near-ceiling baseline: median HD95 improves from 7 .65 mm to 6 .07 mm and median ASSD from 1 .20 mm to 0 .89 mm. Read together, the two studies show that the benefit of inference-time optimisation scales with the degradation of the frozen expert and is never negative where that expert is already accurate. The one structure that remains close to the acceptance threshold is the scapula ( 0.8548 ), which is where the residual error of the framework concentrates. 
+
+# 3.5 Behaviour Outside the Target Domain 
+
+The two secondary cohorts ask the complementary question: what happens when the expert prior is not the weak link. There, TotalSegmentator operates close to both the imaging distri-bution and the annotation protocol it was trained on, and it leads by a substantial margin, reaching average median DSC 0.9865 on TotalSegmentator CT and 0.8534 on TotalSegmenta-tor MRI, ahead of MedSAM2 ( 0.9485 , 0.7361 ) and MedSAM2-Anatomy ( 0.9566 , 0.7389 ). This is the expected outcome rather than a defect of inference-time optimisation, and it is what a pol-icy tuned for a different regime predicts: union fusion with prior rejection is designed for the case where the prior localises well but delineates poorly, so it deliberately discards the expert’s boundaries. Where those boundaries are the most accurate estimate available, discarding them costs accuracy. The informative comparison on these cohorts is therefore between the two promptable methods, both of which are out of distribution in the same way. Automatic prompt optimisation improves the frozen foundation model on both public cohorts, by +0.0081 average median DSC on CT and +0.0028 on MRI, and recovers structure-level failures such as the right scapula (0.5150 → 0.6126 ). The improvement is small but consistent in sign, which is what the mechanism predicts when prompts are already reasonable. Read as a benchmark-compatibility check, the result is that the target-domain policy transfers without col-lapsing: it remains at least as good as the unguided foundation model everywhere while giving up the lead to the expert on the expert’s own benchmark. Figure 3 also tempers the MRI result: each structure there is scored on only eight to twelve instances even after pooling both sides, so the ranking rests on distributions too sparse to separate the methods reliably. Taken together, sections 3.4 and 3.5 give one result with two signs: the best inference-time policy is not fixed but depends on how reliable the expert prior is. MedSAM2-Anatomy is strongest on the two Balgrist-V0 cohorts, whose annotations were produced independently of every evaluated model, which is the target-domain generalisation that inference-time optimisa-tion is meant to deliver; TotalSegmentator remains strongest on the two public benchmarks, which lie closest to its own training distribution and annotation protocol. The primary evidence therefore rests on the independent Balgrist-V0 evaluation, with the public benchmarks establishing compatibility rather than superiority. Figure 4 shows this case by case: its representative rows illustrate the typical outcome of each regime, and its first row separates two claims that the aggregates conflate, since on the partial-field hip MRI prompting a foundation model without a validated prior is not merely less accurate but qualitatively wrong, the track drifting across the joint to DSC 0.4375 on the left acetabulum, whereas the plausibility filter returns the same architecture to 0 .9545. 
+
+# 4 Discussion 
+
+# 4.1 Why the Two Frozen Model Families Fail Differently? 
+
+A frozen CNN encodes the intensity statistics, resolution, and field of view of its training data in its weights. Under do-main shift these assumptions no longer hold at the level of fine detail, but they largely survive at the level of gross spa-tial layout: the network still finds the femur, it just no longer traces its surface. Our measurements match that description. On the target-domain hip MRI the frozen expert reaches aver-age median DSC 0.7105 with median HD95 of 22 .04 mm and block-like boundaries, yet its localisation is good enough that prompts derived from it recover DSC 0.9242 . Domain shift degrades delineation faster than it degrades localisation, and that asymmetry is what makes an expert prior worth using even where the expert’s own output is not. Promptable foundation models have the complementary property. They delineate well because they were trained on a very broad distribution of boundaries, but they carry no anatom-ical prior that tells them which boundary was intended. The prompt supplies that information, and in 3D the prompt is under-specified: a seed slice fixes the appearance of a structure at one cross-section and lets memory propagation extrapolate the rest. The consequence is visible as laterality asymmetry in our results, where the unguided model reaches 0.9156 on the left femur and 0.8351 on the right on the same cohort with the same weights. Prompt sensitivity is not noise to be aver-aged away; it is the model asking a question the input does not answer. 
+
+# 4.2 Why Inference-Time Optimization Combines Them? 
+
+Composing the two frozen models at inference time addresses each weakness with the other’s strength, and it does so with-out touching either model. The expert answers the question the foundation model cannot, namely where the structure is. The foundation model answers the question the expert answers 10 Figure 4: Qualitative comparison across the four evaluation cohorts, one subject per row. Columns show the source image, the reference annotation, and the predictions of TotalSegmentator, MedSAM2, and MedSAM2-Anatomy. The reference column colours each structure instance separately, whereas each prediction column uses that method’s single colour. Row 1 illustrates the partial-field Balgrist-V0 MRI case used to demonstrate prompt drift and its correction by the plausibility filter of eq. (8). Rows 
+
+2–4 show representative cases selected by a predefined median-based criterion, namely the instance whose three per-method DSC values deviate least, in the worst case over the three methods, from that cohort’s per-method medians, for Balgrist-V0 CT, TotalSegmentator CT (ranked over the shoulder structures alone, where that cohort’s residual error concentrates), and TotalSegmentator MRI. The examples illustrate typical qualitative behaviour across target-domain and public benchmark settings; the quantitative conclusions rest on table 2 and fig. 3. badly under shift, namely where its surface lies. Because the coupling is a routing decision rather than a learned mapping, it can be tuned on a small target-domain cohort at no annotation cost beyond what evaluation already requires, and it inherits the reproducibility of its components. With cached expert priors and pinned flags, re-running the selected configuration repro-duced every per-instance DSC exactly, so reported differences between arms reflect the configuration and not run-to-run varia-tion. The ablation locates the tunable value precisely. Requiring agreement between independent propagations erodes exactly the structures that are only a few voxels thick: under major-ity voting the acetabulum is retained at 0.865 of its reference volume against 0.985 under union. Retaining every voxel any pass observed removes that deficit, while the outlier masks a vote was meant to suppress are better handled at their source, by rejecting an implausible prior before prompting rather than discarding a mask after it. A corollary is that post-hoc repair became counterproductive: hole filling, introduced to patch the very gaps voting had created, significantly hurt once the erosion was gone. This is a useful negative result for a literature in which such clean-up steps are commonly stacked by default. 
+
+# 4.3 The Fusion Rule Depends on Prior Reliabil-ity 
+
+The most consequential finding is not that union fusion is uni-versally optimal, but that the optimal fusion strategy depends on the reliability of the expert prior. Union fusion with prior rejection is the right choice when the prior localises well but delineates poorly, which is the situation on high-resolution target-domain CT and MRI, where resolution and protocol dif-11 fer substantially from the expert’s training data. It is the wrong choice when the prior is itself the most accurate estimate avail-able, as on the public test sets, where the expert operates near its training distribution and under the annotation protocol its training data follows. There, discarding the expert’s bound-aries costs accuracy, and no amount of prompt optimisation recovers it. The selected configuration should therefore be read as optimal for the Balgrist-V0 target domain, not as a general recommendation. The current framework treats the prior as a binary object: it is either plausible enough to generate prompts or it is re-jected. Nothing in the pipeline expresses the intermediate case of a prior that is partially trustworthy. The direction we con-sider most promising is therefore confidence-aware adaptive fusion, which decides per structure and per case whether to reject, down-weight, or fully include the expert prior. The reliability estimate driving that decision can be formed from signals available at inference time, such as agreement between the prior and the propagated candidates, prior-to-candidate volume ratios, boundary agreement, or the spread across the 
+
+N hypotheses, and Mexp a would then enter eq. (6) as an addi-tional term weighted by that estimate. The framework would interpolate between the two regimes we observed, remaining refinement-dominant when the prior is unreliable and becoming expert-supported when it is not, rather than committing to one behaviour in advance. We note that this is a different proposal from the soft-fusion variants tested in table 1, which weighted candidate masks by their distance from a seed slice and never estimated the reliability of the prior itself; those variants lost, and they do not bound what a confidence-aware treatment of the prior could achieve. 
+
+# 4.4 Computational Trade-offs 
+
+Inference-time optimisation buys accuracy with computation. The expert runs once per scan, but the foundation model runs N
+
+times per anatomy, so cost scales as O(N) per structure and the framework is roughly N times more expensive than querying the foundation model directly, plus one expert pass. The ablation makes the trade-off concrete and favourable: N = 5 took 21 .6minutes against 16 .6 for the shoulder CT cohort and returned no accuracy for the difference, so N = 3 is selected and the overhead is bounded. Configuration selection itself is a one-off cost on a target-domain cohort, not a per-case cost. Since no gradients are computed and no optimiser state is held, memory requirements are those of inference alone, and the pipeline runs on a single GPU. 
+
+# 4.5 Limitations 
+
+Every case carries a single expert reference, so the comparison cannot be placed against measured inter-reader variability and rests instead on a conventional acceptability threshold. The benchmark covers two anatomical regions across CT and MRI, and we make no claim beyond that scope. The two public cohorts follow the imaging distribution and annotation proto-col of the expert’s training data, so they quantify benchmark compatibility rather than robustness under domain shift; only the two Balgrist-V0 cohorts carry annotations produced inde-pendently of every evaluated model, and those are also the cohorts on which the fusion strategy and prompt budget were selected, which makes them in-sample with respect to that choice. The selection set comprises 30 structure instances, and the margin of the selected configuration over the default does not reach significance. A defect in our own prior-caching har-ness supplied seven public CT scans with another subject’s anatomical prior, costing 14 structure instances that we ex-cluded rather than charge against any method; regenerating those priors is straightforward and remains outstanding. The labrum, although contoured in the hip reference standard, lies outside the shared four-structure label space and is not pro-duced by any of the three methods, so we make no quantitative claim about it. Finally, the results characterise segmentation accuracy on retrospective data; they do not establish clinical readiness, which would require prospective evaluation against the downstream planning measurements the segmentations are intended to support. 
+
+# 4.6 Future Directions 
+
+The confidence-aware fusion described above is the most di-rect extension and the one we consider most likely to improve cross-domain robustness. Beyond it, the framework is agnos-tic to its components: either frozen model can be replaced without changing the surrounding logic, so a stronger expert or a stronger foundation model transfers immediately, and adding an anatomy requires only declaring an expert and a label. Prompt generation is likewise open, and we plan to ex-plore text conditioning through models such as VoxTell [15] and MedGemma [16] to constrain the foundation model in complex multi-label settings where a mask prior alone is am-biguous. More broadly, the question this work leaves open is how far the inference-time budget can be pushed: we tuned three discrete choices on a small cohort, and the search space of routing policies over frozen models is considerably larger. 
+
+# 5 Conclusion 
+
+We asked how frozen state-of-the-art segmentation models can be systematically optimised at inference time, without retraining and without human interaction. The evidence pre-sented here indicates that they can be, within a defined regime. MedSAM2-Anatomy optimises the execution policy of frozen models rather than their parameters: it generates prompts au-tomatically from an expert prior, propagates several prompt hypotheses through a frozen promptable 3D foundation model, fuses the resulting candidates, and rejects anatomically implau-sible priors before they contribute. No weight is updated and no prompt is supplied by a user. Holding representative expert and foundation models fixed is what allows the observed dif-ferences to be attributed to that policy rather than to a stronger network. An ablation on the primary target-domain cohorts identified the fusion layer as the component that governs seg-12 mentation quality and selected union fusion with prior rejection over softer aggregation, additional prompts, and post-hoc mask repair. On Balgrist-V0, the primary evaluation and the only co-horts whose contours were produced independently of every evaluated model, this inference-time policy raised average me-dian DSC from 0.7105 to 0.9242 on FAI hip MRI and from 0.8851 to 0.9216 on PSI shoulder CT relative to the frozen expert, and cut median HD95 on hip MRI from 22 .04 mm to 4.99 mm, while eliminating manual prompting. This is im-proved cross-domain generalisation obtained without touching a single weight. On the secondary public test sets, where the expert operates close to its own training distribution and anno-tation protocol, the same policy is not the best choice, because it deliberately discards expert boundaries that are there the most reliable estimate available; automatic prompt optimisa-tion nevertheless still improves the frozen foundation model on both. The conclusion is therefore not that MedSAM2-Anatomy is a better segmentation model, but that the optimal inference policy depends on how reliable the expert prior is. Making that depen-dence explicit through confidence-aware adaptive fusion, which decides per case whether to reject, down-weight, or include the expert prior, is the main direction we see for extending the ap-proach to robust cross-domain automatic segmentation. These results demonstrate that training-free inference-time optimisa-tion is a practical strategy for systematically improving frozen segmentation models under domain shift, without retraining and without manual interaction. 
+
+# References 
+
+[1] O. Ronneberger, P. Fischer, and T. Brox, “U-net: Con-volutional networks for biomedical image segmentation,” 
+
+Medical Image Computing and Computer-Assisted Inter-vention , pp. 234–241, 2015. [2] F. Isensee, P. F. Jaeger, S. A. Kohl, J. Petersen, and K. H. Maier-Hein, “nnu-net: a self-configuring method for deep learning-based biomedical image segmentation,” Nature Methods , vol. 18, no. 2, pp. 203–211, 2021. [3] J. Wasserthal, H.-C. Breit, M. T. Meyer, M. Pradella, D. Hinck, A. W. Sauter, T. Heye, D. T. Boll, J. Cyriac, S. Yang, M. Bach, and M. Segeroth, “TotalSegmentator: Robust segmentation of 104 anatomic structures in CT images,” Radiol.: Artif. Intell. , vol. 5, no. 5, Sep. 2023, art. no. e230024. [4] T. Akinci D’Antonoli, L. K. Berger, A. K. Indrakanti, N. Vishwanathan, J. Weiss, M. Jung, Z. Berkarda, A. Rau, M. Reisert, T. Küstner, A. Walter, E. M. Merkle, D. Boll, H.-C. Breit, A. P. Nicoli, M. Segeroth, J. Cyr-iac, S. Yang, and J. Wasserthal, “TotalSegmentator MRI: Robust sequence-independent segmentation of multiple anatomic structures in MRI,” Radiology , vol. 314, no. 2, 2025. [5] A. Kirillov, E. Mintun, N. Ravi, H. Mao, C. Rol-land, L. Gustafson, T. Xiao, S. Whitehead, A. C. Berg, W.-Y. Lo et al. , “Segment anything,” arXiv preprint arXiv:2304.02643 , 2023. [6] N. Ravi, V. Gabeur, Y.-T. Hu, R. Hu, C. Ryali, T. Ma, H. Khedr, R. Rädle, C. Rolland, L. Gustafson et al. ,“Sam 2: Segment anything in images and videos,” arXiv preprint arXiv:2408.00714 , 2024. [7] J. Ma, Y. He, F. Li, L. Han, C. You, and B. Wang, “Seg-ment anything in medical images,” Nature Communica-tions , vol. 15, no. 1, p. 654, 2024. [8] J. Ma, S. Yang, C. Zhang, Y. Gu, Z. He, J. Zhang, Y. Zhao, L. Wang, R. Zhang, D. Chen, A. Wong, and B. Wang, “MedSAM2: Segment anything in 3D medical images and videos,” arXiv preprint arXiv:2408.03322 , 2024. [9] Y. Shen et al. , “SIT-SAM: A semantic-integration trans-former that adapts the segment anything model to medical imaging,” Biomed. Signal Process. Control , vol. 97, p. 108086, 2025. [10] H. Gu, R. Colglazier, H. Dong, J. Zhang, Y. Chen, Z. Yildiz, Y. Chen, L. Li, J. Yang, J. Willhite, A. M. Meyer, A. S. Bergamasco, G. Sgroi, E. Kim, J. Lee, M. Faraj, S. Ronnekleiv-Kelly, M. R. Bashir, and M. A. Mazurowski, “SegmentAnyBone: A universal model that segments any bone at any location on MRI,” arXiv preprint arXiv:2401.12974 , 2024. [11] M. Moor, O. Banerjee, Z. S. H. Abad, H. M. Krumholz, J. Leskovec, E. J. Topol, and P. Rajpurkar, “Foundation models for generalist medical artificial intelligence,” Na-ture , vol. 616, no. 7956, pp. 259–265, 2023. [12] A. Moglia, M. Leccardi, M. Cavicchioli, A. Maccarini, M. Marcon, L. Mainardi, and P. Cerveri, “Generalist mod-els in medical image segmentation: A survey and compar-ison,” arXiv preprint arXiv:2506.10825 , 2025. [13] F. Isensee, M. Rokuss, L. Krämer, S. Dinkelacker, A. Ravindran, F. Stritzke, B. Hamm, T. Wald, M. Langen-berg, C. Ulrich, J. Deissler, R. Floca, and K. Maier-Hein, “nnInteractive: Redefining 3D promptable segmentation,” 
+
+arXiv preprint arXiv:2503.08373 , 2025. [14] J. A. Garcia-Henao, A. Depotter, D. V. Bower, H. Ba-jercius, P. T. Todorova et al. , “A multiclass radiomics method-based WHO severity scale for improving COVID-19 patient assessment and disease characterization from CT scans,” Invest. Radiol. , vol. 58, no. 12, pp. 882–893, 2023. [15] M. Rokuss, M. Langenberg, Y. Kirchhoff, F. Isensee, B. Hamm, C. Ulrich, S. Regnery, L. Bauer, E. Katsi-giannopulos, T. Norajitra, and K. Maier-Hein, “VoxTell: Free-text promptable universal 3D medical image segmen-tation,” arXiv preprint arXiv:2511.11450 , 2025. [16] A. Sellergren, C. Gao, F. Mahvar, T. Kohlberger, F. Jamil, M. Traverse, A. Tono, B. Sadjad, L. Yang 
+
+et al. , “MedGemma 1.5 technical report,” arXiv preprint arXiv:2604.05081 , 2026. 13

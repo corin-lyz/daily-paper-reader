@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-08-05</span>
+      <span class="dpr-home-dashboard-kicker">2026-08-07</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 15 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 13 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>7</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>8</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>4</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>9</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-08-05 22:33:55 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-08-07 03:04:51 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,9 +62,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日精选15篇论文，其中7篇精读、8篇速读，重点聚焦开放词汇语义分割与高效立体匹配。</p>
-<p>最值得关注的是10分工作《Perceptual Anchoring》以原型引导文本校准实现免训练分割，以及9分《WHTMix》用Walsh-Hadamard混合提升立体深度估计效率。</p>
-<p>建议优先阅读这两篇高分论文，其余速读可关注注意力剪枝与多模态自监督方向，后续持续追踪视觉-语言模型结合3D证据的进展。</p>
+<p>今日精读4篇、速读9篇，重点覆盖细粒度视觉上采样与稀疏ToF深度补全方向。最值得关注的两项高分工作：PixelUp实现零样本语义特征上采样，Dense Metric深度补全从稀疏ToF传感器恢复稠密度量深度。建议优先精读这两篇，再结合LiteMVS等高效多视图立体方法理解当前性能与效率权衡。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -73,12 +71,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">7 篇</strong>
+    <strong class="dpr-home-dashboard-count">4 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Perceptual Anchoring: Prototype-Guided Text Calibration for Training-free Open-Vocabulary Semantic Segmentation">Perceptual Anchoring: Prototype-Guided Text Calibration for Training-free Open-Vocabulary Semantic Segmentation</span></li><li><span class="dpr-home-dashboard-paper-title" title="WHTMix: Efficient Stereo Depth Estimation via Walsh-Hadamard Token Mixing">WHTMix: Efficient Stereo Depth Estimation via Walsh-Hadamard Token Mixing</span></li><li><span class="dpr-home-dashboard-paper-title" title="XiDepth: a Lightweight and Efficient Network for Self-supervised Monocular Depth Estimation">XiDepth: a Lightweight and Efficient Network for Self-supervised Monocular Depth Estimation</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="PixelUp: Zero-Shot Semantic Feature Upsampling for Fine-Grained Vision Tasks">PixelUp: Zero-Shot Semantic Feature Upsampling for Fine-Grained Vision Tasks</span></li><li><span class="dpr-home-dashboard-paper-title" title="Dense Metric Depth Completion from Sparse Direct Time-of-Flight Sensors">Dense Metric Depth Completion from Sparse Direct Time-of-Flight Sensors</span></li><li><span class="dpr-home-dashboard-paper-title" title="StaticSegFormer: An Efficient High-Performance Semantic Segmentation Based on Static Structured Pruning">StaticSegFormer: An Efficient High-Performance Semantic Segmentation Based on Static Structured Pruning</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">seg <strong>3</strong></span><span class="dpr-home-dashboard-tag">vfm <strong>2</strong></span><span class="dpr-home-dashboard-tag">mono-depth <strong>1</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">depth-refine <strong>1</strong></span><span class="dpr-home-dashboard-tag">mono-depth <strong>1</strong></span><span class="dpr-home-dashboard-tag">seg <strong>1</strong></span><span class="dpr-home-dashboard-tag">vfm <strong>1</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -86,12 +84,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">8 篇</strong>
+    <strong class="dpr-home-dashboard-count">9 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Interpretability-Guided Soft Pruning of Attention Heads in Vision Transformers">Interpretability-Guided Soft Pruning of Attention Heads in Vision Transformers</span></li><li><span class="dpr-home-dashboard-paper-title" title="PixVL: Self-Supervised Training of Pixel-Level MLLMs via a Unified Mask--Text Consistency Cycle">PixVL: Self-Supervised Training of Pixel-Level MLLMs via a Unified Mask--Text Consistency Cycle</span></li><li><span class="dpr-home-dashboard-paper-title" title="Distill What RGB Can Recover: Privileged 3D Evidence for RGB-Only Vision-Language Models">Distill What RGB Can Recover: Privileged 3D Evidence for RGB-Only Vision-Language Models</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Probing the 3D Object-Level Understanding of Pre-Trained Detection Transformers">Probing the 3D Object-Level Understanding of Pre-Trained Detection Transformers</span></li><li><span class="dpr-home-dashboard-paper-title" title="SpatialQuery: Benchmarking Geometry-Grounded Multi-Instance Spatial Reasoning in Vision-Language Models">SpatialQuery: Benchmarking Geometry-Grounded Multi-Instance Spatial Reasoning in Vision-Language Models</span></li><li><span class="dpr-home-dashboard-paper-title" title="LiteMVS: Efficient Multi-View Stereo with Foundation Distillation and Expert Aggregation">LiteMVS: Efficient Multi-View Stereo with Foundation Distillation and Expert Aggregation</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">lite-vision <strong>3</strong></span><span class="dpr-home-dashboard-tag">seg <strong>2</strong></span><span class="dpr-home-dashboard-tag">matting <strong>1</strong></span><span class="dpr-home-dashboard-tag">mono-depth <strong>1</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">lite-vision <strong>2</strong></span><span class="dpr-home-dashboard-tag">mono-depth <strong>2</strong></span><span class="dpr-home-dashboard-tag">seg <strong>2</strong></span><span class="dpr-home-dashboard-tag">vfm <strong>2</strong></span><span class="dpr-home-dashboard-tag">depth-refine <strong>1</strong></span></div>
 </section>
 </div>
 

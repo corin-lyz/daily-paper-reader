@@ -1,0 +1,831 @@
+Title: StaticSegFormer: An Efficient High-Performance Semantic Segmentation Based on Static Structured Pruning
+
+URL Source: https://arxiv.org/pdf/2608.04811v1
+
+Published Time: Thu, 06 Aug 2026 00:56:33 GMT
+
+Number of Pages: 9
+
+Markdown Content:
+# StaticSegFormer: An Efficient High-Performance Semantic Segmentation Based on Static Structured Pruning 
+
+Timo Bartels 1, Danish Nazir 1,2, Jan Piewek 2, Thorsten Bagdonat 2, Tim Fingscheidt 1 
+
+> 1
+
+Technische Universit¨ at Braunschweig, Germany 
+
+{timo.bartels,danish.nazir,t.fingscheidt }@tu-bs.de  
+
+> 2
+
+Group Innovation, Volkswagen AG, Wolfsburg, Germany 
+
+{danish.nazir,jan.piewek,thorsten.bagdonat }@volkswagen.de 
+
+Abstract —Structured pruning enhances the efficiency of deep neural networks (DNNs) by eliminating groups of parameters during inference. Previous methods mostly reduce computational complexity (FLOPs), while semantic segmentation performance (mIoU) slightly drops. Accordingly, recent dynamic structured pruning methods aim at reducing the performance drop, while lowering the FLOPs even more. However, on the ADE20K and Cityscapes benchmarks, our study reveals that on a GPU platform such dynamic methods exhibit a surprisingly low frame rate far below a simple static approach, while having comparable results in mIoU and FLOPs. To address this issue, we propose a static structured pruning method for attention layers, that achieves both, a lower FLOPs and a high frame rate [fps] of the SegFormer network, the latter increased by up to 
+
+34% relative on the Cityscapes dataset, while having no mIoU performance drop at all. Our so-called StaticSegFormer 
+
+method is strongest for small encoders and large images. 
+
+Index Terms —semantic segmentation, efficiency, structured pruning 
+
+I. I NTRODUCTION 
+
+Since the advent of deep convolutional neuronal networks (CNNs), significant progress has been made in the field of computer vision. Particularly in semantic segmentation, where the objective is pixel-level classification, CNNs have demon-strated remarkable success, outperforming other methods on many semantic segmentation benchmarks. However, with the emergence of vision transformers (ViT) by Dosovitskiy et al. [1], this new class of networks now dominates most semantic segmentation benchmarks. In our work, due to its high perfor-mance and efficiency, we build upon the ViT SegFormer 
+
+[2]. Xie et al. [2] improved upon the original ViT [1] by proposing a more efficient attention module, a lightweight de-coder, and a hierarchical encoder. Nevertheless, despite these enhancements, their proposed attention layer still imposes a high computational demand, which scales quadratically with the number of input pixels. The most widely adopted metric to report the computational efficiency of deep neuronal networks (DNNs) is floating-point operations (FLOPs), which can be calculated independently of the employed hardware. Accordingly, FLOPs provide a stan-dardized metric facilitating fair comparisons across different network architectures, regardless of the underlying hardware. However, FLOPs often do not directly correlate with the actual computational speed or energy consumption on a target platform, thereby making this metric less relevant for real-world applications. To address this limitation, in our study, we additionally report frames per second (fps) on an NVIDIA A100 GPU, and on a GTX 1080 Ti .To increase the efficiency of DNN structured pruning, a special form of pruning, where entire model structures, such as kernels, neurons, or layers are removed, can be applied to reduce FLOPs and increase fps substantially [3]–[6]. However, most structured pruning methods trade efficiency (fps, FLOPs) with a certain loss in mIoU performance. Recent structured pruning approaches proposed to prune model structures dy-namically based on the layer input, therefore keeping the original model capacity, while reducing the mIoU performance drop [3], [7]. Despite these efforts, dynamic structured pruning methods still exhibit some performance losses in terms of mIoU. Moreover, our investigations reveal that the inference time of the dynamic structured pruning approach by Bai et al. [3] was even inferior to the corresponding unpruned network. This inefficiency results from the dynamic assembly of ma-trices in linear layers, which adds a computational overhead surpassing the time saved by reducing the dimensions. This is why in this work, we aim at finding a static 
+
+structured pruning approach, that achieves on the one hand a 
+
+higher efficiency in terms of both FLOPs and fps, while at the same time obtaining a higher mIoU . To achieve this, we build upon DynaSegFormer [3], but apply structured pruning solely to the attention layers. We demonstrate that such simple yet effective static structured pruning of the heads in the multi-head attention layers yields comparable results to the dynamic gating module and pruning ratio annealing as proposed by Bai et al. [3], both in terms of FLOPs and mIoU. Our method does not suffer from the drawbacks regarding inference time, instead, it significantly increases the fps without the need of additional techniques, such as knowledge distillation utilized by Bai et al. [3]. Further, we conduct an extensive ablation study on pruning ratios across different model sizes of the 
+
+Segformer encoder, addressing, whether a highly pruned large encoder can outperform a smaller, less pruned one. arXiv:2608.04811v1 [cs.CV] 5 Aug 2026 Finally, we evaluate the best performing networks on the Cityscapes [8] and ADE20K [9] benchmarks, showcasing the superiority of our method over both SegFormer [2] and 
+
+DynaSegFormer [3]. II. R ELATED WORK 
+
+In this section, we discuss related work, beginning with the broader topic of semantic segmentation. Subsequently, we explain model pruning, including the two subcategories of structured model pruning and dynamic model pruning. 
+
+A. Semantic Segmentation 
+
+Semantic segmentation is a pixel-wise classification task, where each pixel of the input image is classified into prede-fined classes. With the rise of fully convolutional deep neural networks [10], [11], dense predictions became feasible with reasonable computational demands, achieving state-of-the-art performance on various benchmarks [8], [9], [12]. Afterwards, Ronneberger et al. [13] proposed the UNet network, which combines deep features with multiple shallower features to merge global semantic context with local information about object boundaries, which is still the basis for most modern architectures. Nowadays, vision transformers, initially intro-duced by Dosovitskiy et al. [1], hold most state-of-the-art results for semantic segmentation [14]–[16]. Various enhance-ments have been proposed, such as the efficient self-attention mechanism utilized in SegFormer [2], on which we build in this work. 
+
+B. Efficient Semantic Segmentation 
+
+Most works focusing on enhancing network architecture to improve efficiency, as it has the most significant impact on model performance. Howard et al. [17] introduced depth-wise separable convolution to reduce computational demand. Tan et al. [18] proposed an efficient model scaling method for convolutional neural networks. With the emergence of vision transformers, various works have proposed more ef-ficient attention mechanisms [2], [14], [19]. However, besides altering network structure, several other approaches exist, such as knowledge distillation [20]–[23], quantization [24]–[26], and model pruning [3], [4], [6], [27], [28], which can be additionally applied to improve efficiency. 
+
+Model Pruning : One approach to reducing the number of parameters in a model while maintaining mIoU performance at high level is through model pruning [5], [29]–[32]. Pruning typically involves multiple stages, including pretraining, prun-ing, and final fine-tuning [5]. Often, an L1 or L2 regularization term is employed to encourage network weights to converge towards zero, enabling their pruning without significant impact on mIoU performance [5]. While unstructured pruning [29], [31] results in sparse matrices and kernels, it fails to decrease model complexity during inference without specialized hard-ware capable of sparse matrix multiplication. 
+
+Structured Model Pruning : Structured pruning can be utilized to learn more efficient models in terms of FLOPs and fps [4]–[6] as entire network structures converge to have minimal impact and can subsequently be pruned away. Previous works have primarily focused on image classifi-cation. Lebedev et al. [33] proposed to prune the kernel size of individual filters in a single convolutional layer. He et al. [34] identified redundant filters in convolutional layers and pruned entire output channels. Similarly, Liu et al. [5] applied L1 regularization to the batch normalization scaling parameter to prune entire convolutional output channels. Michel et al. [35] pruned entire attention heads in a vision transformer, showing minimal performance drop. Tang et al. [36] masked out patch embeddings in vision transformers, thereby reducing redundant patches in later layers. Semantic segmentation poses a challenge for structured pruning due to dense predictions. Nonetheless, some works exist. He et al. [4] followed a similar approach to Liu et al. [5], utilizing batch normalization layers to prune convolutional channels, but additionally use their similarity as guidance. Ditschuneit et al. [6] employed a temperature annealing sched-ule to prune a predefined set of convolutional channels. 
+
+Dynamic Model Pruning : Classical structured pruning identifies and encourages the emergence of irrelevant model structures through an importance metric and regularization term with the goal of removing them entirely for faster inference. However, this often leads to a reduction in model capacity and a subsequent performance drop. Therefore, a new type of structured pruning has emerged, involving the dynamic reduction of the computational demand of a network based on the current input by switching on and off model structures. Rao et al. [37] proposed a dynamic approach for classi-fication with vision transformers, where they apply a multi-layer perceptron on each patch embedding to decide whether to prune it. Gao et al. [7] dynamically prune convolutional channels by predicting their relevance based on previous layer outputs. For semantic segmentation, Tang et al. [27] proposed drop-ping patch embeddings in vision transformers that already have high confidence, with auxiliary heads connected to earlier lay-ers. Bejnordi et al. [28] dynamically switch off convolutional channels via a gating module and enforce the gate to be highly conditional on the input data through a method called batch-shaping. Bai et al. [3] uses a dynamic multi-layer perceptron for self-attention to reduce the computational demand based on the layer input. We build upon the latter dynamic approach from Bai et al. [3], as it is very effective in reducing computational complexity in terms of FLOPS. However, we show that using dynamic self-attention is not necessary, accordingly, we rely on static structured pruning. Our method reduces FLOPS even more than the DynaSegFormer from Bai et al. [3] and is able to increase the frames per second (fps) compared to the 
+
+SegFormer [2]. We also build upon the structured pruning method from Michel et al. [35] and prune attention heads, as it is highly successful for image classification. We are the first to show that such simple yet very effective static structured prun-ing method can be applied to a dense prediction task such as semantic segmentation. Different to previous works, we prune the attention heads directly after pretraining on ImageNet [38], thereby reducing training memory consumption and training time of the fine-tuning step. We demonstrate that our method enables the creation of highly efficient vision transformers that can be customized in size , making them interesting for deployment on edge devices, as this optimizes the utilization of limited computing capacity, all without the need for repeating the expensive pre-training. III. M ETHOD 
+
+In the following, we present the encoder of the used 
+
+SegFormer [2] network in Section III-A. Section III-B introduces the employed efficient multi-head self-attention (MHSA). Afterwards, in Section III-C, we recapitulate the modifications proposed in the DynaSegFormer [3]. Further, we present our proposed static structured pruning approach in Section III-D. 
+
+A. (Dyna)SegFormer Encoder 
+
+The SegFormer encoder comprises four encoder stages, extracting low to high-level features f1, f2, f3, and f4, as illustrated in Fig. 1. The input image x ∈ RH×W ×3 serves as input to the first stage, where H and W represent the image height and width, respectively. Each stage starts with a two-dimensional convolutional layer, denoted as Conv( k×k,
+
+Fj )/ρ , where k×k represents the kernel size, Fj denotes the number of kernels with j indicating the stage index, and 
+
+ρ representing the stride. This convolutional layer serves as the only dimension-changing layer, thereby functioning as a bottleneck. Subsequently, the convolutional layer is succeeded by layer normalization and a number of Bj transformer blocks. The detailed structure of the transformer block is presented in Fig. 3. In the first part of the transformer block, an efficient multi-head self-attention (MHSA) operation is applied. To facilitate this operation, the input is flattened in the spatial dimension. Following the attention operation, the result is reshaped back into its original two-dimensional representation. A bypass is employed in parallel to the attention operation. Subsequently, after layer normalization, the Mix-FFN block, as introduced by Xie et al. [2], is applied, which also has a bypass in parallel to it. The hyperparameters Fj and Bj define the size of the encoder, resulting in the encoder sizes MiT-B0 , . . . , MiT-B5 
+
+proposed by Xie et al. [2]. Note that the DynaSegFormer 
+
+[3] uses the same encoder architecture, but replaces certain matrix multiplications by a specific dynamic gated linear layer (DGL). 
+
+B. Efficient Multi-Head Self-Attention (MHSA) 
+
+The transformer block in the SegFormer encoder (see Fig. 1) employs an efficient scaled dot-product self-attention 
+
+Hi(z) = softmax ( zW (Q)  
+
+> i
+
+· (R(z)W(K)  
+
+> i
+
+)T
+
+√F out ) · R(z)W(V)  
+
+> i
+
+,
+
+(1) Conv(7 ×7, F1)/4
+
+Layer Normalization Transformer Block Transformer Block Conv(3 ×3, F2)/2
+
+Layer Normalization Transformer Block Transformer Block Conv(3 ×3, F3)/2
+
+Layer Normalization Transformer Block Transformer Block Conv(3 ×3, F4)/2
+
+Layer Normalization Transformer Block Transformer Block 
+
+H×W ×3 
+
+> H
+> 4
+
+× W 
+
+> 4
+
+×F1 
+
+> H
+> 8
+
+× W 
+
+> 8
+
+×F2 
+
+> H
+> 16
+
+× W 
+
+> 16
+
+×F3 
+
+> H
+> 32
+
+× W 
+
+> 32
+
+×F4
+
+x
+
+f1 f2 f3 f4
+
+×B1
+
+×B2
+
+×B3
+
+×B4
+
+SegFormer 
+
+Encoder 
+
+............             
+
+> Fig. 1. Standard SegFormer MiT encoder . Varying the numbers of transformer blocks B1, . . . , B 4and the inner feature dimensions F1, . . . , F 4
+> results in the encoders proposed by Xie et al. [2], named MiT-B0 ,. . . ,
+> MiT-B5 , with increasing size. Our proposed method, StaticSegFormer ,builds upon this SegFormer encoder topology.
+
+to compute the attention weights Hi ∈ RN ×F out 
+
+.The learnable fully connected (FC) layer weights are 
+
+W(Q)  
+
+> i
+
+, W(K)  
+
+> i
+
+, W(V)  
+
+> i
+
+∈ RF in ×F out 
+
+, and () T being the trans-pose [1]. Here, z = (zn)T ∈ RN ×F in 
+
+denotes the input sequence composed of vectors z1, z2, . . . , zN with zn ∈ RF in 
+
+,where N = H 
+
+> 4·2j−1
+
+· W 
+
+> 4·2j−1
+
+∈ N represents the number of input vectors, F in ∈ N denotes the length of an input vector, and F out ∈ N represents the length of an output vector. The index i ∈ { 1, . . . , I } refers to the head index, with I ∈ N
+
+being the number of heads. The spatial reduction operation 
+
+R(z) in (1), illustrated in Fig. 2, is the only deviation from the standard scaled dot-product self-attention. This operation reduces the dimension of z from N × F in to N 
+
+> (ρ′)2
+
+× F in using a convolution with kernel size ρ′ × ρ′ and stride ρ′, where Reshape 
+
+Conv( ρ′ × ρ′, F in )ρ′
+
+Reshape 
+
+z
+
+N ×F in  
+
+> H
+> 4·2j−1
+
+× W 
+
+> 4·2j−1
+
+×F in  
+
+> Hρ′·4·2j−1
+
+× Wρ′·2j−1 ×F in  
+
+> N
+> (ρ′)2
+
+×F in 
+
+R(z)
+
+Spatial Reduction (SR)    
+
+> Fig. 2. Spatial reduction operation R(z)employed in the efficient multi-head self-attention shown in Fig. 4.
+
+Layer Normalization 
+
+Reshape 
+
+MHSA 
+
+Reshape 
+
+Layer Normalization 
+
+Mix-FFN 
+
+Transformer Block H 
+
+> 4·2j−1
+
+× W 
+
+> 4·2j−1
+
+×Fj 
+
+> H
+> 4·2j−1
+
+· W 
+
+> 4·2j−1
+
+×Fj 
+
+> H
+> 4·2j−1
+
+× W 
+
+> 4·2j−1
+
+×Fj 
+
+> H
+> 4·2j−1
+
+× W 
+
+> 4·2j−1
+
+×Fj     
+
+> Fig. 3. Transformer Block that is employed in the standard SegFormer
+> encoder and in our StaticSegFormer encoder as shown in Fig. 1.
+
+ρ′ ∈ N is a hyperparameter controlling the reduction rate. Typically, multiple heads are utilized in parallel, which is then called multi-head self-attention (MHSA) with 
+
+MHSA (z) = H1(z) H2(z) . . . HI (z) · WMHSA ,
+
+employing learnable weights WMHSA ∈ RIF out ×F in 
+
+, and 
+
+MHSA (z) ∈ RN ×F in 
+
+[1]. 
+
+C. DynaSegFormer Specifics and Issues 
+
+Bai et al. [3] proposed a dynamic structured pruning method, called dynamic gated linear layer (DGL), which can be used to replace expensive matrix multiplications, as, e.g., the ones in an MHSA layer, or in 1 × 1 convolutions. For the DynaSegFormer [3], the three attention head matrix multiplications zW (Q)  
+
+> i
+
+, R(z)W(K)  
+
+> i
+
+and R(z)W(V)  
+
+> i
+
+in (1), as well as one of the Mix-FFN 1 × 1 convolutions, introduced by Xie et al. [2], all in the transformer block in Fig. 3, are replaced by the dynamic gated linear layer (DGL) operation. Within a single multi-head self-attention layer, the DGL operation prunes single dimensions in each attention head, resulting FC, WMHSA ,prune 
+
+Concatenation Matrix Multiplication Matrix Multiplication Matrix Multiplication Matrix Multiplication FC, FC, FC, FC, W(V) 
+
+> i
+
+Softmax Matrix Multiplication Matrix Multiplication Matrix Multiplication Matrix Multiplication Matrix Multiplication FC, W(Q)  
+
+> i
+
+FC, W(K) 
+
+> i
+
+() T
+
+Attention Weights 
+
+Iprune ×
+
+Iprune ×
+
+Iprune ×
+
+Spatial Reduction R(z)
+
+×1√d
+
+N ×F in  
+
+> NR2
+
+×F in  
+
+> NR2
+
+×F out 
+
+Iprune ×
+
+N ×F out 
+
+N × NR2 
+
+> NR2
+
+×F out 
+
+N ×F out 
+
+N ×Iprune ·F out 
+
+N ×F in 
+
+z
+
+MHSA      
+
+> Fig. 4. Multi-head self-attention (MHSA) with static head pruning em-ployed in our StaticSegFormer encoder . Symbols highlighted in red indicate that the sizes of these entities are influenced by our proposed pruning process.
+
+in varying attention head dimensions. This complicates the efficient implementation of the DGL operation, prohibiting it to effectively reduce inference time on a given hardware. Moreover, the dynamic assembly of the learnable fully con-nected (FC) layer weights W(Q)  
+
+> i
+
+, W(K)  
+
+> i
+
+, W(V)  
+
+> i
+
+during the DGL operation slows down both inference and training, as we observed on NVIDIA A100 and GTX 1080 Ti GPUs. Bai et al. [3] further proposed replacing the concatenation operation in the SegFormer decoder with addition. This alteration significantly reduces the computational complex-ity (FLOPs) of the decoder, while simultaneously enhancing performance (mIoU) on the Cityscapes and ADE20K bench-marks. Additionally, Bai et al. [3] utilize feature and logit-based knowledge distillation to further mitigate performance losses in terms of mIoU. We incorporate the replacement of the costly concatenation by simple addition into our 
+
+StaticSegFormer decoder, details are shown in Fig. 5. 
+
+D. Our Novel Encoder Head Pruning 
+
+Due to the limitations associated with the dynamic pruning method employed in the DynaSegFormer network, we propose to prune the number I of heads prior to fine-tuning— 
+
+in a static fashion . Our modified multi-head self-attention block is shown in Fig. 4. We introduce the global pruning ratio r ∈ I, with I = [0 , 1] . The final number of heads is then obtained by 
+
+Iprune = ⌊r · I⌋ ≤ I, (2) StaticSegFormer 
+
+Decoder 
+
+Conv(1 ×1, F ) Conv(1 ×1, F ) Conv(1 ×1, F ) Conv(1 ×1, F )
+
+Resize Resize Resize 
+
++
+
+Conv(1 ×1, F )
+
+Norm 
+
+ReLU 
+
+Conv(1 ×1, S)
+
+argmax 
+
+f1 f2 f3 f4 
+
+> H
+> 4
+
+× W 
+
+> 4
+
+×F1 H 
+
+> 8
+
+× W 
+
+> 8
+
+×F2 H 
+
+> 16
+
+× W 
+
+> 16
+
+×F3 H 
+
+> 32
+
+× W 
+
+> 32
+
+×F4 
+
+> H
+> 4
+
+× W 
+
+> 4
+
+×F H 
+
+> 4
+
+× W 
+
+> 4
+
+×F H 
+
+> 4
+
+× W 
+
+> 4
+
+×F H 
+
+> 4
+
+× W 
+
+> 4
+
+×F 
+
+> H
+> 4
+
+× W 
+
+> 4
+
+×F 
+
+> H
+> 4
+
+× W 
+
+> 4
+
+×F 
+
+> H
+> 4
+
+× W 
+
+> 4
+
+×S
+
+y
+
+Fig. 5. Our StaticSegFormer decoder , building upon the 
+
+DynaSegFormer decoder topology [3]. 
+
+with ⌊·⌋ being the flooring operator. Additionally, to remove one head, the corresponding weights in WMHSA must also be pruned. Consequently, we reduce the dimension of WMHSA 
+
+from IF out × F in to Iprune F out × F in , resulting in the weight matrix WMHSA ,prune ∈ RIprune F out ×F in 
+
+. Therefore, the only entities that change are the number of heads Iprune 
+
+and WMHSA ,prune , while all dimensions and weights inside each head remain unchanged. Although this approach at first glance looks like a minor change in the pruning strategy, we will show its significant effect on achieving a computationally efficient semantic segmentation of still high performance. 
+
+For the unpruned multi-head self-attention of our base-line model, the output dimensions F out of the I attention heads sum up to F in , as it holds F out · I = F in . Our proposed pruning method removes complete attention heads, including their corresponding learnable FC layer weights 
+
+W(Q)  
+
+> i
+
+, W(K)  
+
+> i
+
+, W(V)  
+
+> i
+
+. Nevertheless, the inner dimensions of the remaining attention heads remain unchanged, as shown in Fig. 4. Therefore, F in and F out remain unchanged, and the (after pruning) remaining learnable FC layer weights 
+
+W(Q)  
+
+> i
+
+, W(K)  
+
+> i
+
+and W(V)  
+
+> i
+
+maintain the same dimensions F in ×
+
+F out . However, I is reduced to Iprune , so the output di-mensions F out of the remaining Iprune attention heads no longer sum up to F in , as F out · Iprune < F in . Consequently, by pruning entire attention heads while keeping F out and 
+
+F in unchanged, we introduce a bottleneck into the MHSA layer. Therefore, the expensive matrix multiplications of key, query, and value inside the pruned multi-head self-attention are performed on a compressed input representation, which proves to be advantageous as it reduces the computational complexity (FLOPs) immensely, while maintaining high mIoU performance. 
+
+In contrast to the dynamic structured pruning method pro-posed in the DynaSegFormer network, our static structured pruning approach for the encoder reduces training time, en-
+
+TABLE I 
+
+DATASETS AND SPLITS USED IN OUR EXPERIMENTS . T RAINING AND VALIDATION REFER TO THE OFFICIAL SPLITS PROPOSED FROM THE RESPECTIVE PAPER , WHILE TRAIN * AND VAL * REFER TO CUSTOM SPLITS EMPLOYED IN THIS WORK FOR OUR ABLATION STUDY , WITH 
+
+DCS train = DCS train ∗ ∪ D CS val ∗ .Dataset Splits # Images Symbol Cityscapes [8] train 2,975 DCS train 
+
+,→ train* 2,475 DCS train ∗
+
+,→ val* 500 DCS val ∗
+
+val 500 DCS val 
+
+ADE20K [9] train 25,574 DADE train 
+
+val 2,000 DADE val 
+
+TABLE II 
+
+HYPERPARAMETERS USED FOR TRAINING THE SE G FO R M E R 
+
+DY N A SE G FO R M E R AND OUR PROPOSED ST A T I C SE G FO R M E R ON THE 
+
+CITYSCAPES AND ADE20K DATASETS .
+
+Hyperparameters Cityscapes ADE20K Batch size 8 16 Random Crop 1024 × 1024 512 × 512 # of training iterations 80,000 160,000 Initial learning rate encoder 6 · 10 −5 6 · 10 −5
+
+Initial learning rate decoder 6 · 10 −4 6 · 10 −4
+
+Learning rate schedule polynomial polynomial Optimizer AdamW AdamW Optimizer parameters β1, β2 0.9, 0.999 0.9, 0.999 Weight decay 0.01 0.01 
+
+abling an extensive ablation study on the pruning ratio r for different model sizes. As the changes proposed by Bai et al. [3] to the decoder effectively reduce FLOPs without loosing mIoU performance, we adopt their modifications also to our decoder. IV. E VALUATION SETUP 
+
+In this section, we introduce the dataset used and provide implementation details, including training settings and evalu-ation metrics. 
+
+A. Dataset 
+
+Following the approach of Bai et al. [3], we evaluate our pruning method on the Cityscapes [8] and ADE20K [9] datasets. Details regarding the employed splits and hyper-parameters are presented in Table I and Table II, respec-tively. Additionally, for all experiments, we utilize Ima-geNet [38] pretrained weights for weight initialization from the MMSegmentation toolbox [39]. 
+
+Cityscapes : We utilize the Cityscapes benchmark [8] as the primary dataset for our ablation study. Following common practice, also employed by Bai et al. [3], we present our final results on the Cityscapes validation split, denoted as DCS val .To avoid hyperparameter tuning on the DCS val split, which we reserve for our final comparison, we further split the training 0 200 400 600 800 1,000 1,200 1,400 
+
+72 
+
+74 
+
+76 
+
+78 
+
+80 
+
+82 r=0.3 
+
+r=0.1 r=0.9 r=0.7 
+
+Method 
+
+Ours: StaticSegFormer DynaSegFormer * [3] Baseline: SegFormer [2] 
+
+Encoder 
+
+MiT-B5 MiT-B4 MiT-B3 MiT-B2 MiT-B1 MiT-B0 
+
+FLOPs (G)            
+
+> mIoU on  DCS val  (%)
+> Fig. 6. Results on mIoU vs. FLOPs for the proposed StaticSegFormer
+> compared against DynaSegFormer [3] and the baseline SegFormer
+> [2] on DCS val . All models are trained on DCS train . Values for methods marked with * are taken from the respective paper. FLOPs are measured for an input resolution of 2048 ×1024 .
+
+data DCS train into DCS train ∗ and DCS val ∗ for our ablation study. All decision-making was conducted solely based on the DCS val ∗
+
+split. We retrained the best models on the full DCS train split and report results for the DCS val in Fig. 6, Fig. 7, and in Table III. 
+
+ADE20K : Since the ADE20K [9] semantic segmentation benchmark has been utilized in many previous works and presents a greater challenge for structured pruning due to the higher number of classes, we also present results for it in Table III. The best performing models, based on the results for the DCS val ∗ split, are retrained on the original training split 
+
+DADE train and evaluated on the original validation split DADE val .
+
+B. Implementation Details 
+
+For all our experiments, we utilized the 
+
+MMSegmentation toolbox [39] and for the baseline experiments its included implementation for the SegFormer 
+
+[2] with standard hyperparameter settings. Additionally, for all StaticSegFormer experiments, we extended it by our employed decoder and the capability to prune the MHSA block in the encoder. We employed the AdamW [40] optimizer and utilized polynomial learning rate scheduling. Unless stated otherwise, experiments were conducted on an 
+
+NVIDIA A100 GPU. During training, we used random cropping with an input resolution of 1024 × 1024 for Cityscapes and 512 × 512 for ADE20K. More details on the hyperparameters can be found in Table II. We maintained consistent settings across all model types, regardless of the network architecture. For ADE20K we employed abatch size of 16, whereas for Cityscapes, we used 8. Furthermore, the training resolution used during cropping differs and is 1024 × 1024 for Cityscapes and 512 × 512 for ADE20K. Additionally, the number of iterations is 80,000 for Cityscapes, while for ADE20K, we used 160,000. All other hyperparameters remained identical for the datasets utilized. For evaluation, we used the mIoU metric, commonly utilized in semantic segmentation tasks. Additionally, we 
+
+0 5 10 15 20 25 30 35 
+
+74 
+
+76 
+
+78 
+
+80 
+
+82 
+
+84 
+
+86 
+
+r=0.7 r=0.1 r=0.3 
+
+r=0.9 
+
+r=0.7 
+
+Method 
+
+Ours: StaticSegFormer DynaSegFormer * [3] Baseline: SegFormer [2] 
+
+Encoder 
+
+MiT-B5 MiT-B4 MiT-B3 MiT-B2 MiT-B1 MiT-B0 
+
+Frame Rate [fps]                          
+
+> mIoU on  DCS val  (%)
+> Fig. 7. Results on mIoU vs. frame rate [fps] for the proposed
+> StaticSegFormer compared against DynaSegFormer [3] and the baseline SegFormer [2] on DCS val . All models are trained on DCS train . The mIoU values for methods marked with * are taken from the respective paper. Frame rates [fps] of all methods are measured for an input resolution of
+> 2048 ×1024 on an NVIDIA A100 GPU.
+
+measured efficiency using a resolution of 2048 × 1024 for Cityscapes and report the metrics floating-point operations (FLOPs) and frames per second [fps]. The FLOPs were mea-sured using random number tensors with sizes 1024 ×2048 ×3.The frame rate was measured on an NVIDIA A100 and a 
+
+GTX 1080 Ti GPU by averaging the inference time over 200 samples after 200 warmup iterations. V. R ESULTS AND DISCUSSION 
+
+In this section, we first compare our proposed semantic segmentation with static structured pruning, 
+
+StaticSegFormer , to the results from SegFormer and 
+
+DynaSegFormer . Additionally, we present an ablation study on the pruning ratio r for different encoder sizes. 
+
+A. Comparison with Baseline Methods 
+
+We present results regarding mIoU and FLOPs for Cityscapes in Fig. 6. We plot all models lying on the Pareto frontier of the ablation study, meaning there is no other model with higher mIoU and lower FLOPs. Additionally, we compare the frame rate of our StaticSegFormer with the 
+
+DynaSegFormer and SegFormer for Cityscapes in Fig. 7. Detailed numbers of the models are reported in Table III. In Fig. 6 we show the mIoU performance and FLOPs of our proposed StaticSegFormer against the baseline 
+
+SegFormer [2] and the DynaSegFormer [3] on DCS val for the various encoder sizes MiT-B n, n ∈ { 0, 1, . . . , 5}, repre-sented by different marker colors. For the DynaSegFormer 
+
+[3], the values are taken from the respective paper and use a pruning ratio of r = 0 .7 and r = 0 .5 for both MiT-B0 and 
+
+B2 . Based on the results of our ablation study, we selected 
+
+r ∈ { 0.1, 0.5, 0.7} for MiT-B0 , r ∈ { 0.1, 0.3} for MiT-B1 ,
+
+r ∈ { 0.1, 0.3, 0.5} for MiT-B2 , r ∈ { 0.1, 0.3, 0.5, 0.7} for 
+
+MiT-B3 , r ∈ { 0.9} for MiT-B4 , and r ∈ { 0.1} for MiT-B5 .For very low FLOPs, our simpler StaticSegFormer 
+
+with the MiT-B0 encoder performs as well as the TABLE III 
+
+PERFORMANCE OF OUR PROPOSED ST A T I C SE G FO R M E R ON THE VALIDATION SPLITS OF CITYSCAPES AND ADE20K (DCS val AND DADE val ) 
+
+> COMPARED TO THE BASELINES
+
+SE G FO R M E R [2] AND DY N A SE G FO R M E R [3]. M ODELS WERE TRAINED ON THE RESPECTIVE TRAINING SPLITS DCS train  
+
+> AND
+
+DADE train . T HE RESULTS ARE GROUPED BASED ON FLOP S, MEASURED WITH INPUT RESOLUTION 2048 × 1024 . V ALUES MARKED WITH * ARE CITED FROM THE RESPECTIVE PAPER . F RAME RATES WERE MEASURED ON AN NVIDIA A100 AND ON A GTX 1080 TI GPU.                                                                                                                                
+
+> Pruning Method Network Pruning Ratio r# Params (M) FLOPs (G) Frame Rate [fps] A100 Frame Rate [fps] 1080 Ti mIoU DCS val
+> (%) mIoU DADE val
+> (%)
+> DynaSegFormer * [3] SegFormer MiT-B0 0.5 4.2 47 1.4 1.4 74.3 35.0
+> DynaSegFormer * [3] SegFormer MiT-B0 0.7 4.2 63 2.5 0.9 75.1 36.9
+> Ours: StaticSegFormer SegFormer MiT-B0 0.1 2.8 33 35.7 7.5 73.8 33.1 Ours: StaticSegFormer SegFormer MiT-B0 0.5 3.1 60 31.7 7.5 76.2 35.3 No Pruning (baseline) SegFormer MiT-B0 -3.8 126 23.6 5.7 76.2 37.4 Ours: StaticSegFormer SegFormer MiT-B1 0.3 11.1 109 25.1 5.1 76.7 38.6
+> No Pruning (baseline) SegFormer MiT-B1 -13.7 244 17.4 3.8 78.5 42.2
+> DynaSegFormer * [3] SegFormer MiT-B2 0.7 30.9 287 0.2 0.2 80.3 44.6
+> DynaSegFormer * [3] SegFormer MiT-B2 0.5 30.9 214 0.3 0.2 79.8 45.4
+> Ours: StaticSegFormer SegFormer MiT-B2 0.3 20.0 192 15.9 3.2 80.5 43.2 No Pruning (baseline) SegFormer MiT-B2 -27.5 717 10.1 2.5 81.0 46.5 Ours: StaticSegFormer SegFormer MiT-B3 0.7 40.0 471 9.2 2.2 81.7 46.9
+> No Pruning (baseline) SegFormer MiT-B3 -47.3 963 6.8 1.7 81.7 49.5
+> Ours: StaticSegFormer SegFormer MiT-B4 0.9 50.0 762 5.8 1.5 82.2 47.9
+
+DynaSegFormer . For all other model sizes ( n ∈ 1, 2, 3, 4, 5)and pruning ratios, our StaticSegFormer outperforms the 
+
+DynaSegFormer . Compared to the baseline, we achieve sig-nificant improvements for all encoder sizes. As an example, the 
+
+StaticSegFormer MiT-B3 with r = 0 .1 outperforms the baseline SegFormer MiT-B1 by a 2.75% absolute higher mIoU performance at a similar computational complexity. In general, we observe that using a highly pruned large encoder is advantageous compared to a smaller unpruned one .Also computational complexity savings can be obtained by the StaticSegFormer vs. SegFormer while preserving mIoU: Our pruned MiT-B3 (r = 0 .7) requires only about 50% of the computations of the baseline MiT-B3 , whereas 1/3
+
+of complexity savings are possible with MiT-B3 (r = 0 .9)against the larger MiT-B4 baseline. In Fig. 7, we report the mIoU vs. the frame rate on an 
+
+NVIDIA A100 GPU on DCS val for the same models as in Fig. 6. We again report results for the baseline SegFormer 
+
+[2] and for the two pruning methods DynaSegFormer [3] and StaticSegFormer .We observe that the DynaSegFormer drastically reduces the frame rate compared to the baseline SegFormer , re-gardless of the encoder size or pruning ratio, making it highly impractical for deployment on this GPU platform. The StaticSegFormer MiT-B0 (r = 0 .7), on the other hand, has better mIoU performance than the SegFormer MiT-B0 , but achieves a 7 fps higher frame rate. The 
+
+StaticSegFormer MiT-B3 (r = 0 .7) outperforms the 
+
+SegFormer MiT-B3 by a higher frame rate (9 fps instead of 7 fps), while achieving similar mIoU performance. To conclude, the StaticSegFormer allows a higher frame rate for all encoder sizes, exceeding the baseline in most cases and the reference method DynaSegFormer by far .In Table III, we show further details. Based on FLOPs, we assign the methods to five groups and report the mIoU perfor-mance for DCS val and DADE val , the number of parameters, global pruning ratios, and frame rates on an NVIDIA A100 and on a 
+
+GTX 1080 Ti GPU. The values for DynaSegFormer are taken from Bai et al. [3]. Concerning mIoU on DCS val , our StaticSegFormer MiT-B0 clearly outperforms both the DynaSegFormer and the baseline SegFormer . Specifically, in the lowest com-plexity group (upper table segment), the StaticSegFormer MiT-B0 with r = 0 .5 requires fewer FLOPs (60 GFLOPs) compared to DynaSegFormer MiT-B0 with r = 0 .7 (63 GFLOPs), achieving a 1.1% absolute higher mIoU (76.2% vs. 75.1%) while operating at frame rates 12.7 and 8.3 times higher on an NVIDIA A100 and a GTX 1080 Ti 
+
+GPU, respectively . The DynaSegFormer uses dynamic structured pruning and therefore increases the number of parameters compared to the baseline SegFormer , while the StaticSegFormer achieves a reduction in parame-ters of 18.4% relative to the baseline MiT-B0 . In all four reported cases ( MiT-B0 and MiT-B2 , r = 0 .5 and 0.7), 
+
+DynaSegFormer shows inacceptably low frame rates both on the NVIDIA A100 and GTX 1080 Ti GPU, making it impractical for usage on a GPU platform. In contrast, the 
+
+StaticSegFormer MiT-B0 (r = 0 .5) increases frame rates vs. the baseline MiT-B0 by 34.3% relative (NVIDIA A100 ) and 31.5% relative (GTX 1080 Ti ) and reduces FLOPs to less than 50% , while having no mIoU performance drop on DCS val at all . In the middle complexity group, the 
+
+StaticSegFormer MiT-B2 with r = 0 .3 surpasses both 
+
+DynaSegFormer MiT-B2 models in all reported metrics for the DCS val on both GPU platforms. Regarding mIoU on 
+
+DADE val , we observe that while our StaticSegFormer 
+
+outperforms the baseline SegFormer in most cases, it falls short compared to DynaSegFormer . Specifically, the 
+
+DynaSegFormer achieves higher mIoU values, likely ben-efiting from its dynamic structured pruning, which allows for better adaptation to the increased complexity of the ADE20k dataset with its larger number of classes. However, the frame rates of DynaSegFormer remain impractically low on both the NVIDIA A100 and GTX 1080 Ti , further emphasizing its limited applicability in real-time scenarios. Compared to the baseline, the StaticSegFormer has the highest mIoU performance on DCS val in all complexity groups, the lowest FLOPs, while achieving frame rates close to the baseline SegFormer on both GPU platforms. For example, the StaticSegFormer MiT-B3 with r = 0 .7 surpasses the baseline SegFormer MiT-B2 with 34.3% relative fewer FLOPs and a 0.7% absolute higher mIoU on DCS val . We note that often the baseline method turns out to be a bit better than our approach in frame rate, however, at costs both in mIoU and FLOPs. To summarize, for all encoder sizes, our 
+
+StaticSegFormer shows the better balance between FLOPs and frame rate compared to the baseline SegFormer ,while being better in mIoU, and offers very attractive frame rates compared to the DynaSegFormer .
+
+B. Ablation Study 
+
+We conducted an ablation study on the pruning ratio r
+
+over five values, r ∈ { 0.1, 0.3, 0.5, 0.7, 0.9}, for each of the six encoder sizes MiT-B0 , . . . , MiT-B5 on the Cityscapes custom validation split DCS val ∗, see Table I, as shown in Fig. 8. We report computational complexity, measured in FLOPs for a resolution of 2048 × 1024 , and model performance (mIoU). The different encoder sizes are represented as dif-ferent colors. The triangular markers show the results for our StaticSegFormer for different global pruning ratios, where the leftmost point for each encoder size always refers to r = 0 .1 and the rightmost to r = 0 .9.The study shows consistent behavior across all model sizes and pruning ratios, with minor statistical fluctuations. Most data points lie above the baseline SegFormer curve, demon-strating the superiority of our approach in reducing FLOPs. For example, the StaticSegFormer MiT-B2 (r = 0 .3) re-quires fewer FLOPs than the baseline SegFormer MiT-B1 ,yet achieves much higher mIoU performance. Furthermore, this StaticSegFormer model achieves mIoU performance similar to the unpruned SegFormer MiT-B2 baseline while operating at less than one-third of its computational complex-ity. Concluding, we observe that it is advantageous to use a larger, heavily pruned encoder rather than a smaller, unpruned one .
+
+0 200 400 600 800 1,000 1,200 1,400 
+
+72 
+
+74 
+
+76 
+
+78 
+
+80 
+
+82 r=0.3 
+
+Method 
+
+Ours: StaticSegFormer 
+
+Baseline: SegFormer [2] 
+
+Encoder 
+
+MiT-B5 MiT-B4 MiT-B3 MiT-B2 MiT-B1 MiT-B0 
+
+FLOPs (G)                      
+
+> mIoU on  DCS val ∗ (%)
+> Fig. 8. Ablation study on the pruning ratio rof MHSA layers for different
+> SegFormer encoders on DCS val ∗. All models are trained on DCS train ∗. The global pruning ratios r∈ { 0.1,0.3,0.5,0.7,0.9}are displayed, with r= 0 .1
+> consistently delivered the lowest / leftmost point and r= 0 .9the highest / rightmost point for each encoder. FLOPs are measured for an input resolution of 2048 ×1024 . Baseline results are reproduced.
+
+VI. C ONCLUSIONS 
+
+In this work, we demonstrate that the efficiency of se-mantic segmentation can be significantly improved through our proposed static structured pruning method for attention heads. While structured pruning methods primarily reduce computational complexity (FLOPs), we observed that dynamic structured pruning can cause very low frame rates on typical GPU target hardware. Our proposed StaticSegFormer 
+
+successfully decreases FLOPs by up to 50% and increases the frame rate by up to 34%, without any loss in mIoU perfor-mance on the Cityscapes dataset. Moreover, we observe that employing a larger, strongly pruned model often outperforms a smaller, unpruned one. REFERENCES [1] A. Dosovitskiy, L. Beyer, A. Kolesnikov, D. Weissenborn, X. Zhai, T. Unterthiner, M. Dehghani, M. Minderer, G. Heigold, S. Gelly, J. Uszkoreit, and N. Houlsby, “An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale,” in Proc. of ICLR , virtual, May 2021, pp. 1–21. 1, 2, 3, 4 [2] E. Xie, W. Wang, Z. Yu, A. Anandkumar, J. M. Alvarez, and P. Luo, “SegFormer: Simple and Efficient Design for Semantic Segmentation with Transformers,” in Proc. of NeurIPS , virtual, Dec. 2021, pp. 12 077– 12 090. 1, 2, 3, 4, 6, 7 [3] H. Bai, H. Mao, and D. Nair, “Dynamically Pruning SegFormer for Efficient Semantic Segmentation,” in Proc. of ICASSP , Singapore, Singapore, May 2022, pp. 3298–3302. 1, 2, 3, 4, 5, 6, 7 [4] W. He, M. Wu, M. Liang, and S.-K. Lam, “CAP: Context-Aware Pruning for Semantic Segmentation,” in Proc. of WACV , virtual, Jan. 2021, pp. 959–968. 1, 2 [5] Z. Liu, J. Li, Z. Shen, G. Huang, S. Yan, and C. Zhang, “Learning Efficient Convolutional Networks through Network Slimming,” in Proc. of ICCV , Los Alamitos, CA, USA, Oct. 2017, pp. 2755–2763. 1, 2 [6] K. Ditschuneit and J. S. Otterbach, “Auto-Compressing Subset Prun-ing for Semantic Image Segmentation,” in Proc. of GCPR , Konstanz, Germany, Sep. 2022, pp. 20–35. 1, 2 [7] X. Gao, Y. Zhao, Ł. Dudziak, R. Mullins, and C.-z. Xu, “Dynamic Channel Pruning: Feature Boosting and Suppression,” in Proc. of ICLR ,New Orleans, LA, USA, May 2019, pp. 1–14. 1, 2 [8] M. Cordts, M. Omran, S. Ramos, T. Rehfeld, M. Enzweiler, R. Benen-son, U. Franke, S. Roth, and B. Schiele, “The Cityscapes Dataset for Semantic Urban Scene Understanding,” in Proc. of CVPR , Las Vegas, NV, USA, Jun. 2016, pp. 3213–3223. 2, 5 [9] B. Zhou, H. Zhao, X. Puig, S. Fidler, A. Barriuso, and A. Torralba, “Scene Parsing through ADE20K Dataset,” in Proc. of CVPR , Honolulu, HI, USA, Jul. 2017, pp. 633–641. 2, 5, 6 [10] J. Long, E. Shelhamer, and T. Darrell, “Fully Convolutional Networks for Semantic Segmentation,” in Proc. of CVPR , Boston, MA, USA, Jun. 2015, pp. 3431–3440. 2 [11] H. Noh, S. Hong, and B. Han, “Learning Deconvolution Network for Semantic Segmentation,” in Proc. of ICCV , Las Condes, Chile, Dec. 2015, pp. 1520–1528. 2 [12] T.-Y. Lin, M. Maire, S. Belongie, J. Hays, P. Perona, D. Ramanan, P. Doll´ ar, and C. L. Zitnick, “Microsoft COCO: Common Objects in Context,” in Proc. of ECCV , Zurich, Switzerland, Sep. 2014, pp. 740– 755. 2 [13] O. Ronneberger, P. Fischer, and T. Brox, “U-Net: Convolutional Net-works for Biomedical Image Segmentation,” in Proc. of MICCAI ,Munich, Germany, Oct. 2015, pp. 234–241. 2 [14] B. Cheng, I. Misra, A. G. Schwing, A. Kirillov, and R. Girdhar, “Masked-Attention Mask Transformer for Universal Image Segmenta-tion,” in Proc. of CVPR , New Orleans, LA, USA, Jun. 2022, pp. 1290– 1299. 2 [15] W. Wang, H. Bao, L. Dong, J. Bjorck, Z. Peng, Q. Liu, K. Aggarwal, O. Mohammed, S. Singhal, S. Som, and F. Wei, “Image as a Foreign Language: BEIT Pretraining for Vision and Vision-Language Tasks,” in 
+
+Proc. of CVPR , Los Alamitos, CA, USA, Jun. 2023, pp. 19 175–19 186. 2[16] Y. Fang, W. Wang, B. Xie, Q. Sun, L. Wu, X. Wang, T. Huang, X. Wang, and Y. Cao, “EVA: Exploring the Limits of Masked Visual Representation Learning at Scale,” in Proc. of CVPR , Los Alamitos, CA, USA, Jun. 2023, pp. 19 358–19 369. 2 [17] A. G. Howard, M. Zhu, B. Chen, D. Kalenichenko, W. Wang, T. Weyand, M. Andreetto, and H. Adam, “MobileNets: Efficient Convolutional Neural Networks for Mobile Vision Applications,” arXiv , Apr. 2017. 2[18] M. Tan and Q. Le, “Efficientnet: Rethinking Model Scaling for Convo-lutional Neural Networks,” in Proc. of ICML , Long Beach, California, USA, Jun. 2019, pp. 6105–6114. 2 [19] Z. Xia, X. Pan, S. Song, L. E. Li, and G. Huang, “Vision Transformer With Deformable Attention,” in Proc. of CVPR , New Orleans, LA, USA, Jun. 2022, pp. 4794–4803. 2 [20] Y. Jin, J. Wang, and D. Lin, “Multi-Level Logit Distillation,” in Proc. of CVPR , Los Alamitos, CA, USA, Jun. 2023, pp. 24 276–24 285. 2 [21] G. Hinton, O. Vinyals, and J. Dean, “Distilling Knowledge in a Neural Network,” in Proc. of NIPS - Workshops , Montr´ eal, QC, Canada, Dec. 2014, pp. 1–9. 2 [22] P. Chen, S. Liu, H. Zhao, and J. Jia, “Distilling Knowledge via Knowledge Review,” in Proc. of CVPR , Los Alamitos, CA, USA, Jun. 2021, pp. 5006–5015. 2 [23] A. Romero, N. Ballas, S. E. Kahou, A. Chassang, C. Gatta, and Y. Bengio, “FitNets: Hints for Thin Deep Nets,” in Proc. of ICLR , San Diego, CA, USA, May 2015, pp. 1–13. 2 [24] B. Zhuang, C. Shen, M. Tan, L. Liu, and I. Reid, “Structured Binary Neural Networks for Accurate Image Classification and Semantic Seg-mentation,” in Proc. of CVPR , Los Alamitos, CA, USA, Jun. 2019, pp. 413–422. 2 [25] M. Nagel, M. v. Baalen, T. Blankevoort, and M. Welling, “Data-Free Quantization Through Weight Equalization and Bias Correction,” in 
+
+Proc. of ICCV , Seoul, Korea, Oct. 2019, pp. 1325–1334. 2 [26] J. Fang, A. Shafiee, H. Abdel-Aziz, D. Thorsley, G. Georgiadis, and J. H. Hassoun, “Post-Training Piecewise Linear Quantization for Deep Neural Networks,” in Proc. of ECCV , Glasgow, UK, Aug. 2020, pp. 69–86. 2 [27] Q. Tang, B. Zhang, J. Liu, F. Liu, and Y. Liu, “Dynamic Token Pruning in Plain Vision Transformers for Semantic Segmentation,” in Proc. of ICCV , Los Alamitos, CA, USA, Oct. 2023, pp. 777–786. 2 [28] B. E. Bejnordi, T. Blankevoort, and M. Welling, “Batch-Shaping for Learning Conditional Channel Gated Networks,” in Proc. of ICLR ,virtual, Apr. 2020, pp. 1–14. 2 [29] S. Han, J. Pool, J. Tran, and W. Dally, “Learning both Weights and Connections for Efficient Neural Networks,” in Proc. of NeurIPS ,Montreal, QC, Canada, Dec. 2015, pp. 1135–1143. 2 [30] S. Varghese, C. H¨ ummer, A. B¨ ar, F. H¨ uger, and T. Fingscheidt, “Joint Optimization for DNN Model Compression and Corruption Robustness,” in Deep Neural Networks and Data for Automated Driving , T. Fin-gscheidt, H. Gottschalk, and S. Houben, Eds. Cham: Springer Nature, 2022, pp. 405–427. 2 [31] J. Frankle and M. Carbin, “The Lottery Ticket Hypothesis: Finding Sparse, Trainable Neural Networks,” in Proc. of ICLR , New Orleans, LA, USA, May 2019. 2 [32] T. Fingscheidt, H. Gottschalk, and S. Houben, Eds., 
+
+Deep Neural Networks and Data for Automated Driving: Robustness, Uncertainty Quantification, and Insights Towards Safety . Cham: Springer Nature, 2022. [Online]. Available: https://library.oapen.org/handle/20.500.12657/57375 2 [33] V. Lebedev and V. Lempitsky, “Fast ConvNets Using Group-Wise Brain Damage,” in Proc. of CVPR , Las Vegas, NV, USA, Jun. 2016, pp. 2554– 2564. 2 [34] Y. He, P. Liu, Z. Wang, Z. Hu, and Y. Yang, “Filter Pruning via Geo-metric Median for Deep Convolutional Neural Networks Acceleration,” in Proc. of CVPR , Long Beach, CA, USA, Jun. 2019, pp. 4340–4349. 2[35] P. Michel, O. Levy, and G. Neubig, “Are Sixteen Heads Really Better than One?” in Proc. of NeurIPS , vol. 32, Vancouver, BC, Canada, Dec. 2019, pp. 14 014–14 024. 2 [36] Y. Tang, K. Han, Y. Wang, C. Xu, J. Guo, C. Xu, and D. Tao, “Patch Slimming for Efficient Vision Transformers,” in Proc. of CVPR , New Orleans, LA, USA, Jun. 2022, pp. 12 165–12 174. 2 [37] Y. Rao, W. Zhao, B. Liu, J. Lu, J. Zhou, and C.-J. Hsieh, “DynamicViT: Efficient Vision Transformers with Dynamic Token Sparsification,” in 
+
+Proc. of NeurIPS , virtual, Dec. 2021, pp. 13 937–13 949. 2 [38] J. Deng, W. Dong, R. Socher, L.-J. Li, K. Li, and L. Fei-Fei, “ImageNet: A Large-Scale Hierarchical Image Database,” in Proc. of CVPR , Miami, FL, USA, Jun. 2009, pp. 248–255. 3, 5 [39] M. Contributors, “MMSegmentation: OpenMMLab Semantic Seg-mentation Toolbox and Benchmark,” https://github.com/open-mmlab/ mmsegmentation, 2020. 5, 6 [40] I. Loshchilov and F. Hutter, “Decoupled Weight Decay Regularization,” in Proc. of ICLR , New Orleans, LA, USA, May 2019, pp. 1–18. 6

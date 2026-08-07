@@ -1,0 +1,314 @@
+Title: HiResNets: Native Full-HD Video Recognition with Foveal Residual Streams
+
+URL Source: https://arxiv.org/pdf/2608.02140v1
+
+Published Time: Tue, 04 Aug 2026 02:50:38 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# HiResNets: Native Full-HD Video Recognition with Foveal Residual Streams 
+
+## Shivani Mall Swarnim Jain 1 Jo˜ ao F. Henriques Visual Geometry Group, University of Oxford 
+
+> shivanim@robots.ox.ac.uk
+
+## Abstract 
+
+Much of the recent progress in image and video recogni-tion has come at the cost of memory: larger models, in-creased resolution, and longer temporal contexts. An in-evitable component is the quadratic (or larger) growth of memory and compute based on image resolution, which is a property of the grid sampling used in convolutional net-works and vision transformers. In this work we study resid-ual networks whose convolutional blocks have logarithmic-square growth instead, enabling them to process very high-resolution video quickly. The key insight is to use a residual architecture’s residual stream as a high-resolution buffer, to which convolutional blocks only read and write via log-polar image warp operations. Layers adaptively focus on different parts of each frame, with very high resolution only near the focus point. A complete high-resolution represen-tation is built up in the residual stream (theoretical con-struction presented to eliminate the quadratic dependency of stream resolution) which is analogous to eye saccades creating a complete picture in biological vision. Experi-ments demonstrate that our proposed HiResNets learn to foveate around scenes similarly to human vision, and have superior performance in difficult egocentric video recogni-tion tasks, especially egocentric video with small objects and fine-grained recognition. 
+
+## 1. Introduction 
+
+Progress in image and video recognition has been driven by ever-larger models, higher input resolutions, and longer temporal contexts. This trend has clear costs: memory and compute grow at least quadratically with spatial resolution in convolutional networks and vision transformers [9, 16], creating a hard bottleneck for tasks that require fine detail. Applications such as egocentric video recognition or small-object analysis are especially constrained, not because of a lack of model capacity, but because of the inefficiency of uniform grid-based sampling. 
+
+> 1Intern at VGG from the University of Cambridge.
+
+In contrast, the human eye allocates resolution unevenly, capturing detail only at the fovea while encoding the pe-riphery coarsely, and relies on saccades to integrate a full high-resolution scene [34]. This principle has motivated several works: from earlier glimpse networks [35], zoom-in detectors [49], and hierarchical multi-scale processing [25], to more recent approaches which incorporated saccade-like glimpses into modern architectures, for example through recurrent hard-attention models [10, 36] or differentiable foveated sampling schemes [23]. Despite these advances, the common limitation is that foveation is applied outside the backbone itself (typically as a control or pre-processing module wrapped around an otherwise standard network), so the backbone continues to scale quadratically with resolu-tion. We address this limitation by embedding foveation di-rectly into the backbone. Our key idea is to use the residual pathway of a deep network as a persistent high-resolution buffer , while convolutional blocks interact only with a warped, adaptive-resolution view. This view is pro-duced by a log-polar image warp, which preserves fine de-tail near a chosen focus point and compresses the periph-ery [43] (illustrated in fig. 1-(d)). As a result, the cost of residual blocks grows only logarithmically with reso-lution, rather than quadratically, while the residual stream maintains full fidelity. Layers can shift their focus adap-tively across frames, gradually building up a complete high-resolution representation in a manner analogous to biologi-cal saccades. While this means that the residual stream still scales quadratically with resolution, it is only involved in inexpen-sive copy and addition operations, and its back-propagation memory can be reduced (for example with gradient check-pointing [4]). We thus have greater performance gains by improving the residual blocks, which are often the bot-tleneck due to their expensive convolutions and expanded numbers of channels [32]. The resulting architecture, HiResNets , integrates foveation directly into residual networks. Unlike prior ap-proaches that wrap a standard backbone with glimpse or zoom modules, HiResNets modify the internal computa-arXiv:2608.02140v1 [cs.CV] 3 Aug 2026 (a) EgoObjects (b) PACO (c) EGTEA (d) Warps      
+
+> Figure 1. (a-c) Illustration of non-uniform resolution on 3 datasets: EgoObjects, PACO and EGTEA. The first row shows original images and focus point (red circles), while the second row shows non-uniform resolution images (by warping and un-warping with a log-polar grid). Notice that regions away from the focus point (in the second row) have much less detail. (d) The same 3 images, warped to log-polar space. The vertical axis corresponds to angular coordinates, and the horizontal axis to radial coordinates (distance from focus point). Toward the right of the image (far from the focus point), objects are compressed into smaller areas, and so a log-polar network will process them at much lower resolutions. Black pixels on the right are too far outside the warp grid.
+
+tion of each residual block, yielding fundamentally differ-ent scaling behaviour with respect to input resolution. Our contributions are threefold: 1. A residual design in which block cost grows only log-arithmically with resolution while the residual stream maintains full fidelity, along with a theoretical construc-tion that eliminates the quadratic dependency of the residual stream resolution. 2. A differentiable log-polar warp mechanism enabling adaptive foveated processing inside the backbone itself. 3. Extensive experiments showing that HiResNets not only reduce memory and computation but also learn inter-pretable foveation strategies. On egocentric video benchmarks, HiResNets offer consis-tent gains, particularly for fine-grained activities and small-object recognition. These results demonstrate that foveated architectures can overcome resolution bottlenecks in video understanding. 
+
+## 2. Related work 
+
+There is an ample body of literature that is related to our work. In this section we provide only a small summary of more recent and classical papers that are relevant. 
+
+Biological Vision and Foveation. It is well known that human vision is sharply non-uniform: the retina contains a densely packed fovea surrounded by coarse peripheral sampling, with an organization that approximates a log-polar map. Classic studies of visual attention note that this arrangement is computationally efficient, as attention im-proves visual acuity only where it is needed [2]. Large vari-ations in photoreceptor density across the retina are con-firmed by anatomical evidence [6], and early computational models described this distribution as a log-polar coordinate transform [42]. Perceptual research has shown how periph-eral vision is limited by crowding and coarse feature in-tegration [44], while summary-statistic representations ex-plain how robust search and whole-scene perception is pos-sible despite these limits [41]. Meng et al. [34] demon-strated computer vision applications of foveation, showing how uneven resolution sampling can reduce bandwidth and computation. These works show that foveation and sac-cades evolved in biology as an efficient strategy for build-ing complete high-resolution representations from partial glimpses, as opposed to having a uniform-resolution sen-sor, which is commonly the case in artificial vision. 
+
+Log-Polar Compression and Differentiable Warping. 
+
+This biological perspective has inspired computer vision models that explicitly encode non-uniform sampling. Fo-cusing on the deep learning era, early work in geometric warping introduced learnable modules such as spatial trans-former networks (STN) [18], while polar transformer net-works showed how polar coordinates yield built-in rota-Figure 2. Overview of the differences between our scheme and alternative multi-gaze strategies. Using multi-gaze crops in every bottleneck block (column 2) leads to high compute, since all the gazed sites are preserved at high resolution. Using varying single-gaze crops instead (column 3), reduces compute but leads to degraded representations. Our proposal (column 4) preserves these single-gaze sites at high-res., plus other regions at low-res. This achieves an ideal balance between bottleneck compute and representations. Further details in Sec. 6.4 
+
+tion and scale equivariance [11]. More recently, log-polar convolution layers were proposed to natively operate in a retina-inspired coordinate system, yielding both efficiency and robustness to geometric variation [45]. 
+
+Computational Models of Foveation. Beyond static reparameterizations, many learning-based systems attempt to mimic saccades by dynamically selecting where to pro-cess at high resolution. The Recurrent Model of Visual At-tention (RAM) introduced sequential glimpses trained via reinforcement learning [35], while later models such as Sac-cader stabilized accuracy by supervising fixation selection [10]. Other approaches replaced reinforcement learning with differentiable mechanisms: the Dynamic Zoom-In net-work, for example, predicted where to zoom within large images to save computation [13]. Wang et al. [49] intro-duced zoom-in detection pipelines, reducing cost for large images. More recent methods have implemented continu-ous foveated sensors and learn how to shift fixations end-to-end [23], or incorporated foveation directly into trans-formers, as in FoveaTer [20]. Monte Carlo convolutions generalize filtering to non-uniform foveated inputs [22], and multi-resolution strategies such as Recently, Pan et al. [36] proposed MRAM, a multi-level recurrent attention model that mimics fixations and saccades to improve stability and accuracy in glimpse-based architectures. 
+
+Egocentric Vision and Gaze Estimation Benchmarks. 
+
+Egocentric video is a natural application domain for foveated models, since hand-object interactions, rapid ego-motion, and small tools make uniform downsampling es-pecially lossy. Benchmarks such as EPIC-KITCHENS [8] and Ego4D [15] established large-scale testbeds for activ-ity recognition and object understanding, while HD-EPIC [37] recently added highly detailed annotations and gaze data. In parallel, gaze-estimation datasets such as MPI-IGaze [51], ETH-XGaze [52], and Gaze360 [21], along with VR-focused corpora like OpenEDS [14], provide ev-idence of where humans naturally focus in first-person set-tings. 
+
+Small-Object Detection and Fine-Grained Targets. 
+
+Standard detection backbones lose fine detail under pooling and stride, which led to several multi-scale architectures. Larochelle and Hinton [25] presented one of the earliest hi-erarchical multi-scale models, showing that learning across resolutions improves recognition efficiency. Feature Pyra-mid Networks [30] explicitly added top-down pathways to × 𝑀 blocks              
+
+> Centre
+> Predictor
+> +
+> Warp Unwarp
+> Saccade position (2D)
+> High -resolution residual stream (𝐶 ×𝐻 ×𝑊 )
+> Log -space tensors
+> (𝐶 ×𝒫 ×Θ)
+> ×𝑁 stages
+> Pred iction
+> +
+> Input i mage
+> Handle
+
+Figure 3. Overview of the proposed architecture. We integrate log-polar warp and unwarp operators around a series of residual (convolutional) blocks of a given backbone (e.g. ResNet). In this warped space, the network can process a very high resolution only around a center position (predicted by a separate branch), with much reduced computation. This allows the residual stream to carry information at a much higher resolution, processing full-HD video natively and recognizing very fine-grained detail. 
+
+preserve detail across scales, while RetinaNet [31] intro-duced focal loss to mitigate the imbalance between small and large objects. 
+
+Large-Scale High-Resolution Vision. Finally, a broad literature addresses how to scale vision architectures to high-resolution images and video. HRNet demonstrated the benefits of maintaining parallel high-resolution streams throughout a network [46, 48], while Multiscale Vision Transformers (MViT) and its successor MViTv2 used hi-erarchical pooling to manage compute [12, 28]. Efficiency-focused transformers prune or merge tokens dynamically, as in DynamicViT [39], EViT [29], and ToMe [1]. At the extreme end, gigapixel pathology has motivated hierarchi-cal pretraining (HIPT) [3] and MIL-based slide classifica-tion (CLAM) [33]. However, these proposals mostly oper-ate at globally fixed scales or discard fine detail. In con-trast, the proposed HiResNets achieve sub-quadratic (log-squared) scaling by treating the residual stream itself as a high-resolution buffer accessed via log-polar warps, allow-ing full-HD video to be processed natively while preserving the biological analogy of foveation and saccades. 
+
+## 3. Method 
+
+3.1. Residual networks and resolution scaling 
+
+We begin by recalling the standard residual block notation of He et al. [16]. Let x(l) ∈ RC×H×W denote the feature map (the residual stream) after block l. A residual block updates it via 
+
+x(l+1) = x(l) + f
+
+
+
+x(l)
+
+, (1) where f (·) is a sequence of convolutions, nonlinearities, and normalizations. While this formulation underlies most modern vision models, its cost grows quickly with resolution. The com-putational complexity of a convolution with kernel size K
+
+is 
+
+O(C2HW K 2), (2) so both compute and memory scale quadratically in the spa-tial dimensions. This quadratic law is the main bottleneck preventing standard residual networks from handling very high-resolution video. 
+
+3.2. Log-polar warps 
+
+To alleviate this bottleneck, we require a representation that emphasizes local detail while compressing distant regions. One candidate is the log-polar reparameterization of the im-age plane [11]. Let c ∈ R2 be a centre of focus. The log-polar mapping ψc : RP× Θ → RH×W is defined by 
+
+(i, j ) = ψc(ρ, θ ) = c +   exp( ρ) cos θ, exp( ρ) sin θ, (3) where (ρ, θ ) are the log-polar coordinates of a point in the warped view. This mapping allocates exponentially more resolution near c, while progressively downsampling farther away. The warped feature at (ρ, θ ) is obtained by bilinear re-sampling: 
+
+v(ρ, θ ) = X
+
+> m
+
+X
+
+> n
+
+xm,n φ(i − m) φ(j − n),φ(t) = max(0 , 1 − | t|).
+
+(4) Since φ has compact support in [−1, 1] , this double sum reduces to exactly four terms: the 4 neighbours obtained by integer floor and ceiling of the coordinates. 
+
+Limitations of direct warping. Although the log-polar warp provides a more efficient parameterization, applying it directly to the input image or to the activations of a stan-dard network has a major limitation: the centre c is fixed for the entire forward pass. As a result, only a single part of the scene benefits from high-resolution processing, and the network cannot reallocate its resolution budget across layers or time. This motivates applying the warp at a more fine-grained level. 
+
+3.3. HiResNet architecture 
+
+We therefore restructure the residual block so that convolu-tional processing takes place only in log-polar space, while the global high-resolution representation is preserved in the residual stream. Concretely, a block is defined as 
+
+u = ψc(x), y = f (u), x ← x + ψ−1 
+
+> c
+
+(y), (5) where ψ−1 
+
+> c
+
+is the inverse log-polar warp, mapping features back to Cartesian coordinates by bilinear resampling. This means that each convolutional block operates on a compact warped view u ∈ RC×P× Θ, while x maintains a full-resolution buffer of the scene. Over the course of Nblocks, the network integrates multiple warped updates into 
+
+x, analogous to how the visual system fuses multiple sac-cades into a coherent high-resolution percept. In practice, we let f be a sequence of M residual blocks instead of just one, in order to avoid recomputing the centre c too often over the depth of the network. 
+
+3.4. Center predictor 
+
+To make this mechanism adaptive, the centre c must be predicted dynamically at each block. We introduce a lightweight center predictor , consisting of two 1 × 1 con-volutions with a ReLU nonlinearity, followed by a differ-entiable softargmax operator [17]. Given an attention map 
+
+a ∈ RH×W , the softargmax produces 
+
+c = X
+
+> i,j
+
+(i, j ) exp( ai,j )
+
+P 
+
+> m,n
+
+exp( am,n ) . (6) This allows each block to reposition its high-resolution fo-cus based on the current residual state x.
+
+3.5. Inverse warp 
+
+In order to relate high-resolution information from differ-ent focus positions, we must be able to write information back from a log-polar warped space into a common space (typically cartesian). We thus use also the following inverse warp to transform features to the high-resolution residual stream: 
+
+(ρ, θ ) = ψ−1 
+
+> c
+
+(i, j )=
+
+
+
+log ∥(i′, j ′)∥2 , atan2( j′, i ′)
+
+
+
+,
+
+(i′, j ′) = ( i, j ) − c. 
+
+(7) again using bilinear interpolation (eq. 4). 
+
+3.6. Complexity analysis: from linear to logarith-mic 
+
+A standard residual block with kernel size k applied to a feature map of size (W, H ) has cost O(k2W H ). In our proposal, convolutions act only on the warped view u ∈
+
+RC×Θ×P , where the log-polar warp yields Θ = O(log W )
+
+and P = O(log H). The warp itself can be implemented in 
+
+O(Θ P), so the dominant cost is the convolution, scaling as 
+
+O(k2ΘP) = O k2 log W log H.
+
+This logarithmic-square scaling replaces the quadratic growth of conventional blocks, and becomes the bottleneck whenever convolution dominates warp overhead and chan-nel dimensions remain moderate. Meanwhile, the residual stream ensures that no fine de-tail is lost: every update is reintegrated into a global high-resolution buffer. Thus HiResNets achieve logarithmic-square scaling in the computationally dominant convolu-tional bottlenecks, while preserving complete spatial infor-mation across depth and time. 
+
+(a) (b)     
+
+> Figure 4. Qualitative results (randomly selected): (a) object de-tection on EgoObjects, (b) object part detection on PACO. Notice that PACO includes fine-grained and small object details, such as the mobile phone button on the bottom-right of the image.
+
+## 4. Implementation Details 
+
+In each experiment, we take an existing residual network as a baseline (ResNet [16] or SqueezeTime [50]), and obtain a HiResNet by adding the warp operations as described in sec. 3.3. We implement the log-polar warp (sec. 3.2) and its inverse transform modules using efficient bilinear sam-pling ( grid sample in PyTorch) in order to produce the warped and unwarped tensors. A new localization network is instantiated in every stage (group of residual blocks) – for example, the ResNet always has 4 stages [16]. Therefore there is one focus point per stage. We also experiment with the frequency of the polar prediction, for block groups with large number of residual blocks. As for spatial resolution of the tensors, the residual blocks’ spatial sizes increase by 1/2 every stage with in-creasing depth, while the residual stream has a constant size 4 times smaller than the input resolution. 
+
+## 5. Experiments 
+
+In these experiments, we want to assess several capabili-ties of HiResNets: 1) their ability to mimic gaze estimation, analogously to biological vision; 2) the ability to process higher-resolution images and video than their correspond-ing baselines; 3) their performance scaling w.r.t. image res-olution; 4) the ability to detect fine-grained object details that would be difficult in lower resolutions. We show examples of the tasks in figures 4 and 5a: • Gaze estimation in Ego4D and EGTEA; • Object detection in EgoObjects and Ego4D; • Object part detection in PACO. 
+
+Baselines. We use YOLOv11 [19] as a strong one-stage object detection baseline. It uses a CSPDarknet backbone with PANet feature aggregation and anchor-free detection heads, to trade off between accuracy and speed on high-resolution inputs. For gaze estimation, Global-Local Cor-relation (GLC) [24] is a transformer-based egocentric gaze estimation model that explicitly models the interaction be-tween global scene context and local visual features. It in-(a) Qualitative results (randomly se-lected): gaze estimation on Ego4D (top row) and EGTEA (bottom row). Notice that the network tends to focus on hands in close-up scenes (important for action predic-tion and locating manipulated ob-jects), and alternating near-far re-gions in panoramic scenes.     
+
+> (b) Per-block cost decomposition at three resolutions. With higher res-olutions, convolutions (conv.) take less of the total time, until they equal other operators. Note, that the log-square scaling only applies to the conv. operation, the others are still linear (element-wise operations must apply to every element).
+> Figure 5. Overview of timing and qualitative gaze estimation re-sults.
+
+jects a “global token” into the transformer embedding and uses a Global-Local Correlation (GLC) module to compute attention weights between that global token and every local token. 
+
+5.1. High-Resolution Egocentric Vision Experi-ments 
+
+We focus on egocentric video, which presents unique chal-lenges that are relevant for our approach. Unlike third-person data, egocentric data is dominated by rapid head mo-tion, cluttered environments, and frequent occlusions. Ob-jects of interest are often small, hand-held, and viewed at unusual angles. These conditions make accurate recogni-tion heavily dependent on preserving fine spatial detail, but requiring high resolution quickly becomes prohibitive. We therefore focus our experiments on egocentric object detec-tion, where the ability of HiResNets to foveate adaptively and process high-resolution video efficiently is most criti-cal. In all these experiments, we evaluate the method at dif-ferent resolutions, including relatively high ones (reaching Full HD resolution), in order to show the scaling behaviour of the different methods. 
+
+Results. For the the Ego4D dataset, when scaling the res-olutions, accuracy does not significantly improve as seen in table 2. This can be attributed to the distribution of the object sizes in the dataset which cover large pixel areas, hence do not need higher resolution training. In contrast, for EgoObjects, when scaling the resolutions, accuracy im-proves by about 10%, attributing to varied object size dis-tribution from small to large pixel areas (table 2). However, we can observe that performance is generally higher at in-termediate resolutions. Varying improvements at increasing resolutions across the two datasets motivates us to investi-gate performance on a dataset primarily covering smaller objects sizes. We show an example result for EgoObjects in fig. 4-(a). 
+
+5.2. Fine-grained Visual Understanding 
+
+Finally, we turn to fine-grained visual understanding, for which we posit that high-resolution video understanding may be especially well-suited. We thus evaluate on the PACO [38] detection and classification dataset for detailed visual understanding. Derived from the Ego4D dataset [15], PACO comprises of rich annotations 531 object categories, of which 456 are object-part categories. There are a total of 15667 frames in train and 550 frames in validation, and 197K bounding boxes. Here, we also study the effective-ness of foveation by evaluating on dataset splits with vary-ing object sizes (spatial area 0-5% and 5-10% of the image). While our method delivers stable evaluation performance for these splits, the baseline’s accuracy degrades by 1-2% than that observed in table 3. 
+
+Results. We show an example result in fig. 4-(b), which illustrates the difficulties posed by the small parts in this dataset (such as the mobile phone button in the bottom-right corner). We evaluate the performance on PACO when scaling resolution from 640 to 1400. We see that our method outperforms the baseline at lower resolutions, how-ever, only by a small margin (table 3). This indicates that PACO is not solvable with resolution lower than its full-HD or higher. The performance increase at higher pixel resolutions (that is, 900 and 1400) comes at 1.2x and 1.5x higher latency respectively, compared to the 640 pixel reso-lution. This shows that, for harder classification and detec-tion tasks, increased resolution does meaningfully improve performance, and methods such as ours can take advantage of the additional detail without a large increase in compu-tational cost. We observe 5 % accuracy improvement over the ResNet [16] baseline in the image classification task, and showing example qualitative results in Fig 5a-(a). More detailed classification results are in the appendix. 
+
+5.3. Scaling behaviour of computational cost with increasing image resolution 
+
+For this experiment we measured inference latency as a function of input resolution on the Ego4D gaze estimation benchmark, without any additional training. We compared HiResNets to the baseline SqueezeTime, running both mod-els on an NVIDIA M40 GPU. Latency was recorded while scaling the input from a typical ResNet resolution (224px) up to 1K, using identical preprocessing and batch (size 24) settings. EGTEA Ego4D Method Max Res. AP AR F1 AP AR F1 GLC [24] 640 35 61 44 34 57 43 1000 38 63 47 36 59 46 ARGaze [26] 640 40 66 50 39 62 48 1000 42 68 52 41 64 50 SqueezeTime [50] 640 29 59 39 32 57 41 1000 33 60 42 34 58 42 Ours 640 43 69 54 42 65 52       
+
+> 1000 45 72 56 44 67 54
+
+Table 1. Gaze estimation results on EGTEA and Ego4D.                                               
+
+> Ego4D Ego-Objects Method Max Res. Sm. Md. Lg. Sm. Md. Lg. YOLOv11 [19] 640 40 20 25 33 20 32 900 42 22 27 35 22 34 1200 43 23 28 36 23 35 Ours 640 46 27 26 39 25 33
+> 900 50 29 28 43 28 35
+> 1200 51 30 29 45 30 36
+
+Table 2. Object detection results on Ego4D and Ego-Objects. Ac-curacies reported on small (Sm.), medium (Md.), large (Lg.) splits. 
+
+> (a) Latency vs. resolution on the Ego4D object detection validation set with baseline (YOLOv11). Note, that linearity dominates in our plot as the log-square scaling applies to the convolutions, and the other operators scale lin-early.
+> (b) Accuracy vs. resolution on the small Ego-Objects detection benchmark. The baselines are YOLOv11 [19] and FOVEA [47]
+
+Figure 6. Comparison of computational efficiency and detection performance across image resolutions. Left: latency vs. resolu-tion on the Ego4D object detection validation set for the baseline (YOLOv11) and our method. Right: accuracy vs. resolution on the PACO small object detection benchmark. 
+
+Results. The results, shown in Fig. 5b and 6, show that HiResNets scale much more favorably with resolution. SqueezeTime, FOVEA and YOLOv11 exhibits the expected quadratic growth in latency as image size increases, re-flecting the pixel-wise scaling of convolutional layers in a ResNet-style backbone. In contrast, HiResNets grow only nearly linearly with resolution, consistent with their loga-rithmic–squared property. As a result, HiResNets remain efficient even at 1K input, while SqueezeTime becomes substantially slower. 
+
+## 6. Discussion 
+
+6.1. Bottleneck Latency vs Representational Capac-ity Trade-off 
+
+The center predictor (Sec. 3.4) with the respective warp operation (inverse log-polar or log-polar) is an instantia-tion of the STN [18]. As described in [17, 18], this fast self-contained module can be inserted into a CNN archi-tecture at any point, and in any number; plus, the CNN can be designed with various such transforms, in parallel. In fact, several other works have also explored the benefits of input-dependent geometric transformations of the feature maps [5, 7, 40]. Here, we perform a comparative study with two such plug-in modules – deformable and dynamic con-volutions. In table 4, we show the varying impact on the bottleneck’s feature processing latency and representational capacity. 
+
+6.2. Gaze-Shift or Dynamic Saccades: An Emergent Property 
+
+The dataset gaze trajectories naturally capture gaze-shift or dynamic saccades from the observer [15, 27]. We ob-serve a higher correlation between the ground-truth and pre-dicted gaze trajectories in ours and baseline methods, except Learning to Zoom [40]. This shows that gaze shift emerges as a result of applying input-dependent spatial transforma-tion modules (Sec. 6.1) throughout the architecture back-bone which is absent in [40]. 
+
+6.3. Residual Stream Memory Consumption 
+
+We also propose a theoretical construction that eliminates the quadratic dependency of the residual stream resolution Method Res. Train Eval. AP AR YOLOv11 [19] 640 50 42 56 18 900 54 45 58 21 1400 58 47 59 23 Ours 640 56 47 62 27                
+
+> 900 60 50 64 30
+> 1400 64 53 66 33
+> Table 3. Object part detection results on PACO.
+> Method AP ↑Lat. ↓
+> Learning to Zoom [40] 45.7 9.5 Dynamic Conv. [5] 47.1 10.4 Deformable Conv. [7] 48.3 11.6
+> Ours 51.2 7.5
+> Table 4. CNN variant comparison on Egtea.
+
+(while introducing a quadratic dependency on the depth). While the residual stream is full resolution ( O(n2)), we prove that this buffer can be eliminated entirely. It is true that, as written, the residual stream x ∈ RC×H×W scales quadratically with resolution. We will better discuss this limitation of a direct implementation. Since x is only ever written to by unwarped log-polar up-dates, we have x = P 
+
+> k<l
+
+ψ−1 
+
+> ck
+
+(yk) at block l, so the block’s input is ul = ψcl (x) = P 
+
+> k<l
+
+ψcl ◦ ψ−1 
+
+> ck
+
+(yk). Defining the direct log-polar-to-log-polar warp Wk→l ≜ ψcl ◦ ψ−1
+
+> ck
+
+(a single warp with a closed-form grid), the block update becomes ul = P 
+
+> k<l
+
+Wk→l(yk). This is mathematically equivalent to the original formulation but never instantiates 
+
+x: only the log-polar tensors {yk} ∈ RC×P× Θ are stored. In the current implementation, we also see that the mem-ory growth is within reasonable budget as resolution in-creases (only upto 10 GB at 4K px) 
+
+6.4. HiResNets Roadmap 
+
+Gaze is an underlying property of egocentric videos, pri-marily obtained by following an agent’s eye gaze. To pre-serve salient frame regions at high-resolution, gaze serves as a crucial cue. Thus, we propose to predict the gaze cen-ter within a frame, following a top-down visual mechanism (also present in human vision). To arrive at our proposal, we ablate with a few baselines. For the first two, we pre-serve high-resolution frame crops around possible gaze cen-ters (predicted), and jointly process these at each bottleneck block (Fig. 2, columns a, b). However, this leads to a high compute cost at each block. Additionally, successive gaze centers do not iteratively refine upon the previous ones. So, instead in our last baseline (Fig. 2, column c), we predict a fresh gaze center at every stage (set of bottleneck blocks), using feedback signal from the previous predictions; we then process a high-resolution crop at the recent gaze center only, and observe significantly reduced compute cost. 
+
+## 7. Ablations for HiResNet Design 
+
+As discussed in Sec. 6.1, the center predictor (with the re-spective warp) is an instantiation of the STN, and can be in-serted in a CNN architecture at any point and in any number [17, 18]. This combined module augments static convolu-tions by enabling spatial transformations of the input feature map; thus, having multiple of these, through a network’s in-creasing depths is not an adverse effect of our or previous proposals. In fact, as discussed in [17, 18], such input-adaptive modules lead to a higher representational align-ment in the architecture’s progressive stages, that is other-wise not possible in general CNNs. To corroborate this find-ing, we experiment with different configurations that result from predicting fresh centers for the transform through the network’s depth. For this module, we further justify how we arrive at the position of insertion into the CNN architecture. 
+
+7.1. Number of Center Predictors 
+
+We experiment with increasing the center predictions, by predicting twice (instead of once) for stacks of residual blocks (greater than 4), and observe an increase in evalua-tion accuracy by 1.5%. This is expected due to the represen-tations drift in later blocks from that of the initial residual block. We also ablate by predicting the center only once for the entire network, which results in accuracy degradation (> 7% ). Further, we ablate with using ground-truth image center (no prediction) which leads to an even more severe performance hit. 
+
+7.2. Position of Center Predictors 
+
+As discussed in Sec. 6.1, this module can be inserted in a CNN architecture at any point. We ablate with insert-ing the module before, instead of within a bottleneck block (as proposed). We observe severely lower accuracy as the full-fidelity frames are no longer preserved in the residual stream, leading to degraded representations through the net-work depth. 
+
+## 8. Conclusion 
+
+In this work we propose HiResNets, a residual architecture that integrates log-polar warps into the residual stream to enable efficient foveated processing. Our experiments show that HiResNets can mimic gaze allocation, handle inputs at substantially higher resolutions than conventional baselines, and exhibit favourable scaling behaviour with respect to resolution. These properties lead to superior performance on egocentric tasks, where capturing fine-grained details is critical. Overall, our results highlight foveated representations as a promising direction for building scalable and efficient high-resolution vision models without incurring quadratic computational cost. References 
+
+[1] Daniel Bolya, Cheng-Yang Fu, Xiaoliang Dai, Peizhao Zhang, Christoph Feichtenhofer, and Judy Hoffman. Token merging: Your vit but faster. In International Conference on Learning Representations (ICLR) , 2023. 4 [2] Marisa Carrasco. Visual attention: The past 25 years. Vision Research , 51(13):1484–1525, 2011. 2 [3] Richard J. Chen, Chengkuan Chen, Yicong Li, Tiffany Y. Chen, Andrew D. Trister, Rahul G. Krishnan, and Faisal Mahmood. Scaling vision transformers to gigapixel images via hierarchical self-supervised learning. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2022. 4 [4] Tianqi Chen, Bing Xu, Chiyuan Zhang, and Carlos Guestrin. Training deep nets with sublinear memory cost, 2016. 1 [5] Yinpeng Chen, Xiyang Dai, Mengchen Liu, Dongdong Chen, Lu Yuan, and Zicheng Liu. Dynamic convolution: At-tention over convolution kernels. In CVPR , 2020. 7, 8 [6] Christine A. Curcio, Kenneth R. Sloan, Richard E. Kalina, and Alan E. Hendrickson. Human photoreceptor topography. 
+
+Journal of Comparative Neurology , 292(4):497–523, 1990. 2[7] Jifeng Dai, Haozhi Qi, Yuwen Xiong, Yi Li, Guodong Zhang, Han Hu, and Yichen Wei. Deformable convolutional networks. In ICCV , 2017. 7, 8 [8] Dima Damen, Hazel Doughty, Giovanni Maria Farinella, Sanja Fidler, Antonino Furnari, Evangelos Kazakos, Da-vide Moltisanti, Jonathan Munro, Toby Perrett, Will Price, and Michael Wray. Scaling egocentric vision: The EPIC-KITCHENS dataset. In European Conference on Computer Vision (ECCV) , 2018. 3 [9] Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Syl-vain Gelly, Jakob Uszkoreit, and Neil Houlsby. An image is worth 16x16 words: Transformers for image recognition at scale. In International Conference on Learning Representa-tions , 2021. 1 [10] Gamaleldin F Elsayed, Simon Kornblith, and Quoc V Le. Saccader: Improving accuracy of hard attention models for vision. In Advances in Neural Information Processing Sys-tems , 2019. 1, 3 [11] Carlos Esteves, Christine Allen-Blanchette, Xiaowei Zhou, and Kostas Daniilidis. Polar transformer networks. In Inter-national Conference on Learning Representations , 2018. 3, 4[12] Haoqi Fan, Bo Xiong, Karttikeya Mangalam, Yanghao Li, Zhicheng Yan, Jitendra Malik, and Christoph Feichten-hofer. Multiscale vision transformers. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , 2021. 4 [13] Mingfei Gao, Ruichi Yu, Ang Li, Vlad I. Morariu, and Larry S. Davis. Dynamic zoom-in network for fast object detection in large images. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2018. 3 [14] Stephan J. Garbin, Yiru Shen, Dushyant Goodman, Jakob H. Lagergren, and Sachin S. Talathi. OpenEDS: Open eye dataset. arXiv preprint arXiv:1905.03702 , 2019. 3 [15] Kristen Grauman et al. Ego4D: Around the world in 3,000 hours of egocentric video. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2022. 3, 6, 7 [16] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image recognition. In Proceed-ings of the IEEE conference on computer vision and pattern recognition , pages 770–778, 2016. 1, 4, 5, 6 [17] Joao F Henriques and Andrea Vedaldi. Warped convolutions: Efficient invariance to spatial transformations. In Interna-tional Conference on Machine Learning , pages 1461–1469. PMLR, 2017. 5, 7, 8 [18] Max Jaderberg, Karen Simonyan, Andrew Zisserman, and Koray Kavukcuoglu. Spatial transformer networks. In Ad-vances in Neural Information Processing Systems , 2015. 2, 7, 8 [19] Glenn Jocher and Jing Qiu. Ultralytics yolo11, 2024. 5, 7, 8 [20] Aditya Jonnalagadda, William Yang Wang, B.S. Manjunath, and Miguel P. Eckstein. FoveaTer: Foveated transformer for image classification. arXiv preprint arXiv:2105.14173 ,2021. 3 [21] Petr Kellnhofer, Adri` a Recasens, Simon Stent, Wojciech Ma-tusik, and Antonio Torralba. Gaze360: Physically uncon-strained gaze estimation in the wild. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , 2019. 3 [22] George Killick, Gerardo Aragon-Camarasa, and J. Paul Siebert. Monte-carlo convolutions on foveated images. In 
+
+Proceedings of the 17th International Joint Conference on Computer Vision, Imaging and Computer Graphics Theory and Applications (VISIGRAPP) – VISAPP , 2022. 3 [23] George Killick, Paul Henderson, Jan Paul Siebert, and Ger-ardo Aragon-Camarasa. Foveation in the era of deep learn-ing. In British Machine Vision Conference (BMVC) , 2023. 1, 3 [24] Bolin Lai, Miao Liu, Fiona Ryan, and James M Rehg. In the eye of transformer: Global–local correlation for egocentric gaze estimation and beyond. International Journal of Com-puter Vision , pages 1–18, 2023. 5, 7 [25] Hugo Larochelle and Geoffrey E Hinton. Learning to combine foveal glimpses with a third-order boltzmann ma-chine. In Advances in Neural Information Processing Sys-tems , 2010. 1, 3 [26] Jia Li, Wenjie Zhao, Shijian Deng, Bolin Lai, Yuheng Wu, Ruijia Chen, Jon E. Froehlich, Yuhang Zhao, and Yapeng Tian. Autoregressive transformers for online egocentric gaze estimation, 2026. 7 [27] Yin Li, Miao Liu, and James M. Rehg. In the eye of the beholder: Joint learning of gaze and actions in first person video. In European Conference on Computer Vision (ECCV) ,2018. 7 [28] Yanghao Li, Chao-Yuan Wu, Haoqi Fan, Karttikeya Man-galam, Bo Xiong, Jitendra Malik, and Christoph Feichten-hofer. MViTv2: Improved multiscale vision transformers for classification and detection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2022. 4 [29] Youwei Liang, Chongjian Ge, Zhan Tong, Yibing Song, Jue Wang, and Pengtao Xie. Evit: Expediting vision transform-ers via token reorganizations. In International Conference on Learning Representations (ICLR) , 2022. 4 [30] Tsung-Yi Lin, Piotr Doll´ ar, Ross B. Girshick, Kaiming He, Bharath Hariharan, and Serge Belongie. Feature pyra-mid networks for object detection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2017. 3 [31] Tsung-Yi Lin, Priya Goyal, Ross B. Girshick, Kaiming He, and Piotr Doll´ ar. Focal loss for dense object detection. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , 2017. 4 [32] Zhuang Liu, Hanzi Mao, Chao-Yuan Wu, Christoph Feicht-enhofer, Trevor Darrell, and Saining Xie. A convnet for the 2020s. In Proceedings of the IEEE conference on computer vision and pattern recognition , 2022. 1 [33] Ming Y. Lu, Drew F.K. Williamson, Tiffany Y. Chen, Richard J. Chen, Matteo Barbieri, and Faisal Mahmood. Data-efficient and weakly supervised computational pathol-ogy on whole-slide images. Nature Biomedical Engineering ,5:555–570, 2021. 4 [34] Xiaoxu Meng, Ruofei Du, Matthias Zwicker, and Amitabh Varshney. Kernel foveated rendering. Proceedings of the ACM on Computer Graphics and Interactive Techniques , 1: 1–20, 2018. 1, 2 [35] Volodymyr Mnih, Nicolas Heess, Alex Graves, and Koray Kavukcuoglu. Recurrent models of visual attention. In Ad-vances in Neural Information Processing Systems , 2014. 1, 3[36] Pengcheng Pan, Shogo Yonekura, and Yasuo Kuniyoshi. 
+
+Emergence of Fixational and Saccadic Movements in a Multi-level Recurrent Attention Model for Vision , page 299–313. Springer Nature Singapore, 2025. 1, 3 [37] Toby Perrett, Ahmad Darkhalil, Saptarshi Sinha, Omar Emara, Sam Pollard, Kranti Parida, Kaiting Liu, Prajwal Gatti, Siddhant Bansal, Kevin Flanagan, Jacob Chalk, Zhi-fan Zhu, Rhodri Guerrier, Fahd Abdelazim, Bin Zhu, Da-vide Moltisanti, Michael Wray, Hazel Doughty, and Dima Damen. HD-EPIC: A highly-detailed egocentric video dataset. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2025. 3 [38] Vignesh Ramanathan, Anmol Kalia, Vladan Petrovic, Yi Wen, Baixue Zheng, Baishan Guo, Rui Wang, Aaron Mar-quez, Rama Kovvuri, Abhishek Kadian, Amir Mousavi, Yi-wen Song, Abhimanyu Dubey, and Dhruv Mahajan. Paco: Parts and attributes of common objects. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2023. 6 [39] Yongming Rao, Wenliang Zhao, Benlin Liu, Jiwen Lu, Jie Zhou, and Cho-Jui Hsieh. Dynamicvit: Efficient vision transformers with dynamic token sparsification. In Advances in Neural Information Processing Systems , 2021. 4 [40] Adri` a Recasens, Petr Kellnhofer, Simon Stent, Wojciech Ma-tusik, and Antonio Torralba. Learning to zoom: a saliency-based sampling layer for neural networks. In European Con-ference on Computer Vision (ECCV) , 2018. 7, 8 [41] Ruth Rosenholtz, Jie Huang, Alvin Raj, Benjamin J. Balas, and Livia Ilie. A summary statistic representation in periph-eral vision explains visual search. Journal of Vision , 12(4): 14–14, 2012. 2 [42] Eric L. Schwartz. Spatial mapping in the primate sensory projection: Analytic structure and relevance to perception. 
+
+Biological Cybernetics , 25(4):181–194, 1977. 2 [43] Eric L Schwartz. Computational anatomy and functional ar-chitecture of striate cortex: A spatial mapping approach to perceptual coding. Vision Research , 20(8):645–669, 1980. 1 [44] Hans Strasburger, Ingo Rentschler, and Martin J¨ uttner. Pe-ripheral vision and pattern recognition: A review. Journal of Vision , 11(5):13–13, 2011. 2 [45] Bing Su and Ji-Rong Wen. Log-polar space convolution lay-ers. In Advances in Neural Information Processing Systems ,2022. 3 [46] Ke Sun, Bin Xiao, Dong Liu, and Jingdong Wang. Deep high-resolution representation learning for human pose es-timation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2019. 4 [47] Chittesh Thavamani, Mengtian Li, Nicolas Cebron, and Deva Ramanan. Fovea: Foveated image magnification for autonomous navigation. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pages 15519–15528, 2021. 7 [48] Jingdong Wang, Ke Sun, Tianheng Cheng, Borui Jiang, Chaorui Deng, Yang Zhao, Dong Liu, Yadong Mu, Mingkui Tan, Xinggang Wang, Wenyu Liu, and Bin Xiao. Deep high-resolution representation learning for visual recogni-tion. IEEE Transactions on Pattern Analysis and Machine Intelligence , 2020. 4 [49] Zhe Wang, Yanxin Yin, Jianping Shi, Wei Fang, Hongsheng Li, and Xiaogang Wang. Zoom-in-net: Deep mining lesions for diabetic retinopathy detection. In Medical Image Com-puting and Computer Assisted Intervention – MICCAI 2017 ,pages 267–275, 2017. 1, 3 [50] Yingjie Zhai, Wenshuo Li, Yehui Tang, Xinghao Chen, and Yunhe Wang. No time to waste: Squeeze time into channel for mobile video understanding, 2024. 5, 7 [51] Xucong Zhang, Yusuke Sugano, Mario Fritz, and An-dreas Bulling. MPIIGaze: Real-world dataset and deep appearance-based gaze estimation. IEEE Transactions on Pattern Analysis and Machine Intelligence , 41(1):162–175, 2019. 3 [52] Xucong Zhang, Seonwook Park, Thabo Beeler, Derek Bradley, Siyu Tang, and Otmar Hilliges. ETH-XGaze: A large scale dataset for gaze estimation under extreme head pose and gaze variation. In European Conference on Com-puter Vision (ECCV) , 2020. 3
