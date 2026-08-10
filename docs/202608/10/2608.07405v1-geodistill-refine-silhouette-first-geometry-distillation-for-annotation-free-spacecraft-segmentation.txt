@@ -1,0 +1,747 @@
+Title: GeoDistill-Refine: Silhouette-First Geometry Distillation for Annotation-Free Spacecraft Segmentation
+
+URL Source: https://arxiv.org/pdf/2608.07405v1
+
+Published Time: Mon, 10 Aug 2026 01:08:49 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+# GeoDistill-Refine: Silhouette-First Geometry Distillation for Annotation-Free Spacecraft Segmentation 
+
+## Yonglong Zhang a, Zongwu Xie a and Yang Liu a,∗
+
+> a
+
+School of Mechatronics Engineering, Harbin Institute of Technology, Harbin, Heilongjiang, China 
+
+A R T I C L E I N F O 
+
+Keywords :spacecraft segmentation pseudo-labeling geometry distillation unseen spacecraft 
+
+A B S T R A C T 
+
+Foundation segmentation models can provide supervision for spacecraft imagery without manual training masks, but their predictions vary with textual prompts and may contain geometric errors that are amplified during distillation. This paper presents GeoDistill-Refine, a two-stage framework that transfers offline SAM 3 pseudo-masks to a compact segmentation network. Six fixed prompts are fused by an unweighted 50% vote to stabilize the teacher output. The student first learns the foreground silhouette and is then refined with signed-distance-field, skeleton, and area objectives derived from the pseudo-mask. A sample-level gate, computed from prompt agreement, the valid-prompt ratio, and pseudo-mask area plausibility, reduces the influence of unreliable pseudo-geometry. On the SpaceSense-Bench HJM lockbox set, GeoDistill-Refine improves Image IoU and Boundary F1 by 0.0456 and 0.1380, respectively, over a plain pseudo-label student. External evaluations on the SPEED+ Lightbox and Sunlamp domains and on TANGO show competitive regional overlap together with gains in boundary quality or foreground precision. The deployed TinyUNet contains 0.263 M parameters and requires approximately 1.1 ms per image on an RTX 4090; SAM 3 pseudo-mask construction and the auxiliary geometry branches are used only during training. 
+
+## I. Introduction 
+
+On-orbit servicing, active debris removal, and rendez-vous with non-cooperative targets require robust visual per-ception of spacecraft. Foreground segmentation provides pixel-level spatial constraints for target localization, relative pose estimation, and three-dimensional reconstruction [1, 2, 3]. Segmenting previously unseen spacecraft nevertheless remains difficult because illumination, background, appar-ent scale, and structural configuration vary substantially. Results reported on SPEED+, TANGO, and SpaceSense-Bench have shown the performance degradation associated with illumination-domain shifts and changes in target geom-etry [4, 5, 6]. Most existing approaches depend on manually annotated pixels. Such annotations are costly because real on-orbit imagery is scarce and spacecraft often contain low-contrast boundaries and slender appendages. Simulation provides inexpensive labels but cannot fully reproduce real materials, illumination, or background distributions. Large foundation models offer a different route to supervision, although their memory and computational requirements make direct on-board deployment impractical. Open-vocabulary detectors and promptable segmenta-tion models can generate object boxes or masks for unla-beled images from textual prompts [7, 8, 9]. Recent space-craft studies have demonstrated automatic mask genera-tion, pseudo-label distillation into compact students, and structured prompting [10, 11, 12]. The resulting teacher predictions, however, remain sensitive to wording, target scale, and local structure. Existing pseudo-label processing commonly relies on augmentation consistency, box fusion, 
+
+> ∗
+
+Corresponding author  
+
+> E-mail address:liuyanghit@hit.edu.cn
+
+(Y. Liu) 
+
+> ORCID
+
+(s): 0000-0002-0773-0706 (Y. Liu) 
+
+or confidence filtering, with limited treatment of boundary, connectivity, and area errors. Distance-field supervision can improve spacecraft boundary modeling [13], but dense ge-ometric targets derived directly from noisy pseudo-masks may propagate and spatially amplify teacher errors. This paper introduces GeoDistill-Refine, an annotation-free training framework for compact spacecraft segmenta-tion. A frozen SAM 3 teacher first generates offline pseudo-masks through multi-prompt consensus. The student then learns the primary silhouette before being refined with reliability-gated pseudo-geometry from the corresponding checkpoint. Only the single-frame RGB student is retained at deployment. Here, annotation-free refers specifically to student optimization without manual masks; validation an-notations are still used for checkpoint selection and threshold calibration. SpaceSense-Bench is used to assess generalization to un-seen spacecraft. SPEED+ and TANGO instead provide ex-ternal validation of in-domain distillation under challenging illumination and different image distributions; they are not used to claim unseen-spacecraft generalization. On the held-out HJM lockbox set, GeoDistill-Refine improves Image IoU and Boundary F1 by 0.0456 and 0.1380, respectively, over a plain pseudo-label student. Ablation results further support the silhouette-first warm start and reliability-gated signed distance field (SDF) refinement under the evaluated student and loss configuration. The main contributions are as follows: 1. A fixed multi-prompt consensus teacher reduces the instability of single-prompt pseudo-masks and sup-plies more stable spacecraft foreground supervision without introducing the large teacher into deployment. 
+
+Y. Zhang et al.: Preprint submitted to Elsevier Page 1 of 11 arXiv:2608.07405v1 [cs.CV] 7 Aug 2026 GeoDistill-Refine 
+
+2. A silhouette-first two-stage schedule separates initial foreground learning from low-weight geometric re-finement. Under the evaluated TinyUNet configura-tion, it is more effective than optimizing noisy pseudo-geometry jointly from random initialization. 3. A sample-level reliability gate, derived from prompt agreement, the valid-prompt ratio, and pseudo-mask area plausibility, modulates the SDF, skeleton, and area objectives. It reduces the contribution of anoma-lous pseudo-geometry while retaining the majority-voted mask supervision for every training sample. 
+
+## II. Related Work 
+
+A. Spacecraft Segmentation and Generalization to Unseen Targets 
+
+Visual spacecraft perception encompasses target detec-tion, component segmentation, and relative pose estima-tion. The original SPEED challenge established a com-mon synthetic-to-real benchmark and documented the data scarcity and domain gap that distinguish spaceborne vision from terrestrial perception [14]. SPEED+ and TANGO subsequently provided synthetic or hardware-in-the-loop imagery for studying illumination changes and imaging-domain gaps [4, 5], while spacecraft-part datasets sup-port detection and semantic segmentation benchmarks [2]. SpaceSense-Bench broadens the range of spacecraft and sensing modalities and uses a spacecraft-disjoint protocol to emphasize the difficulty of unseen targets and small structures [6]. Many segmentation systems combine encoder–decoder architectures with lightweight backbones to balance contour recovery and computational cost [15, 16, 3]. Most neverthe-less require manual labels and focus on known targets or imaging-domain transfer. Adaptation to previously unseen spacecraft structures in the absence of training masks re-mains less thoroughly studied. 
+
+B. Foundation-Model Pseudo-Labels and Annotation-Free Distillation 
+
+Pseudo-labeling, self-training, and knowledge distilla-tion provide established mechanisms for exploiting unla-beled imagery [17, 18, 19]. Mean Teacher and FixMatch stabilize supervision through temporal averaging or aug-mentation consistency [20, 21]; segmentation methods such as Cross Pseudo Supervision, ST++, and U2PL further use mutual prediction, checkpoint stability, or low-confidence evidence [22, 23, 24]. These methods establish the impor-tance of pseudo-label reliability, but generally remain semi-supervised and estimate quality from model confidence or training-time consistency. Grounding DINO, SAM, SAM 3, and SEEM can pro-duce boxes or masks directly from textual and visual prompts [7, 8, 9, 25], reducing the need for a task-specific teacher. Their frozen predictions nevertheless vary with wording and prompt conditions. A confidence score for one prediction neither measures agreement across valid descriptions nor exposes errors shared by several prompts. In spacecraft vision, foundation models have supported automatic annotation, lightweight student distillation, and prompt-driven capability extension [10, 11, 12]. Existing studies emphasize annotation generation, candidate fusion, or iterative distillation; inter-prompt disagreement and the reliability of geometry derived from pseudo-masks remain less explored. GeoDistill-Refine uses fixed multi-prompt consensus while reserving its reliability estimate for pseudo-geometric supervision, separating prompt stabilization from the treatment of anomalous geometry. 
+
+C. Boundary Modeling and Distance-Field Supervision 
+
+Boundary-aware segmentation complements region ob-jectives with explicit contour or topology cues. Gated-SCNN maintains a dedicated shape stream, distance-transform and boundary losses encode displacement from reference con-tours, and clDice targets the connectivity of thin structures [26, 27, 28, 29, 30]. These approaches extend supervision beyond pixelwise overlap, but their geometric targets are typically derived from manual masks. Related ideas have also been explored for spacecraft segmentation. GABI combines distance information with boundary features for contour recovery under difficult imag-ing conditions [13]. Annotation-free distillation changes the underlying assumption because errors in a pseudo-mask propagate into its SDF, skeleton, and area targets. Apply-ing such objectives without accounting for target reliabil-ity can therefore amplify teacher errors. GeoDistill-Refine addresses this gap by introducing pseudo-geometric super-vision after silhouette learning and modulating it with a sample-level reliability gate. 
+
+## III. Method 
+
+We consider single-frame binary spacecraft foreground segmentation under annotation-free student training. Each input image satisfies 𝐼 𝑖 ∈ ℝ3× 𝐻 ×𝑊 , and the unlabeled training set is 
+
+𝑢 = { 𝐼 𝑖 }𝑁 𝑖 =1 (1) For the unseen-spacecraft evaluation on SpaceSense-Bench, the training and evaluation sets are separated by spacecraft identity. Let tr and ev denote their respective sets of spacecraft. This protocol requires 
+
+tr ∩ ev = ∅ (2) The objective is to learn a student network 𝑓 𝜃 that predicts the foreground logit 𝑍 𝑖 and probability map 𝑃 𝑖 = 𝜎 (𝑍 𝑖 )
+
+from 𝐼 𝑖 . Annotation-free refers only to optimization of the student: manual masks are excluded from the training loss and are used solely for validation-time checkpoint selection, threshold calibration, and final evaluation. As summarized in Fig. 1, GeoDistill-Refine comprises offline pseudo-mask construction, two-stage student distil-lation, and student-only inference. A frozen SAM 3 teacher   
+
+> Y. Zhang et al.: Preprint submitted to Elsevier Page 2 of 11
+
+GeoDistill-Refine Unlabeled RGB 
+
+> SAM3  Teacher
+
+Six fixed prompts 
+
+> Category-level varlants Structure-aware descriptions
+
+Prompt masks 
+
+# ... 
+
+Pseudo-Mask Construction Student Distillation 
+
+Pseudo-mask Stage Ⅰ Stage Ⅱ
+
+Stage Ⅰloss function Stage Ⅱloss function     
+
+> Majority vote
+> Pseudo SDF Pseudo skeleton Area target Sample-level gate g
+> warm-start
+> TinyUNet TinyUNet
+
+Silhouette Distillation Geometry Refinement   
+
+> : Frozen
+> : Trainable
+> 6→1: Vote fusion
+> Mask Head
+> Pseudo-mask Predicted Mask Mask
+> Head
+> SDF Head Skeleton Head Area target
+> Sample-level gate g
+> : Gated by g
+
+Inference 
+
+Unlabeled RGB 
+
+Spacecraft mask 
+
+TinyUNet 
+
+Unlabeled RGB 
+
+> SAM3  Teacher
+
+Six fixed prompts 
+
+> Category-level varlants Structure-aware descriptions
+
+Prompt masks 
+
+# ... 
+
+Pseudo-Mask Construction Student Distillation 
+
+Pseudo-mask Stage Ⅰ Stage Ⅱ
+
+Stage Ⅰloss function Stage Ⅱloss function     
+
+> Majority vote
+> Pseudo SDF Pseudo skeleton Area target Sample-level gate g
+> warm-start
+> TinyUNet TinyUNet
+
+Silhouette Distillation Geometry Refinement   
+
+> : Frozen
+> : Trainable
+> 6→1: Vote fusion
+> Mask Head
+> Pseudo-mask Predicted Mask Mask
+> Head
+> SDF Head Skeleton Head Area target
+> Sample-level gate g
+> : Gated by g
+
+Inference 
+
+Unlabeled RGB 
+
+Spacecraft mask 
+
+TinyUNet         
+
+> ref ine =raw +𝜆 SDF SDF +𝜆 skel skel +𝜆 area area
+
+Figure 1: Overview of GeoDistill-Refine. Six fixed prompts are fused into a pseudo-mask that supplies the silhouette target, pseudo-geometric targets, and sample-level reliability gate. Stage II warm-starts the Stage-I student and adds gated geometry refinement; only the TinyUNet mask path is retained for inference. 
+
+first generates six prompt-specific masks, whose majority vote forms the teacher pseudo-mask. Stage I trains the TinyUNet mask path to learn a binary silhouette. Stage II warm-starts the same student from the selected Stage-I checkpoint and adds pseudo-geometric supervision; the two TinyUNet icons in Fig. 1 therefore denote successive training stages of one student rather than separate deployed models. This is label distillation from hard teacher masks; no teacher features or logits are matched. 
+
+A. Multi-Prompt Consensus-Based Pseudo-Mask Construction 
+
+For each training image, the frozen SAM 3 teacher is queried with six fixed foreground prompts. Four are category-level descriptions— spacecraft , satellite , space probe , and space vehicle —and two add structural context: 
+
+spacecraft with rigid body and appendages and artificial object in space with panels and antennas . Every prompt denotes the complete spacecraft foreground rather than an independent semantic component. The fixed prompt set is 
+
+ = { 𝑝 𝑘 }6
+
+𝑘 =1 (3) The graphical labels 𝑃 1–𝑃 6 in Figs. 1 and 2 identify the six prompts 𝑝 1–𝑝 6 in . In the equations, lowercase 𝑝 𝑘 denotes a text prompt, whereas uppercase 𝑃 𝑖 remains reserved for the student’s foreground probability map. For image 𝐼 𝑖 and prompt 𝑝 𝑘 ∈ , the teacher  returns its highest-scoring candidate mask 𝑀 𝑖𝑘 ∈ {0 , 1} 𝐻 ×𝑊 and the associated score 
+
+𝑠 𝑖𝑘 : (𝑀 𝑖𝑘 , 𝑠 𝑖𝑘 
+
+) =  (𝐼 𝑖 , 𝑝 𝑘 ) (4) Only predictions with 𝑠 𝑖𝑘 > 0 participate in fusion. Let 
+
+𝑖 = { 𝑘 ∣ 𝑠 𝑖𝑘 > 0} be the valid-prompt set. For |𝑖 | > 0, the pixelwise agreement map is 
+
+𝐴 𝑖 (𝑥 ) = 1
+
+|𝑖 |∑
+
+𝑘 ∈𝑖 
+
+𝑀 𝑖𝑘 (𝑥 ) (5) The teacher pseudo-mask is obtained by an unweighted 50% consensus vote: 
+
+𝑀 𝑇 𝑖 (𝑥 ) = 𝕀 [𝐴 𝑖 (𝑥 ) ≥ 0.5] (6) Thus, a tie among the valid prompts is retained as fore-ground; for six valid prompts, at least three foreground votes are required. We retain the conventional term “majority vote” in the experimental tables for brevity. The scores 𝑠 𝑖𝑘 
+
+are not used to reweight individual pixels. If none of the six prompts yields a positive-score prediction, we set 𝐴 𝑖 (𝑥 ) = 0, 𝑀 𝑇 𝑖 (𝑥 ) = 0, and the corresponding geometry gate to zero. Prompt-specific masks, scores, and agreement maps are generated once and cached offline; 𝑀 𝑇 𝑖 is reconstructed according to the rule above when the training sample is loaded. 
+
+B. Compact Student Distillation for Stable Silhouette Learning 
+
+The student is a TinyUNet operating at 384 × 384 res-olution. Its three encoder blocks contain 24, 48, and 96 channels, and the decoder restores spatial resolution through two upsampling levels with skip connections. The mask, SDF, and skeleton heads share the decoded features and produce 𝑃 𝑖 , 𝐷 𝑆 𝑖 , and 𝑍 𝐾 𝑖 , respectively. The area prediction is computed directly from 𝑃 𝑖 and therefore introduces no additional head. Only the mask branch is active in Stage I; the SDF and skeleton heads are initialized at the start of Stage II. Let  index a batch of size 𝐵 . Foreground class imbal-ance is handled by a positive-class weight shared across the batch: 
+
+𝑁 + = max 
+
+(∑
+
+𝑖 ∈
+
+∑
+
+𝑥 
+
+𝑀 𝑇 𝑖 (𝑥 ), 1
+
+)
+
+(7) 
+
+𝑁 − = max 
+
+(∑
+
+𝑖 ∈
+
+∑
+
+𝑥 
+
+[1 − 𝑀 𝑇 𝑖 (𝑥 )] , 1
+
+)
+
+(8) 
+
+𝜋 = clip 
+
+( 𝑁 −
+
+𝑁 +
+
+, 1, 500 
+
+)
+
+(9) 
+
+Y. Zhang et al.: Preprint submitted to Elsevier Page 3 of 11 GeoDistill-Refine SAM3 Majority 
+
+vote 
+
+Unlabeled RGB 
+
+Voted Pseudo-mask 
+
+P1: spacecraft P2: satellite P3: space probe 
+
+P4: space vehicle P5: spacecraft with rigid 
+
+> body and appendages
+> P6: artificial object in space
+> with panels and antennas
+
+score=0.889 score=0.915 score=0.739 score=0.573 score=0.833 score=0.878 
+
+Agreement Multi-prompt pseudo-target construction 
+
+Voted Pseudo-mask Pseudo-SDF Pseudo-skeleton Area-target 
+
+SAM3 Majority 
+
+vote 
+
+Unlabeled RGB 
+
+Voted Pseudo-mask 
+
+P1: spacecraft P2: satellite P3: space probe 
+
+P4: space vehicle P5: spacecraft with rigid 
+
+> body and appendages
+> P6: artificial object in space
+> with panels and antennas
+
+score=0.889 score=0.915 score=0.739 score=0.573 score=0.833 score=0.878 
+
+Agreement Multi-prompt pseudo-target construction 
+
+Voted Pseudo-mask Pseudo-SDF Pseudo-skeleton Area-target 
+
+Figure 2: Multi-prompt pseudo-target construction for an unlabeled Landsat 8 training image. Six fixed prompts produce candidate masks and teacher scores. The valid masks form the agreement map 𝐴 𝑖 , whose 50% consensus vote yields 𝑀 𝑇 𝑖 . The normalized SDF 𝐷 𝑇 𝑖 , skeleton 𝐾 𝑇 𝑖 , and area target 𝑎 𝑖 are then derived from 𝑀 𝑇 𝑖 . The sample-level gate combines foreground agreement 𝑐 𝑖 ,valid-prompt ratio 𝑣 𝑖 , and area plausibility through Eqs. 
+
+The resulting balanced binary cross-entropy is 
+
+BBCE = − 1
+
+𝐵𝐻𝑊 
+
+∑
+
+> 𝑖 ∈
+
+∑
+
+> 𝑥
+
+[𝜋𝑀 𝑇 𝑖 (𝑥 ) log 𝑃 𝑖 (𝑥 )+(1 − 𝑀 𝑇 𝑖 (𝑥 )) log (1 − 𝑃 𝑖 (𝑥 ))] (10) The Dice term is computed per image and then averaged over the batch: 
+
+Dice = 1 − 1
+
+𝐵 
+
+∑
+
+> 𝑖 ∈
+
+2 ∑𝑥 𝑃 𝑖 (𝑥 )𝑀 𝑇 𝑖 (𝑥 ) + 1 
+
+∑𝑥 𝑃 𝑖 (𝑥 ) + ∑𝑥 𝑀 𝑇 𝑖 (𝑥 ) + 1 (11) 
+
+raw = BBCE + 0 .2 Dice (12) Stage I is trained from random initialization for 20 epochs. The checkpoint selected on the validation set supplies the encoder, decoder, and mask-head parameters for Stage II. 
+
+C. Reliability-Aware Pseudo-Geometry Refinement 
+
+The SDF, skeleton, and area targets visualized in Fig. 2 are all derived from the voted pseudo-mask 𝑀 𝑇 𝑖 . Imposing them jointly from random initialization would expose the student to both binary contour errors and their geometric transformations before a stable foreground has formed. Stage II is therefore not reinitialized. Instead, low-weight geomet-ric refinement begins from the Stage-I checkpoint, with the SDF serving as the principal continuous geometric target. Let 𝑑 in (𝑥 ) and 𝑑 out (𝑥 ) be the interior and exterior dis-tance transforms of 𝑀 𝑇 𝑖 , respectively, and define ̃ 𝐷 𝑇 𝑖 =
+
+𝑑 in − 𝑑 out . For a non-degenerate mask, let 𝑞 𝑖 = 𝑞 0.95 (|̃ 𝐷 𝑇 𝑖 |).We set 𝑠 𝑖 = 𝑞 𝑖 when 𝑞 𝑖 ≥ 10 −6 and 𝑠 𝑖 = 1 otherwise. The normalized target is 
+
+𝐷 𝑇 𝑖 (𝑥 ) = 
+
+⎧⎪⎪⎨⎪⎪⎩
+
+0, max 𝑥 𝑀 𝑇 𝑖 (𝑥 ) = 0 ,
+
+1, min 𝑥 𝑀 𝑇 𝑖 (𝑥 ) = 1 ,
+
+clip 
+
+(̃ 𝐷 𝑇 𝑖 (𝑥 )
+
+𝑠 𝑖 
+
+, −1 , 1
+
+)
+
+, otherwise (13) The auxiliary skeleton target 𝐾 𝑇 𝑖 = Skel( 𝑀 𝑇 𝑖 ) consists of local maxima in the interior distance map after removing points whose distance does not exceed one pixel. If a non-empty mask yields no valid skeleton, 𝐾 𝑇 𝑖 falls back to 𝑀 𝑇 𝑖 .For visibility, Fig. 2 overlays this one-pixel skeleton in red on the voted pseudo-mask. The pseudo-foreground area ratio is 
+
+𝑎 𝑖 = 1
+
+𝐻𝑊 
+
+∑
+
+> 𝑥
+
+𝑀 𝑇 𝑖 (𝑥 ) (14) For the Landsat 8 example in Fig. 2, all six prompts are valid and the foreground agreement is 𝑐 𝑖 = 0 .936 . Its pseudo-foreground area is 𝑎 𝑖 = 0 .00230 , approximately 1.17 
+
+times the training-set median 𝑎 0 = 0 .00197 . The resulting factors are 𝑔 conf  
+
+> 𝑖
+
+= 0.902 , 𝑔 valid  
+
+> 𝑖
+
+= 1.000 , and 𝑔 area  
+
+> 𝑖
+
+=0.842 , giving a final reliability weight of 𝑔 𝑖 = 0 .760 . Thus, mutually consistent prompt predictions with a plausible fore-ground area retain substantial pseudo-geometric supervi-sion. More generally, the proxy combines mean agreement 
+
+Y. Zhang et al.: Preprint submitted to Elsevier Page 4 of 11 GeoDistill-Refine 
+
+within the voted foreground 𝑐 𝑖 , the valid-prompt ratio 𝑣 𝑖 , and the pseudo-mask area ratio 𝑎 𝑖 :
+
+𝑐 𝑖 =
+
+⎧⎪⎨⎪⎩∑𝑥 𝐴 𝑖 (𝑥 )𝑀 𝑇 𝑖 (𝑥 )
+
+∑𝑥 𝑀 𝑇 𝑖 (𝑥 ) , ∑𝑥 𝑀 𝑇 𝑖 (𝑥 ) > 0,
+
+0, otherwise (15) 
+
+𝑣 𝑖 = |𝑖 |
+
+6 (16) Let 𝑎 0 denote the median of 𝑎 𝑖 over non-empty training pseudo-masks, and set 𝜀 = 10 −6 for numerical stability. These signals are converted into confidence, valid-prompt, and area-plausibility gate factors. 
+
+𝑔 conf  
+
+> 𝑖
+
+= clip 
+
+( 𝑐 𝑖 − 0 .35 1 − 0 .35 , 0, 1
+
+)
+
+(17) 
+
+𝑔 valid  
+
+> 𝑖
+
+= clip 
+
+( 𝑣 𝑖 − 0 .20 1 − 0 .20 , 0, 1
+
+)
+
+(18) 
+
+𝑔 area  
+
+> 𝑖
+
+= clip 
+
+⎡⎢⎢⎢⎣
+
+exp 
+
+⎛⎜⎜⎜⎝
+
+−
+
+||||log 𝑎 𝑖 +𝜀 𝑎 0+𝜀 
+
+||||
+
+0.9
+
+⎞⎟⎟⎟⎠
+
+, 0.05 , 1
+
+⎤⎥⎥⎥⎦
+
+(19) 
+
+𝑔 𝑖 = clip (𝑔 conf  
+
+> 𝑖
+
+𝑔 valid  
+
+> 𝑖
+
+𝑔 area  
+
+> 𝑖
+
+, 0, 1) (20) The gate 𝑔 𝑖 is applied only to the SDF, skeleton, and area terms, not to the primary segmentation loss. The dashed paths marked “Gated by 𝑔 ” in Fig. 1 denote this selective samplewise modulation; the equations use 𝑔 𝑖 to make the sample index explicit. The gate thresholds were specified without KCP annotations and then fixed for all subsequent evaluations. The SDF head produces 𝐷 𝑆 𝑖 ∈ [−1 , 1] 𝐻 ×𝑊 using a tanh activation. Distance errors near the pseudo-boundary receive greater weight: 
+
+𝐵 𝑖 (𝑥 ) = 𝕀 [|𝐷 𝑇 𝑖 (𝑥 )| ≤ 0.55 ] (21) 
+
+𝑤 SDF  
+
+> 𝑖
+
+(𝑥 ) = 𝑔 𝑖 
+
+[0.15 + 0 .85 𝐵 𝑖 (𝑥 )] (22) 
+
+SDF =
+
+∑𝑖 ∈
+
+∑𝑥 𝑤 SDF  
+
+> 𝑖
+
+(𝑥 ) |||𝐷 𝑆 𝑖 (𝑥 ) − 𝐷 𝑇 𝑖 (𝑥 )|||∑𝑖 ∈
+
+∑𝑥 𝑤 SDF  
+
+> 𝑖
+
+(𝑥 ) + 𝜀 (23) Let 𝑍 𝐾 𝑖 denote the skeleton-head logits. Reusing the batch-level balanced binary cross-entropy operator gives 
+
+skel = BBCE ({𝑍 𝐾 𝑖 }𝑖 ∈, {𝐾 𝑇 𝑖 }𝑖 ∈; { 𝑔 𝑖 }𝑖 ∈
+
+) (24) Here, 𝐾 𝑇 𝑖 is the target, and 𝑔 𝑖 is broadcast as a per-pixel weight within each sample. The positive-class weight is computed from the gated counts of positive and negative skeleton pixels. The area term introduces no separate prediction head. It compares the foreground proportions of the mask probability and the pseudo-mask through a logarithmic ratio error: ̂𝑎 𝑖 = 1
+
+𝐻𝑊 
+
+∑
+
+> 𝑥
+
+𝑃 𝑖 (𝑥 ) (25) 
+
+𝓁 (𝑖 )area =
+
+|||||
+
+log ̂𝑎 𝑖 + 10 −5 
+
+𝑎 𝑖 + 10 −5 
+
+|||||
+
+(26) 
+
+area =
+
+∑𝑖 ∈ 𝑔 𝑖 𝓁 (𝑖 )area 
+
+∑𝑖 ∈ 𝑔 𝑖 + 𝜀 (27) Stage II is warm-started from the Stage-I checkpoint and trained for 10 epochs. The SDF remains the principal geo-metric objective, while the skeleton and area terms act only as low-weight auxiliaries. Let 𝜆 SDF , 𝜆 skel , and 𝜆 area denote the three coefficients displayed schematically in Fig. 1. Be-cause 𝑔 𝑖 is already incorporated samplewise into Eqs. (23), (24), and (27), it is not multiplied a second time after batch aggregation. The primary mask supervision remains ungated: 
+
+ref ine = raw + 𝜆 SDF SDF + 𝜆 skel skel + 𝜆 area area (28) The coefficients are fixed as 𝜆 SDF = 0 .002 , 𝜆 skel = 0 .001 ,and 𝜆 area = 0 .05 . For the default SpaceSense-Bench config-uration, the final model is the Stage-II epoch-10 checkpoint. The quality-adaptive configuration used only for the external evaluations is specified in Section IV.C.2. At inference, an RGB image passes only through the TinyUNet mask path. A threshold 𝜏 fixed on the validation set converts its probability map into the binary spacecraft mask: ̂𝑀 𝑖 (𝑥 ) = 𝕀 [𝑃 𝑖 (𝑥 ) ≥ 𝜏 ] (29) Consequently, SAM 3, the prompt cache, the SDF head, and the skeleton head are absent from deployment; the area term has no prediction head to retain. 
+
+## IV. Experiments 
+
+A. Experimental Setup 
+
+1) Datasets 
+
+Experiments are conducted on SpaceSense-Bench, SPEED+, and TANGO. They respectively examine generalization to unseen spacecraft structures, the stability of pseudo-label distillation under challenging illumination, and validation on an independent dataset. All three datasets are converted to binary spacecraft foreground segmentation, and images are resized to 384 × 384 .
+
+SpaceSense-Bench. Only single-frame RGB images are used, and all non-background classes in the original seman-tic masks are merged into a single spacecraft foreground. The data are divided by spacecraft identity, with no target overlap across subsets. The training set contains 270 images of nine spacecraft, and the validation set contains 60 im-ages of three spacecraft. Evaluation is performed on three additional unseen-spacecraft groups, KCP, CVI, and HJM, each comprising 60 images of three spacecraft. KCP and CVI provide development evidence on two different target combinations, with KCP also used for ablation. HJM is reserved as a lockbox set after the method has been frozen. 
+
+SPEED+. The Lightbox and Sunlamp hardware-in-the-loop domains are used to evaluate segmentation under diffuse and strong direct illumination. For each domain,   
+
+> Y. Zhang et al.: Preprint submitted to Elsevier Page 5 of 11 GeoDistill-Refine
+
+500 fixed images form the unlabeled training set, and non-overlapping validation and test subsets are drawn from the remaining images. Separate students and thresholds are used for the two domains. These experiments assess in-domain pseudo-label distillation under difficult illumination; they do not support claims of cross-spacecraft or cross-domain generalization. 
+
+TANGO. A fixed set of 500 images from the official training split is used as unlabeled training data, and a disjoint set of 500 images is used for validation. The official test set of 3,002 images is left unchanged and used only for final evaluation. TANGO tests whether similar behavior is observed under an independent acquisition setup and image distribution. The strict Annotation-Free reproduction retains its original teacher and pseudo-label processing pipeline. GeoDistill-Refine and its controlled comparisons update the student using only RGB images, SAM 3 voted pseudo-masks, and the corresponding pseudo-label processing outputs. No annotation-free method uses manual masks for student updates; manual segmentation masks are restricted to validation-time model selection, threshold calibration, and final evaluation. 
+
+2) Training Details 
+
+The frozen SAM 3 teacher generates six prompt-specific predictions in advance, and their 50% consensus vote serves as the foreground pseudo-label. Plain Student and GeoDistill-Refine share the same TinyUNet and preprocessing. In the default SpaceSense-Bench protocol, Plain Student under-goes Stage-I silhouette learning only, whereas GeoDistill-Refine continues from the corresponding Stage-I checkpoint for Stage-II geometric refinement. Both stages use AdamW with a batch size of 4 and weight decay of 10 −4 . For the default SpaceSense-Bench protocol, Stage I is trained from random initialization for 20 epochs with an initial learning rate of 5 × 10 −4 , and Stage II runs for another 10 epochs with an initial learning rate of 10 −4 . The quality-adaptive external protocol and its checkpoint candidates are described in Section IV.C.2. Main results use random seeds 42, 3407, and 2026; mechanistic ablations use seed 42 unless stated otherwise. The binarization threshold is selected by Image IoU on the corresponding validation set and then applied unchanged to the test set. All experiments use PyTorch 2.5.1 and an NVIDIA GeForce RTX 4090 GPU. 
+
+3) Metrics and Statistical Analysis 
+
+The primary metrics are mean image-level intersection over union (Image IoU) and Boundary F1. Image IoU mea-sures regional overlap between the predicted and reference foregrounds. Boundary F1 uses a two-pixel tolerance at 
+
+384 × 384 resolution and evaluates boundary displacement, contour gaps, and segmentation of slender structures. Foreground precision and recall are also reported to di-agnose over-segmentation and missed foreground. Predicted foreground area ratio and Small-region IoU are used as                  
+
+> Table 1
+> Pseudo-mask quality of different teacher prompting configurations on SpaceSense-Bench KCP.
+> Teacher configuration Image IoU Boundary F1 Precision Recall Base prompt: spacecraft 0.4743 0.5374 0.5137 0.5069 Validation-selected single prompt 0.5691 0.6456 0.6243 0.6065 Mean over six single prompts 0.3462 ±0 .2423 0.3934 ±0 .2745 0.3726 ±0 .2625 0.3734 ±0 .2602
+> Six-prompt majority vote 0.6833 0.7794 0.7375 0.7403
+
+supplementary diagnostics; the latter is computed only for SpaceSense-Bench. Main student results are reported as the mean and stan-dard deviation over three random seeds. For the SpaceSense-Bench controlled comparisons in Table 4, 95% confidence intervals are estimated from matched per-image outputs us-ing 10 000 paired hierarchical bootstrap resamples. External reproduced baselines for which only run-level summary statistics are available are compared descriptively through their means and standard deviations; no paired significance test is claimed. The primary Plain Student versus GeoDistill-Refine comparison on KCP is additionally evaluated at a fixed threshold of 0.5 to assess sensitivity to threshold cali-bration. 
+
+B. Multi-Prompt Teacher and Pseudo-Label Quality Analysis 
+
+1) Effectiveness of Multi-Prompt Fusion 
+
+The six fixed prompts are first evaluated on the SpaceSense-Bench validation set. The KCP development set is then used to compare the base prompt spacecraft , the validation-selected prompt, the mean across independent single-prompt evaluations, and six-prompt majority voting. The validation-selected prompt is spacecraft with rigid body and appendages . KCP annotations are not involved in prompt selection, and no student is trained in this analysis. The “mean over six single prompts” in Table 1 is the arithmetic mean and sample standard deviation of six inde-pendently evaluated single-prompt configurations ( 𝑛 = 6 ); it is not a mask-fusion result. The large dispersion shows sensitivity to wording. Relative to the validation-selected prompt, majority voting increases Image IoU and Boundary F1 by 0.1142 and 0.1338, respectively, a result consistent with complementary predictions across prompts. This voting rule is fixed for all subsequent experiments. Results for the remaining prompts and fusion variants are deferred to the supplementary material, and no claim of universal optimal-ity is made. Figure 3 uses examples in which the spacecraft naturally occupies 33.8%, 15.8%, and 26.9% of the full image, avoid-ing apparent enlargement from region-of-interest cropping. Voting raises pseudo-mask IoU from 0.920 to 0.966, from 0.838 to 0.917, and from 0.772 to 0.816 in rows (a)–(c), respectively. The vote-difference maps localize the added foreground responsible for these gains, while the intermedi-ate 𝐴 𝑖 (𝑥 ) values identify boundaries or structures on which   
+
+> Y. Zhang et al.: Preprint submitted to Elsevier Page 6 of 11
+
+GeoDistill-Refine RGB       
+
+> Selected single prompt
+> Vote difference
+> Six-prompt vote
+> Foreground consensus Ai(x)GT + boundary
+> 0.0 0.5 1.0
+> Foreground consensus  Ai(x)
+> (a) Boundary (b) Glare (c) Structure
+> TP FP FN Added by vote Removed by vote
+
+Figure 3: Qualitative analysis of multi-prompt pseudo-mask construction on full-frame SPEED+ images. The validation-selected single prompt is fixed for all cases. Green, red, and blue indicate true positives, false positives, and false negatives; yellow and magenta in the vote-difference maps indicate foreground added and removed by voting. 𝐴 𝑖 (𝑥 ) visualizes foreground consensus, and yellow contours mark ground-truth boundaries. Rows (a)–(c) show boundary completion, glare recovery, and structure recovery. Ground truth is used only for post-hoc visualization. 
+
+Table 2 
+
+Multi-prompt teacher pseudo-mask quality across datasets and imaging domains.                    
+
+> Dataset/domain Image IoU Boundary F1 Precision Recall SpaceSense-Bench (KCP) 0.6833 0.7794 0.7375 0.7403 SPEED+ Lightbox 0.7721 0.7600 0.8823 0.7925 SPEED+ Sunlamp 0.6235 0.5892 0.6725 0.6508 TANGO 0.3324 0.3768 0.3858 0.3468
+
+the valid prompts disagree. Thus, voting reduces prompt-specific omissions without implying that foreground consen-sus is a calibrated correctness estimate; prompt-consistent teacher errors can still remain. 
+
+2) Pseudo-Label Quality and Reliability Analysis 
+
+Multi-prompt voting does not remove errors caused by target scale, slender structures, or difficult illumination. Us-ing the same prompt configuration, Table 2 shows strong overlap and precision on Lightbox, degradation on Sun-lamp, and both false positives and missed foreground on TANGO. KCP has lower Image IoU than Lightbox but the highest Boundary F1. These within-domain measurements show that regional and boundary noise need not vary to-gether, making uniform pseudo-geometric supervision ques-tionable. The gate 𝑔 𝑖 is analyzed post hoc on KCP using manual masks only to measure teacher quality; its inputs and param-eters do not use KCP annotations. Its Spearman correlations with teacher Image IoU and Boundary F1 are 0.4230 (𝑝 =7.58 × 10 −4 ) and 0.5305 (𝑝 = 1 .30 × 10 −5 ). Because 18 samples have 𝑔 𝑖 = 0 and the remaining 42 occupy a high-quality range, Table 3 reports the actual gating states rather than equal-sized tertiles. 
+
+Table 3 
+
+Teacher pseudo-mask quality for samples suppressed or retained by the reliability gate.            
+
+> Gating state Images Teacher Image IoU Teacher Boundary F1
+> 𝑔 𝑖 = 0 : geometry suppressed 18 0.2853 0.3258
+> 𝑔 𝑖 >0: geometry enabled 42 0.8539 0.9738
+
+The suppressed group has substantially lower teacher quality, indicating that the gate identifies anomalous pseudo-labels rather than providing a calibrated continuous quality estimate. This KCP analysis is mechanistic evidence only. During training, 𝑔 𝑖 modulates the pseudo-geometric losses, while all voted masks remain in the primary segmentation loss, motivating the refinement evaluated next. 
+
+C. Student Distillation and Multi-Dataset Evaluation 
+
+1) Results on Unseen Spacecraft in SpaceSense-Bench 
+
+Table 4 compares Plain Student, two pseudo-label pro-cessing baselines, a GABI-inspired pseudo-geometry base-line, and GeoDistill-Refine under a common protocol. All controlled methods share TinyUNet, teacher predictions, and unlabeled training images, except that the GABI-inspired baseline follows its joint-training formulation and is opti-mized from scratch. Results are means and standard devi-ations over three random seeds, and gains are calculated relative to Plain Student. GeoDistill-Refine improves both Image IoU and Bound-ary F1 on KCP, CVI, and HJM. Relative to Plain Student, the gains are 0.0576 and 0.1017 on KCP and 0.0630 and 0.1376 on CVI. These two development sets show similar behavior for different combinations of unseen targets. 
+
+Y. Zhang et al.: Preprint submitted to Elsevier Page 7 of 11 GeoDistill-Refine 
+
+Table 4 
+
+Segmentation results on the SpaceSense-Bench KCP and CVI development sets and HJM lockbox set. 
+
+Evaluation set Method Image IoU Boundary F1 Image IoU gain and 95% CI KCP Plain Student 0.5235 ± 0 .0458 0.7173 ± 0 .0974 –Confidence-Filtered Student 0.5022 ± 0 .0638 0.6920 ± 0 .0826 −0 .0213 [−0 .0805 , 0.0426] 
+
+Annotation-Free-style Control 0.5118 ± 0 .0564 0.7056 ± 0 .0792 −0 .0117 [−0 .0612 , 0.0385] 
+
+GABI-inspired Pseudo-Geometry 0.5509 ± 0 .0199 0.7621 ± 0 .0151 +0 .0274 [−0 .0177 , 0.0831] 
+
+GeoDistill-Refine 𝟎 .𝟓𝟖𝟏𝟏 ± 𝟎 .𝟎𝟐𝟗𝟎 𝟎 .𝟖𝟏𝟖𝟗 ± 𝟎 .𝟎𝟓𝟑𝟒 +0 .0576 [0 .0351 , 0.0813] 
+
+CVI Plain Student 0.3442 ± 0 .0607 0.6013 ± 0 .1054 –Confidence-Filtered Student 0.3496 ± 0 .0617 0.6133 ± 0 .0927 +0 .0055 [−0 .0374 , 0.0448] 
+
+Annotation-Free-style Control 0.3568 ± 0 .0561 0.6237 ± 0 .0869 +0 .0126 [−0 .0294 , 0.0551] 
+
+GABI-inspired Pseudo-Geometry 0.3743 ± 0 .0179 0.6801 ± 0 .0435 +0 .0302 [−0 .0302 , 0.1113] 
+
+GeoDistill-Refine 𝟎 .𝟒𝟎𝟕𝟑 ± 𝟎 .𝟎𝟒𝟐𝟐 𝟎 .𝟕𝟑𝟖𝟗 ± 𝟎 .𝟎𝟓𝟖𝟖 +0 .0630 [0 .0166 , 0.1140] 
+
+HJM Plain Student 0.3437 ± 0 .0570 0.4689 ± 0 .1358 –Confidence-Filtered Student 0.3479 ± 0 .0603 0.4970 ± 0 .1291 +0 .0042 [−0 .0273 , 0.0315] 
+
+Annotation-Free-style Control 0.3534 ± 0 .0548 0.5127 ± 0 .1113 +0 .0097 [−0 .0236 , 0.0430] 
+
+GABI-inspired Pseudo-Geometry 0.3646 ± 0 .0332 0.5464 ± 0 .0586 +0 .0209 [−0 .0384 , 0.0928] 
+
+GeoDistill-Refine 𝟎 .𝟑𝟖𝟗𝟑 ± 𝟎 .𝟎𝟐𝟖𝟎 𝟎 .𝟔𝟎𝟔𝟗 ± 𝟎 .𝟎𝟓𝟓𝟓 +0 .0456 [0 .0107 , 0.0835] 
+
+Table 5 
+
+Student segmentation results on SPEED+ Lightbox, SPEED+ Sunlamp, and TANGO. 
+
+Data domain Method Image IoU Boundary F1 Precision Recall Lightbox Annotation-Free Reproduction 𝟎 .𝟔𝟎𝟑𝟓 ± 𝟎 .𝟎𝟏𝟒𝟖 0.4587 ± 0 .0215 0.7984 ± 0 .0173 0.7368 ± 0 .0196 
+
+Plain Student 0.5419 ± 0 .0052 0.4089 ± 0 .0472 0.7482 ± 0 .0156 0.6890 ± 0 .0133 
+
+Confidence-Filtered Student 0.5554 ± 0 .0125 0.3734 ± 0 .0359 0.7070 ± 0 .0143 0.7362 ± 0 .0048 
+
+Annotation-Free-style Control 0.5648 ± 0 .0136 0.3839 ± 0 .0314 0.7188 ± 0 .0179 𝟎 .𝟕𝟒𝟏𝟓 ± 𝟎 .𝟎𝟏𝟏𝟐 
+
+GABI-inspired Pseudo-Geometry 0.5671 ± 0 .0174 0.4071 ± 0 .0116 0.7444 ± 0 .0135 0.7233 ± 0 .0346 
+
+GeoDistill-Refine 0.5983 ± 0 .0082 𝟎 .𝟒𝟖𝟏𝟑 ± 𝟎 .𝟎𝟏𝟐𝟔 𝟎 .𝟖𝟐𝟗𝟒 ± 𝟎 .𝟎𝟎𝟔𝟓 0.7237 ± 0 .0188 
+
+Sunlamp Annotation-Free Reproduction 𝟎 .𝟔𝟖𝟗𝟏 ± 𝟎 .𝟎𝟏𝟐𝟕 0.5628 ± 0 .0184 0.8059 ± 0 .0131 𝟎 .𝟖𝟑𝟖𝟐 ± 𝟎 .𝟎𝟏𝟔𝟕 
+
+Plain Student 0.6426 ± 0 .0121 0.5169 ± 0 .0235 0.7662 ± 0 .0096 0.7894 ± 0 .0091 
+
+Confidence-Filtered Student 0.6330 ± 0 .0237 0.5178 ± 0 .0144 0.7617 ± 0 .0183 0.7784 ± 0 .0234 
+
+Annotation-Free-style Control 0.6417 ± 0 .0204 0.5226 ± 0 .0188 0.7664 ± 0 .0162 0.7879 ± 0 .0215 
+
+GABI-inspired Pseudo-Geometry 0.6556 ± 0 .0091 0.5323 ± 0 .0140 0.7771 ± 0 .0158 0.7997 ± 0 .0052 
+
+GeoDistill-Refine 0.6823 ± 0 .0112 𝟎 .𝟓𝟕𝟔𝟐 ± 𝟎 .𝟎𝟏𝟏𝟏 𝟎 .𝟖𝟏𝟒𝟖 ± 𝟎 .𝟎𝟎𝟖𝟔 0.8354 ± 0 .0172 
+
+TANGO Annotation-Free Reproduction 𝟎 .𝟖𝟔𝟔𝟏 ± 𝟎 .𝟎𝟎𝟕𝟏 𝟎 .𝟗𝟏𝟗𝟎 ± 𝟎 .𝟎𝟎𝟔𝟑 0.9372 ± 0 .0126 0.9254 ± 0 .0118 
+
+Plain Student 0.7570 ± 0 .0343 0.8703 ± 0 .0298 0.8491 ± 0 .0527 0.8975 ± 0 .0868 
+
+Confidence-Filtered Student 0.8537 ± 0 .0068 0.8973 ± 0 .0049 0.9261 ± 0 .0207 0.9178 ± 0 .0173 
+
+Annotation-Free-style Control 0.8584 ± 0 .0079 0.9011 ± 0 .0068 0.9297 ± 0 .0191 0.9208 ± 0 .0157 
+
+GABI-inspired Pseudo-Geometry 0.7954 ± 0 .0531 0.8979 ± 0 .0087 0.9105 ± 0 .0211 0.8721 ± 0 .0537 
+
+GeoDistill-Refine 0.8642 ± 0 .0064 0.9126 ± 0 .0115 𝟎 .𝟗𝟔𝟏𝟖 ± 𝟎 .𝟎𝟎𝟏𝟖 𝟎 .𝟗𝟐𝟖𝟐 ± 𝟎 .𝟎𝟖𝟎𝟕 
+
+On the HJM lockbox set, Image IoU and Boundary F1 in-crease by 0.0456 and 0.1380, with corresponding 95% con-fidence intervals of [0 .0107 , 0.0835] and [0 .0422 , 0.2496] .Relative to the GABI-inspired baseline, GeoDistill-Refine gains 0.0302, 0.0330, and 0.0247 Image IoU across the three evaluation groups, together with 0.0568, 0.0588, and 0.0605 Boundary F1. The differences from this baseline were not subjected to separate significance tests. 
+
+2) External Validation on SPEED+ and TANGO 
+
+SPEED+ Lightbox, SPEED+ Sunlamp, and TANGO test in-domain distillation stability under different labora-tory imaging conditions and consistency on an indepen-dent dataset. They do not evaluate generalization to unseen spacecraft identities. Pseudo-labels, students, checkpoints, and thresholds are produced independently for each domain. For these external domains, we evaluate a pre-specified quality-adaptive extension rather than applying the fixed SpaceSense-Bench schedule unchanged. The proportions of pseudo-labels passing the confidence criterion in the Lightbox, Sunlamp, and TANGO training sets are 0.724, 0.544, and 0.308, respectively. Weak region anchoring to the frozen Stage-I prediction is retained for the first two domains. For TANGO, the Stage-II pseudo-mask region loss is disabled, and the unrefined Stage-I checkpoint, denoted as Stage-II epoch 0, remains eligible for model selection. This adaptation changes the region supervision and check-point candidate set but retains the frozen teacher, pseudo-geometric targets, and reliability gate. Its operating mode is determined only from training pseudo-label statistics using a fixed boundary of 0.5. Table 5 reports three-seed results; test annotations are not used for training or model selection. Relative to the external reproduction baseline, GeoDistill-Refine is lower by 0.0052 and 0.0068 Image IoU on Lightbox and Sunlamp, respectively, while improving Boundary F1 by 0.0226 and 0.0134 and precision by 0.0310 and 0.0089. On TANGO, Image IoU and Boundary F1 are lower by 0.0019 and 0.0064, whereas precision and recall increase by 0.0246 and 0.0028. These are descriptive differences between means and are not interpreted as statistically significant. Among methods using the same SAM 3 teacher and TinyUNet protocol, the quality-adaptive GeoDistill-Refine configuration achieves the highest mean Image IoU, Bound-ary F1, and precision in all three domains. The complete external configuration yields its clearest descriptive gains in 
+
+Y. Zhang et al.: Preprint submitted to Elsevier Page 8 of 11 GeoDistill-Refine RGB + ROI        
+
+> Voted pseudo-mask
+> Plain Student GeoDistill-Refine
+> Ground Truth
+> Boundary comparison
+> (a) Boundary refinement (b) Thin-structure recovery (c) Contour refinement (d) Failure under glare
+> Mask errors TP FP FN Mask errors TP FP FN Boundaries GT Plain GeoDistill
+
+Figure 4: Qualitative comparison of Plain Student and GeoDistill-Refine on KCP using the seed-42 checkpoints and validation-calibrated thresholds. Yellow boxes identify identical visualization crops. Green, red, and blue in the student panels indicate true positives, false positives, and false negatives; green, orange, and blue contours denote ground truth, Plain Student, and GeoDistill-Refine. Rows (a)–(c) show boundary refinement on Kepler, thin-structure recovery on Philae, and contour refinement on Chandra; row (d) shows a Kepler failure under severe glare. All metrics are computed on full frames. 
+
+Table 6 
+
+Computational efficiency of the teacher and deployed student.           
+
+> Model Parameters Latency (ms/image) Throughput (image/s) Peak memory (MB) SAM 3 teacher 840.5 M 447.9 2.23 4234.0 TinyUNet student 0.263 M 1.1 900 102.7
+
+boundary quality and false-positive control; the experiments do not isolate the effect of region anchoring alone. 
+
+3) Robustness, Efficiency, and Qualitative Results 
+
+At the fixed KCP threshold 𝜏 = 0 .5, GeoDistill-Refine increases Image IoU from 0.5125 ± 0 .0560 to 0.5491 ± 0.0378 , Boundary F1 from 0.6863 ± 0 .1313 to 0.7581 ± 0.0841 , and recall from 0.8117 ± 0 .0343 to 0.8826 ± 0 .0294 .The gains therefore persist without model-specific threshold calibration. Deployment retains only the TinyUNet segmentation path. The student contains approximately 0.263 M parame-ters and 18.22 GFLOPs and requires about 1.1 ms per image on the RTX 4090. The six-prompt SAM 3 teacher contains 840.5 M parameters and requires 447.9 ms per image. Both the teacher and pseudo-geometry construction are confined to offline training. Plain Student and GeoDistill-Refine share the same de-ployed mask path. Table 6 excludes the training-only SDF and skeleton heads, and latency excludes disk input. The measurements characterize relative cost on the RTX 4090 and should not be interpreted as onboard-processor perfor-mance. Figure 4 localizes the improvements summarized by the aggregate metrics. In rows (a)–(c), GeoDistill-Refine improves Image IoU by 0.114, 0.047, and 0.078 and Bound-ary F1 by 0.344, 0.057, and 0.202, respectively. The thin-structure example also raises small-region IoU from 0.286 to 0.929. Under the intense glare in row (d), however, Image IoU decreases from 0.228 to 0.177 and Boundary F1 from 0.905 to 0.742. Both students inherit the teacher-derived systematic foreground omission in this case, showing that pseudo-geometric refinement cannot recover structures ab-sent from the pseudo-supervision. 
+
+D. Ablation of Geometry Refinement 
+
+1) Effect of Silhouette-First Warm-Start Refinement 
+
+Mechanistic ablations use random seed 42 on the SpaceSense-Bench KCP development set. Data, pseudo-labels, student architecture, and threshold calibration remain fixed. These experiments diagnose the training mechanism and do not replace the three-seed main results. 
+
+Y. Zhang et al.: Preprint submitted to Elsevier Page 9 of 11 GeoDistill-Refine 
+
+Table 7 
+
+Ablation of silhouette-first warm-start refinement on KCP.                                  
+
+> Training configuration Stage IStage II Total epochs Image IoU Boundary F1 Plain Student 20 –20 0.5697 0.8024 Full geometry, from scratch –10 10 0.4509 0.6329 Full geometry, from scratch –30 30 0.5645 0.7876 SDF only, from scratch –10 10 0.5214 0.7083 Stage I →gated SDF 20 10 30 0.5979 0.8622 GeoDistill-Refine 20 10 30 0.6056 0.8683
+
+Joint training with the full geometric objective from scratch yields only 0.4509 Image IoU after 10 epochs. Ex-tending it to the same 30-epoch budget produces 0.5645 Image IoU and 0.7876 Boundary F1, still below the two-stage result of 0.6056 and 0.8683. Training with only the SDF from scratch is also weaker than the Stage-I warm start: the former obtains 0.5214 and 0.7083, whereas the latter reaches 0.5979 and 0.8622. Under the present architecture and loss configuration, establishing the primary silhouette before introducing noisy pseudo-geometry is therefore more effective than joint optimization from random initialization. This observation is not generalized to other architectures or geometric objectives. 
+
+2) Geometric Components and Reliability Gating 
+
+Table 8 compares the geometric components and relia-bility gate using the same Stage-I checkpoint, 10 refinement epochs, and threshold-calibration protocol. Gated SDF is the strongest reduced configuration, iden-tifying SDF as the principal signal in this setup. The full model adds 0.0077 Image IoU and 0.0061 Boundary F1, but area and skeleton show no monotonic standalone gain.Removing the gate lowers Image IoU from 0.6056 to 0.5917 and Boundary F1 from 0.8683 to 0.8588, supporting its role in limiting anomalous pseudo-geometry. The independent effects of the skeleton and area auxiliaries remain unresolved in this single-seed ablation. 
+
+## V. Conclusion 
+
+GeoDistill-Refine distills offline multi-prompt SAM 3 pseudo-masks into a compact spacecraft foreground seg-menter without using manual masks for student updates. Its two-stage schedule first learns the foreground silhouette and then introduces reliability-gated SDF, skeleton, and area supervision. On the pre-reserved HJM lockbox set, this design improves Image IoU and Boundary F1 by 0.0456 and 0.1380 over Plain Student. The KCP ablations suggest that the silhouette-first warm start and gated SDF account for most of the observed refinement benefit under the current TinyUNet configuration. SPEED+ and TANGO provide complementary evidence on difficult laboratory imagery, where the quality-adaptive configuration improves boundary quality or foreground precision but does not exceed the external reproduction baseline on every metric. The deployed model contains approximately 0.263 M parameters and requires about 1.1 ms per image on an RTX 
+
+Table 8 
+
+Ablation of geometric components and reliability gating on KCP.                        
+
+> Refinement configuration SDF Skel. Area Gate IoU BF1 Gated SDF only ✓✓0.5979 0.8622 Gated SDF + skeleton ✓✓✓0.5487 0.7992 Gated SDF + area ✓✓✓0.5855 0.8437 SDF + skeleton + area, no gate ✓✓✓0.5917 0.8588 GeoDistill-Refine ✓✓✓✓0.6056 0.8683
+
+4090; the teacher and auxiliary geometry heads are absent from inference. The evidence is limited to binary segmen-tation with validation masks used for checkpoint selection and threshold calibration. Only SpaceSense-Bench supports conclusions about unseen spacecraft identities, and the in-dependent contributions of the skeleton and area objectives remain unresolved. 
+
+## References 
+
+[1] Pauly, L., Rharbaoui, W., Shneider, C., Rathinam, A., Gaudilliere, V., Aouada, D., 2023. A survey on deep learning-based monocular spacecraft pose estimation: Current state, limitations and prospects. Acta Astronautica 212, 339–360. [2] Dung, H.A., Chen, B., Chin, T.J., 2021. A spacecraft dataset for detection, segmentation and parts recognition, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pp. 2012–2019. [3] Muniyasamy, S., Devasundaram, S., 2026. Segmentation-based detection for efficient multi-task spacecraft perception. 
+
+> arXiv:2606.15409
+
+.[4] Park, T.H., Märtens, M., Lecuyer, G., Izzo, D., D’Amico, S., 2022. SPEED+: Next-generation dataset for spacecraft pose estimation across domain gap, in: 2022 IEEE Aerospace Conference, IEEE. pp. 1–15. [5] Bechini, M., Lavagna, M., Lunghi, P., 2023. Dataset generation and validation for spacecraft pose estimation via monocular images processing. Acta Astronautica 204, 358–369. [6] Wu, A., Zuo, J., Zhao, Z., Luo, X., Wang, R., Wan, X., 2026. SpaceSense-Bench: A large-scale multi-modal benchmark for space-craft perception and pose estimation. arXiv:2603.09320 .[7] Liu, S., Zeng, Z., Ren, T., Li, F., Zhang, H., Yang, J., Jiang, Q., Li, C., Yang, J., Su, H., Zhu, J., Zhang, L., 2024. Grounding DINO: Marrying DINO with grounded pre-training for open-set object detection, in: European Conference on Computer Vision. [8] Kirillov, A., Mintun, E., Ravi, N., Mao, H., Rolland, C., Gustafson, L., Xiao, T., Whitehead, S., Berg, A.C., Lo, W.Y., Dollár, P., Girshick, R., 2023. Segment anything, in: Proceedings of the IEEE/CVF International Conference on Computer Vision, pp. 4015–4026. [9] Carion, N., et al., 2025. SAM 3: Segment anything with concepts. 
+
+> arXiv:2511.16719
+
+.[10] Zhang, Z., Dang, Z., 2024. Automatic segmentation annotation of space target using segment anything model and object detection prompts. IEEE Transactions on Aerospace and Electronic Systems . [11] Hicsonmez, S., Sosa, J., Pineau, D., Singh, I.P., Rathinam, A., Shabayek, A.E.R., Aouada, D., 2026. Annotation free space-craft detection and segmentation using vision language models. 
+
+> arXiv:2602.04699
+
+.[12] Welsh, N.A., Shikhman, L.J., Attazs, M.N., Putane, S.K., Nguyen, V.M., White, R.T., 2026. Post-launch capability expansion of vision-language models via prompting for on-orbit spacecraft inspection. 
+
+> arXiv:2606.15427
+
+.[13] Velentzas, I.G., Ahuja, D., Tsiotras, P., 2026. GABI: Geometry-aware boundary integration for spacecraft segmentation, in: Proceedings of 
+
+Y. Zhang et al.: Preprint submitted to Elsevier Page 10 of 11 GeoDistill-Refine 
+
+the IEEE/CVF Conference on Computer Vision and Pattern Recogni-tion Workshops, pp. 10415–10424. [14] Kisantal, M., Sharma, S., Park, T.H., Izzo, D., Märtens, M., D’Amico, S., 2020. Satellite pose estimation challenge: Dataset, competition design, and results. IEEE Transactions on Aerospace and Electronic Systems 56, 4083–4098. doi: 10.1109/TAES.2020.2989063 .[15] Ronneberger, O., Fischer, P., Brox, T., 2015. U-Net: Convolutional networks for biomedical image segmentation, in: Medical Image Computing and Computer-Assisted Intervention, pp. 234–241. [16] Howard, A., Sandler, M., Chu, G., Chen, L.C., Chen, B., Tan, M., Wang, W., Zhu, Y., Pang, R., Vasudevan, V., Le, Q.V., Adam, H., 2019. Searching for MobileNetV3, in: Proceedings of the IEEE/CVF International Conference on Computer Vision, pp. 1314–1324. [17] Lee, D.H., 2013. Pseudo-label: The simple and efficient semi-supervised learning method for deep neural networks, in: ICML Workshop on Challenges in Representation Learning. [18] Xie, Q., Luong, M.T., Hovy, E., Le, Q.V., 2020. Self-training with noisy student improves ImageNet classification, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pp. 10687–10698. [19] Hinton, G., Vinyals, O., Dean, J., 2015. Distilling the knowledge in a neural network. arXiv:1503.02531 .[20] Tarvainen, A., Valpola, H., 2017. Mean teachers are better role mod-els: Weight-averaged consistency targets improve semi-supervised deep learning results, in: Advances in Neural Information Processing Systems. [21] Sohn, K., Berthelot, D., Li, C.L., Zhang, Z., Carlini, N., Cubuk, E.D., Kurakin, A., Zhang, H., Raffel, C., 2020. FixMatch: Simplifying semi-supervised learning with consistency and confidence, in: Ad-vances in Neural Information Processing Systems, pp. 596–608. [22] Chen, X., Yuan, Y., Zeng, G., Wang, J., 2021. Semi-supervised semantic segmentation with cross pseudo supervision, in: Proceed-ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pp. 2613–2622. [23] Yang, L., Zhuo, W., Qi, L., Shi, Y., Gao, Y., 2022. ST++: Make self-training work better for semi-supervised semantic segmentation, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pp. 4268–4277. [24] Wang, Y., Wang, H., Shen, Y., Fei, J., Li, W., Jin, G., Wu, L., Zhao, R., Le, X., 2022. Semi-supervised semantic segmentation using unreliable pseudo-labels, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pp. 4248– 4257. [25] Zou, X., Yang, J., Zhang, H., Li, F., Li, L., Wang, J., Wang, L., Gao, J., Lee, Y.J., 2023. Segment everything everywhere all at once, in: Advances in Neural Information Processing Systems. [26] Takikawa, T., Acuna, D., Jampani, V., Fidler, S., 2019. Gated-SCNN: Gated shape CNNs for semantic segmentation, in: Proceedings of the IEEE/CVF International Conference on Computer Vision, pp. 5229– 5238. [27] Audebert, N., Boulch, A., Le Saux, B., Lefèvre, S., 2019. Distance transform regression for spatially-aware deep semantic segmentation. Computer Vision and Image Understanding 189, 102809. [28] Chai, D., Newsam, S., Huang, J., 2020. Aerial image semantic segmentation using DCNN predicted distance maps. ISPRS Journal of Photogrammetry and Remote Sensing 161, 309–322. [29] Kervadec, H., Bouchtiba, J., Desrosiers, C., Granger, E., Dolz, J., Ben Ayed, I., 2021. Boundary loss for highly unbalanced segmen-tation. Medical Image Analysis 67, 101851. doi: 10.1016/j.media. 2020.101851 .[30] Shit, S., Paetzold, J.C., Sekuboyina, A., Ezhov, I., Unger, A., Zhylka, A., Pluim, J.P.W., Bauer, U., Menze, B.H., 2021. clDice: A novel topology-preserving loss function for tubular structure segmentation, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pp. 16560–16569. doi: 10.1109/CVPR46437. 2021.01629 .
+
+Y. Zhang et al.: Preprint submitted to Elsevier Page 11 of 11
