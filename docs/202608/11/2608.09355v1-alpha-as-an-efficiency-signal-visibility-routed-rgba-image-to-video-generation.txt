@@ -1,0 +1,1141 @@
+Title: Alpha as an Efficiency Signal: Visibility-Routed RGBA Image-to-Video Generation
+
+URL Source: https://arxiv.org/pdf/2608.09355v1
+
+Published Time: Tue, 11 Aug 2026 02:42:24 GMT
+
+Number of Pages: 25
+
+Markdown Content:
+## Alpha as an Efficiency Signal: Visibility-Routed RGBA Image-to-Video Generation 
+
+Zhe Li 1,2 ∗, Honghao Qiao 2, Zhixin Xu 2, Qijie Wang 2,3 ∗, Bo Peng 2, Dawei Li 2†
+
+> 1
+
+Peking University, 2ByteDance, 3Tsinghua University 
+
+Abstract 
+
+RGBA videos combine RGB appearance with an alpha chan-nel, enabling animated assets to be applied across arbi-trary backgrounds, which are heavily used in gaming in-dustry. However, generating high-quality RGBA animations for games remains challenging for two reasons. First, most existing RGBA video datasets are dominated by photore-alistic content, with limited coverage of game assets. Sec-ond, the traditional generate-then-matte pipelines estimate al-pha only after RGB synthesis, so semi-transparent regions are often blurred by background, resulting in unstable mat-ting outputs. More recently, many methods have begun to model RGB and alpha jointly, but existing approaches are mostly text-conditioned, and still have unresolved issues in efficiency and quality. To address these challenges, we intro-duce GameAlpha-2.4K , a 2.4K-clip game-style RGBA video dataset built with matte-friendly synthesis, multi-hypothesis alpha recovery, and compositing-based quality gates. Using this dataset, we train a reference-conditioned RGBA video generator that jointly produces RGB frames and alpha mattes in a single pass. To improve efficiency, we propose a visibil-ity router that identifies transparent tokens in an early stage and bypasses their later DiT updates, while x0-lock guides them along the original flow-matching schedule toward self-predicted endpoints. Our model obtains lower FVD than tra-ditional two-stage pipelines, and the visibility router skips 35% of token evaluations in the final two DiT denoising steps, providing a 1.2× backbone speedup with negligible quality degradation compared to dense inference. 
+
+1 Introduction 
+
+We study reference-conditioned RGBA image-to-video gen-eration. Given a single RGBA reference image and a text prompt, the model jointly generates foreground and a tem-porally coherent alpha matte. Existing solutions fall into two families, each leaving part of the problem unresolved. The first generates an RGB video and then estimates alpha with segmentation or video mat-ting (Ravi et al. 2024; Yang et al. 2025; Lim et al. 2026). This decomposition is often limited for semi-transparent content: once background color has mixed into a pixel, estimating alpha alone is usually insufficient to recover a clean fore-ground for re-compositing; hard segmentation discards par-tial opacity outright, and matting tends to flicker around hair, glow, and motion blur—failures that concentrate ex-actly in the soft regions on which compositable assets are judged. The second generates RGBA directly and avoids the decomposition, but open reference-conditioned models re-main scarce: image-level methods carry no motion, open video models are mostly text-to-video, and image-to-video attempts are domain-specific or not fully released (Wang et al. 2025; Dong et al. 2025; Zhang et al. 2026; Zhang and Agrawala 2024; Chen, Chen, and Song 2026; Li et al. 2025). How alpha is represented further sets the cost of direct gener-ation: TransPixeler appends alpha tokens and TransText tiles alpha beside RGB, both inflating the DiT sequence, whereas Wan-Alpha folds RGB and alpha into one merged latent at no token overhead—the representation we adopt. Yet all existing direct generators, merged-latent designs included, spend DiT computation uniformly over spatiotemporal tokens, leaving the visibility information carried by alpha unused. RGBA compositing provides an analytic visibility signal. Given C = αR + (1 − α)B, ∂C ∂R = α; conditioned on a re-gion’s final alpha being zero, further refinement of its RGB layer cannot affect any composite. This criterion follows from the compositing equation, but which regions will be trans-parent in the output remains unknown during denoising, and alpha errors remain consequential. The resulting problem is therefore not to estimate generic visual saliency, but to predict sufficiently early which tokens will remain fully transparent. We use this observation as an inference-time routing prin-ciple while designing the model to generate RGB and alpha jointly. To address the lack of reference-conditioned RGBA data for game-asset animation, we construct GameAlpha-2.4K, whose alpha mattes are recovered from videos gener-ated under controlled, matte-friendly conditions and retained through staged quality checks. For generation, we adapt a merged RGB-A representation to the pretrained model’s na-tive image-to-video conditioning. The reference RGB and al-pha are fused into a first-frame latent anchor, while its white-background composite and text enter the model’s visual and textual conditioning pathways. A single DoRA-adapted DiT then denoises the joint RGB-A latent without introducing additional DiT tokens or an alpha-specific DiT branch. 
+
+∗. Work done while interning at ByteDance. 
+
+†. Corresponding author. arXiv:2608.09355v1 [cs.CV] 10 Aug 2026 A visibility router reads the model’s step-2 clean estimate and predicts which tokens will remain fully transparent. Af-ter retaining a conservative spatiotemporal margin around the predicted foreground, the router advances the routed to-kens along an x0-locked flow path toward their step-2 pre-dicted endpoints. Subsequent sparse steps reactivate tokens near the evolving foreground boundary, while low-support or high-uncertainty samples remain on the dense path. Because the router changes neither the denoising schedule nor the backbone parameters, it is compatible with step distillation and other orthogonal acceleration techniques. Our contributions are: 
+
+• Task and dataset. We study reference conditioned RGBA image-to-video generation for compositable game-asset animation and build GameAlpha-2.4K: 2,400 clips with alpha mattes are recovered under controlled, matte-friendly conditions and verified by staged quality gates. 
+
+• A visibility-aware framework. We introduce a visibility router with x0-lock that predicts effectively transparent tokens from an early clean estimate and safely reduces their late-step computation using a spatiotemporal margin and a pre-routing dense fallback. 
+
+• Empirical validation. On GameAlpha-2.4K, our single-stage model lowers FVD versus same-backbone generate-then-matte baselines; at a 35% average evaluation 2 routed fraction, reactivation-aware routing achieves a 1.2× DiT-backbone speedup with near-dense metrics and the lowest FVD among compute-matched token-selection baselines. 
+
+2 Related Work 
+
+2.1 RGBA and Layered Generation 
+
+RGBA and layered generation model appearance together with explicit opacity, producing foregrounds or layers that can be composited independently. At the image level, Lay-erDiffuse (Zhang and Agrawala 2024) encodes transparency in a frozen diffusion latent and ART (Pu et al. 2025) extends it to multiple layers, but neither models motion. Video meth-ods include text-conditioned RGBA or layered generation with TransPixeler (Wang et al. 2025), Wan-Alpha (Dong et al. 2025), and LayerFlow (Ji et al. 2025). Reference-conditioned or specialized I2V methods include TransText (Zhang et al. 2026) for glyph animation, TransVDM (Li et al. 2025) for image-and-text-conditioned synthesis, and motion-guided TransAnimate (Chen, Chen, and Song 2026). TransPixeler also demonstrates CogVideoX-based I2V, but no correspond-ing checkpoint or I2V code is public. Cost separates these representations: TransPixeler and TransText enlarge the to-ken sequence or spatial canvas, increasing attention cost, whereas Wan-Alpha folds RGB and alpha into a merged latent without token overhead. We combine Wan-Alpha’s merged latent with native I2V conditioning and use the gen-erated alpha to route inference computation. 
+
+2.2 Video Matting and Segmentation 
+
+Two-stage pipelines generate RGB before estimating a seg-mentation mask or alpha matte. SAM2/3 produce hard masks without partial opacity (Ravi et al. 2024; Carion et al. 2025), while Matting-Anything (Li, Jain, and Shi 2023) estimates soft alpha at the image level. Video matting models use tem-poral recurrence, memory, or global aggregation (Lin et al. 2021b; Li et al. 2022; Yang et al. 2025, 2026), with Video-MaMa (Lim et al. 2026) further introducing a generative video prior. Despite these advances, matting remains post-hoc: a composite underdetermines foreground and alpha, so estimating alpha alone after RGB synthesis cannot guaran-tee a background-independent foreground layer. We instead generate paired foreground color and alpha in one pass. 
+
+2.3 Efficient Diffusion Inference 
+
+Efficient diffusion inference exploits redundancy across denoising steps, intermediate features, and tokens. Few-step distillation reduces denoising evaluations (Contributors 2025; Wang et al. 2024), while cross-step reuse avoids re-peated feature or attention computation (Liu et al. 2024a; Ma, Fang, and Wang 2024; Zou et al. 2024; Lyu et al. 2025). Token-level methods selectively update or merge tokens using previous-step outputs, feature similarity, or learned scores (Liu et al. 2025; Bolya et al. 2023; Bolya and Hoffman 2023; Rao et al. 2021, 2022), but these criteria are not tied to RGBA visibility. RGBA generation provides a task-native criterion: if final alpha is zero, foreground RGB cannot affect the composite. Our router estimates this condition from the model’s evolving transparency prediction. 
+
+3 Method 
+
+Our framework addresses three coupled challenges: con-structing audited alpha supervision for synthesized RGB clips, incorporating alpha without expanding the DiT token sequence or adding an alpha-specific DiT branch, and esti-mating final visibility early enough to reduce later denois-ing computation. We address them with GameAlpha-2.4K, a merged RGB-A latent that preserves the pretrained I2V in-terface, and a conservative visibility router that routes tokens predicted to be transparent in the final output away from later DiT computation, while x0-lock advances their latent states. 
+
+3.1 The GameAlpha-2.4K Dataset 
+
+Existing matting datasets provide limited coverage of diverse silhouettes, equipment, effects, and partial transparency found in game assets. A naive sequential pipeline samples prompts, synthesizes reference images and RGB videos, ap-plies a single matte extractor, and filters only the final outputs. Even with category-balanced prompts, category-dependent rejection can bias the accepted set toward simpler concepts. Arbitrary backgrounds make foreground and alpha recov-ery underconstrained, while a single extractor propagates model-specific errors. We address these weaknesses through acceptance-aware sampling, matte-friendly synthesis, mul-tiple alpha hypotheses, and stage-wise audits while failures remain repairable. Generating RGB on arbitrary backgrounds also makes foreground and alpha recovery underconstrained, while relying on a single matte extractor transfers its sys-tematic errors to the entire dataset. We address these weak-nesses through acceptance-aware sampling, controlled syn-thesis, multiple alpha hypotheses, and stage-wise audits. step 1  step 2  step 3  step 4                        
+
+> 𝜎 = 0.938 𝜎 = 1.0 𝜎 = 0.834 𝜎 = 0.628 𝜎 = 0
+> full DiT
+> all tokens
+> full DiT
+> cache K/V
+> Text prompt
+> full DiT
+> 𝑔𝑎𝑡ℎ𝑒𝑟 → 𝑎𝑡𝑡𝑛 → 𝑠𝑐𝑎𝑡𝑡𝑒𝑟
+> spatial K/V reuse(c)
+> cache K/V
+> frozen token
+> active token
+> 3D Mask
+> Active tokens
+> 3D Mask
+> frozen token
+> full DiT
+> 𝑔𝑎𝑡ℎ𝑒𝑟 → 𝑎𝑡𝑡𝑛 → 𝑠𝑐𝑎𝑡𝑡𝑒𝑟
+> spatial K/V reuse (c)
+> 3D Mask
+> Frozen tokens
+> 3D Mask
+> Reactivated tokens
+> Visibility Router
+> Visibility Router
+> merge token
+> 𝑥 0− 𝑙𝑜𝑐𝑘: 𝑣 = (𝑥 𝑡 − ෞ 𝑥 0)/𝜎
+> [0 𝑁𝐹𝐸]
+> 𝑥 0− 𝑙𝑜𝑐𝑘: 𝑣 = (𝑥 𝑡 − ෞ 𝑥 0)/𝜎
+> [0 𝑁𝐹𝐸]
+> Visibility Router
+> (𝑐)
+> 𝑄𝑢𝑒𝑟𝑦
+> 𝐾𝑒𝑦
+> 𝐴𝑐𝑡𝑖𝑣𝑒  𝐹𝑟𝑜𝑧𝑒𝑛
+> 𝐴𝑐𝑡𝑖𝑣𝑒 𝐹𝑟𝑜𝑧𝑒𝑛
+> cache K/V
+> from step 2
+> frozen queries: not compute
+> activate
+> fresh K/V
+> (𝑏)
+> 𝑥
+> 𝜎 → 0
+> ෞ𝑥 0
+> 𝐴𝑐𝑡𝑖𝑣𝑒 𝑡𝑜𝑘𝑒𝑛
+> 𝐹𝑟𝑜𝑧𝑒𝑛 𝑡𝑜𝑘𝑒𝑛
+> RGB
+> Decoder
+> Alpha
+> Decoder
+> ො𝑥 0= 𝑥 𝑡 − 𝜎 ∙ ො𝑣
+> 𝑓𝑟𝑜𝑧𝑒𝑛 𝑀𝑎𝑠𝑘 = ¬𝑑𝑖𝑙𝑎𝑡𝑒 3𝐷 (ℓ ≤ 𝜏, 𝑟 𝑠 = 2)
+> ℓ𝑗 = 𝐿𝑖𝑛𝑒𝑎𝑟𝑃𝑟𝑜𝑏𝑒( ෞ 𝑥 0,𝑗 [2] )
+> g𝑎𝑡𝑒: 𝑢𝑛𝑐𝑒𝑟𝑡𝑎𝑖𝑛 → 𝑓𝑢𝑙𝑙 𝑓𝑎𝑙𝑙𝑏𝑎𝑐𝑘 a
+> Noise
+> Reference Image
+
+Figure 1: Visibility-routed RGBA inference. (a) Evaluations 1–2 process all tokens. After evaluation 2, the router uses ˆx[2] 0 to protect the predicted nontransparent support with a spatiotemporal margin and route the remaining tokens; uncertain samples retain dense inference. Evaluations 3–4 update active tokens, advance routed states with x0-lock, and reactivate tokens reached by the evolving support before merging both sets for RGB and alpha decoding. (b) x0-lock transports each routed state under the unchanged global noise schedule toward its stored endpoint x⋆ 
+
+> 0,j
+
+. (c) Cache-KV lets active queries attend to fresh active K/V and cached routed K/V while omitting routed queries, output projections, and feedforward updates. 
+
+Balancing the dataset distribution. To mitigate category dependent drift in the accepted set, we apply acceptance-aware tuple sampling with compatibility constraints and adaptive weights over entity, equipment, action, style, and viewpoint; the full taxonomy, prompt-expansion procedure, and weight-update rules are provided in A.1. 
+
+Constraining foreground recovery before matting. Be-cause a matte extractor cannot resolve foreground– background ambiguities already baked into RGB, we con-strain generation before matting. A fixed high-capacity text-to-image model synthesizes a 1920 ×1920 reference image with a single frame-safe subject on a content-free back-ground. A VLM then checks the sampled attributes, fram-ing, background contamination, and external cast shadows. Each rejection becomes a prompt repair instruction, and the reference is regenerated for up to three attempts. BiRefNet extracts an alpha matte from the accepted reference image to form an RGBA reference. The accepted reference RGB also conditions a fixed high-capacity image-to-video generator. A raw-video gate then rejects inconsistent subjects, incorrect motion or orientation, external shadows, scattered debris, and content-bearing backgrounds before matting. 
+
+Alpha recovery and staged audits. No single extractor performs consistently well across hard boundaries, fine struc-tures, motion blur, holes, and partial opacity. We therefore generate three complete alpha hypotheses for each retained RGB clip using framewise BiRefNet, SAM3 video segmen-tation, and MatAnyone2 video matting. Since BiRefNet pro-cesses each frame independently, we add a temporal stabilizer that warps neighboring-frame mattes to the current frame us-ing optical flow. This suppresses brief errors without averag-ing misaligned motion boundaries. A fixed multimodal eval-uator compares sampled-frame composites for subject com-pleteness, background leakage, soft boundaries, and tempo-ral stability, then selects one complete sequence per clip; clip-level selection avoids discontinuities from switching ex-tractors across frames. The selected alpha and generated RGB clip form the RGBA video. A final audit alone cannot de-termine whether a failure came from the reference, RGB video, or matte, so each gate acts while repair remains pos-sible. The reference gate regenerates images, the raw video gate avoids running three extractors on defective clips, and matte selection compares complete hypotheses through their composites. A final VLM and human audit check subject consistency, action, orientation, equipment, style, temporal stability, and foreground cleanliness. Recurring failures and category imbalance update the next batch’s compatibility rules, penalties, and sampling weights. Each sample includes an RGBA reference and video, the selected grayscale alpha sequence, structured image and video prompts, and an audit record. 
+
+3.2 End-to-End RGBA Generation 
+
+Preserving pretrained interfaces. Reference-conditioned RGBA generation must introduce alpha without disrupting the pretrained model’s video token geometry, native refer-ence conditioning, and motion prior. Alpha representation therefore determines DiT cost. TransPixeler doubles visual tokens from L to 2L, expanding the full attention matrix from (Ltext + L)2 to (Ltext + 2 L)2, while TransText en-larges the spatial canvas by concatenating RGB and repli-cated alpha. Concatenating RGB and alpha along the chan-nel dimension requires new projection layers, which behave like training from scratch and reduce generation diversity when RGBA training data are limited. We therefore follow Wan-Alpha and use a merged RGB-A VAE that preserves Wan’s native 16-channel latent. For an RGBA image or video 
+
+U = ( Urgb , U α), define 
+
+Φ( U ) = M(E(Urgb ), E(Rep 3(Uα))) , (1) Here, E is the frozen Wan-VAE encoder, Rep 3 replicates grayscale alpha into three channels, and M is the learned RGB-A merge module. The target latent x0 = Φ( Vtar ) re-tains the pretrained geometry and normalization. Separate decoders recover RGB and alpha from the merged latent without extra DiT tokens or an alpha-specific DiT branch. 
+
+Reusing rather than rebuilding image conditioning. Acompact alpha latent still requires reference control. Con-trollers such as SparseCtrl, I2V-Adapter, and VACE (Guo et al. 2023, 2024; Jiang et al. 2025) allow text-to-video back-bones to accept image input, but they do not reduce the cost of an expanded alpha representation. Thus, we reuse Wan-I2V’s native first-frame latent, CLIP-image, and umT5-text conditioning (Radford et al. 2021; Chung et al. 2023). Let 
+
+m denote Wan-I2V’s native four-channel first-frame mask, active only at the first latent frame. We form an RGBA condi-tioning video whose first frame is Iref and whose subsequent frames are zero: 
+
+Icond = Concat T (Iref , 0, . . . , 0) , zcond = Φ( Icond ),
+
+y = Concat C (m, zcond ) ∈ R20 ×Tℓ×Hℓ×Wℓ ,
+
+ut = Concat C (xt, y) ∈ R36 ×Tℓ×Hℓ×Wℓ .
+
+(2) The white-background reference composite and prompt pro-duce cimg and ctext through the pretrained CLIP and umT5 pathways, respectively, and enter native decoupled cross-attention. Since zcond has 16 channels, combining it with the four-channel mask gives the 20-channel condition y; con-catenating y with the 16-channel target xt preserves the original 36-channel DiT input without extra alpha tokens or a ControlNet branch (Zhang, Rao, and Agrawala 2023). 
+
+Adapting the VAE and DiT. The VAE must learn a gen-eral RGB and alpha representation, whereas the DiT learns game asset motion conditioned on the reference. Stage 1 learns the RGB-A latent contract using Wan-Alpha’s VAE objective on the GameAlpha-2.4K training split and Video-Matte240K (Lin et al. 2021a). We freeze the pretrained encoder and base decoder, optimize only M and LoRA adapters (Hu et al. 2022) in the separate RGB and alpha de-coders, and then freeze the complete RGB-A VAE. With this latent contract fixed, Stage 2 adapts the pretrained Wan-I2V DiT on the GameAlpha-2.4K training split. Given Gaussian noise ϵ ∼ N (0, I) and timestep t with noise level σt, flow matching (Lipman et al. 2022) defines 
+
+xt = (1 −σt)x0 +σtϵ, v = ϵ−x0, ˆx(t)0 = xt −σt ˆvt. (3) 
+
+ˆvt = ˆ vθ (ut, cimg , ctext , t ) (4) We retain the base scheduler’s timestep-weighted objective 
+
+LFM = Ex0,ϵ,t [ω(t) MSE (ˆ vt, v)] . (5) where ω(t) is the scheduler’s timestep-dependent weight. We freeze the base DiT and train only DoRA modules (Liu et al. 2024b) in its attention and feedforward layers. Although decoded RGB does not affect a composite wher-ever α = 0 , each merged latent token jointly represents RGB and alpha, so downweighting it would also weaken zero-alpha supervision. The generator therefore retains the spa-tially uniform, scheduler-weighted objective in Eq. (5), while predicted visibility is used only by the inference router. The frozen decoders output aligned RGB and grayscale alpha videos without matting. 
+
+3.3 Visibility-Routed Inference 
+
+Predicting final transparency. Generic accelerators infer importance from attention, feature similarity, or update mag-nitude, whereas RGBA provides an analytic criterion. For RGB R, alpha α, and background B, let C = αR +(1 −α)B.For a prediction ( ˆR, ˆα) on the same background, define 
+
+∆R = ˆR − R and ∆α = ˆ α − α. Then 
+
+∂C c
+
+∂R c
+
+= α, c ∈ { r, g, b },
+
+ˆC − C = α ⊙ ∆R + ∆ α ⊙ ( ˆR − B).
+
+(6) Thus, RGB has no direct compositing contribution where final alpha is zero. The criterion is analytic at the final output, but routing must predict which tokens will be transparent during denoising. We do not use the dataset target alpha as a routing label because it may not align with the generated motion. Like-wise, simply repeating the first-frame alpha is also insuffi-cient because it cannot anticipate future motion. We instead use the clean estimate ˆx[k]0 = xk − σk ˆvk at DiT evalua-tion k, following Eq. (3). Square brackets index evaluations rather than diffusion time. A logistic-regression probe, fit-ted offline on dense trajectories from the training clips and frozen for sparse inference, maps each token’s 2×2×16 la-tent patch to a 64-dimensional feature and transparency logit 
+
+ℓj . Dense final generations provide self-labels: token j is ef-fectively transparent if the maximum decoded alpha over its spatiotemporal region Ωj is at most η = 0 .05 , with larger 
+
+ℓj indicating greater confidence in this event. Routing time trades prediction risk against the number of remaining sparse evaluations. The risk–yield analysis in Sec. 4.5 supports rout-ing after evaluation 2, so we set kroute = 2 and retain two evaluations for sparse execution. 
+
+A safety margin and dense fallback. Because foreground support may expand after evaluation 2, routing uses a conser-vative spatiotemporal margin. With τ = 0 , tokens satisfying 
+
+ℓj > τ are predicted transparent; we dilate the complemen-tary nontransparent support by rs = 2 , extend it by rt = 1 
+
+along latent time, and always keep the first latent frame ac-tive. Tokens outside the protected support form the candi-date routed set. The risk–yield analysis in Sec. 4.5 supports 
+
+rs = 2 , while rt = 1 provides an adjacent-time guard. Be-fore constructing sparse states or caches, the sample remains on the dense path if fewer than 10% of tokens are candidates or more than 15% are uncertain, where uncertainty is defined by |ℓj − τ | < δ with δ = 2 .
+
+Skipping with x0-lock. Routing determines which later token updates may be omitted, but not how the correspond-ing latent states should evolve. Holding a state fixed leaves it at an obsolete noise level. Assigning different timesteps to individual tokens creates an asynchronous schedule that conflicts with the pretrained DiT’s global time condition-ing. For each token j routed after kroute = 2 , we store the Generator Matte FVD ↓ DINO-ID ↑ Aesthetic ↑ Motion Sm. ↑ Flow-Diff ↓ MAD ( 10 −3)↓ Time (s) ↓
+
+Wan2.1-I2V (4-step) BiRefNet 224.3 0.848 5.396 0.984 0.598 160.0 128.4 MatAnyone2 225.8 0.846 5.402 0.985 0.586 171.3 149.9 SAM3 221.3 0.849 5.369 0.985 0.611 159.6 126.7 UniVidX 276.6 0.695 5.116 0.986 0.548 194.9 4212.9 CogVideoX1.5-I2V BiRefNet 318.8 0.848 5.223 0.986 0.609 92.9 664.5 MatAnyone2 320.2 0.846 5.234 0.985 0.620 93.9 688.0 SAM3 316.2 0.845 5.202 0.985 0.688 94.0 655.7 UniVidX 330.7 0.733 5.011 0.987 0.595 138.6 4749.0 HunyuanVideo-I2V BiRefNet 418.6 0.790 5.142 0.985 0.688 261.8 2281.1 MatAnyone2 399.6 0.794 5.121 0.985 0.660 236.2 2291.7 SAM3 391.8 0.804 5.124 0.986 0.658 242.9 2272.4 UniVidX 470.6 0.515 4.725 0.986 0.632 237.8 6377.5 
+
+Ours (visibility router) 174.4 0.840 5.314 0.988 0.548 108.1 104.8 
+
+Table 1: Two-stage generate-then-matte comparison on the GameAlpha-2.4K validation set. Bold marks the best value in each column; ties at displayed precision are also bolded. model’s clean endpoint x⋆ 
+
+> 0,j
+
+= ˆ x[2] 0,j . Evaluation 2 still uses the ordinary dense scheduler update. At each later evaluation 
+
+k > k route , the routed token bypasses the DiT and follows 
+
+vlock  
+
+> k,j
+
+= xlock  
+
+> k,j
+
+− x⋆
+
+> 0,j
+
+σk
+
+,
+
+xlock  
+
+> k+1 ,j
+
+= xlock  
+
+> k,j
+
++ ( σk+1 − σk)vlock 
+
+> k,j
+
+= x⋆ 
+
+> 0,j
+
++ σk+1 
+
+σk
+
+ xlock  
+
+> k,j
+
+− x⋆
+
+> 0,j
+
+ .
+
+(7) Because (xlock  
+
+> k,j
+
+− x⋆ 
+
+> 0,j
+
+)/σ k remains constant, Eq. (7) ex-actly transports each routed state along the straight flow-matching interpolant defined by its stored endpoint under the unchanged global noise schedule. Only the evaluation 2 estimate is approximate. Using token-specific endpoints also avoids discontinuities from a shared transparent latent. 
+
+Local reactivation and routed-token context. Although the evaluation-2 safety margin protects likely foreground ex-pansion, the predicted support may still change during the sparse suffix. After the first sparse evaluation, we update the protected nontransparent support from the fresh clean esti-mates of active tokens using the same spatial and temporal margins. Any routed token reached by this updated support is reactivated for the final evaluation. Because x0-lock has advanced its state, the token re-enters the DiT at the current global noise level. For tokens that remain routed, attention context is the remaining concern: even a token with zero final alpha may influence active queries despite having no direct RGB contribution in Eq. (6). Our primary Cache-KV implementation therefore stores the per-layer K/V of routed tokens at evaluation 2, the last dense evaluation. During later sparse evaluations, active tokens compute fresh Q/K/V and full attention and feedforward updates, attending to fresh ac-tive and cached routed K/V; routed tokens reuse cached K/V, omit queries, output projections, and feedforward compu-tation, and advance only through Eq. (7). When a token is reactivated, its cached rows are replaced with fresh K/V after re-entry. Drop-KV removes routed context for greater speed.                      
+
+> Dataset Clips Frames Domain Public VideoMatte240K 484 240.7K human ✓
+> Wan-Alpha (DiT) 429 n/d human/VFX ✓
+> TransVDM ∼10K ∼150K objects ✗
+> TransAnimate ∼30K n/d game FX/objects ✗
+> TransText 16.1K n/d glyphs ✗
+> LayerDiffuse 1M imgs n/a general ✗
+> GameAlpha-2.4K 2,400 232.8K game assets Planned
+
+Table 2: Comparison of reported training data for RGBA generation or video matting by scale, domain, and public availability. LayerDiffuse is included as an image-only ref-erence. “Public” denotes public availability at the time of writing; n/d and n/a denote not disclosed and not applicable. Both variants retain four evaluations without changing the backbone parameters or denoising schedule. 
+
+4 Experiment 
+
+4.1 Setup 
+
+Implementation. We build on Wan2.1-I2V-14B with the RGB-A VAE in Sec. 3.2 and four-step LightX2V distilla-tion (Contributors 2025). We optimize rank-32 DoRA mod-ules in the DiT attention projections (q, k, v, o ) and feedfor-ward layers for 10 epochs with AdamW (Loshchilov, Hutter et al. 2017) at 1.4 × 10 −4 using distributed bfloat16 training. Training completes in less than a day on a 32-GPU node. We generate 97 frames at 624 ×640 .
+
+Protocol. After splitting GameAlpha-2.4K 9:1, we train the Stage 1 RGB-A VAE on VideoMatte240K and the GameAlpha training clips, and the Stage 2 DiT only on the latter. The transparency probe is fitted on dense train-ing trajectories and frozen. Analysis on the full validation split selects kroute = 2 and rs = 2 ; all metrics use the same split and a fixed seed. Inference follows the four-evaluation schedule and dense fallback in Sec. 3.3. CogVideoX    
+
+> Ours
+> BiRefNet MatAnyone 2
+> Ours
+> Hunyuan
+> Video
+> Ours
+> Wan 2.1 I2V
+
+Figure 2: Qualitative comparison with two-stage baselines. We pair three RGB generators with BiRefNet or MatAnyone2. Each group shows the RGBA reference (left) and four uniformly sampled frames from the two-stage baseline (top) and ours (bottom). Checkerboards denote transparency; prompts are provided in the appendix D.3. 
+
+Metrics. FVD (Unterthiner et al. 2019; Skorokhodov, Tulyakov, and Elhoseiny 2021; Yu et al. 2022; Carreira and Zisserman 2017) uses I3D features from checkerboard com-posites. DINO-ID averages DINOv2 (Oquab et al. 2024) sim-ilarity between generated frames and the reference, a LAION predictor scores frame aesthetics, and motion smoothness follows VBench (Huang et al. 2024). MAD (Lin et al. 2021a; Yang et al. 2026) measures alpha error against the dataset se-quence in 10 −3. Flow Difference adapts TransPixeler: it com-pares consecutive-frame Farneback flows (Farnebäck 2003) of the white-background RGB composite and alpha, averages endpoint distance within a dilated foreground, and normal-izes by the mean magnitudes of both fields to avoid favor-ing static videos. Table 1 reports mean end-to-end runtime per clip, including matting, whereas Table 3 reports DiT-backbone speedup over dense inference. 
+
+4.2 Dataset Analysis 
+
+At 960 ×960 , GameAlpha-2.4K provides 97% as many frames as VideoMatte240K across nearly five times as many clips. Prior corpora focus on humans/VFX, generic objects, game effects, or glyphs, while LayerDiffuse is image-only; GameAlpha instead targets reusable game assets, contribut-ing domain coverage rather than raw scale (Lin et al. 2021a). The table does not assess matte accuracy: intermediate-opacity pixels ( 2/255 < α < 253 /255 ) comprise 2.2% of GameAlpha, an opacity-distribution statistic that motivates the broader Stage 1 mixture in Sec. 3.2. 
+
+4.3 Comparison with Two-Stage Pipelines 
+
+Because no reproducible open direct baseline covers this set-ting, we pair three I2V generators—Wan2.1-I2V-14B (Wan et al. 2025), CogVideoX1.5-I2V (Yang et al. 2024), and HunyuanVideo-I2V (Kong et al. 2024)—with four alpha ex-tractors: BiRefNet (Zheng et al. 2024), MatAnyone2 (Yang et al. 2026), SAM3 (Carion et al. 2025), and UniVidX (Chen et al. 2026). The four-step Wan system is closest in backbone and step budget, but RGB-A adaptation and routing make ours a full-system comparison rather than an isolated alpha ablation. All video generators receive the same 624 ×640 
+
+white-composited reference and output 97 frames; ours ad-ditionally uses the RGBA latent anchor in Sec. 3.2, while MatAnyone2 and SAM3 are initialized with the same refer-ence alpha. All systems are evaluated on the same validation videos and dataset alpha sequences. Table 1 shows that our full model achieves the lowest FVD (174 .4) and runtime ( 104 .8s). Against the closest Wan sys-tems, it reduces FVD and runtime. Alpha metrics must be in-terpreted with content quality: our MAD is below every Wan and HunyuanVideo pipeline, although three CogVideoX combinations obtain lower MAD with much worse FVD. Our model also achieves the best motion smoothness and keeps DINO-ID within 0.009 of the best pipeline. Figure 2 illustrates qualitative differences in prompt following, fore-ground preservation, and checkerboard composites in the dis-played examples. Overall, our full system offers the strongest observed quality–efficiency trade-off while remaining com-petitive in motion and RGB–alpha alignment. 
+
+4.4 Ablation Studies 
+
+Table 3 compares visibility routing with a RAS-style update-magnitude proxy (Liu et al. 2025), two static first-frame poli-cies, and random selection. Our primary router uses Cache-KV; Drop-KV retains visibility-based selection and reacti-FVD ↓ DINO-ID ↑ Aesthetic ↑ Motion Smoothness ↑ Flow Difference ↓ MAD ( 10 −3)↓ Speedup ↑
+
+Dense (no routing) 172.3 0.840 5.317 0.988 0.550 108.2 1.00 ×
+
+Ours (visibility router) 174.4 0.840 5.314 0.988 0.548 108.1 1.2 ×
+
+Ours (Drop-KV) 177.2 0.840 5.304 0.987 0.549 108.9 1.3 ×
+
+Ours (w/o reactivation) 537.2 0.828 5.209 0.986 0.496 108.8 1.3 ×
+
+RAS proxy 819.3 0.823 5.196 0.985 0.462 109.5 1.2 ×
+
+Planner (static) 181.6 0.838 5.290 0.986 0.547 108.5 1.2 ×
+
+Union2D (static) 184.2 0.836 5.273 0.987 0.540 108.4 1.2 ×
+
+Random 297.1 0.820 5.193 0.984 0.532 107.7 1.2 ×
+
+Table 3: Routing ablation on the GameAlpha-2.4K validation set. The evaluation-2 routed fraction averages 35% over validation. The no-reactivation row fixes these tokens through evaluations 3–4; Ours and Drop-KV may reactivate them and thus realize fewer skips. RAS, Planner, Union2D, and Random match the primary router’s validation-mean realized skip count. Speedup is DiT-backbone speedup over dense inference. Bold /underlined mark best/second-best sparse quality values. vation but discards routed K/V context. The no-reactivation variant otherwise matches the primary router but fixes the evaluation-2 routed set, isolating the value of revising early decisions. (i) The signal matters. Random and RAS selec-tion can freeze visible content, degrading FVD to 297 .1 and 
+
+819 .3, respectively. A small update at the routing evalua-tion does not imply final transparency, so update-magnitude saliency may freeze still-evolving content. (ii) Adaptivity matters. Static first-frame policies reach FVD 181 .6/184 .2
+
+but trail the router in DINO-ID, aesthetics, and motion smoothness, showing that fixed support cannot track evolving motion. (iii) Visibility routing remains close to dense infer-ence. Cache-KV changes FVD from 172 .3 to 174 .4 at a 1.2×
+
+backbone speedup while matching dense DINO-ID and mo-tion smoothness. Drop-KV reaches 1.3× speedup with FVD 
+
+177 .2, indicating a modest benefit from retaining routed K/V context. MAD remains near dense across sparse variants, but lower Flow Difference need not imply better content: RAS scores 0.462 despite an FVD of 819 .3. Flow Difference therefore diagnoses RGB–alpha motion alignment and must be interpreted with FVD. (iv) Reactivation corrects conse-quential early errors. Keeping the evaluation-2 routed set fixed raises FVD from 174 .4 to 537 .2 and lowers DINO-ID from 0.840 to 0.828 , while increasing backbone speedup from 1.2× to 1.3×. Local reactivation therefore trades part of the nominal speed gain for recovering tokens reached by the evolving foreground. 
+
+4.5 Routing Time and Safety Margin 
+
+Because final transparency is known only after sampling, routing must balance computation savings against the risk of omitting updates for tokens that later become visible. Figure 3 plots P90 final-visible-token miss against median full-trajectory token-evaluation saving across routing times and spatial margins. At rs = 2 , delaying routing from evalu-ation 1 to 2 reduces P90 miss from 0.824% to 0.603% , while saving decreases from 22 .99% to 15 .68% . The 15 .68% value is a per-sample median over all four evaluations, whereas the 35% in Table 3 is the validation-set mean initial routed fraction for the final two evaluations; they differ in both de-nominator and aggregation. We select evaluation 2 because it lowers tail risk while retaining two sparse evaluations. 0 
+
+> 1
+> 2
+> 4
+> 0
+> 1
+> 2
+> 4
+> 0
+> 1
+> 2
+> 4
+> Avoided token evals. (%)
+> Avoided token evals. (%)
+> a𝑏
+> P90 visible-token miss (%)
+> Visible-token miss (%)
+
+Figure 3: Visibility-routing risk–yield trade-off. (a) The 90th-percentile final-visible-token miss rate versus the me-dian fraction of token evaluations skipped across all four evaluations. Blue circles, orange squares, and gray triangles indicate routing after evaluations 1, 2, and 3, respectively; la-bels indicate rs, and the black outline identifies the selected setting, (kroute , r s) = (2 , 2) . (b) Per-clip changes when rout-ing is delayed from evaluation 1 to 2 at rs = 2 ; lines connect the same clip, the gray marker summarizes clips with no sav-ings, and the dashed line indicates a 1% miss rate. 
+
+5 Conclusions, Limitations and Future Work 
+
+The central observation is that alpha determines both how an RGBA asset is composited and where further RGB refine-ment can affect the result. GameAlpha-2.4K supplies game-asset data, while a merged RGB-A latent lets one image-conditioned DiT generate color and alpha jointly. This native alpha enables the visibility router to identify final-transparent tokens; x0-lock advances them on the unchanged flow sched-ule, while conservative fallback protects uncertain clips. Ex-periments show lower FVD than the evaluated generate-then-matte systems and measured quality close to dense at a 1.2× DiT-backbone speedup. The binary router targets to-kens predicted effectively transparent ( α ≤ 0.05 ), limiting acceleration on foreground-dense clips. Routing errors also remain nonzero. GameAlpha-2.4K uses synthesized videos and extractor-selected alpha, with only 2.2% intermediate-opacity pixels. Future work should allocate computation by expected compositing error, expand artist- or renderer-derived RGBA supervision, and test recompositability and transfer across backgrounds, domains, and video models. Supplementary Material 
+
+This supplementary material provides: ( A) construction details, design rationale, and statistics of the GameAlpha-2.4K dataset; ( B) implementation and evaluation-protocol details; ( C) additional experiments, analyses of the visibil-ity router, and human evaluation; ( D) additional qualitative results and the prompts used by the qualitative figures; ( E)reproducibility notes; and ( F) licensing and planned release status. 
+
+A The GameAlpha-2.4K Dataset 
+
+A.1 Construction Pipeline 
+
+Figure 4 summarizes the four stages of the pipeline; the main paper describes each gate in one paragraph, and this section documents the design rationale and the operational details that did not fit in the main text. 
+
+Stage 1: distribution-controlled sampling. Each sample starts from a tuple over entity (7 classes), equipment (7 classes), action (5 classes), style, and viewpoint. Hard rules remove invalid combinations, and soft penalties with cate-gory weights suppress unlikely tuples while filling under-represented combinations. An LLM expands each accepted tuple into a separate image prompt and video prompt, color metadata, and a structured description that later audits check against. Sampling weights are updated from the accepted dis-tribution and the recorded failures rather than from the pro-posed distribution: acceptance rates differ across categories, so balancing proposals alone still lets the accepted set drift toward easy concepts. Table 4 lists the taxonomy. Hard rules encode physical or perspective incompatibilities (for exam-ple, isometric 2.5D rendering excludes strict top-down and pure side-profile viewpoints, and object or vehicle entities exclude character-portrait viewpoints), while soft penalties down-weight unlikely pairings such as minimalist geometric styles with semantically strong actions. 
+
+Stage 2: matte-friendly reference synthesis. An extrac-tor cannot undo foreground–background ambiguity that is already baked into an RGB image, so the pipeline con-strains generation before matting: a fixed high-capacity text-to-image generator renders a 1920 ×1920 reference with a single frame-safe subject on a content-free background, and a VLM gate checks the sampled attributes, framing, back-ground contamination, and external cast shadows. Each re-jection is converted into a prompt-repair instruction and the reference is regenerated for up to three attempts before the tu-ple is returned to the sampler as a recorded failure. BiRefNet extracts the extractor-derived reference alpha of the accepted image to form the RGBA reference. 
+
+Stage 3: controlled video synthesis and the raw-video gate. The accepted reference RGB conditions a fixed high-capacity image-to-video generator. A raw-video gate rejects inconsistent subjects, incorrect motion or orientation, ex-ternal shadows, scattered debris, and content-bearing back-grounds before the matting stage, so defective clips never consume the three-extractor budget. 
+
+Stage 4: multi-hypothesis alpha recovery and staged au-dits. No single extractor is best across hard boundaries, fine structures, motion blur, holes, and partial opacity, so each re-tained clip receives three complete alpha hypotheses: frame-wise BiRefNet, SAM3 video segmentation, and MatAny-one2 video matting. Only the framewise BiRefNet candidate is stabilized by warping neighboring mattes into the current frame with optical flow and taking a temporal median, which suppresses brief errors without averaging misaligned motion boundaries; the two video models are left untouched. A fixed multimodal evaluator compares white-background compos-ites of sampled frames for subject completeness, background leakage, soft boundaries, and temporal stability, and selects 
+
+one complete sequence per clip — clip-level selection avoids the discontinuities that per-frame extractor switching would introduce. Across the accepted corpus, the selected sequence comes from BiRefNet for 81% of clips, SAM3 for 13% , and MatAnyone2 for 6% . The VLM audits every selected clip for subject consistency, action, orientation, equipment, style, temporal stability, and foreground cleanliness. Human audi-tors independently review a prespecified one-tenth subset as a sampled quality-control check; this human review is not presented as a full-corpus gate. The main paper’s shorthand “VLM and human audit” denotes these two distinct coverage levels rather than a full-corpus human review. 
+
+A.2 Gate Statistics and Audit Records 
+
+Figure 5 reports the acceptance funnel of the accepted batch. Two properties are worth noting. First, rejection is front-loaded and cheap: the reference gate and its prompt-repair loop act before video synthesis, and the matte-stage quality gate acts before any clip reaches the final audits, so expensive stages never process clips that earlier stages could already reject. Second, the final frame-safety review trades raw vol-ume for the frame-safe property that reference-conditioned training relies on. Every accepted clip passes the VLM au-dit. Human auditors additionally review a prespecified one-tenth subset for subject identity, action alignment, viewpoint, equipment, and style; this sampled audit feeds the sampling-policy iteration of Appendix A.1 but is not a full-corpus human gate. 
+
+A.3 Category Coverage 
+
+Figures 6 and 7 show the realized category coverage. The support-completeness property is the operative check for a compositional taxonomy: all empty entity–action cells are those excluded by hard compatibility rules (vehicles and props do not perform daily-life or combat actions), not col-lapsed categories, and the smallest populated classes retain 
+
+≈ 5% of the corpus. We report observed coverage only: proposal-side tuple distributions were not persisted with this batch, so no quantitative before/after reweighting comparison is claimed. 
+
+A.4 Transparency Statistics 
+
+Figure 8 summarizes the transparency structure of the dataset and connects it to two design choices of the main paper. The per-pixel distribution in panel (a) is the domain finger-print of RGBA game assets: probability mass concentrates 1 Distribution-Controlled Sampling  2 Matte-Friendly Reference Synthesis 
+
+4 Multi-Hypothesis Alpha Recovery & Staged Audits  3 Controlled Video Synthesis & Raw-Video Gate                              
+
+> Compatibility Rules
+> Sample Space
+> entities
+> equipments
+> actions
+> style
+> view angle
+> Adaptive Sampling
+> Policy
+> Sample
+> Sampled Case
+> Entity: Scuba Diver
+> Equipment: Longbow
+> Action: Jumping
+> Style: Retro Pixel Art
+> View: Isometric Orthographic
+> Rules: Humanoid · Water -Compatible
+> Policy: Adaptive Sampling
+> Prompt Builder
+> T2I Prompt
+> Single scuba diver holding a longbow, retro
+> pixel -art sprite, isometric view, facing bottom -
+> left, fully visible on a neutral gray background...
+> I2V Prompt
+> Animate the scuba diver jumping in place and
+> landing exactly at the start, fixed camera,
+> stable colors, longbow controlled throughout...
+> Fixed T2I Generator
+> RGB Reference Image
+> Reference -image QA
+> Final VLM + Human Audit
+> Good Case
+> Complete Foreground ✓Clean Edges ✓Stable Alpha ✓
+> VLM Score: 0.92
+> Bad -case Pattern
+> Isometric View ×Jumping
+> Matting defects : 10/12
+> Accepted GameAlpha -2.4K Sample Policy Update
+> Pair weight: 1.0 →0.8
+> I2V Prompt Fixed I2V Generator Approved Reference Image
+> Raw RGB Video
+> Repair x3
+> Fail
+> Pass
+> Pass Fail
+> BiRefNet
+> RGBA Reference Image
+> Approved Raw RGB Video
+> BiRefNet + Flow
+> Candidate A
+> SAM3 Video Segmentation
+> Candidate B
+> MatAnyone2
+> Candidate C
+> Composite -based Multimodal Selection
+> Selected Candidate
+> Raw Video Gate
+> Pass
+
+Figure 4: The GameAlpha-2.4K construction pipeline. Distribution-controlled prompt sampling (Stage 1) feeds matte-friendly reference synthesis with a repair loop (Stage 2). The approved RGB reference drives video synthesis and a raw-video gate (Stage 3), while a parallel branch forms the RGBA reference. Retained clips receive three alpha hypotheses for composite-based selection and final VLM-and-human audit (Stage 4). Recurring failures and category imbalance update the next batch’s sampling rules, penalties, and weights (red feedback edge). 
+
+Dimension Classes 
+
+Entity (7) Character/NPC; Monster/Creature; Wildlife/Animal; Vehicle/Transport; Environment Prop; Modern Tech; Food/Plant 
+
+Equipment (7) Unarmed; Melee Weapon; Ranged Weapon; Armor/Apparel; Consumable; Tool/Gadget; Magic Relic 
+
+Action (5) Locomotion; Combat Action; State/Reaction; NPC Daily; Physics/VFX 
+
+Style (23) Core mainstream; genre-specific; long-tail artistic. The accepted clips cover 23 distinct styles. 
+
+Viewpoint (7) Mainstream 2D; depth/strategy; character/UI. Seven named viewpoints are included. 
+
+Table 4: Sampling taxonomy used to construct GameAlpha-2.4K. Category counts are shown in parentheses. Candidate tuples span all five dimensions; invalid combinations are filtered by hard rules, while category weights and soft penalties shape the proposal distribution (Appendix A.1). at the two ends, and the soft band — hair, glow, motion blur, semi-transparent effects — is narrow ( 2.2% of pix-els) yet is exactly where compositing quality is judged. This sparsity of intermediate opacity is why Stage 1 of the main paper trains the RGB-A VAE on a broader mixture rather than on GameAlpha-2.4K alone. Panel (b) explains the ini-tial routed-fraction budget: on average 62 .5% of tokens are fully transparent under the conservative pooling criterion, so the evaluation-2 35% budget for evaluations 3–4 sits well inside the transparent budget of nearly all validation videos (and the first latent frame is never routed, which lowers the implementation-reachable ceiling to 59 .9% on average). The routed-fraction sweep in Appendix C.4 confirms this head-room empirically: Cache-KV remains within 6.7 FVD points of the independent dense run while realized suffix skip grows to 51 .7% across the tested range. Panel (c) quantifies why adaptivity matters: transparent sets barely move between ad-jacent latent frames but drift substantially away from any static first-frame plan, which is precisely the failure mode of the static baselines in the routing ablation of the main paper. 
+
+A.5 Sample Gallery 
+
+Figure 9 shows five samples spanning distinct render treat-ments (isometric 2.5D, cel-shaded, top-down pixel art, neon-accented flat 2D, painterly dark fantasy). Two properties re-cur. First, mattes remain clean across the clip at exactly the structures where post-hoc matting degrades — fur tufts, glow accents, thin props. Second, each motion is prompted to re-turn to its starting pose within the frame-safe canvas, making the clip suitable for looped compositing workflows. We do not infer arbitrary-background recompositability from these examples; that transfer test remains future work, as stated in the main paper. 0 1000 2000 3000 Proposed tuples Reference gate passed Video gate passed Matting gate passed Final audited corpus 
+
+> 3,000 2,966 (−34) 2,953 (−13) 2,943 (−10) ≈2,400 full VLM; 1-in-10 human QA
+
+Figure 5: Acceptance funnel of GameAlpha-2.4K. From 
+
+3,000 proposed tuples, 34 are removed at the reference stage (25 rejected by the reference gate after up to three prompt-repair attempts, 9 synthesis-service failures), 13 at the video stage (synthesis-service and content screening), 10 by the matte-stage quality gate (per-frame extraction-failure rate above 25% ). For 19 of the resulting 2,943 unique tasks, production retained one additional regenerated clip, giving 
+
+2,962 clip artifacts at the final frame-safety review; remov-ing 567 edge-touching artifacts yields 2,395 accepted clips (2,156 train / 239 validation), reported as approximately 2.4Kin the main paper. 
+
+A.6 Comparison with Existing Dataset 
+
+The main paper compares reported scale, domain, and avail-ability of RGBA training dataset. Four clarifications be-long here. First, clip count alone understates the dataset: the exact 2,395 -clip corpus contains 232 .3K frames at the 
+
+960 ×960 native resolution; under the main paper’s rounded 
+
+2,400 -clip convention, this is reported as 232 .8K frames — about 97% of the frame budget of VideoMatte240K (Lin et al. 2021a) — distributed over nearly five times as many clip-level examples, which matters for reference-conditioned training where diversity is consumed at the clip level. Second, the closest dataset differ in kind, not only in size: green-screen human footage (VideoMatte240K), hu-man/VFX clips (Wan-Alpha), generic objects (TransVDM), game effects (TransAnimate), and glyphs (TransText) do not cover reusable game-asset animation with equipment, styl-ization, and effect-like foregrounds; LayerDiffuse is image-only. Third, the alpha in GameAlpha-2.4K is recovered un-der controlled, matte-friendly conditions and retained only after staged gates (Appendix A.1), which is a different su-pervision contract from post-hoc matting of arbitrary com-posites. Finally, the planned release status and licensing for GameAlpha-2.4K, the accompanying code, and the model checkpoint are documented in Appendix F. 
+
+B Implementation and Protocol Details 
+
+B.1 DiT Adaptation and Inference Configuration 
+
+As stated in the main paper, we adapt Wan2.1-I2V-14B (Wan et al. 2025) with rank-32 DoRA (Liu et al. 2024b) modules on the attention projections (q, k, v, o ) and feedforward layers, trained for 10 epochs with AdamW (Loshchilov, Hutter et al. Locomotion Combat Action State Reaction NPC Daily Physics VFX Character NPC Monster Creature Wildlife Animal Vehicle Transport Environment Prop Modern Tech Food Plant 333 130 116 78 124 191 68 74 36 136 146 19 44 88 50 35 184 47 12 179 34 8 139 21 8 95     
+
+> 781 505 297 269 238 181 124 822 217 297 114 945
+
+Figure 6: Entity ×action coverage of GameAlpha-2.4K. Hatched cells are structurally forbidden combinations under the body-type compatibility rules (9 of 35); every supported cell is populated (minimum count 8). The smallest entity class holds 5.2% of clips and the smallest action class 4.8% .Unarmed Melee Weapon Ranged Weapon Armor Apparel Consumable Tool Gadget Magic Relic         
+
+> 0500 1000 1500
+> accepted clips
+> 1275 53% 233 10% 96 4% 202 8% 150 6% 296 12% 143 6%
+> Equipment (7 classes)
+> tier 1 core tier 2 genre tier 3 long tail
+> 0250 500 750 1000 1250
+> 794 33% 1140 48% 461 19%
+> Style tier (23 observed styles)
+> tier 1 2D main tier 2 depth tier 3 char/UI
+> 0500 1000 1500 1236 52% 942 39% 217 9%
+> Viewpoint tier (7 named angles)
+
+Figure 7: Marginal distributions over equipment, style tier, and viewpoint tier. Closed-loop reweighting keeps every cat-egory populated but not uniform: acceptance rates differ across categories, and sampling mixes a mainstream and an exploration mode, so observed shares deviate from proposal weights. 2017) at 1.4 × 10 −4 and weight decay 0.01 under distributed bfloat16. The per-GPU batch size is 1 without gradient accu-mulation (global batch 32). The shifted-linear flow-matching scheduler uses shift 5, σmax = 1 , and σmin = 0 ; training uniformly samples its 1,000 nonzero levels. Inference uses the four-evaluation LightX2V (Contributors 2025) schedule shown in the main paper, σ = (1 .000 , 0.938 , 0.834 , 0.628) 
+
+before the zero-noise endpoint, with FlowMatch shift 5, and generates 97 frames at 624 ×640 .
+
+B.2 Visibility Router Details 
+
+Probe. The transparency probe is a logistic regression fit-ted offline on dense denoising trajectories of training clips and frozen for routed inference. For each token, the feature flattens its 2×2 spatial patch across the 16 latent channels of 
+
+ˆx[k]0 into 64 dimensions; the label marks token j effectively transparent when the maximum decoded alpha over its spa-tiotemporal region Ωj is at most η = 0 .05 in the dense final output. The probe is a readout of the model’s own evolving prediction, not an external saliency heuristic, and its cost a 𝑏  𝑐 Figure 8: Transparency structure of GameAlpha-2.4K. (a) Per-pixel alpha over all GameAlpha-2.4K videos × 97 frames at the training geometry ( 624 ×640 ; log scale): 70 .1% of pixels are fully transparent ( α ≤ 2/255 ; exactly 0: 69 .2% ) and 
+
+27 .8% effectively opaque ( α ≥ 253 /255 ; exactly 1: 1.2% ), leaving a 2.2% soft band ( 2/255 < α < 253 /255 ); the ±2/255 
+
+margins absorb video-codec noise. Under the naive definition 0 < α < 1 the soft fraction is 29 .6% , so the band definition must accompany any quoted number. (b) Per-video fraction of fully transparent tokens under the conservative token criterion (16 ×16 spatial and 4-frame temporal max-pooling, token visible if any pixel in its receptive field is): mean 0.63 , median 0.64 .This is the oracle upper bound on skippable computation; the evaluation-2 initial-routing budget for evaluations 3–4 ( 0.35 ,dashed) lies below the transparent budget of 98 .9% of videos. (c) Transparent-token sets of adjacent latent frames overlap almost perfectly (per-video mean IoU, median 0.95 ), whereas a static first-frame plan (visible set dilated by r=2 ) overlaps later-frame transparency far less (median 0.72 ): assets move and grow, and on average 12 .2% of plan-frozen tokens become visible in a later frame. This gap underlies the ordering of the routing ablation in the main paper. Token statistics here use the 2/255 threshold of the dataset audit; the router’s transparency labels in the main paper use η = 0 .05 on decoded alpha — the two thresholds serve different objects and are not interchangeable. is negligible relative to a DiT evaluation (a single N × 64 
+
+matrix product per routing decision). Measured with the fi-nal checkpoint at inference precision (medians over repeated runs on one accelerator), reading the probe over all 39 ,000 
+
+tokens costs 0.8 ms per routing decision along the inference code path ( 0.05 ms once inputs are resident on the accelera-tor), decoding alpha from ˆx0 through the VAE alpha decoder costs 6.9 s, and one dense DiT evaluation costs 22 .6 s: probe-based routing adds ≈0.004% of one evaluation, whereas decoder-based routing would add ≈31% of one evaluation per read. 
+
+Margins, gates, and reactivation. With τ = 0 , tokens with logit ℓj > τ are predicted transparent; the complemen-tary nontransparent support is dilated by rs = 2 in space and rt = 1 along latent time, and the first latent frame al-ways stays active. Before any sparse state is constructed, a sample stays on the dense path if fewer than 10% of to-kens are routing candidates or more than 15% are uncertain (|ℓj − τ | < δ , δ = 2 ); because this gate runs before any mutation, the fallback is bit-exact dense inference. After the first sparse evaluation, the protected support is recomputed from the fresh clean estimates of active tokens with the same margins, and any routed token reached by the updated sup-port is reactivated for the final evaluation, re-entering at the current global noise level thanks to the x0-lock transport. 
+
+B.3 Baseline Systems 
+
+All two-stage baselines receive exactly the input our model receives — the reference foreground composited on white at 624 ×640 — and produce 97 frames; the memory-based extractors (MatAnyone2 (Yang et al. 2026), SAM3 (Carion et al. 2025)) are seeded with the same reference alpha our model is conditioned on, and reported runtime is the summed generation-plus-matting wall clock on identical hardware. 
+
+Generators. Wan2.1-I2V-14B uses the official 480P weights with the same LightX2V CFG step-distillation LoRA as our backbone (4 evaluations, no negative branch, FlowMatch shift 5), generating natively at 624 ×640 × 97 .CogVideoX1.5-5B-I2V runs its official recipe (50 steps, dy-namic guidance 6.0) at its native 768 ×768 and 16 fps — a one-to-one temporal mapping to the protocol — and is then resampled to 624 ×640 . HunyuanVideo-I2V (13B) runs its official step count and guidance directly at the protocol reso-lution 624 ×640 (both sides divisible by 16); its 720p bucket is computationally infeasible at 97 frames, which we dis-close rather than crop. All generator outputs are conformed to 624 ×640 , 97 frames, 16 fps with high-quality H.264 (al-pha read-back error ≈2 × 10 −4 MAE), and all generators share seed 0. 
+
+Extractors. BiRefNet uses the RMBG-2.0 release (frame-wise, 1024 2 input, soft alpha); MatAnyone2 propagates from the first-frame dataset alpha (binarized seed mask); SAM3 tracks from the same seed and produces binary masks (largest connected component); UniVidX generates alpha with its re-leased configuration. Per-clip runtime sums generation and matting wall clock, excluding model loading. A beast-form fox is rendered as a compact, agile dark-fantasy creature with clearly vulpine anatomy, including a lean body, alert upright ears, a narrow muzzle, a thick tail, and grounded animal proportions suited for a 2D game asset. The main body is covered in dark russet fur, the limbs are soot-browned, the underfur is muted cream, and shadowy charcoal accents define the face, ears, tail, and lower silhouette, all treated in a gritty, desaturated dark-fantasy palette. The view is a 3/4 top-down perspective in a classic JRPG camera angle, seen from a high angle that shows both the top and front of the body, with the fox oriented diagonally toward the bottom-right of the screen and its front-right side more visible. The visual treatment is a grim, desaturated 2D illustration for a game asset, combining detailed ink linework with layered digital paint, restrained hand-painted edge control, visible brush rhythm, and strong material contrast between coarse outer fur, soft undercoat, and dusty 
+
+surface grime. The shading remains physically grounded and readable for animation. The fox performs a compact in-place jump , crouching slightly before springing upward, with all four paws leaving the 
+
+ground at once, the body tightening in midair and the tail counterbalancing the motion, then dropping straight back down to land in the exact same footprint with a soft rebound, completing a clean looping jump with no forward travel. 
+
+A humanoid demon creature is shown with a strong, readable silhouette, facing toward the bottom of the screen with the front of the body visible, seen from a classic JRPG three-quarter top-down perspective in a high angle view that shows both the top and the front. It has dark metallic charcoal skin and fitted armor plates, combining infernal anatomy with sleek cybernetic design cues through sharp angular contours, layered plating, and luminous edge accents while remaining clearly demonic and humanoid. Electrified infernal markings run across the body and armor, glowing in neon cyan, magenta, 
+
+and lime, integrated into a flat 2D game-art rendering style with crisp silhouette-first shape language, dark metallic massing, clean graphic surfaces, and controlled luminous accents for a cinematic but 
+
+highly readable cyberpunk neon look. The creature is carrying sleek high-tech thieves' tools designed in black chrome, including compact lockpicks, probes, and precision implements accented with vivid neon cyan, magenta, and lime highlights. The tools look engineered, stealthy, and professional, matching the demon's dark metallic finish and glowing cyberpunk detailing. In motion, the humanoid demon performs a compact combat dodge roll in place, tucking the body into a fast defensive rotation and then recovering smoothly back into a ready stance without drifting from the original position. During the roll, the dark metallic armor and charcoal skin catch sharp neon cyan, magenta, and lime edge glows, while the electrified infernal markings briefly streak to emphasize motion in a smooth continuous looping action. 
+
+A humanoid scout character with a lean, agile build and a clear reconnaissance silhouette is presented as a classic retro pixel art sprite, rendered as a flat 2D game asset with pixel-precise construction, crisp outer contours, and clean blocky shading. The figure is shown in a strict top-down overhead view , looking directly down from above in a flat 2D projection with no perspective, and the body is oriented facing the bottom of the screen so the silhouette reads instantly at small sprite scale. The main palette uses muted olive green, dusty tan, dark brown, faded navy blue, and deep charcoal, with small restrained dull silver-gray accents. The clothing and gear are practical and lightly worn, built from simple layered shapes that suggest a field-ready outfit, compact utility straps, sturdy boots, and a low-profile explorer look without excessive ornament. The character carries a small set of caltrops as compact metal hazard spikes, kept clearly visible as practical scout equipment rather than a large weapon; the caltrops read as simple dark metallic forms with tiny dull silver-gray highlights, attached to an easy-access pouch at the waist or held in a controlled, ready manner suited to a mobile scout. The action shows a compact in-place parkour loop, cycling through tight acrobatic flips , quick vault-like tucks, planted hand touches, and agile rebound motions while staying centered on the starting position . The 
+
+body remains spring-loaded and controlled, with readable limb arcs, balanced landings, and brief crouched compression between beats to keep the motion physically grounded and naturally repeatable. The 
+
+pixel treatment emphasizes strong silhouette separation, low-noise surfaces, simplified texture frequency, restrained cluster-based pixel placement, minimal anti-aliasing, and clear value grouping so the humanoid form, outfit layers, and carried caltrops remain legible throughout the motion. 
+
+A humanoid werewolf is depicted as a modern anime-inspired 2D character illustration with cel-shaded rendering, flat controlled color blocking, crisp inked outlines, and consistent angular shape language. It has an athletic digitigrade build and is covered in charcoal gray and cool brown fur with creamy highlight accents along the muzzle, chest, forearms, and tail edge. The head is distinctly lupine with pointed ears, a strong snout, and glowing amber eyes, while the hands and feet remain expressive and humanlike in structure, tipped with pale claws. The silhouette is sleek and clearly readable, with sharp fur tufts and clean anatomical separation suited for stylized 2D character art. It is holding a streamlined dart with a sleek cel-shaded finish in neon teal and dark steel, featuring a narrow pointed tip, compact fletching, and crisp graphic paneling that reads clearly in a modern anime illustration. The character is shown in a strict top-down overhead view , looking directly down from above in a 2D flat projection with no perspective, and it remains oriented facing the bottom of the screen. It performs tight in-place parkour flips and agile traversal motions in a continuous loop , springing from compressed leg poses into compact aerial rotations, shifting through quick hand-assisted vault-like transitions, controlling the torso precisely through twists, and landing with sharp clawed precision that rebounds immediately 
+
+into the next acrobatic move while staying centered in place, with the dart remaining clearly visible throughout. 
+
+A humanoid guard character appears with a clear, readable protective silhouette, clad in polished steel armor over deep royal blue cloth layers, secured with dark brown leather straps and fittings. The design reads as disciplined and defensive, with grounded proportions, crisp plate shapes, and controlled hand-painted edge definition suited for a production-quality game sprite. The view is an isometric orthographic projection with a pseudo-3D game camera and a 2.5D angle, with no perspective convergence, and the character is oriented toward the screen bottom-right diagonal with the front-right side visible. The character holds a magical wand designed as a compact arcane focus, glowing violet along its core with clean metallic gold accents and a refined crafted finish. The wand feels functional and 
+
+magically energized, visually distinct while remaining proportioned to read clearly in an isometric game asset. The character is performing a compact combat dodge roll animation while remaining centered in 
+
+place, tucking the body into a controlled rotational roll and keeping the glowing violet wand secured in hand throughout the motion. The action feels defensive, efficient, and battle-ready, with readable armor and cloth overlap during the roll, brief but continuous violet glow visibility from the wand, and only minimal movement so the motion reads as a stable in-place loop. The overall style is a crisp 2.5D isometric game asset with a pre-rendered 3D sprite look, clean studio-like lighting, strong silhouette readability, clear material separation, polished hand-painted edge control, and subtle brush rhythm, so the final result reads cleanly as a high-quality 2D game sprite. Figure 9: GameAlpha-2.4K samples with their prompts. Each row shows the RGBA reference (left), the video prompt (below; viewpoint and action constraints highlighted), and uniformly sampled frames of the clip (right); checkerboards denote transparency. The prompts are the structured output of the tuple sampler in Appendix A.1: the sampled entity, equipment, action, style, and viewpoint of Table 4 are each traceable in the text, and every action is constrained to be in-place and loop-closing. Algorithm 1: Visibility-routed sampling (four evaluations). 
+
+g: frozen transparency probe; margins (rs, r t) = (2 , 1) ; the first latent frame is never routed; with routing disabled (or on fallback) sampling is bit-exact to the dense sampler.  
+
+> 1:
+
+run evaluations 1–2 dense; keep ˆx[2] 0 
+
+> 2:
+
+ℓ ← g(ˆ x[2] 0 ); P ← Dilate rs,r t ({ℓj ≤ τ }) ∪{frame 0}; F ← ∁P 
+
+> 3:
+
+if |F |/N < 10% or |{ j : |ℓj − τ | < δ }| /N > 15% 
+
+return dense sampling  
+
+> 4:
+
+store endpoints x⋆ 
+
+> 0,j
+
+← ˆx[2] 0,j and per-layer K/V of F
+
+{Cache-KV}  
+
+> 5:
+
+for k = 3 , 4 do  
+
+> 6:
+
+active tokens: fresh Q/K/V, attention over fresh + cached K/V, FFN  
+
+> 7:
+
+routed tokens: advance by the x0-lock transport (main paper, Eq. 7) {no DiT pass}  
+
+> 8:
+
+if k = 3 : recompute P from fresh ˆx[3] 0 of active tokens; reactivate F ∩ P (fresh K/V on re-entry)  
+
+> 9:
+
+end for  
+
+> 10:
+
+return RGB and alpha decoded from the merged states 
+
+B.4 Metric Definitions 
+
+FVD. I3D features (Carreira and Zisserman 2017) on checkerboard composites of RGBA outputs, following (Un-terthiner et al. 2019; Skorokhodov, Tulyakov, and Elhoseiny 2021); both generated and reference sets use the same checker pattern and compositing code. The checker uses 16 -pixel tiles with light/dark gray levels 230 /179 (XOR pattern, dark ori-gin) at the evaluation resolution 624 ×640 , identical for every frame and every system. For the GameAlpha-2.4K evalua-tion, FVD uses exactly 97 frames per clip and all n=239 
+
+validation clips (FVD values are not comparable across dif-ferent n or frame counts); cross-domain cohorts are specified separately in Appendix C.6. 
+
+DINO-ID. Mean DINOv2 (Oquab et al. 2024) ViT-S/14 cosine similarity between 16 uniformly sampled generated frames (white composites) and the reference frame’s white composite. 
+
+Aesthetic. Mean LAION aesthetic-predictor score over 8 uniformly sampled white-composite frames. 
+
+Motion smoothness. The VBench (Huang et al. 2024) motion-smoothness metric. 
+
+MAD. Mean absolute difference ( ×10 −3) between gener-ated and dataset alpha sequences (Lin et al. 2021a; Yang et al. 2026), over all pixels of all 97 frames at 624 ×640 (al-pha decoded as the channel mean of the grayscale video). For GameAlpha-2.4K, the dataset alpha is extractor-selected supervision rather than renderer-native ground truth; con-sequently, MAD measures agreement with that reference sequence and does not by itself establish physical opacity accuracy or arbitrary-background recompositability. 
+
+Flow Difference. Following the adaptation described in the main paper: Farneback flows (Farnebäck 2003) are com-puted on consecutive frames of the white-background RGB composite and of the alpha sequence; the endpoint distance between the two flows is averaged inside a dilated foreground mask and normalized by the mean magnitudes of both fields, so static videos gain no trivial advantage. Flow Difference diagnoses RGB–alpha motion alignment and is interpreted jointly with FVD (a frozen-content clip can have excellent alignment). Precisely, for each consecutive pair (t−1, t ):Farneback flows (parameters 0.5, 3, 15 , 3, 5, 1.2, 0) are com-puted on the grayscale white composite and on the alpha map; the foreground mask is the union max( αt−1, α t) > 0.05 di-lated twice with a 5×5 kernel ( ≈ 4 pixels); the pair score is mean fg ∥Frgb − Fα∥2 / (mean fg ∥Frgb ∥ + mean fg ∥Fα∥ +10 −3); clip scores average the 96 pairs (empty-foreground pairs are skipped), and table entries average all 239 clips. 
+
+C Additional Experiments and Analyses 
+
+C.1 Early Readability of Token Transparency and Routing Time 
+
+The visibility criterion of the main paper is analytic at the final output, but membership in the final-transparent set is unknown while denoising is still running. This section tests whether the model’s step-wise clean estimates already con-tain a cheaply readable signal of final token transparency, and when that signal becomes reliable enough to route com-putation. From held-out denoising trajectories that pass an alpha-health gate (rejecting degenerate alpha predictions), we score every token at each of the four evaluations with the probe fitted on training trajectories and evaluate the same scores against two label sets: Final-Transparency Predic-tion AUROC against the final decoded alpha (does the cur-rent state predict the final transparent set?), and Same-Step Readout AUROC against alpha decoded from the same-step 
+
+ˆx[k]0 (does the probe correctly read the model’s current trans-parency estimate?). Alpha maps are max-pooled to the DiT token grid; a token is visible if any alpha in its receptive field exceeds η = 0 .05 .Two observations follow. First, the probe reads the model’s current transparency estimate essentially from the first eval-uation (readout 0.9981 at evaluation 1), so early routing is not limited by readout capacity. Second, the current esti-mate itself keeps converging toward the final output: final-transparency AUROC improves markedly from evaluation 1 to evaluation 2 ( 0.9863 →0.9952 , closing the gap to the read-out curve from 0.0118 to 0.0028 ) and only marginally after-wards ( 0.9973 at evaluation 3), which supports kroute = 2 
+
+as the earliest practical routing point — waiting until evalua-tion 3 buys a small ranking gain but halves the sparse suffix. AUROC only selects the routing time; freezing safety is pro-vided by the spatiotemporal margin, local reactivation, and the pre-routing dense fallback of the main paper, and AUROC values are ranking quality, not classification accuracy. 
+
+C.2 How the Alpha Trajectory Evolves 
+
+This analysis visualizes why early routing plus a local mar-gin is the right shape of solution: the model’s clean estimate forms the correct subject silhouette early, and the remain-𝑒𝑣𝑎𝑙𝑢𝑎𝑡𝑖𝑜𝑛 𝑘 (𝑝𝑟𝑜𝑏𝑒 𝑖𝑛𝑝𝑢𝑡 ෞ 𝑥 0(𝑘) )
+
+> 𝐴𝑈𝑅𝑂𝐶
+> 𝑣𝑠 𝑓𝑖𝑛𝑎𝑙 𝑡𝑟𝑎𝑛𝑠𝑝𝑎𝑟𝑒𝑛𝑐𝑦
+> 𝑣𝑠 𝑠𝑎𝑚𝑒 − 𝑠𝑡𝑒𝑝 𝑡𝑟𝑎𝑛𝑠𝑝𝑎𝑟𝑒𝑛𝑐𝑦
+
+Figure 10: Early readability of token transparency (probe fitted on training trajectories; 48 held-out validation trajec-tories; 1,872 ,000 tokens per evaluation; identical token set for both curves; the alpha-health gate fired on 0 of 48 clips). Blue (solid, circles): probe scores against final transparency labels. Coral (dashed, squares): the same scores against same-step decoded alpha. The vertical line marks the routing point 
+
+k=2 . Same-step readout stays at 0.9974 –0.9981 from the first evaluation, while final-transparency prediction rises from 
+
+0.9863 (evaluation 1) to 0.9952 (evaluation 2) and plateaus near 0.997 ; at evaluation 4 the two targets coincide by con-struction. The early gap is consistent with belief drift of the model’s own alpha estimate rather than a readout failure. ing changes concentrate near the foreground boundary as contours, soft edges, and motion details emerge. Reading Figure 11 column by column: at evaluation 1 the silhouette is already essentially correct, with residual coral/blue disagreement forming a band around the bound-ary (row 3 shows the largest early drift among the three ex-amples); by evaluation 2 the band thins to one or two token widths; evaluations 3–4 refine soft edges. This boundary-concentrated convergence is exactly the pattern the router’s safety design assumes: routing after evaluation 2 with a two-token spatial margin covers the dominant residual drift, and reactivation handles the tail — consistent with the risk–yield analysis in the main paper. 
+
+C.3 Within-Frame Support-Mismatch Distances 
+
+Figure 12 asks where the evaluation-2 transparency estimate disagrees with the final output within each frame: most raw mismatches lie within one or two token cells of the current foreground boundary, supporting the choice of a small spatial margin ( rs = 2 ) over a globally enlarged active set, while the long tail (distances up to 17) is why the margin alone is not the entire safety story — the reactivation pass and the dense fallback of the main paper cover what a local margin cannot. 
+
+C.4 Routed-Fraction Sweep 
+
+Figure 13 sweeps the requested routing fraction over 
+
+{0.10 , 0.20 , 0.30 , 0.35 , 0.40 , 0.50 , 0.65 } under true sparse inference. With reactivation, Cache-KV remains close to dense (FVD 173 .1–179 .6 versus 172 .9) while the realized suffix skip grows from 9.6% to 51 .7% . At the requested 0.35 
+
+tier, Cache-KV obtains FVD 174 .4 at 31 .9% realized suf-fix skip. The controlled no-reactivation comparison is the selected operating-point row reported in the main paper: it starts from the same evaluation-2 routed set and dense-fallback decisions but never returns tokens to the active set, raising FVD from 174 .4 to 537 .2 while increasing backbone speedup from 1.2× to 1.3×. Under this matched construc-tion, disabling reactivation cannot produce fewer skips than enabling it; the no-reactivation result is therefore not mixed into the separate budget sweep in Figure 13. The dense value differs from the main ablation table ( 172 .3) because it is an independent run under the same metric harness. 
+
+C.5 Fallback and Reactivation Statistics 
+
+Figure 14 measures how often the router’s safety mechanisms actually fire on the validation split. Dense fallback. The pre-routing gate keeps 7 of 239 clips ( 2.9% ) on the dense path: 
+
+4 trigger the low-support condition (fewer than 10% candi-dates), 2 the high-uncertainty condition (more than 15% un-certain tokens), and 1 both. Because the gate decides before any sparse state is constructed, these clips execute bit-exact dense inference. Routed fraction and full-trajectory saving. 
+
+The 35% figure in the main paper refers to the evaluation-2 initial-routing reference for evaluations 3–4, so it describes the sparse suffix rather than an all-step compute-saving per-centage. The 15 .68% figure is instead the per-sample median fraction of token evaluations avoided over evaluations 1–4, whose first two evaluations remain dense; it also reflects fallback and reactivation. Thus the two percentages use dif-ferent denominators and aggregations rather than making competing claims about the same quantity. Reactivation. Ev-ery routed clip reactivates tokens between evaluations 3–4 (median 325 tokens, i.e., 2.1% of the routed set; maximum 
+
+16 .4% ), confirming that the evaluation-2 decision does re-quire local revision; the cost is small, reducing realized skip by only 0.46 percentage points on average. 
+
+C.6 Cross-Domain Evaluation on VideoMatte240K 
+
+This section evaluates cross-domain behavior on Video-Matte240K (Lin et al. 2021a): human-subject clips outside the game-asset training domain of our Stage-2 generator. For this cross-domain diagnostic, we use a separately trained RGB-A VAE checkpoint that was trained without Video-Matte240K; none of the evaluated VideoMatte240K clips or alpha sequences was used to train that VAE, the Stage-2 DiT, or the transparency probe. For each clip, we take the first 97 source frames without temporal resampling and ap-ply to foreground and alpha a 421 ×432 crop centered on the union of ground-truth alpha support ( α > 2/255 ) over those frames. We then resize both to 624 ×640 and encode them at 16 fps. All systems receive the resulting white-composited first frame and the same per-clip caption from a fixed open captioning model; MatAnyone2 and SAM3 also receive the same first-frame ground-truth alpha. Our model is evaluated with dense inference and with the visibility router at its de-𝐷𝑒𝑐𝑜𝑑𝑒𝑑 ෞ 𝑥 0(𝑘) 𝑎𝑙𝑝ℎ𝑎 𝑣𝑠 𝑓𝑖𝑛𝑎𝑙 𝑎𝑙𝑝ℎ𝑎(𝑐𝑜𝑟𝑎𝑙: 𝑎𝑝𝑝𝑒𝑎𝑟𝑠 𝑙𝑎𝑡𝑡𝑒𝑟; 𝑏𝑙𝑢𝑒: 𝑝𝑟𝑒𝑠𝑒𝑛𝑡 𝑛𝑜𝑤, 𝑎𝑏𝑠𝑒𝑛𝑡 𝑎𝑡 𝑓𝑖𝑛𝑎𝑙) 
+
+> 𝑒𝑣𝑎𝑙𝑢𝑎𝑡𝑖𝑜𝑛 𝑘 (𝑝𝑟𝑜𝑏𝑒 𝑖𝑛𝑝𝑢𝑡 ෞ 𝑥 0(𝑘) )
+> 𝐴𝑈𝑅𝑂𝐶
+> 𝑣𝑠 𝑓𝑖𝑛𝑎𝑙 𝑡𝑟𝑎𝑛𝑠𝑝𝑎𝑟𝑒𝑛𝑐𝑦
+> 𝑣𝑠 𝑠𝑎𝑚𝑒 − 𝑠𝑡𝑒𝑝 𝑡𝑟𝑎𝑛𝑠𝑝𝑎𝑟𝑒𝑛𝑐𝑦
+> selected
+
+Figure 11: Evolution of decoded alpha estimates (deployed checkpoint; dense validation trajectories). Three manually selected alpha-healthy clips (rows) at evaluations 1–4 (numbered columns) and the final output (rightmost column), decoded directly from the stored clean-estimate latents. Grayscale shows the current decoded alpha; coral marks support that appears later 
+
+(missing relative to the final alpha), and blue marks support present now but absent at final . Rows are cropped independently, so scales are not comparable across rows. The visualization diagnoses trajectory self-consistency — how the model’s own estimate converges to its own final output — and does not measure matte accuracy against an external alpha target. ployed configuration. Metrics follow the main paper, with MAD computed against the dataset’s ground truth alpha. Table 5 reports the grid. Among the directly comparable full-cohort rows, our model obtains the lowest FVD ( 125 .7
+
+routed; 129 .7 dense) and MAD ( 105 .2 routed; 105 .0 dense). With the shared Wan backbone, generate-then-matte variants reach FVD 132 .6–135 .9 and MAD 127 .9–135 .9. These are full-system comparisons: RGB-A adaptation and routed in-ference vary together, so the table does not isolate a causal gain from joint foreground-and-alpha generation alone. Flow Difference must still be read with content quality: Wan– SAM3 has a slightly lower value than our router ( 0.618 vs. 
+
+0.621 ) but a higher FVD ( 135 .9 vs. 125 .7). Under Stage-2 domain shift, dense fallback rises from 
+
+2.9% in-domain to 5.2% (25 /484 : 22 low-support and 3
+
+high-uncertainty clips). Among clips that enter sparse exe-cution, every clip reactivates tokens (median 198 tokens, ver-sus 325 in-domain). Routed and dense results remain close across the reported metrics, consistent with fallback and re-activation acting as safeguards under domain shift. 
+
+C.7 Loss-Weighting Ablation 
+
+To test whether visibility should also reweight the training ob-jective, we retrain a controlled variant of the same 36-channel architecture while changing only the spatial weighting of the flow-matching loss. For latent cell i, let ai ∈ [0 , 1] denote the aligned dataset alpha occupancy and define 
+
+wi = λ + (1 − λ)ai, Lλ = E
+
+
+
+ω(t)
+
+P 
+
+> i
+
+wi∥ˆvt,i − vi∥22
+
+16 P 
+
+> i
+
+wi
+
+
+
+.
+
+(8) The weight is shared by all 16 channels of the merged RGB– alpha latent. Thus, λ = 1 recovers the spatially uniform objective, whereas λ = 0 .2 assigns a fully transparent cell one fifth of the weight of an opaque cell and interpolates continuously through partial opacity. Normalization by the mean weight keeps the overall loss scale comparable. All data and optimization settings are unchanged. Table 6 evaluates both models with dense inference so that routing does not confound the comparison. Table 6 shows that downweighting transparent regions raises FVD from 172 .3 to 185 .8 and reduces DINO-ID from 
+
+0.840 to 0.836 , while motion smoothness is unchanged at the reported precision. It also provides no benefit in agree-ment with the dataset alpha target: Flow Difference increases from 0.550 to 0.560 and MAD from 108 .2 to 108 .5. Un-der this controlled setting, reallocating loss toward visible cells therefore degrades distribution-level video quality with-out improving RGB–alpha alignment or agreement with the extractor-selected alpha target, supporting the spatially uni-form objective used in the main model. This result is specific to the tested λ = 0 .2 weighting and does not rule out every Generator Matte FVD ↓ DINO-ID ↑ Aesthetic ↑ Motion Smoothness ↑ Flow-Diff ↓ MAD ( 10 −3)↓                                                                                          
+
+> Wan2.1-I2V (4-step) BiRefNet 133.9 0.887 5.166 0.991 0.624 135.9 MatAnyone2 132.6 0.888 5.168 0.991 0.619 131.7 SAM3 135.9 0.885 5.149 0.991 0.618 127.9 UniVidX †143.8 0.866 5.155 0.992 0.633 138.5 CogVideoX1.5-I2V BiRefNet 179.5 0.860 4.868 0.988 0.640 128.3 MatAnyone2 175.2 0.865 4.876 0.988 0.621 125.3 SAM3 176.4 0.859 4.872 0.987 0.691 128.2 UniVidX †178.2 0.854 4.870 0.988 0.652 128.3 HunyuanVideo-I2V BiRefNet 423.3 0.659 4.793 0.992 0.701 283.4 MatAnyone2 372.2 0.697 4.730 0.993 0.670 234.6 SAM3 353.6 0.719 4.739 0.991 0.668 245.0 UniVidX †341.6 0.581 4.582 0.993 0.617 225.4
+> Ours (dense) 129.7 0.905 5.119 0.994 0.624 105.0 Ours (visibility router) 125.7 0.906 5.107 0.994 0.621 105.2
+> Ground truth (anchor) ≈00.885 4.930 0.990 0.588 —
+
+Table 5: Cross-domain comparison on VideoMatte240K. Full-cohort rows use n=484 and 97 frames; MAD uses ground-truth alpha. The separately trained RGB-A VAE checkpoint used in this diagnostic was trained without VideoMatte240K. †UniVidX rows use the same seeded 400-clip manifest prefix due to per-clip cost, so their FVD is not comparable with the n=484 rows. DINO-ID/Aesthetic use 447–483 and 395–400 valid scores for the n=484 and n=400 rows, respectively, after auxiliary NIQE failures; Flow-Diff uses 480–484 clips for full-cohort rows (400 for UniVidX) where foreground-flow support is available. Bold 
+
+marks the best n=484 value per column, excluding the ground-truth anchor.                      
+
+> Training objective λFVD ↓DINO-ID ↑Aesthetic ↑Motion Sm. ↑Flow-Diff ↓MAD ( 10 −3)↓
+> Uniform 1.0 172.3 0.840 5.317 0.988 0.550 108.2
+> Alpha-weighted 0.2 185.8 0.836 5.307 0.988 0.560 108.5
+
+Table 6: Controlled loss-weighting ablation on the GameAlpha-2.4K validation set ( n=239 ). The uniform row is the dense reference reported in the main paper. The alpha-weighted model has the same 36-channel architecture and training recipe; only Eq. (8) changes. Both models are evaluated with dense four-step inference. Bold marks the better value; ties at displayed precision are both bolded. alternative weighting schedule. 
+
+C.8 Human Evaluation 
+
+Participants. Ten professional data annotators partici-pated in a blinded, within-subject evaluation. Each partic-ipant independently rated all evaluated outputs, and partici-pant identities are anonymized as P01–P10 in the analysis. 
+
+Protocol. We evaluate 20 reference–prompt pairs. For each pair, participants view the checkerboard compos-ites produced by four systems: Wan2.1-I2V-14B (4-step) + BiRefNet, CogVideoX1.5-5B-I2V + BiRefNet, HunyuanVideo-I2V + BiRefNet, and our deployed visibility-routed RGBA model. All methods are hidden behind labels A–D. Label positions are counterbalanced over the 20 cases, such that every method appears five times at each position. Each participant therefore rates 80 outputs on two criteria using a three-level ordinal scale (low, medium, or high). The two criteria displayed on the rating sheet were (1) Vi-sual Attractiveness , which asks for the visual appeal of each generated checkerboard composite, and (2) RGBA Align-ment , whether RGB and alpha align correctly. The latter wording follows the RGBA Alignment dimension used by TransPixeler (Wang et al. 2025); our first criterion is not Tran-sPixeler’s Motion Quality dimension, which instead evalu-ates whether generated motion matches the corresponding text description. We therefore report the rating-sheet con-struct under its literal name and do not claim to replicate TransPixeler’s evaluation dimensions or pairwise-preference protocol. Checkerboard ratings provide a perceptual measure of visible RGBA alignment, not pixel-accurate alpha quality or arbitrary-background recompositability. 
+
+Analysis. We map low, medium, and high to 1, 2, and 3 only for descriptive summaries. The participant is the inde-pendent unit: for each method and criterion, we first average over the same 20 cases within each participant. We then compare our method against each baseline using exact two-sided Wilcoxon signed-rank tests on the 10 paired participant summaries and apply Holm correction over the three baseline comparisons within each criterion. We additionally report the complete ordinal-response distributions in Table 7. Ordinal Krippendorff’s alpha is .679 for Visual Attractiveness and .508 for RGBA Alignment. 
+
+Results. For Visual Attractiveness, our method obtains the largest share of high ratings (62.0%), followed by Wan2.1 + BiRefNet (58.0%). Participant-level comparisons show that Visual Attractiveness (%) RGBA Alignment (%) Method Low Mid High Low Mid High Wan2.1-I2V + BiRefNet 12.0 30.0 58.0 17.5 28.0 54.5 CogVideoX1.5-I2V + BiRefNet 81.5 16.0 2.5 7.5 40.0 52.5 HunyuanVideo-I2V + BiRefNet 67.0 28.5 4.5 31.0 28.0 41.0 Ours 11.0 27.0 62.0 4.5 19.5 76.0 
+
+Table 7: Blinded human evaluation on 20 cases by 10 professional data annotators. Each method receives 200 ratings per criterion. Percentages sum to 100 within each method and criterion. The evaluated cases form an enriched qualitative pool rather than a random sample of the full validation set. 0 1 2 4 8 12 16 025 50 75 100     
+
+> 82.7 124670 80 90
+> r= 1 -7
+
+Figure 12: Within-frame support-mismatch distance CDF (pilot). For alpha-healthy analysis trajectories at k=2 : cumu-lative fraction of raw per-frame support mismatches (tokens transparent in the evaluation-2 estimate but visible in the final output) within a given 2D Chebyshev distance of the current foreground, before any dilation or first-frame protection is ap-plied. Blue: per-sample median CDF; band: P10–P90 across samples; coral dashed: pooled over tokens ( 82 .7% of pooled mismatches lie within radius 2, marked). The inset enlarges 
+
+r = 1 –7, where the median and pooled curves differ most. Per-sample mismatch counts vary widely, so the pooled curve is weighted toward high-mismatch samples. This is a mecha-nism diagnostic for the margin choice, not a measurement of the deployed 3D margin: it cannot be read as “ rs=2 covers 
+
+82 .7% of routed misses”. our method receives higher ratings than CogVideoX1.5 + BiRefNet and HunyuanVideo + BiRefNet (Holm-adjusted 
+
+p = .0059 for both), while no significant difference is ob-served relative to Wan2.1 + BiRefNet ( p = .5508 ). For RGBA Alignment, our method achieves the largest share of high ratings (76.0%), substantially ex-ceeding Wan2.1 + BiRefNet (54.5%), CogVideoX1.5 + BiRefNet (52.5%), and HunyuanVideo + BiRefNet (41.0%). Participant-level comparisons further show that our method receives significantly higher RGBA Alignment ratings than all three generate-then-matte baselines: Wan2.1 + BiRefNet (Holm-adjusted p = .0254 ), CogVideoX1.5 + BiRefNet (p = .0117 ), and HunyuanVideo + BiRefNet ( p = .0059 ). Overall, our method achieves the strongest perceptual 𝑒𝑣𝑎𝑙𝑢𝑎𝑡𝑖𝑜𝑛 𝑘 (𝑝𝑟𝑜𝑏𝑒 𝑖𝑛𝑝𝑢𝑡 ෞ 𝑥 0(𝑘) )
+
+> 𝐴𝑈𝑅𝑂𝐶
+> 𝑣𝑠 𝑓𝑖𝑛𝑎𝑙 𝑡𝑟𝑎𝑛𝑠𝑝𝑎𝑟𝑒𝑛𝑐𝑦
+> 𝑣𝑠 𝑠𝑎𝑚𝑒 − 𝑠𝑡𝑒𝑝 𝑡𝑟𝑎𝑛𝑠𝑝𝑎𝑟𝑒𝑛𝑐𝑦
+> selected
+
+Figure 13: Quality–budget frontier of the deployed Cache-KV router (GameAlpha-2.4K validation, n=239 ). Labels denote requested routing fractions, while the horizontal axis reports the fraction of token evaluations actually skipped over evaluations 3–4; the 7/239 dense fallbacks count as zero skip. Blue circles show Cache-KV with local reactivation, and the dashed line is dense inference under the same 97-frame checker-composite FVD protocol. evaluation profile: it obtains the highest high-rating shares for both criteria, significantly improves RGBA Align-ment over all three generate-then-matte baselines, and re-ceives significantly higher Visual Attractiveness ratings than CogVideoX1.5 and HunyuanVideo, while its paired compar-ison with Wan2.1 is not significant. 
+
+D Additional Qualitative Results 
+
+D.1 Full Generator–Extractor Grid 
+
+Together with the qualitative comparison in the main pa-per, Figures 15 and 16 cover the three RGB generators and four post-hoc extractors in the quantitative grid. Within each example, the paired rows use the same reference and prompt. 
+
+D.2 Qualitative Routing Ablation 
+
+Figures 17 and 18 complement the quantitative routing abla-tion in the main paper with selected paired examples. 0.1 0.2 0.3 0.4 0.5 0.6 0.7       
+
+> evaluation-2 routed fraction
+> 0510 15 20
+> clips
+> 0.35 reference 0250 500 750 1000 1250 1500
+> reactivated tokens (evaluations 3 4)
+> 0510 15 20 25 30 35
+> clips
+> median 325 mean 360
+
+Figure 14: Deployment statistics of the safety mecha-nisms (validation split, n=239 , primary realization). Left: per-clip distribution of the evaluation-2 routed fraction over the 232 routed clips (dashed: the main paper’s 0.35 initial routed-fraction reference for evaluations 3–4). Right: per-clip reactivated-token counts between evaluations 3–4 (solid: median 325 ; dashed: mean 360 ). 
+
+D.3 Prompts of the Qualitative Examples 
+
+The main paper’s qualitative comparison pairs three RGB generators with BiRefNet or MatAnyone2. Within each group, our model and the corresponding two-stage pipeline receive the identical text prompt reproduced below and the identical white-composited reference frame; the prompts are quoted verbatim, and the sampled entity, equipment, action, style, and viewpoint of Table 4 remain traceable in each of them. 
+
+Top row, left — Wan2.1-I2V (4-step) + BiRefNet. A rugged humanoid barbarian with weathered tan skin, a sturdy survival-ist silhouette, and a battle-worn presence — grounded proportions and practical anatomy, a believable fantasy warrior rather than an exaggerated monster. Rendered as hand-drawn 2D game concept art with clean readable linework, controlled contour hierarchy, and painterly digital rendering, using expressive brushwork and stylized textures to define materials clearly while preserving strong sprite legibility and cohesive shape language. Strict top-down overhead view looking directly downward in flat 2D projection with no per-spective, the character facing the bottom of the screen. He wears a worn mask of carved bone or aged wood, hand-shaped with natural brush-painted markings and a scuffed surface. The outfit is rugged earth-toned leather with muted iron and bronze accents — func-tional, distressed, repeatedly repaired, no weapon. He continuously climbs a vertical rope in place in a seamless loop, alternating hand-over-hand pulls with compact leg engagement and controlled body lift while staying centered. The motion is grounded and rhythmic, with subtle torso compression and extension, slight movement in the leathers and straps, and the mask stable as he ascends without changing screen position. 
+
+Top row, right — Wan2.1-I2V (4-step) + MatAnyone2. A hu-manoid vampire creature is shown in a strict top-down overhead view, seen directly from above in a flat 2D projection with no per-spective, oriented toward screen left. It has pale, ashen skin, sharp predatory facial features, and deep crimson accents integrated into its design. The body is lean and undead-looking, with a clear read-able silhouette and gothic menace. Layered shadowy black and burgundy garments frame the form, emphasizing clawed hands, tense posture, and a cold nocturnal presence. Over this clothing it wears a worn dark bulletproof tactical vest fitted close to the body, scuffed, utilitarian, and slightly weathered, rendered in nat-ural hand-painted tones with stylized digital brush texture while remaining clearly protective modern armor rather than decorative costume. The image is rendered as hand-drawn 2D game concept art with clean controlled linework, painterly digital rendering, and expressive brush-driven surface treatment, using strong silhouette readability, cohesive shape language, and stylized but natural ma-terial definition suited for a polished 2D game asset, with crisp forms, selective texture, and a cinematic yet objective presentation. The humanoid vampire performs a compact vertical jump in place, springing upward and landing back in the exact same spot with a clean return to a neutral pose. During the lift and descent, the garments and the worn dark tactical vest react subtly to the motion while the body remains centered, the silhouette stays stable and readable, and the landing resolves into a clear idle-ready stance. 
+
+Middle row, left — CogVideoX1.5-I2V + BiRefNet. A cute chibi oni demon creature is shown in a strict top-down overhead view, looking directly down from above in a flat 2D projection with no perspective, facing the top of the screen. It has a compact humanoid body, an oversized head, a tiny torso and limbs, and a clean read-able silhouette. Its skin is pastel cherry red, with small baby pink horns, creamy ivory fangs peeking from a playful mouth, round bubblegum pink cheeks, and soft lavender shadow accents defining simple stylized forms. The visual treatment is a kawaii chibi 2D sprite style with thick crisp outlines, a pastel candy palette, soft flat shading, minimal but polished surface detail, and strong shape-language consistency for clear game-asset silhouette readability. It is holding a candy-colored crossbow sized for the chibi character, with a chunky readable shape, a mint green body, baby blue limbs and grip details, and pale yellow accent pieces, built with simpli-fied 2D game-friendly construction, soft flat color blocks, and bold outline clarity. The action is an in-place shooting animation: the chibi oni plants its stance, raises the mint-and-blue crossbow to aim, gives a compact firing snap with a small recoil through the arms and shoulders, and then smoothly returns along a clean arc to a neutral ready pose. 
+
+Middle row, right — CogVideoX1.5-I2V + MatAnyone2. A gar-goyle creature with a beast-like silhouette is shown in an isometric orthographic projection with a pseudo-3D game camera at a 2.5D angle, with no perspective convergence, facing diagonally toward the bottom-right of the screen with its front-right side clearly vis-ible. It has carved-stone anatomy and rugged architectural forms, broad clawed limbs, heavy wings, a horned head, and a snarling face. Its surface is weathered stone gray with cool blue undertones, broken by mossy olive staining, soot-dark recessed cracks, chipped edges, and muted hand-painted earthy accents. Strong material con-trast appears across rough rock plates, worn ornamented ridges, and subtle decorative carved motifs embedded in the body. The image is rendered as hand-drawn 2D game concept art with crisp clean linework, painterly digital rendering, and expressive brush-driven strokes, designed as a readable 2D game asset with a clear silhou-ette. The gargoyle remains rooted in place, swaying dizzily from side to side in a loose off-balance posture, with its head wobbling, shoulders slumped, and wings twitching unevenly. Its clawed hands hang open and empty, and the beast-like stone body rocks in a com-pact loop that clearly conveys a stunned status effect without any forward movement. 
+
+Bottom row, left — HunyuanVideo-I2V + BiRefNet. An amor-phous air elemental creature formed from swirling sky-blue, white, and pale cyan vapor masses appears as a readable elemental body silhouette built from soft cloudlike contours, curling wind ribbons, and floating wisps, accented with bright solid vector highlights and subtle ornamental airflow motifs. The subject is rendered as a clean 2D flat vector game asset in crisp SVG-inspired styling, with sharp polished edges, minimal flat shading, clearly grouped color planes, and a palette of bright sky blue, white, and pale cyan enhanced by vibrant solid highlights for a stylized yet production-ready look. CogVideoX 
+
+Ours 
+
+SAM 3
+
+Ours 
+
+Hunyuan 
+
+Video 
+
+Ours 
+
+Wan  2.1  I2V 
+
+A humanoid gladiator character is shown in a classic JRPG three-quarter top-down high-angle view that reveals both the top and the front, consistently facing toward the bottom of the screen with the front clearly visible. The figure has a battle-worn arena presence and a broad, readable silhouette that remains clear as a 2D game sprite. The character has sun-browned skin, aged bronze and iron armor plates, weathered tan leather straps, dusty linen wraps, and muted earth-toned garments accented with rich oil-painted highlights of ochre, umber, and deep crimson. The overall style is a stylized 2D game asset rendered as a richly textured oil painting, with visible brushwork, 
+
+thick impasto buildup, saturated yet earthy color harmonies, crisp contour hierarchy for strong 
+
+sprite readability, and restrained decorative motifs layered into the armor and fabrics. The character clearly holds a simple combat sling in hand, worn and practical, made of weathered leather and cord suited to arena fighting, with no other weapon added. The action is a compact basic attack performed in place with the sling, as the torso twists, the arm snaps through the strike, and the pose settles cleanly back into the idle stance. 
+
+A humanoid paladin character as a readable heroic sprite in classic retro pixel art style for a flat 2D game asset, with pixel-perfect placement, crisp outer edges, and blocky color shading. The figure is shown in a pure orthographic side view with a strictly flat 2D projection, fully facing screen left without perspective distortion. The character wears bright ivory plate armor segmented into golden 
+
+yellow blocks, deep royal blue accent panels, and crimson trim details. Pale peach skin is visible at the 
+
+face, and medium brown hair frames the head to preserve silhouette clarity. Overall design presents a sturdy holy knight with clear contour separation between body parts for strong legibility. Material treatment creates contrast between polished armor, skin, hair, cloth, and glossy potion glass. Compact lighting uses cluster-based highlights suitable for animation loops. In one hand, the paladin holds a ruby red healing potion vial with bright red liquid and white highlight pixels suggesting reflective glass. The action is a compact in-place hit reaction where the paladin flinches backward from taking damage: chest and shoulders recoil, knees soften, head snaps back, and the armor plates 
+
+tilt with a jolt before naturally returning to a neutral stance in a loop-friendly damage animation. 
+
+An amorphous mimic monster formed from aged wooden chest-like surfaces and warped lid panels 
+
+appears in a deceptive container silhouette, shown from a 3/4 top-down perspective in a classic JRPG high-angle view revealing both top and front. Its overall shape sags, flexes, and subtly shifts in an organic way, reading clearly as a living mimic rather than a normal chest, naturally presenting its fluid, unstable form. The exterior is painted in muted aged wood browns and dusty parchment beige grain, while the interior opens into shadowy charcoal darkness, with restrained mossy green accents tucked into seams and creases. Decorative carved trims, worn corner bands, and subtle ornamental motifs cling to the body, while the wood structure remains readable with strong silhouette hierarchy 
+
+and sprite-friendly shape clarity. The asset is rendered as a 2D game sprite in a cel-shaded 
+
+watercolor style, combining crisp contour lines and distinct shape separation with soft layered pigment washes; aged wood browns, parchment beige, charcoal interior shadows, and subtle mossy green notes bloom gently within clearly defined cel-shaded borders. It idles in place with a slow natural breathing loop as the amorphous chest body rises and settles, the lid edges flex softly, wooden panels creak and relax, and the shadowy interior gives a gentle pulse before returning to a neutral still pose. 
+
+A beastlike dragon creature is shown in a 3/4 top-down perspective with a classic JRPG high camera angle that clearly reveals both the top and the front, facing toward the bottom of the screen. It has a sleek, powerful serpentine-draconic body covered in smooth, glossy emerald green scales, with cleanly defined scale plates and ornamental contour accents. Warm ivory horns and claws are distinct materials, and bright amber-gold eyes remain clearly visible on the forward-facing head. The subject 
+
+is presented as a crisp 2.5D isometric game asset with a polished pre-rendered 3D look as a clean 2D 
+
+sprite, using controlled studio-like lighting, sharp silhouette readability, grouped value layering, and tidy material separation. The emerald dragon performs a compact in-place lunge attack: it first compresses its body tightly at center, then snaps its upper body and head sharply forward with claws spread and jaws driving toward the target in a short concentrated strike, followed by a quick recoil that immediately returns it to the centered pose. The movement is nearly stationary and a clean loop-friendly action. 
+
+A modern handheld cellular telephone object is presented from an isolated UI item showcase perspective at a clean neutral angle suitable for an inventory icon, facing in the direction that best 
+
+reveals its structure and readability. It has a slim rectangular body with rounded corners, a glossy 
+
+clean blue display area, bright silver-gray trim, and a vibrant solid black main casing, forming a simple and readable device silhouette. The style is a clean flat 2D vector game asset rendered in crisp SVG-like shapes with sharp edge definition, minimal flat shading, and simplified surface detail for strong readability, with a clear outer contour hierarchy for sprite legibility and solid graphic color blocking that separates the black, silver-gray, and blue accent areas. The cellular telephone then crumbles apart in place as the black casing and silver-gray edges break into small sharp debris fragments and soft dust particles, while the blue screen area splinters into simple graphic shards, 
+
+creating a compact destruction burst that disperses slightly outward and then settles back without 
+
+leaving the original position, forming a clear and natural break-and-return neutral motion arc. 
+
+A readable 2D humanoid scuba diver is depicted in a traditional tarot card-inspired illustration style 
+
+as flat symbolic 2D art, with mystical iconography, elegant line work, and an occult atmosphere. The design emphasizes clean contour hierarchy for silhouette readability, simplified shape language, and a stylized surface patina suggesting aged printmaking, while keeping forms graphic and coherent as an arcane card emblem. The character wears a muted deep-sea teal diving suit with layered contours and a vintage silhouette, accented with aged brass helmet details and restrained ornamental decoration. Symbolic gold, indigo, and faded crimson motifs are integrated as mystical insignia, appearing subtly weathered by salt and depth while preserving strong clarity. The figure is shown in 
+
+a strict top-down overhead view with no perspective, facing the bottom of the screen. The diver 
+
+holds a compact, worn pickaxe with a dark iron head, rendered with legible proportions and practical material definition. The humanoid scuba diver remains in place and sways dizzily in a compact loop, with the torso rocking and helmet tilting under disoriented weight. The posture slackens as if briefly stunned, showing only small balance corrections, slight bobbing, and no forward travel, preserving a clean in-place animation silhouette. 
+
+Ours 
+
+Wan  2.1  I2V 
+
+CogVideoX 
+
+Ours 
+
+Ours 
+
+Hunyuan 
+
+Video Figure 15: Additional qualitative comparison with SAM3. Each example shows the prompt (left), common RGBA reference (center), and four frames at the same temporal indices from the indicated RGB generator followed by SAM3 (top) and from our single-stage model (bottom). Row pairs use Wan2.1-I2V, CogVideoX1.5-I2V, and HunyuanVideo-I2V from top to bottom; checkerboards denote transparency. CogVideoX 
+
+Ours 
+
+UniVidX 
+
+Ours 
+
+Hunyuan 
+
+Video 
+
+Ours 
+
+Wan  2.1  I2V 
+
+A compact snowmobile is shown in an isometric orthographic projection with a pseudo-3D game camera and a 2.5D angle, facing the screen's bottom-left diagonal with its front-left side visible and no perspective convergence. It has a clean, readable silhouette and is rendered as a flat 2D game asset in a paper craft cutout aesthetic, built from stacked construction-paper planes with crisp layered edges, orderly handmade surfaces, and clear panel segmentation. The body is made of cool white and icy blue matte construction paper layers, with a black seat, a clearly defined charcoal gray tread assembly, and small restrained red accent details. The front skis, low windshield area, side 
+
+panels, and rear tread housing are separated into simple, readable layered shapes that preserve the 
+
+recognizable form of a standard snowmobile with no added gear. The vehicle stays fixed in place while the entire chassis violently shakes and rattles in a tight, rapid loop, creating a strong pre-explosion tension. The body jitters intensely side to side and up and down, the front skis quiver, the handlebars tremble, and the rear tread housing shudders, all while remaining locked to its position. The motion is compact, intense, and suitable for seamless looping as a clear animated game asset. 
+
+A decorative stone fountain prop is shown in a pure orthographic side-view projection, kept strictly flat in 2D with no perspective distortion, facing in the most readable direction to clearly display its classic fountain structure. The form is compact and immediately legible as a traditional fountain, built from nostalgic vibrant gray stone with soft mossy green touches settled in the creases, warm 
+
+sunlit beige highlights along the worn edges, clear sky-blue water pooled and circulating within the 
+
+basin, and a gentle aged patina that suggests long outdoor use without changing its simple fountain identity. The image follows a Studio Ghibli-inspired 2D animation sprite aesthetic with beautiful traditional anime color harmony, cel-shaded rendering, hand-painted edge control, visible brush rhythm across the surface treatment, and stylized material simplification organized with consistent shape grammar for clean game-ready readability. The stone body remains fully still and balanced in place as a quiet fountain prop, while the water moves in a gentle repeating cycle with a soft rise and fall, subtle ripples shimmering across the basin, and tiny splashes with slight flowing variation 
+
+creating a natural breathing-like rhythm. 
+
+A cute chibi pig is rendered as a small beast-like animal with a round and readable silhouette, a plump body, short sturdy legs, tiny cloven hooves, a soft rounded head, small perked ears, a pastel peach snout, and a curly little tail. Its skin is soft bubblegum pink with creamy blush accents, pastel peach on the snout and inside the ears, tiny rosy details, and warm ivory highlights that gently define the volume. The character is presented in an adorable kawaii chibi 2D game sprite style with bold clean outlines, a pastel-heavy color design, and soft flat shading shaped by subtle hand-painted brush control, emphasizing clear silhouette language, rounded simplified forms, tidy edge rhythm, gentle 
+
+grounded contact cues, and polished sprite readability suitable for production animation. The view is 
+
+a strict top-down overhead angle, looking directly down from above in a flat 2D projection with no perspective. The pig remains centered and oriented with its head facing the bottom of the screen while walking continuously in place, using alternating short leg steps, a gentle side-to-side body sway, slight bobbing through the torso, tiny hoof lifts followed by soft grounded foot plants, subtle ear bounce, and a small rhythmic tail wiggle in a smooth loop-friendly motion. 
+
+A beastlike dragon creature is shown in a 3/4 top-down perspective with a classic JRPG high camera angle that clearly reveals both the top and the front, facing toward the bottom of the screen. It has a sleek, powerful serpentine-draconic body covered in smooth, glossy emerald green scales, with cleanly defined scale plates and ornamental contour accents. Warm ivory horns and claws are distinct materials, and bright amber-gold eyes remain clearly visible on the forward-facing head. The subject 
+
+is presented as a crisp 2.5D isometric game asset with a polished pre-rendered 3D look as a clean 2D 
+
+sprite, using controlled studio-like lighting, sharp silhouette readability, grouped value layering, and tidy material separation. The emerald dragon performs a compact in-place lunge attack: it first compresses its body tightly at center, then snaps its upper body and head sharply forward with claws spread and jaws driving toward the target in a short concentrated strike, followed by a quick recoil that immediately returns it to the centered pose. The movement is nearly stationary and a clean loop-friendly action. 
+
+A household refrigerator appears as a standalone 2D sprite with a clear upright rectangular 
+
+silhouette, a closed front door, a simple handle detail, and clean planar surfaces. Its proportions are 
+
+balanced, and subtle panel separation with understated accent shapes strengthens recognition as a standard everyday refrigerator without changing its familiar design. The image is rendered as a flat 2D game sprite in a Japanese Ukiyo-e inspired woodblock print aesthetic, using broad simplified color fields, traditional inked contour lines, and layered value grouping for strong silhouette clarity. The color treatment centers on faded paper white, with indigo shadow planes, muted sumi-gray outlines, and subtle vermilion accent details in traditional Japanese woodblock pigment tones. It is shown in a pure orthographic side-view projection, strictly flat and two-dimensional with no 
+
+perspective distortion, facing the direction that best presents its structure clearly. The 
+
+refrigerator remains centered and standing still, performing a subtle loop-friendly breathing motion through a gentle rise and settle in the body mass, with tiny easing in outline and shadow shapes before smoothly returning to neutral, without any sliding or positional drift. 
+
+A compact decorative fountain prop appears as a small 2D sprite in an authentic Atari-era 8-bit retro pixel art style, shown from a strict top-down overhead view looking directly down in a flat 2D projection with no perspective, oriented in the angle that best presents its structure clearly. The object has a clearly readable symmetrical silhouette, with a deep blue stone basin supporting a simple central water spout. Bright cyan blue water rises slightly above the basin and settles back down in a contained shape, creating a subtle idle loop while the fountain remains fixed and centered. Crisp white highlight pixels flicker lightly across the water to suggest reflective wet surfaces, while 
+
+the basin stays rigid and unmoving. The sprite uses an extremely low-resolution presentation and a 
+
+tightly limited palette, emphasizing strong material contrast between the solid dark basin and the glossy cyan water through blocky pixel clusters, sparse white specular highlights, and firm black outline accents along the rim, base, and water contour for maximum silhouette clarity and readable shape language. 
+
+Ours 
+
+Wan  2.1  I2V 
+
+CogVideoX 
+
+Ours 
+
+Ours 
+
+Hunyuan 
+
+Video Figure 16: Additional qualitative comparison with UniVidX. The layout follows Figure 15: the upper and lower rows show the same four temporal indices from the indicated RGB generator followed by UniVidX and from our model, respectively, under the same prompt and reference. Checkerboards denote transparency; checkerboard-only panels contain no visible foreground in the displayed RGBA output. Random 
+
+Ours 
+
+Ours 
+
+RAS 
+
+Ours 
+
+Planner 
+
+A sturdy wooden crate prop is shown from an isolated UI item showcase perspective at a clean neutral angle, facing in the most effective three-quarter direction to display its structure with maximum clarity. The crate has a clean boxy silhouette, reinforced corner joins, visible plank faces and slat seams, simple cross-brace paneling, and slightly beveled edges over solid flat surfaces, giving it a readable retro game shape. It is rendered in a 16-bit retro arcade pixel sprite style with pixel-perfect detailing, strong silhouette clarity, high-contrast flat 2D asset rendering, solid color blocking, and compact decorative wood grain marks formed by crisp pixel clusters. The color treatment uses warm medium brown, dark brown, and muted tan arranged in clean flat pixel masses, with deep brown accent pixels defining seams, edging, and depth separation. In the animation, the wooden crate performs a compact in-place hit reaction, giving a brief stagger and flinch as it snaps 
+
+slightly backward with a tight jolt, while the corners and plank faces shift by a few pixels to suggest 
+
+impact, then it eases cleanly back to its neutral resting pose. 
+
+A humanoid priest character is presented as a readable game asset with a clear iconic silhouette, wearing bright white and gold ceremonial robes with soft blue accents, warm skin tones, and a calm sacred identity. Rendered in clean flat 2D vector art with an SVG-like style, it features crisp sharp edges, solid color blocking, and minimal flat shading for high readability, maintaining material contrast across cloth, trim, skin, and wood. Proportions are balanced with clear layered robe panels. The view is an isometric orthographic projection with a 2.5D angle and no perspective convergence, 
+
+facing the screen's bottom-left diagonal. The priest holds a rich brown wooden quarterstaff with a 
+
+straight sturdy shaft and simple finish, designed for clear asset readability. The animation features compact acrobatic parkour flips and agile in-place movement while holding the staff, incorporating tight rotations, springy footwork, controlled rebounds, and a smooth return to neutral. The priest twists, tucks, and lands in place with energetic momentum, keeping the silhouette centered without positional drift. 
+
+A humanoid gladiator character is shown with a strong arena-fighter silhouette, readable heroic proportions, and clear layered shapes suited for a 2D sprite, rendered as a hand-painted feature-animation inspired 2D anime frame with a gentle Ghibli-like charm, beautiful traditional cel-shaded color treatment, stylized color layering and grouped values for strong readability, and a crisp contour hierarchy for sprite clarity, with vibrant yet natural nostalgic tones. The character wears a weathered earthy brown trench coat draped over the gladiator armor, with aged fabric folds, a slightly worn hem and seams, practical layered construction, and muted steel accent details that support the armored silhouette without adding any weaponry. The armor features warm sunlit 
+
+bronze plates, muted steel fittings, and small nostalgic anime-color accents in soft olive, burgundy, 
+
+and cream. The view is a 3/4 top-down perspective in a classic JRPG high-angle camera, showing both the top and the front clearly, with the character facing toward the bottom of the screen and the front remaining visible. The action is a compact in-place hit reaction: the gladiator gives a brief stagger and defensive flinch, the torso recoils slightly, the shoulders tighten, the coat and armor jolt with a short impact snap, and then the pose settles smoothly back into a neutral ready stance. 
+
+A beastlike dragon creature is shown in a 3/4 top-down perspective with a classic JRPG high camera angle that clearly reveals both the top and the front, facing toward the bottom of the screen. It has a sleek, powerful serpentine-draconic body covered in smooth, glossy emerald green scales, with cleanly defined scale plates and ornamental contour accents. Warm ivory horns and claws are distinct materials, and bright amber-gold eyes remain clearly visible on the forward-facing head. The subject is presented as a crisp 2.5D isometric game asset with a polished pre-rendered 3D look as a clean 2D sprite, using controlled studio-like lighting, sharp silhouette readability, grouped value layering, and tidy material separation. The emerald dragon performs a compact in-place lunge attack: it first compresses its body tightly at center, then snaps its upper body and head sharply forward with 
+
+claws spread and jaws driving toward the target in a short concentrated strike, followed by a quick 
+
+recoil that immediately returns it to the centered pose. The movement is nearly stationary and a clean loop-friendly action. 
+
+A vulture is rendered as a beast-like game character with a compact scavenger-bird silhouette, 
+
+broad wings held close to the body, vibrant dark brown feathers, a warm tan torso, a pale cream 
+
+neck ruff, and a bright yellow hooked beak with sturdy yellow legs. The character is presented as a clean flat 2D vector game asset in crisp SVG-style artwork, with sharp edges, simplified and readable feather shapes, minimal flat shading, and clear contrast between the smooth beak and legs and the layered feather masses for strong in-game silhouette clarity. The view is isometric orthographic projection with a pseudo-3D game camera and a 2.5D angle, with no perspective convergence, and the character faces diagonally toward the bottom-left of the screen with the 
+
+front-left side visible. It is sprinting fast in place in a compact looping dash cycle, with the body 
+
+pitched forward, the neck thrust slightly ahead, the legs pumping rapidly beneath the torso, the wings tucked tight for balance, and the feathers streamlined, maintaining energetic speed while returning cleanly to a neutral in-place running arc. 
+
+A humanoid sorcerer with pale skin is shown in an isometric orthographic projection with a pseudo-3D game camera and a 2.5D angle, facing diagonally toward the bottom-left of the screen with the front-left side visible. The character wears layered deep arcane purple and midnight blue robes 
+
+accented with bright cyan magical glow motifs and refined silver ornamental details, forming a clear 
+
+mystical silhouette with controlled magical presence. The visual style is a crisp stylized 2D game UI icon asset with clean cut edges, flat-shaded forms, subtle controlled highlights, and an isolated presentation, using cohesive shape language, readable layered silhouettes, and clear contrast between the soft fabric robes, metallic silver trim, and the polished steel weapon surface. The character is holding a vivid polished steel cleaver that is broad and weighty in shape, with a clean reflective finish and a sharp blood-red edge highlight, clearly readable as a melee weapon without extra adornment. The sorcerer walks continuously in place in a seamless loop with compact alternating steps, gentle robe sway, slight shoulder and arm counter-motion, the cleaver carried steadily in hand, and a smooth return-to-neutral motion arc for clean loop playback. 
+
+Ours 
+
+Planner 
+
+Random 
+
+Ours 
+
+Ours 
+
+RAS 
+
+A humanoid mummy creature is shown in a strict top-down overhead view, seen directly from above in a flat 2D projection with no perspective, oriented facing screen right. Its body is wrapped in aged sand-beige linen bandages with layered dusty ochre and sepia shadow accents, while muted bone-toned and desiccated brown undertones show through the worn wrappings, creating a dry ancient 
+
+silhouette with clear, readable sprite shape. The visual style is a stylized 2D game asset rendered as 
+
+a cel-shaded watercolor illustration, combining crisp contour lines, strong value grouping, soft layered pigment washes, controlled shadow blocks, and painterly color transitions for clean sprite legibility. It holds a glowing crystal ball cradled firmly in its hands, the orb emitting a soft luminous cyan and teal radiance that gently blooms across the mummy's wrappings in translucent watercolor-like washes while remaining clearly defined by clean cel-shaded edges. In the video, the humanoid mummy performs a brief in-place hit reaction, sharply staggering and flinching backward through 
+
+the torso and shoulders as the bandaged body compresses for an instant, then quickly recoils and 
+
+settles into an immediate recovery-ready posture, with slight wrap flutter throughout while the crystal ball remains securely gripped. 
+
+Ours 
+
+Union2d 
+
+Ours 
+
+Union2d 
+
+A humanoid knight character is rendered as a refined symbolic figure, clad in aged steel plate armor adorned with muted gold filigree, deep crimson and indigo accent panels, and weathered leather straps and joints. The silhouette is noble and balanced, with ornamental trim, engraved armor edges, and carefully arranged decorative motifs that reinforce a mystical tarot-inspired presence. The figure is shown in a strict top-down overhead view, looking directly down from above in a flat 2D projection with no perspective, facing toward the top of the screen. The knight holds a softly 
+
+luminous scimitar, its curved blade carrying a mystic silver sheen with subtle engraved detailing, 
+
+paired with a worn, elegant hilt that matches the aged steel and muted gold armor ensemble. One hand is held to the head while the other keeps the scimitar controlled, and the knight sways gently side to side in place with a dizzied, unsteady motion. The torso rocks as the posture briefly tilts off balance and then eases back toward a near-upright stance in a smooth looping arc. The overall presentation follows a traditional tarot card illustration aesthetic with flat symbolic 2D composition, elegant line work, ornamental detailing, stylized surface treatment, controlled shape language, and 
+
+clean planar color fields. 
+
+A beast-like bat animal is rendered as a compact arcade sprite in a strict top-down overhead view, 
+
+seen directly from above in a flat 2D projection with no perspective, oriented toward screen right. It has broad angular wings, pointed ears, a short muzzle, and clawed feet, with a wrapped silhouette built from deep charcoal black, muted purple, and dark indigo, accented sparingly by pale pink details  w/o Figure 17: Qualitative routing ablation: selection policies. Each example shows the prompt (left), common RGBA reference (center), and the same four temporal indices from the named alternative (top) and our full visibility router (bottom). Two cases each compare Planner, Random, and RAS under the matched realized-skip protocol reported in the main paper. Checkerboards denote transparency. Ours 
+
+RAS 
+
+A humanoid gladiator character is shown with a strong arena-fighter silhouette, readable heroic proportions, and clear layered shapes suited for a 2D sprite, rendered as a hand-painted feature-animation inspired 2D anime frame with a gentle Ghibli-like charm, beautiful traditional cel-shaded color treatment, stylized color layering and grouped values for strong readability, and a crisp contour hierarchy for sprite clarity, with vibrant yet natural nostalgic tones. The character wears a weathered earthy brown trench coat draped over the gladiator armor, with aged fabric folds, a slightly worn hem and seams, practical layered construction, and muted steel accent details that support the armored silhouette without adding any weaponry. The armor features warm sunlit 
+
+bronze plates, muted steel fittings, and small nostalgic anime-color accents in soft olive, burgundy, 
+
+and cream. The view is a 3/4 top-down perspective in a classic JRPG high-angle camera, showing both the top and the front clearly, with the character facing toward the bottom of the screen and the front remaining visible. The action is a compact in-place hit reaction: the gladiator gives a brief stagger and defensive flinch, the torso recoils slightly, the shoulders tighten, the coat and armor jolt with a short impact snap, and then the pose settles smoothly back into a neutral ready stance. 
+
+returning cleanly to a neutral in-place running arc. 
+
+A humanoid sorcerer with pale skin is shown in an isometric orthographic projection with a pseudo-3D game camera and a 2.5D angle, facing diagonally toward the bottom-left of the screen with the front-left side visible. The character wears layered deep arcane purple and midnight blue robes 
+
+accented with bright cyan magical glow motifs and refined silver ornamental details, forming a clear 
+
+mystical silhouette with controlled magical presence. The visual style is a crisp stylized 2D game UI icon asset with clean cut edges, flat-shaded forms, subtle controlled highlights, and an isolated presentation, using cohesive shape language, readable layered silhouettes, and clear contrast between the soft fabric robes, metallic silver trim, and the polished steel weapon surface. The character is holding a vivid polished steel cleaver that is broad and weighty in shape, with a clean reflective finish and a sharp blood-red edge highlight, clearly readable as a melee weapon without extra adornment. The sorcerer walks continuously in place in a seamless loop with compact alternating steps, gentle robe sway, slight shoulder and arm counter-motion, the cleaver carried steadily in hand, and a smooth return-to-neutral motion arc for clean loop playback. 
+
+Ours 
+
+Ours 
+
+RAS 
+
+A humanoid mummy creature is shown in a strict top-down overhead view, seen directly from above in a flat 2D projection with no perspective, oriented facing screen right. Its body is wrapped in aged sand-beige linen bandages with layered dusty ochre and sepia shadow accents, while muted bone-toned and desiccated brown undertones show through the worn wrappings, creating a dry ancient 
+
+silhouette with clear, readable sprite shape. The visual style is a stylized 2D game asset rendered as 
+
+a cel-shaded watercolor illustration, combining crisp contour lines, strong value grouping, soft layered pigment washes, controlled shadow blocks, and painterly color transitions for clean sprite legibility. It holds a glowing crystal ball cradled firmly in its hands, the orb emitting a soft luminous cyan and teal radiance that gently blooms across the mummy's wrappings in translucent watercolor-like washes while remaining clearly defined by clean cel-shaded edges. In the video, the humanoid mummy performs a brief in-place hit reaction, sharply staggering and flinching backward through 
+
+the torso and shoulders as the bandaged body compresses for an instant, then quickly recoils and 
+
+settles into an immediate recovery-ready posture, with slight wrap flutter throughout while the crystal ball remains securely gripped. 
+
+Ours 
+
+Union2d 
+
+Ours 
+
+Union2d 
+
+A humanoid knight character is rendered as a refined symbolic figure, clad in aged steel plate armor adorned with muted gold filigree, deep crimson and indigo accent panels, and weathered leather straps and joints. The silhouette is noble and balanced, with ornamental trim, engraved armor edges, and carefully arranged decorative motifs that reinforce a mystical tarot-inspired presence. The figure is shown in a strict top-down overhead view, looking directly down from above in a flat 2D projection with no perspective, facing toward the top of the screen. The knight holds a softly 
+
+luminous scimitar, its curved blade carrying a mystic silver sheen with subtle engraved detailing, 
+
+paired with a worn, elegant hilt that matches the aged steel and muted gold armor ensemble. One hand is held to the head while the other keeps the scimitar controlled, and the knight sways gently side to side in place with a dizzied, unsteady motion. The torso rocks as the posture briefly tilts off balance and then eases back toward a near-upright stance in a smooth looping arc. The overall presentation follows a traditional tarot card illustration aesthetic with flat symbolic 2D composition, elegant line work, ornamental detailing, stylized surface treatment, controlled shape language, and 
+
+clean planar color fields. 
+
+A beast-like bat animal is rendered as a compact arcade sprite in a strict top-down overhead view, 
+
+seen directly from above in a flat 2D projection with no perspective, oriented toward screen right. It has broad angular wings, pointed ears, a short muzzle, and clawed feet, with a wrapped silhouette built from deep charcoal black, muted purple, and dark indigo, accented sparingly by pale pink details in the inner ears and wing membranes and bright white highlights in the eyes and along icy specular edges. The style is 16-bit retro arcade pixel art with pixel-precise sprite readability, high-contrast flat 2D game asset treatment, solid color blocking, crisp silhouette design, and stylized surface 
+
+texture contrast between soft wing membranes, dense fur masses, and sharp icy overlays, all using 
+
+consistent angular shape grammar and an objective sprite presentation suited for clean looping animation. The bat stays fixed in place as a freezing-over animation rapidly travels across the body, beginning with a tight shiver and a slight wing recoil before solid ice plates and frosted pixel clusters spread over the head, torso, wings, and feet. The dark body colors become progressively muted beneath a translucent bright white and pale blue ice sheen, small crystalline highlights flicker along the edges, and the pose locks into a rigid frozen statue before easing back toward a neutral 
+
+loop-ready hold. 
+
+A cute kawaii chibi zebra is shown as a 2D game sprite with a compact beast-like body, an oversized rounded head, tiny sturdy legs, small hooves, and highly simplified but readable anatomy. Soft pastel black-and-white zebra stripes wrap around the body in clean stylized bands, with creamy white fur on the muzzle, belly, and inner body areas, gentle charcoal gray markings for softened contrast, subtle rosy blush on the cheeks, and bright candy-pink inner ears and nose. The design uses adorable kawaii chibi 2D sprite styling with bold thick outlines, a pastel-driven color palette, soft flat shading, and very simplified surface detail for strong gameplay readability. The shapes remain rounded and consistent, textures are reduced to low-frequency graphic forms, and the rendering includes clear grounded contact cues while staying clean, gentle, and toy-like. The view is a strict top-down overhead view, looking directly down from above in a flat 2D projection with no perspective, and the zebra is oriented facing screen left. The chibi zebra performs a compact vertical jump in place, pushing off with all legs together, lifting slightly upward with the body tucked 
+
+and the ears bouncing subtly, then landing back on the exact same spot with a soft squash on impact 
+
+before returning to the starting pose in a continuous looping jump motion. 
+
+Ours 
+
+Ours 
+
+w/o 
+
+reactivation 
+
+w/o 
+
+reactivation Figure 18: Qualitative routing ablation: static support and reactivation. The layout follows Figure 17. Union2D follows the same matched realized-skip protocol, whereas the no-reactivation variant shares our evaluation-2 routing decision but fixes the routed set through evaluations 3–4. The selected cases visualize how static support and local revision affect foreground structure over time. The view remains a strict top-down overhead angle, looking directly down from above in a 2D flat projection with no perspective, and the creature has no specific facing so its fluid amorphous form is shown naturally. In the looping animation, the air elemental stays in place while steadily dripping and leaking fluid beneath itself, with small repeated droplets forming along its lower vapor edges and falling straight downward in a compact cycle, as the main body gently quivers and ripples without shifting position.    
+
+> Bottom row, right — HunyuanVideo-I2V +MatAnyone2. Asturdy wooden crate prop is shown from an isolated UI item show-case perspective at a clean neutral angle, facing in the most effective three-quarter direction to display its structure with maximum clar-ity. The crate has a clean boxy silhouette, reinforced corner joins, visible plank faces and slat seams, simple cross-brace paneling, and slightly beveled edges over solid flat surfaces, giving it a readable retro game shape. It is rendered in a 16-bit retro arcade pixel sprite style with pixel-perfect detailing, strong silhouette clarity, high-contrast flat 2D asset rendering, solid color blocking, and compact decorative wood grain marks formed by crisp pixel clusters. The color treatment uses warm medium brown, dark brown, and muted tan arranged in clean flat pixel masses, with deep brown accent pixels defining seams, edging, and depth separation. In the anima-tion, the wooden crate performs a compact in-place hit reaction, giving a brief stagger and flinch as it snaps slightly backward with a tight jolt, while the corners and plank faces shift by a few pixels to suggest impact, then it eases cleanly back to its neutral resting pose.
+
+E Reproducibility Notes 
+
+GameAlpha-2.4K is split 9:1 before any training; the Stage-1 VAE trains on the training split plus VideoMatte240K, the Stage-2 DiT only on the training split, and the transparency probe is fitted on dense trajectories of training clips and frozen. The cross-domain diagnostic in Appendix C.6 is a stated exception: it uses a separately trained RGB-A VAE checkpoint that did not use VideoMatte240K. Unless other-wise stated, the main-paper GameAlpha automatic metrics use the full validation split ( n = 239 ) at a fixed seed; aux-iliary analyses, cross-domain experiments, and human eval-uation use the sample sizes stated in their respective text or captions. The analysis that selects kroute = 2 and rs = 2 is described in the main paper. Further implementation details are intended for the planned dataset, code, and checkpoint releases; release status and licensing are described in Ap-pendix F. 
+
+F Licenses and Intended Release 
+
+GameAlpha-2.4K and our implementation are not public at submission. We plan to release GameAlpha-2.4K, open-source the accompanying implementation, and release the trained model checkpoint. The artifact scope and applicable licenses will be specified at release. 
+
+Verified third-party terms. At submission, the official re-lease pages report the following licenses; repository code, model weights, and datasets are distinguished because one artifact’s license does not automatically cover the others. 
+
+• Apache License 2.0. Wan2.1 code and released mod-els (Wan et al. 2025); LightX2V code and the four-step I2V distillation checkpoint used here (Contributors 2025); standard DINOv2 code and weights (Oquab et al. 2024); VBench code (Huang et al. 2024); and UniVidX code and released checkpoints (Chen et al. 2026). 
+
+• MIT License. The BiRefNet (Zheng et al. 2024) and Wan-Alpha (Dong et al. 2025) repository code and the LAION aesthetic-predictor repository use MIT. Wan-Alpha’s released model cards separately label its weights Apache-2.0. 
+
+• Custom or restricted licenses. CogVideo code is Apache-2.0, but the CogVideoX1.5-5B-I2V parame-ters use the CogVideoX License (Yang et al. 2024). HunyuanVideo-I2V code and weights use the Tencent Hunyuan Community License Agreement (Kong et al. 2024). MatAnyone2 uses S-Lab License 1.0, which per-mits non-commercial use and requires permission for commercial use (Yang et al. 2026); SAM3 code and weights use the SAM License (Carion et al. 2025); and the RMBG-2.0 weights used with the BiRefNet architec-ture use CC BY-NC 4.0, with commercial use requiring a Bria agreement. 
+
+• Data and metric caveats. The official VideoMatte240K page (Lin et al. 2021a) does not specify a separate dataset license; we do not treat the associated repository’s MIT software license as licensing the dataset. The StyleGAN-V I3D/FVD implementation used for FVD (Skorokhodov, Tulyakov, and Elhoseiny 2021) has no standalone li-cense file; its repository states that it is likely subject to the NVIDIA Source Code License-NC inherited through StyleGAN2-ADA. All third-party resources, including bundled submodels and dependencies, remain governed by their upstream terms and are not relicensed by us. The planned release will ref-erence upstream sources and record artifact-level licenses rather than redistribute third-party datasets or checkpoints unless their terms permit it. The fixed generation and screen-ing services used for dataset construction are governed by their providers’ service terms. Before releasing GameAlpha-2.4K, we will verify that those terms permit redistribution of the generated outputs. 
+
+References 
+
+Bolya, D.; Fu, C.-Y.; Dai, X.; Zhang, P.; Feichtenhofer, C.; and Hoffman, J. 2023. Token Merging: Your ViT but Faster. In International Conference on Learning Representations .Bolya, D.; and Hoffman, J. 2023. Token Merging for Fast Sta-ble Diffusion. CVPR Workshop on Efficient Deep Learning for Computer Vision .Carion, N.; Gustafson, L.; Hu, Y.-T.; Debnath, S.; Hu, R.; Suris, D.; Ryali, C.; Alwala, K. V.; Khedr, H.; Huang, A.; Lei, J.; Ma, T.; Guo, B.; Kalla, A.; Marks, M.; Greer, J.; Wang, M.; Sun, P.; Rädle, R.; Afouras, T.; Mavroudi, E.; Xu, K.; Wu, T.-H.; Zhou, Y.; Momeni, L.; Hazra, R.; Ding, S.; Vaze, S.; Porcher, F.; Li, F.; Li, S.; Kamath, A.; Cheng, H. K.; Dollár, P.; Ravi, N.; Saenko, K.; Zhang, P.; and Feicht-enhofer, C. 2025. SAM 3: Segment Anything with Concepts. arXiv:2511.16719. Carreira, J.; and Zisserman, A. 2017. Quo Vadis, Action Recognition? A New Model and the Kinetics Dataset. 2017 IEEE Conference on Computer Vision and Pattern Recogni-tion (CVPR) , 4724–4733. Chen, H.; Li, H.; Kong, X.; Zhu, T.; Xu, S.; Xiao, W.; Guo, Y.; Ye, C.; Zhang, L.; Zhao, H.; and Rao, A. 2026. UniVidX: A Unified Multimodal Framework for Versatile Video Gen-eration via Diffusion Priors. ACM Transactions on Graphics ,45(4). Chen, X.; Chen, Z.; and Song, Y. 2026. Transanimate: Tam-ing layer diffusion to generate rgba video. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 6083–6092. Chung, H. W.; Constant, N.; Garcia, X.; Roberts, A.; Tay, Y.; Narang, S.; and Firat, O. 2023. UniMax: Fairer and more Effective Language Sampling for Large-Scale Multilingual Pretraining. arXiv:2304.09151. Contributors, L. 2025. LightX2V: Light Video Genera-tion Inference Framework. https://github.com/ModelTC/ lightx2v. Dong, H.; Wang, W.; Li, C.; Lyu, J.; and Lin, D. 2025. Video Generation with Stable Transparency via Shiftable RGB-A Distribution Learner. arXiv:2509.24979. Farnebäck, G. 2003. Two-Frame Motion Estimation Based on Polynomial Expansion. In Scandinavian Conference on Image Analysis .Guo, X.; Zheng, M.; Hou, L.; Gao, Y.; Deng, Y.; Wan, P.; Zhang, D.; Liu, Y.; Hu, W.; Zha, Z.; et al. 2024. I2v-adapter: A general image-to-video adapter for diffusion models. In 
+
+ACM SIGGRAPH 2024 Conference Papers , 1–12. Guo, Y.; Yang, C.; Rao, A.; Agrawala, M.; Lin, D.; and Dai, B. 2023. SparseCtrl: Adding Sparse Controls to Text-to-Video Diffusion Models. arXiv:2311.16933. Hu, E. J.; Shen, Y.; Wallis, P.; Allen-Zhu, Z.; Li, Y.; Wang, S.; Wang, L.; and Chen, W. 2022. LoRA: Low-Rank Adaptation of Large Language Models. In International Conference on Learning Representations .Huang, Z.; He, Y.; Yu, J.; Zhang, F.; Si, C.; Jiang, Y.; Zhang, Y.; Wu, T.; Jin, Q.; Chanpaisit, N.; Wang, Y.; Chen, X.; Wang, L.; Lin, D.; Qiao, Y.; and Liu, Z. 2024. VBench: Compre-hensive Benchmark Suite for Video Generative Models. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vi-sion and Pattern Recognition .Ji, S.; Luo, H.; Chen, X.; Tu, Y.; Wang, Y.; and Zhao, H. 2025. LayerFlow : A Unified Model for Layer-aware Video Generation. arXiv preprint arXiv:2506.04228 .Jiang, Z.; Han, Z.; Mao, C.; Zhang, J.; Pan, Y.; and Liu, Y. 2025. VACE: All-in-One Video Creation and Editing. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , 17191–17202. Kong, W.; Tian, Q.; Zhang, Z.; Min, R.; Dai, Z.; Zhou, J.; Xiong, J.; Li, X.; Wu, B.; Zhang, J.; et al. 2024. Hunyuan-video: A systematic framework for large video generative models. arXiv preprint arXiv:2412.03603 .Li, J.; Goel, V.; Ohanyan, M.; Navasardyan, S.; Wei, Y.; and Shi, H. 2022. VMFormer: End-to-End Video Matting with Transformer. arXiv preprint .Li, J.; Jain, J.; and Shi, H. 2023. Matting Anything. arXiv: 2306.05399 .Li, M.; Zhang, Z.; Liao, J.; Qin, L.; and Wang, W. 2025. TransVDM: Motion-Constrained Video Diffusion Model for Transparent Video Synthesis. In ICASSP 2025-2025 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , 1–5. IEEE. Lim, S.; Oh, S. W.; Huang, J.; Yoon, H.; Kim, S.; and Lee, J.-Y. 2026. VideoMaMa: Mask-Guided Video Matting via Generative Prior. arXiv preprint arXiv:2601.14255 .Lin, S.; Ryabtsev, A.; Sengupta, S.; Curless, B. L.; Seitz, S. M.; and Kemelmacher-Shlizerman, I. 2021a. Real-time high-resolution background matting. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 8762–8771. Lin, S.; Yang, L.; Saleemi, I.; and Sengupta, S. 2021b. Robust High-Resolution Video Matting with Temporal Guidance. arXiv:2108.11515. Lipman, Y.; Chen, R. T.; Ben-Hamu, H.; Nickel, M.; and Le, M. 2022. Flow matching for generative modeling. arXiv preprint arXiv:2210.02747 .Liu, F.; Zhang, S.; Wang, X.; Wei, Y.; Qiu, H.; Zhao, Y.; Zhang, Y.; Ye, Q.; and Wan, F. 2024a. Timestep Embedding Tells: It’s Time to Cache for Video Diffusion Model. arXiv preprint arXiv:2411.19108 .Liu, S.-Y.; Wang, C.-Y.; Yin, H.; Molchanov, P.; Wang, Y.-C. F.; Cheng, K.-T.; and Chen, M.-H. 2024b. DoRA: Weight-Decomposed Low-Rank Adaptation. arXiv preprint arXiv:2402.09353 .Liu, Z.; Yang, Y.; Zhang, C.; Zhang, Y.; Qiu, L.; You, Y.; and Yang, Y. 2025. Region-Adaptive Sampling for Diffusion Transformers. arXiv:2502.10389. Loshchilov, I.; Hutter, F.; et al. 2017. Fixing weight decay regularization in adam. arXiv preprint arXiv:1711.05101 ,5(5): 5. Lyu, Z.; Si, C.; Song, J.; Yang, Z.; Qiao, Y.; Liu, Z.; and Wong, K.-Y. K. 2025. Fastercache: Training-free video diffusion model acceleration with high quality. In Inter-national Conference on Learning Representations , volume 2025, 33132–33156. Ma, X.; Fang, G.; and Wang, X. 2024. DeepCache: Ac-celerating Diffusion Models for Free. In The IEEE/CVF Conference on Computer Vision and Pattern Recognition .Oquab, M.; Darcet, T.; Moutakanni, T.; Vo, H.; Szafraniec, M.; Khalidov, V.; Fernandez, P.; Haziza, D.; Massa, F.; El-Nouby, A.; et al. 2024. Dinov2: Learning robust visual fea-tures without supervision. Transactions on Machine Learn-ing Research Journal .Pu, Y.; Zhao, Y.; Tang, Z.; Yin, R.; Ye, H.; Yuan, Y.; Chen, D.; Bao, J.; Zhang, S.; Wang, Y.; et al. 2025. Art: Anony-mous region transformer for variable multi-layer transparent image generation. In Proceedings of the Computer Vision and Pattern Recognition Conference , 7952–7962. Radford, A.; Kim, J. W.; Hallacy, C.; Ramesh, A.; Goh, G.; Agarwal, S.; Sastry, G.; Askell, A.; Mishkin, P.; Clark, J.; et al. 2021. Learning transferable visual models from natural language supervision. In International conference on machine learning , 8748–8763. PMLR. Rao, Y.; Liu, Z.; Zhao, W.; Zhou, J.; and Lu, J. 2022. Dynamic Spatial Sparsification for Efficient Vision Trans-formers and Convolutional Neural Networks. arXiv preprint arXiv:2207.01580 .Rao, Y.; Zhao, W.; Liu, B.; Lu, J.; Zhou, J.; and Hsieh, C.-J. 2021. DynamicViT: Efficient Vision Transformers with Dynamic Token Sparsification. In Advances in Neural Infor-mation Processing Systems (NeurIPS) .Ravi, N.; Gabeur, V.; Hu, Y.-T.; Hu, R.; Ryali, C.; Ma, T.; Khedr, H.; Rädle, R.; Rolland, C.; Gustafson, L.; Mintun, E.; Pan, J.; Alwala, K. V.; Carion, N.; Wu, C.-Y.; Gir-shick, R.; Dollár, P.; and Feichtenhofer, C. 2024. SAM 2: Segment Anything in Images and Videos. arXiv preprint arXiv:2408.00714 .Skorokhodov, I.; Tulyakov, S.; and Elhoseiny, M. 2021. Stylegan-v: A continuous video generator with the price, image quality and perks of stylegan2. arXiv preprint arXiv:2112.14683 .Unterthiner, T.; Van Steenkiste, S.; Kurach, K.; Marinier, R.; Michalski, M.; and Gelly, S. 2019. FVD: A new metric for video generation. Wan, T.; Wang, A.; Ai, B.; Wen, B.; Mao, C.; Xie, C.-W.; Chen, D.; Yu, F.; Zhao, H.; Yang, J.; Zeng, J.; Wang, J.; Zhang, J.; Zhou, J.; Wang, J.; Chen, J.; Zhu, K.; Zhao, K.; Yan, K.; Huang, L.; Feng, M.; Zhang, N.; Li, P.; Wu, P.; Chu, R.; Feng, R.; Zhang, S.; Sun, S.; Fang, T.; Wang, T.; Gui, T.; Weng, T.; Shen, T.; Lin, W.; Wang, W.; Wang, W.; Zhou, W.; Wang, W.; Shen, W.; Yu, W.; Shi, X.; Huang, X.; Xu, X.; Kou, Y.; Lv, Y.; Li, Y.; Liu, Y.; Wang, Y.; Zhang, Y.; Huang, Y.; Li, Y.; Wu, Y.; Liu, Y.; Pan, Y.; Zheng, Y.; Hong, Y.; Shi, Y.; Feng, Y.; Jiang, Z.; Han, Z.; Wu, Z.-F.; and Liu, Z. 2025. Wan: Open and Advanced Large-Scale Video Generative Models. arXiv preprint arXiv:2503.20314 .Wang, F.-Y.; Huang, Z.; Bergman, A. W.; Shen, D.; Gao, P.; Lingelbach, M.; Sun, K.; Bian, W.; Song, G.; Liu, Y.; Wang, X.; and Li, H. 2024. Phased Consistency Models. arXiv:2405.18407. Wang, L.; Li, Y.; Chen, Z.; Wang, J.-H.; Zhang, Z.; Zhang, H.; Lin, Z.; and Chen, Y.-C. 2025. Transpixeler: Advancing text-to-video generation with transparency. In Proceedings of the Computer Vision and Pattern Recognition Conference ,18229–18239. Yang, P.; Zhou, S.; Hao, K.; and Tao, Q. 2026. MatAnyone 2: Scaling Video Matting via a Learned Quality Evaluator. In CVPR .Yang, P.; Zhou, S.; Zhao, J.; Tao, Q.; and Loy, C. C. 2025. MatAnyone: Stable Video Matting with Consistent Memory Propagation. In CVPR .Yang, Z.; Teng, J.; Zheng, W.; Ding, M.; Huang, S.; Xu, J.; Yang, Y.; Hong, W.; Zhang, X.; Feng, G.; et al. 2024. CogVideoX: Text-to-Video Diffusion Models with An Ex-pert Transformer. arXiv preprint arXiv:2408.06072 .Yu, S.; Tack, J.; Mo, S.; Kim, H.; Kim, J.; Ha, J.-W.; and Shin, J. 2022. Generating Videos with Dynamics-aware Implicit Generative Adversarial Networks. In International Confer-ence on Learning Representations .Zhang, F.; Zhou, Z.; Tang, B.; He, S.; Li, H.; Wang, Z.; Sanyal, S.; Liu, P.; Atliha, V.; Xiang, T.; et al. 2026. Trans-Text: Alpha-as-RGB Representation for Transparent Text An-imation. arXiv preprint arXiv:2603.17944 .Zhang, L.; and Agrawala, M. 2024. Transparent image layer diffusion using latent transparency. arXiv preprint arXiv:2402.17113 .Zhang, L.; Rao, A.; and Agrawala, M. 2023. Adding condi-tional control to text-to-image diffusion models. In Proceed-ings of the IEEE/CVF International Conference on Computer Vision , 3836–3847. Zheng, P.; Gao, D.; Fan, D.-P.; Liu, L.; Laaksonen, J.; Ouyang, W.; and Sebe, N. 2024. Bilateral Reference for High-Resolution Dichotomous Image Segmentation. CAAI Artificial Intelligence Research , 3: 9150038. Zou, C.; Liu, X.; Liu, T.; Huang, S.; and Zhang, L. 2024. Ac-celerating Diffusion Transformers with Token-wise Feature Caching. arXiv preprint arXiv:2410.05317 .

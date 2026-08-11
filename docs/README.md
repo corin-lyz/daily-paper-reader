@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-08-10</span>
+      <span class="dpr-home-dashboard-kicker">2026-08-11</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 7 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 16 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>4</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>3</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>9</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>7</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-08-10 21:46:08 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-08-11 22:03:07 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,7 +62,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日精读2篇、速读3篇，共7篇论文，聚焦视觉特征上采样与多视图立体匹配等方向。最值得关注的是《PixelUp》与《LiteMVS》（均8.0分），分别解决细粒度视觉任务的特征上采样和高效MVS的蒸馏聚合问题。建议优先精读这两篇，并对照速读中的知识蒸馏与结构剪枝方法，探索跨任务融合思路。</p>
+<p>今日16篇论文中，9篇精读，聚焦开放词汇语义分割与开放世界语义分割的测试时原型自适应与敏感性建模。最值得关注的是两篇9.0分精读论文，均围绕提升分割模型对未知类别的泛化能力。普通读者可优先了解测试时自适应与敏感性建模这两大提升分割鲁棒性的技术思路。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -71,12 +71,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">4 篇</strong>
+    <strong class="dpr-home-dashboard-count">9 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="PixelUp: Zero-Shot Semantic Feature Upsampling for Fine-Grained Vision Tasks">PixelUp: Zero-Shot Semantic Feature Upsampling for Fine-Grained Vision Tasks</span></li><li><span class="dpr-home-dashboard-paper-title" title="LiteMVS: Efficient Multi-View Stereo with Foundation Distillation and Expert Aggregation">LiteMVS: Efficient Multi-View Stereo with Foundation Distillation and Expert Aggregation</span></li><li><span class="dpr-home-dashboard-paper-title" title="LiteKD-Net: Lightweight Knowledge-Distilled Network for Mobile Image Denoising">LiteKD-Net: Lightweight Knowledge-Distilled Network for Mobile Image Denoising</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Test-Time Prototype Adaptation for Open-Vocabulary Semantic Segmentation">Test-Time Prototype Adaptation for Open-Vocabulary Semantic Segmentation</span></li><li><span class="dpr-home-dashboard-paper-title" title="Open-World Semantic Segmentation with Sensitivity Modeling">Open-World Semantic Segmentation with Sensitivity Modeling</span></li><li><span class="dpr-home-dashboard-paper-title" title="PixelUp: Zero-Shot Semantic Feature Upsampling for Fine-Grained Vision Tasks">PixelUp: Zero-Shot Semantic Feature Upsampling for Fine-Grained Vision Tasks</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">lite-vision <strong>2</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>1</strong></span><span class="dpr-home-dashboard-tag">vfm <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">seg <strong>3</strong></span><span class="dpr-home-dashboard-tag">lite-vision <strong>2</strong></span><span class="dpr-home-dashboard-tag">depth-refine <strong>1</strong></span><span class="dpr-home-dashboard-tag">matting <strong>1</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>1</strong></span><span class="dpr-home-dashboard-tag">vfm <strong>1</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -84,12 +84,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">3 篇</strong>
+    <strong class="dpr-home-dashboard-count">7 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Towards Compact Unified Multimodal Tracking: Synergizing Knowledge Distillation with Structural Pruning">Towards Compact Unified Multimodal Tracking: Synergizing Knowledge Distillation with Structural Pruning</span></li><li><span class="dpr-home-dashboard-paper-title" title="Flow-Map Distillation on Relation Manifolds for Image Restoration">Flow-Map Distillation on Relation Manifolds for Image Restoration</span></li><li><span class="dpr-home-dashboard-paper-title" title="SGFormer: Structure-Guided Transformer for Robust Local Feature Matching">SGFormer: Structure-Guided Transformer for Robust Local Feature Matching</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="LAD-COD: Language-Aligned Dense Perception for Camouflaged Object Detection">LAD-COD: Language-Aligned Dense Perception for Camouflaged Object Detection</span></li><li><span class="dpr-home-dashboard-paper-title" title="RayLift: Lifting Complementary Ray-Wise Evidence with 3D Geometry Priors for Semantic Scene Completion">RayLift: Lifting Complementary Ray-Wise Evidence with 3D Geometry Priors for Semantic Scene Completion</span></li><li><span class="dpr-home-dashboard-paper-title" title="OccAnyScene: Towards Unified Indoor-Outdoor 3D Occupancy Predictio">OccAnyScene: Towards Unified Indoor-Outdoor 3D Occupancy Predictio</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">lite-vision <strong>2</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">vfm <strong>3</strong></span><span class="dpr-home-dashboard-tag">mono-depth <strong>2</strong></span><span class="dpr-home-dashboard-tag">matting <strong>1</strong></span><span class="dpr-home-dashboard-tag">seg <strong>1</strong></span></div>
 </section>
 </div>
 
