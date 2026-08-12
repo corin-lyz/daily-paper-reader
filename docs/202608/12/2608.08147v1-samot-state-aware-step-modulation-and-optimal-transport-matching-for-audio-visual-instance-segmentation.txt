@@ -1,0 +1,676 @@
+Title: SAMOT: State-Aware Step Modulation and Optimal Transport Matching for Audio-Visual Instance Segmentation
+
+URL Source: https://arxiv.org/pdf/2608.08147v1
+
+Published Time: Tue, 11 Aug 2026 00:42:53 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# SAMOT: State-Aware Step Modulation and Optimal Transport Matching for Audio-Visual Instance Segmentation 
+
+## Kai Peng ∗
+
+Dalian University of Technology Dalian, China happypk@mail.dlut.edu.cn 
+
+## Yunzhe Shen ∗
+
+Dalian University of Technology Dalian, China 1079006460@mail.dlut.edu.cn 
+
+## Miao Zhang ✉
+
+Dalian University of Technology Dalian, China miaozhang@dlut.edu.cn 
+
+## Leiye Liu 
+
+Dalian University of Technology Dalian, China leiyeliu@mail.dlut.edu.cn 
+
+## Wei Ji 
+
+Yale University New Haven, United States wei.ji@yale.edu 
+
+## Jingjing Li 
+
+Carnegie Mellon University Pittsburgh, United States jingjingli.cmu@gmail.com 
+
+## Yongri Piao ✉
+
+Dalian University of Technology Dalian, China yrpiao@dlut.edu.cn 
+
+## Huchuan Lu 
+
+Dalian University of Technology Dalian, China lhchuan@dlut.edu.cn 
+
+## Abstract 
+
+Audio-Visual Instance Segmentation (AVIS) aims to simultaneously classify, segment, and track sounding objects within video sequences. Unlike Audio-Visual Semantic Segmentation (AVS), AVIS involves instance-level modeling across longer video sequences, introducing two key challenges: (1) complex modality-state changes disrupt long-range modeling, and (2) substantial structural and distribu-tional discrepancies between modalities hinder precise instance-level association. Existing methods rely on fixed-step Transformers and recursive Mamba models, lacking adaptability to modality-state changes. In addition, methods performing implicit matching ignore the inherent distributional inconsistencies. To address these issues, we propose a framework with Adaptive Dynamic Step Modula-tion (ADSM) and Optimal Transport-based Matching Modulation (OT-MM). ADSM adaptively modulates Mamba step sizes using temporal variation, cross-modal discrepancy, and historical context, balancing rapid response to modality-state changes with stable long-range modeling. OT-MM explicitly formulates instance-level cross-modal matching as an entropy-regularized optimal transport problem solved via log-domain Sinkhorn iterations, and further enforces distribution-level coherence with an MMD regularizer. Extensive experiments demonstrate state-of-the-art performance on the AVIS benchmark (+3.76 FSLA, +2.75 HOTA, +2.58 mAP), verified through comprehensive qualitative visualizations. The code and model are available at https:// github.com/ happylife-pk/ SAMOT . 
+
+## CCS Concepts 
+
+• Computing methodologies → Video segmentation .
+
+## Keywords 
+
+Audio-Visual Instance Segmentation, Multimodal Fusion, State Space Model, Optimal Transport 
+
+> ∗Kai Peng and Yunzhe Shen contributed equally to this work.
+> This work is licensed under a Creative Commons Attribution 4.0 International License.
+> MM ’26, Rio de Janeiro, Brazil.
+> © 2026 Copyright held by the owner/author(s). ACM ISBN 979-8-4007-2213-4/2026/11 https://doi.org/10.1145/3767308.3834906
+
+ACM Reference Format: 
+
+Kai Peng, Yunzhe Shen, Miao Zhang, Leiye Liu, Wei Ji, Jingjing Li, Yongri Piao, and Huchuan Lu. 2026. SAMOT: State-Aware Step Modulation and Optimal Transport Matching for Audio-Visual Instance Segmentation. In 
+
+Proceedings of the 34th ACM International Conference on Multimedia (MM ’26), November 10–14, 2026, Rio de Janeiro, Brazil. ACM, New York, NY, USA, 10 pages. https://doi.org/10.1145/3767308.3834906 
+
+## 1 Introduction 
+
+Audio-Visual Instance Segmentation (AVIS) [19] is a novel task designed to simultaneously classify, segment, and track sounding objects at instance level within video sequences by jointly leverag-ing auditory and visual modalities. This task facilitates a wide range of practical applications, including intelligent surveillance [54], mul-timedia content analysis [6], and video understanding [5]. Compared to Audio-Visual Semantic Segmentation (AVS), AVIS exhibits two key features: ( 𝑖 ) it involves longer video sequences and (𝑖𝑖 ) it requires instance-level modeling. These properties introduce two inherent challenges, as shown in Fig. 1. First, long sequences naturally exhibit richer and more complex modality-state changes (𝑒.𝑔. , stable visual presence with intermittent audio, or continuous audio presence with intermittent visual absence). Such complex modality-state changes disrupt the stability of long-range modeling. Second, AVIS inherently involves significant mismatches between audio and visual modalities. These mismatches typically manifest as structural and distributional discrepancies, such as the spatial rich-ness of video queries contrasting with the temporal-spectral char-acteristics of audio queries. Such disparities give rise to pronounced semantic gaps between the two modalities, which complicate the establishment of precise instance-level correspondences. Existing audio-visual methods [9, 55] typically utilize Transformer-based architectures characterized by multi-head attention mech-anisms, where reasoning is uniformly conducted through global computations at fixed time steps. Such fixed temporal processing limits their adaptability to complex modality-state changes in long video sequences. Mamba-based methods [12] attempt to improve long-range dependency modeling through recursive state updates. However, their step-size updates are typically fixed or insufficiently sensitive to input-dependent modality-state alterations, resulting in delayed responses and error propagation in long video sequences. arXiv:2608.08147v1 [cs.MM] 8 Aug 2026 MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil. Peng et al. T1  T2 T3         
+
+> 0s1s2s 3s
+> Mismatch Mismatch Mismatch Mismatch Mismatch Mismatch Match Match
+> Audio
+> Distribution
+> Video
+> Distribution
+> (a)
+> (b)
+
+Figure 1: Illustration of the two core challenges in AVIS. (a) Al-though the visual content remains stable, the active sources are the dog at T1, both the person and the dog at T2, and the person at T3. These modality-state changes disrupt sta-ble long-range modeling. (b) Structural and distributional discrepancies between audio and visual modalities hinder precise instance-level correspondence. 
+
+Concerning modality mismatches, previous methods perform implicit [29] matching through cross-attention mechanisms [2] or contrastive learning [15] to achieve certain progress in alleviating the initial semantic gap for modality fusion. However, these meth-ods often struggle with the inherent inconsistencies between the two modalities, as they primarily focus on learning shared latent representations without explicitly modeling the structural and tem-poral correlations. This oversight compromises the establishment of multi-modal coherence, causing imprecise matching and fusion. Based on the above observations, two key questions arise for AVIS: (1) How can a model maintain stable long-range model-ing while remaining sensitive to modality-state changes? (2) How can a model explicitly align heterogeneous modalities for precise instance-level associations in complex environments? To answer these questions, we propose a framework equipped with two core strategies: Adaptive Dynamic Step Modulation (ADSM) and Optimal Transport-based Matching Modulation (OT-MM). First, we introduce ADSM, which dynamically modulates the Mamba step-size during long-sequence modeling. Specifically, ADSM injects audio cues into visual features, estimates temporal variation and cross-modal discrepancy to determine whether the current segment remains stable or is undergoing a modality-state transition. Then, we employ a Delta Gating Router (DGR) to adaptively fuse current visual, audio, and historical cues into a step-size offset, thereby de-termining the relative contribution of current cross-modal cues and historical context in step-size modulation. In this way, ADSM en-ables the model to respond more promptly to abrupt modality-state changes while preserving stable long-range propagation. Second, we introduce OT-MM, a mechanism that explicitly bridges audio-visual queries at the instance level. We formulate instance-level cross-modal matching as an optimal transport problem to establish audio-visual correspondence under structural and tem-poral mismatches, unlike conventional optimal transport, which relies solely on pairwise matching costs. OT-MM incorporates a Relative Positional Prior (RPP) and a Temporal Consistency Prior (TCP) to capture structural and temporal correspondence, and fur-ther employs an MMD regularizer to reduce residual distribution discrepancy. Thus, OT-MM enforces instance-level cross-modal consistency and resolves cross-modal distribution mismatches, fa-cilitating precise associations in multi-instance scenarios. Extensive experiments demonstrate that our method achieves state-of-the-art performance on the AVIS benchmark, with improve-ments of +3.76 FSLA, +2.75 HOTA, and +2.58 mAP. Comprehensive quantitative and qualitative analyses further validate the overall framework and the effectiveness of our key designs for handling complex modality-state changes and cross-modal discrepancies in AVIS scenarios. 
+
+## 2 Related Work 2.1 Audio-Visual Segmentation 
+
+Related advances in segmentation [47, 49, 50], grounding and rea-soning [13, 14, 31, 53, 64], and long-video and audio-visual un-derstanding [11, 26, 32, 40, 41] provide broader methodological context for Audio-Visual Segmentation (AVS). Notably, AVS has progressed significantly in recent years [20, 28, 61, 62]. Recent AVS methods [9, 15, 42, 44, 48, 55] improve fine-grained cross-modal fusion through audio-conditioned queries, bilateral interaction, and task-specific training strategies. However, AVS typically focuses on semantic segmentation in short videos, without distinguishing mul-tiple instances or maintaining temporal consistency across frames. AVIS [19] extends AVS by incorporating instance-level differen-tiation and frame-to-frame tracking in long videos. AVISM [19] establishes the AVIS benchmark and employs Transformer-based tracking to preserve sounding-object identities in dynamic multi-instance scenes. Nevertheless, existing methods still struggle with heterogeneous modality dynamics in long sequences. 
+
+## 2.2 Mamba and Multimodal Modeling 
+
+The Selective State Space Model (Mamba) [16], built on structured state space models (SSMs) [17, 18, 35], provides selective mecha-nisms for input-dependent state propagation. These mechanisms efficiently capture long-range dependencies while controlling infor-mation retention, making Mamba-based methods [7, 27] suitable for extended sequences. In audio-visual tasks, AVS-Mamba [12] and AV-Mamba [25] integrate temporal and cross-modal selective mechanisms for segmentation and question answering, respectively, supporting efficient spatio-temporal fusion. Mamba has also been applied to audio-visual enhancement [1] and continual audio-visual classification [33], where sequential modeling improves robustness and alleviates forgetting. Related studies extend temporal and mul-timodal modeling to speech representation, adaptive fusion, and efficient inference [34, 36–38, 51, 57, 60]. However, existing meth-ods do not jointly address complex modality-state alterations in long sequences and cross-modal distribution mismatches. 
+
+## 3 Method 3.1 Overview 
+
+As shown in Fig. 2(a), given a video sequence 𝑉 ∈ R𝑇 ×3×𝐻 ×𝑊 with 𝑇 
+
+frames and its corresponding audio clip, we adopt ResNet [21] as the visual backbone to extract multi-scale spatial features from video frames. The visual encoder produces hierarchical feature maps, which are further refined by a pixel decoder [63] to generate high-resolution embeddings 𝐹 𝑣 = [𝑓 𝑖 𝑣 ]4
+
+> 𝑖 =1
+
+, where 𝑓 𝑖 𝑣 ∈ R𝑇 ×𝐶 ×𝐻 𝑖 ×𝑊 𝑖 and 
+
+𝐻 𝑖 × 𝑊 𝑖 denotes the spatial resolution of the 𝑖 -th stage. Meanwhile, the input audio is converted into a mono mel-spectrogram and SAMOT: State-Aware Step Modulation and Optimal Transport Matching for Audio-Visual Instance Segmentation MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil. Video 
+
+> Encoder
+
+# *    
+
+> Video
+> Feature
+> Pixel
+> Decoder
+> Video
+> Encoder
+> Audio
+> Encoder
+> Add Audio
+> Feature
+> Patch
+> Embedding
+> Audio
+> Conditioned
+> Feature
+> OT -MM
+> Transformer Decoder
+> Fusion
+> Feature
+> Linear Scan →(Mismatch) (Match)
+> Transformer Decoder
+> Mask
+> Class
+> Cost
+> Matrix
+> Transport
+> Plan
+> (a) Overall Architecture
+> (b) ADSM (c) OT -MM
+
+# *  
+
+> Mismatch
+> Match
+> Mamba  Fusio n
+> (d) Hierarchical Temporal Tracker
+> Window -based
+> Local Mamba Fusion
+> Window -based
+> Global Mamba Fusion T
+> frame
+> T-1
+> frame
+> （History ）
+> d
+> Similarity
+> Score
+> Comparison
+> Score
+> = +d
+> ADSM
+
+𝑭 𝒗  
+
+> 𝑻
+
+𝑭 𝒂𝒗 
+
+> 𝑻
+> 𝑭 𝒗
+> 𝑻 −𝟏 𝑭 𝒂𝒗
+> 𝑻 −𝟏
+
+𝝀 𝒗 
+
+𝝀 𝒂 
+
+𝝀 𝒉 
+
+𝜹 𝒗 
+
+𝜹 𝒂 
+
+𝜹 𝒉  
+
+> *
+> Video Input
+> Audio Input
+> 𝓛 𝑴𝑴𝑫
+> Learnable
+> Query
+> Patch
+> Embedding
+> Hierarchical
+> Temporal Tracker
+> RPP Structural
+> prio r
+> Log -domain Sinkhorn
+
+𝑪 𝒕  𝑴 𝒕                  
+
+> TCP Temporal
+> prio r
+> 𝒍𝒐𝒈 𝒌 𝒕
+> (𝒕 −𝟏)
+> Audio Query Video Query Learnable Query mismatch / matched ΔMamba step size 𝑭 𝒗 visual feature 𝑭 𝐚𝐯 audio -conditioned visual feature 𝒍𝒐𝒈 𝒌 𝒕 Log Kernel distribution regularization 𝓛 𝑴𝑴𝑫
+
+Figure 2: (a) Overall architecture of the proposed framework. (b) ADSM dynamically modulates Mamba step sizes using temporal variation, cross-modal discrepancy, and the Delta Gating Router (DGR). (c) OT-MM performs instance-level audio-visual matching with a Relative Positional Prior (RPP) and a Temporal Consistency Prior (TCP), followed by MMD regularization. (d) The Hierarchical Temporal Tracker performs sliding-window refinement and global temporal modeling for final tracking. 
+
+encoded by a pre-trained VGGish model [23] into an audio feature sequence 𝑓 𝑎 ∈ R𝑇 ×𝐶 𝑎 , where 𝐶 𝑎 is the audio feature dimension. Based on 𝐹 𝑣 and 𝑓 𝑎 , the frame-level localizer proceeds along two complementary branches. On the visual side, we inject audio cues into the lower three visual scales [𝑓 𝑖 𝑣 ]3 
+
+> 𝑖 =1
+
+and apply Adaptive Dy-namic Step Modulation (ADSM) to dynamically regulate the visual state update, yielding audio-conditioned visual features [𝑓 𝑖 𝑎𝑣 ]3
+
+> 𝑖 =1
+
+that are more sensitive to modality-state changes. In parallel, the audio features are projected into query embeddings and further associated with the highest-level visual tokens 𝑓 4 
+
+> 𝑣
+
+to form audio queries 𝑞 𝑎 ∈ R𝑇 ×𝑁 𝑎 ×𝐶 , where 𝑁 𝑎 denotes the number of audio queries. The Transformer decoder then takes [𝑓 𝑖 𝑎𝑣 ]3 
+
+> 𝑖 =1
+
+and 𝑞 𝑎 as inputs to derive instance-level visual queries 𝑞 𝑣 ∈ R𝑇 ×𝑁 𝑣 ×𝐶 , where 
+
+𝑁 𝑣 is the number of frame queries. At the video level, Optimal Transport-based Matching Modula-tion (OT-MM) explicitly aligns 𝑞 𝑎 and 𝑞 𝑣 by solving a log-domain Sinkhorn transport problem and further regularizing the aligned representations with an MMD loss, thereby producing matched audio queries ˜ 𝑞 𝑎 and establishing robust instance-level cross-modal correspondence. Finally, the Hierarchical Temporal Tracker per-forms sliding-window local refinement followed by full-sequence Mamba modeling over 𝑞 𝑣 and ˜ 𝑞 𝑎 , thereby preserving short-term consistency while capturing long-range temporal dependencies for final segmentation and tracking predictions. 
+
+## 3.2 Adaptive Dynamic Step Modulation 
+
+To effectively capture complex modality-state alterations in long-range audio-visual sequences, we propose the Adaptive Dynamic Step Modulation (ADSM) mechanism based on the Mamba archi-tecture. Unlike conventional methods that utilize fixed step-sizes, ADSM dynamically adjusts the step-size according to both cur-rent cross-modal states and historical context, striking a balance between immediate response and long-range modeling stability. We first inject audio cues into multi-scale visual features to obtain audio-conditioned visual features, enabling the visual stream to reflect the current sounding state. Specifically, the audio feature 
+
+𝑓 𝑡 𝑎 is fused with the visual representation 𝑓 𝑖,𝑡 𝑣 at scale 𝑖 and time step 𝑡 via: 
+
+𝑓 𝑖,𝑡 𝑎𝑣 = 𝑓 𝑖,𝑡 𝑣 ⊙ 1 + tanh  CrossAttn (𝑓 𝑖,𝑡 𝑣 , 𝑓 𝑡 𝑎 ) · 𝛼  , (1) where ⊙ denotes element-wise multiplication, and 𝛼 is a learnable scaling parameter controlling the intensity of cross-modal fusion. For brevity, we omit the scale index 𝑖 in the following equations and use 𝑓 𝑡 𝑣 and 𝑓 𝑡 𝑎𝑣 to denote the corresponding current visual and audio-conditioned visual representations. As shown in Fig. 2(b), to determine whether the current segment remains stable or is undergoing a modality-state transition, ADSM estimates two complementary signals: a temporal variation score 
+
+𝑠 modality , which captures the abruptness of state changes across adjacent time steps, and a cross-modal discrepancy score 𝑠 diff , which measures the semantic deviation of the audio-conditioned visual representation from the raw visual representation. The temporal variation score is defined as: 
+
+𝑠 modality = max  ∥𝑓 𝑡 𝑎𝑣 − 𝑓 𝑡 −1 
+
+> 𝑎𝑣
+
+∥∞, ∥𝑓 𝑡 𝑣 − 𝑓 𝑡 −1 
+
+> 𝑣
+
+∥∞
+
+
+
+max  ∥𝑓 𝑡 𝑎𝑣 ∥∞, ∥𝑓 𝑡 𝑣 ∥∞
+
+ . (2) In this formulation, the Max norm highlights the most pronounced temporal variation, ensuring that ADSM remains highly sensitive to abrupt state transitions. Complementary to this, the cross-modal discrepancy score is defined as: 
+
+𝑠 diff = 1 − 𝑓 𝑡 𝑎𝑣 · 𝑓 𝑡 𝑣 
+
+∥𝑓 𝑡 𝑎𝑣 ∥2 ∥𝑓 𝑡 𝑣 ∥2
+
+. (3) By utilizing a cosine-based distance, this metric focuses on cross-modal semantic deviation, enabling the detection of substantial cross-modal inconsistencies at the current step. Consequently, 𝑠 modality 
+
+captures temporal abruptness, whereas 𝑠 diff reflects the degree of instantaneous cross-modal conflict. Together, they characterize whether the current segment is temporally stable and whether its audio-visual evidence remains cross-modally consistent. MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil. Peng et al. 
+
+However, perceiving modality-state alterations alone is insuffi-cient; the model must further determine which source of evidence should dominate the step-size adjustment. To this end, we introduce the Delta Gating Router (DGR), which decomposes the update into visual, audio, and history branches and adaptively weights them according to the current state indicators. We then estimate the base modulation influences of the three branches, denoted as 𝛿 𝑣 , 𝛿 𝑎 , and 
+
+𝛿 ℎ , which respectively capture current audio-conditioned visual cues, current audio cues, and historical cross-modal context: 
+
+𝛿 𝑣 = tanh (MLP (𝑓 𝑡 𝑎𝑣 )) , 𝛿 𝑎 = tanh (MLP (𝑓 𝑡 𝑎 )) ,𝛿 ℎ = tanh (MLP (𝑓 𝑡 −1 
+
+> 𝑎𝑣
+
++ 𝑓 𝑡 −1 
+
+> 𝑎
+
+)) . (4) where MLP denotes a multi-layer perceptron. Guided by the per-ceived state indicators, the router assigns adaptive weights 𝜆 𝑣 , 𝜆 𝑎 ,and 𝜆 ℎ to these branches: 
+
+[𝜆 𝑣 , 𝜆 𝑎 , 𝜆 ℎ ] = softmax  MLP  [𝑠 diff , 𝑠 modality ] . (5) This adaptive routing strategy ensures that when state changes are abrupt or cross-modal discrepancy is high, the model emphasizes immediate modality-specific evidence, whereas under smoother dynamics, it places more weight on historical context to maintain long-range continuity. Finally, this routing decision is translated into a concrete step-size offset. The weighted fusion of the three branches yields an adaptive offset 𝑑 , which dynamically modulates the original fixed step-size Δ0 to obtain the adjusted step-size Δ:
+
+𝑑 = 𝜆 𝑣 𝛿 𝑣 + 𝜆 𝑎 𝛿 𝑎 + 𝜆 ℎ𝛿 ℎ,
+
+Δ = Δ0 + 𝑑. (6) Crucially, the adjusted Δ is directly injected into the discretization step of the selective state-space mechanism, thereby modulating the update rate of the Mamba dynamics. Thus, ADSM enables rapid adaptation under abrupt modality-state shifts while preserving stable long-range propagation in temporally smoother segments. 
+
+## 3.3 Optimal Transport-based Matching Modulation 
+
+As shown in Fig. 2(c), we introduce the Optimal Transport-based Matching Modulation (OT-MM) mechanism to address the inherent semantic mismatches between heterogeneous modalities and to con-struct robust instance-level correspondences. Unlike standard im-plicit cross-attention, OT-MM explicitly formulates the cross-modal matching as an optimal transport problem uniquely constrained by spatial-temporal priors, thereby establishing robust instance-level cross-modal correspondence for subsequent temporal tracking. Let 𝑞 𝑡 𝑎 ∈ R𝑁 𝑎 ×𝐶 and 𝑞 𝑡 𝑣 ∈ R𝑁 𝑣 ×𝐶 denote the temporally-sampled audio and spatially-sampled video embeddings at time step 𝑡 . The goal is to find a soft transport plan 𝑀 𝑡 ∈ R𝑁 𝑎 ×𝑁 𝑣 that minimizes the assignment cost. To explicitly restrict the search space of the transport plan and encourage the model to prioritize structurally corresponding queries, we incorporate a Relative Positional Prior (RPP) into the transport cost. This effectively prevents distinctive audio signals from being spuriously matched to noisy or homoge-neous visual backgrounds. Assuming ℓ2-normalized features, the cost matrix 𝐶 𝑡 is defined as: 
+
+𝐶 𝑡 𝑖,𝑗 =  1 − ⟨ 𝑞 𝑡 𝑎 [𝑖 ], 𝑞 𝑡 𝑣 [ 𝑗 ]⟩  + 𝛽 |𝑖 − 𝑗 |
+
+max (𝑁 𝑎 , 𝑁 𝑣 ) , (7) where 𝛽 controls the intensity of the relative positional prior. This relative positional prior encourages the matching of queries that are proximate in the unrolled feature sequences, effectively reduc-ing false-positive global associations. Under this cost mechanism, the cross-modal matching is naturally formulated as an entropy-regularized optimal transport problem, in which the transport plan is optimized under uniform marginal constraints to produce a bal-anced correspondence matrix. While 𝐶 𝑡 effectively resolves intra-frame structural ambiguities, the AVIS task additionally requires maintaining the temporal con-sistency of sounding objects across extended video sequences. To achieve this inter-frame stability without introducing additional learnable parameters, we integrate a Temporal Consistency Prior (TCP) by recycling the transport plan from the previous time step. We define the temporally-smoothed log-kernel matrix log 𝐾 𝑡 as: log 𝐾 𝑡 =
+
+(
+
+−𝐶 𝑡  
+
+> 𝜖
+
++ 𝛾 log  𝑀 𝑡 −1 + 𝜂  , 𝑡 > 1,
+
+−𝐶 𝑡  
+
+> 𝜖
+
+, 𝑡 = 1, (8) where 𝜖 is the entropic regularization coefficient, 𝛾 acts as a momen-tum factor dictating the influence of the historical transport prior, and 𝜂 is a small constant to prevent invalid logarithmic operations. During standard Sinkhorn iterations, numerical underflow fre-quently destabilizes gradient propagation. To ensure robust nu-merical stability and continuous gradient flow, we compute the marginal projections strictly in the logarithmic domain using the Log-Sum-Exp (LSE) operator. Detailed derivations of the alternating updates are provided in the supplementary material. After 𝐿 Sinkhorn iterations, the converged dual scaling variables (denoted as 𝑓 (𝐿 )
+
+> 𝑖
+
+and 𝑔 (𝐿 ) 
+
+> 𝑗
+
+for the audio and visual modalities, respectively) are used to map the log-kernel back to the probability simplex, yielding the final transport plan 𝑀 𝑡 ∈ R𝑁 𝑎 ×𝑁 𝑣 :
+
+𝑀 𝑡 𝑖,𝑗 = exp 
+
+
+
+𝑓 (𝐿 ) 
+
+> 𝑖
+
++ 𝑔 (𝐿 ) 
+
+> 𝑗
+
++ log 𝐾 𝑡 (𝑖, 𝑗 )
+
+
+
+. (9) This approach guarantees robust numerical stability and con-tinuous gradient flow throughout the entire optimization process, culminating in a highly reliable multimodal matching. The final matched audio representation ˜ 𝑞 𝑡 𝑎 is derived via a differentiable transport operation: ˜𝑞 𝑡 𝑎 = (𝑀 𝑡 )T𝑞 𝑡 𝑎 , (10) where T denotes the transpose operation, projecting the audio representation into the video embedding domain. To enhance the robustness of this match, the OT module operates iteratively across consecutive temporal steps, forming local-to-global consistency in feature space, ensuring that the established correspondence is both temporally smooth and semantically precise. Furthermore, to effectively constrain modality gaps remaining after OT matching and further enforce distribution-level coherence, we employ a Maximum Mean Discrepancy (MMD)-based distribu-tional loss, regularizing the overall audio-video feature distributions in a Reproducing Kernel Hilbert Space (RKHS). The MMD loss is SAMOT: State-Aware Step Modulation and Optimal Transport Matching for Audio-Visual Instance Segmentation MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil.       
+
+> Table 1: Performance comparison of different models on VIS, AVS, and AVIS tasks. The red and blue backgrounds denote the best and second-best results on AVIS tasks. *indicates models trained with an MS-COCO pre-trained visual backbone.
+
+Task Model Reference Audio FSLA HOTA mAP FSLAn FSLAs FSLAm 
+
+VIS TeViT [56] CVPR’22 ✗ 32.28 53.67 31.52 0.00 28.07 39.18 SeqFormer [52] ECCV’22 ✗ 30.32 54.32 32.79 25.03 21.76 36.46 VITA [22] NeurIPS’22 ✗ 38.04 57.48 36.25 15.04 27.98 47.45 DAVIS [58] ICCV’23 ✗ 23.99 49.12 19.83 14.61 24.83 24.69 LBVQ [8] TCSVT’24 ✗ 34.73 56.97 36.58 27.71 29.52 38.96 AVS AVSegFormer [9] AAAI’24 ✓ 35.66 55.74 35.72 18.58 27.51 43.08 COMBO [55] CVPR’24 ✓ 39.49 57.39 37.84 21.91 27.18 49.63 VCT [24] CVPR’25 ✓ 41.89 60.71 40.06 32.17 27.44 52.01 SDAVS [44] TMM’26 ✓ 41.50 60.30 39.80 31.08 28.31 51.46 AVIS AVISM [19] CVPR’25 ✓ 42.78 61.73 40.57 32.22 29.83 52.40 ACVIS [45] ICASSP’26 ✓ 42.87 62.09 42.14 21.16 30.62 52.34 Ours — ✓ 46.07 62.58 42.85 37.81 32.46 55.81 AVIS * AVISM * [19] CVPR’25 ✓ 44.42 64.52 45.04 20.62 32.62 54.99 ACVIS * [45] ICASSP’26 ✓ 46.48 65.12 46.68 10.74 34.45 58.81 Ours * — ✓ 48.18 67.27 47.62 36.73 32.87 60.68 defined as: 
+
+LMMD = 1
+
+𝑁 2
+
+> 𝑎 𝑁 𝑎
+
+∑︁ 
+
+> 𝑖 =1
+> 𝑁 𝑎
+
+∑︁ 
+
+> 𝑖 ′=1
+
+𝑘   ˜𝑞 𝑡 𝑎 [𝑖 ], ˜𝑞 𝑡 𝑎 [𝑖 ′]+
+
+1
+
+𝑁 2
+
+> 𝑣 𝑁 𝑣
+
+∑︁ 
+
+> 𝑗 =1
+> 𝑁 𝑣
+
+∑︁  
+
+> 𝑗 ′=1
+
+𝑘  𝑞 𝑡 𝑣 [ 𝑗 ], 𝑞 𝑡 𝑣 [ 𝑗 ′] − 2
+
+𝑁 𝑎 𝑁 𝑣 𝑁 𝑎 ∑︁ 
+
+> 𝑖 =1
+> 𝑁 𝑣
+
+∑︁ 
+
+> 𝑗 =1
+
+𝑘   ˜𝑞 𝑡 𝑎 [𝑖 ], 𝑞 𝑡 𝑣 [ 𝑗 ],𝑘 (𝑥, 𝑦 ) = 1
+
+|𝑆 |∑︁ 𝜎 ∈𝑆 
+
+exp 
+
+
+
+− ∥𝑥 − 𝑦 ∥22
+
+2𝜎 2
+
+
+
+,
+
+(11) where 𝑘 (𝑥, 𝑦 ) is a multi-kernel Gaussian function, in which each bandwidth 𝜎 is selected from a fixed multi-scale set 𝑆 = {0.1, 1.0, 10 .0}.We adopt this design to capture cross-modal discrepancy at differ-ent similarity ranges, while additional analysis on fixed-bandwidth ablations is provided in the supplementary material. 
+
+## 3.4 Hierarchical Temporal Tracker 
+
+To track sounding objects across video sequences, we employ a hier-archical temporal tracker that combines local temporal refinement with full-sequence Mamba modeling. As shown in Fig. 2(d), we first apply a sliding-window refinement module with window size 𝑤 = 3and stride 1 to preserve short-term consistency, where each local segment spans frames 𝑡 : 𝑡 + 𝑤 − 1. For each window, we extract the corresponding visual object queries 𝑞 𝑡 :𝑡 +𝑤 −1 
+
+> 𝑣
+
+and matched audio queries ˜ 𝑞 𝑡 :𝑡 +𝑤 −1 
+
+> 𝑎
+
+. Bidirectional scanning is then performed within the window, followed by a lightweight fusion layer for cross-modal interaction and local temporal refinement: 
+
+𝑞 𝑡 :𝑡 +𝑤 −1 
+
+> 𝑎𝑣
+
+= 𝑀 𝑣 (𝑞 𝑡 :𝑡 +𝑤 −1 
+
+> 𝑣
+
+) ⊙ 𝑀 𝑎 ( ˜𝑞 𝑡 :𝑡 +𝑤 −1 
+
+> 𝑎
+
+),
+
+ˆ𝑞 𝑡 :𝑡 +𝑤 −1 
+
+> 𝑎𝑣
+
+= 𝑀 𝑣 (𝑞 𝑡 :𝑡 +𝑤 −1 
+
+> 𝑣
+
+) + 𝑀 𝑎 ( ˜𝑞 𝑡 :𝑡 +𝑤 −1 
+
+> 𝑎
+
+),
+
+˜𝑞 𝑡 :𝑡 +𝑤 −1 
+
+> 𝑣
+
+= 𝜎 (𝐺𝐴𝑃 (𝑀 𝑎𝑣 (𝑞 𝑡 :𝑡 +𝑤 −1 
+
+> 𝑎𝑣
+
+))) ⊙ ˆ𝑞 𝑡 :𝑡 +𝑤 −1 
+
+> 𝑎𝑣
+
++ 𝑞 𝑡 :𝑡 +𝑤 −1 
+
+> 𝑣
+
+,
+
+(12) where 𝑀 𝑣 /𝑎 /𝑎𝑣 denote Mamba blocks, 𝜎 denotes the Sigmoid func-tion, and 𝐺𝐴𝑃 denotes global average pooling along the temporal dimension. This local refinement improves short-term tracking consistency and alleviates drift in appearance or sound correlation. After window-based refinement, we further apply Mamba over the entire sequence to model global temporal dependencies and pro-duce the final temporal query embeddings, thereby complementing the preceding local refinement. In this way, the tracker preserves local consistency while incorporating long-range contextual cues for object motion, sound-source continuity, and extended temporal dependency modeling. 
+
+## 4 Experiments 4.1 Overall Comparisons 
+
+Dataset and Evaluation Metrics. We evaluate our method on AVISeg [19], the first benchmark for audio-visual instance segmen-tation, whose videos have an average duration of 61.4 seconds. Following [19], we report mean Average Precision (mAP), Higher Order Tracking Accuracy (HOTA), and Frame-Level Sound Localiza-tion Accuracy (FSLA). Details of the dataset and evaluation metrics are provided in the supplementary material. 
+
+Training Details. For fair comparison, all methods use the same input resolution and ResNet-50 backbone. Our model employs a ResNet-50 [21] visual backbone, a VGGish [23] audio encoder pretrained on AudioSet [10], and the query-learning protocol of Mask2Former [4] and VITA [22]. We train the model for 50,000 iterations with batch size 1 using AdamW and a stepwise learning-rate schedule on NVIDIA RTX 4090 GPUs. We set 𝛼 = 0.2, 𝛽 = 0.1, 
+
+𝜖 = 0.01, 𝛾 = 0.1, 𝐿 = 10, and 𝜂 = 10 −8; the remaining Mamba settings follow VMamba [39]. The objective follows AVISM [19] with an additional LMMD , and all loss weights are 1.0. Further im-plementation details are provided in the supplementary material. 
+
+Comparison Protocol. We compare our method with representa-tive video instance segmentation (VIS) methods [3, 8, 22, 52, 56, 58], AVS methods [9, 24, 44, 46, 55], and the AVIS baseline AVISM [19]. Following AVISM [19], VIS and AVS methods are adapted to the AVIS benchmark under the same backbone, input resolution, and training protocol. The results are summarized in Table 1. It is worth noting that the AVISM result reported in Table 1 corresponds to the official benchmark baseline, whereas the baseline used in our later ablation studies is our reproduced framework equipped with MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil. Peng et al. tuba[0,1,2]  tuba[0,1,2]  tuba[0,1,2]  piano[0] violin[1]  piano[0] violin[1]  piano[0] violin[1] 
+
+(c)  (d) 
+
+(a) 
+
+GT 
+
+AVISM 
+
+Ours 
+
+(b)     
+
+> person[1] person[0] person[1] airplane[0] airplane[0] airplane[0]
+
+GT 
+
+AVISM 
+
+Ours 
+
+Figure 3: Qualitative comparison between AVISM and Ours across diverse audio scenarios with varying sound sources. 
+
+the hierarchical temporal tracker but without ADSM or OT-MM. Therefore, the two baselines are not numerically identical. As shown in Table 1, our method achieves the best primary metrics under both standard and MS-COCO-pretrained settings. Under the standard setting, it surpasses AVISM by 3.29 FSLA, 0.85 HOTA, and 2.28 mAP; with MS-COCO pretraining, the correspond-ing gains are 3.76, 2.75, and 2.58, respectively. The FSLA improve-ment indicates more accurate sounding-object localization in long and dynamic sequences, while the HOTA and mAP gains reflect stronger temporal association and instance-level segmentation. No-tably, our method performs better in challenging silent and multi-source scenarios, as evidenced by the improvements in FSLAn and FSLAm, verifying the effectiveness of our design in handling com-plex modality-state changes and cross-modal discrepancies in AVIS. 
+
+## 4.2 Qualitative and Mechanism Analysis 
+
+How does the framework perform in challenging scenarios? 
+
+To intuitively demonstrate the effectiveness of our framework, we present qualitative comparisons between Ours and AVISM in challenging AVIS scenarios, as shown in Fig. 3. The displayed frames are adjacent samples selected to highlight inter-frame modality-state changes and complex multi-instance interactions, and GT denotes the currently sounding object instances. In Fig. 3(a-b), the dominant challenge lies in complex modality-state changes. In Fig. 3(a), the visual content remains nearly un-changed while the active sound source alternates across different persons. In Fig. 3(b), the sounding aircraft remains consistent while the visible target undergoes large motion and background varia-tion. In both cases, AVISM fails to promptly perceive changes in the current modality state and therefore cannot adapt its temporal modeling accordingly. In contrast, our method can more accurately track and segment the currently sounding object, demonstrating the effectiveness of ADSM in stabilizing temporal modeling while remaining responsive to modality-state transitions. In Fig. 3(c-d), we further consider multi-instance scenes with sub-stantial cross-modal mismatch. When multiple instruments sound A
+
+> V
+> I
+> S
+> M
+> O
+> U
+> R
+> S
+
+0.0816 
+
+0.0085 
+
+X:  Frames 
+
+Y:  Effective Δ                    
+
+> Change Stable
+> Frame 1 Frame 2 Frame 3 Frame 4 Frame 5 Frame 6 Frame 7 Frame 8
+> Frame 1 Frame 2 Frame 3 Frame 4 Frame 5 Frame 6 Frame 7 Frame 8
+> F1
+> F2
+> F3
+> F4
+> F5
+> F6
+> F7 F8
+> 8red boxes: 8frames below
+
+Figure 4: Visualization of the effective step size Δ in ADSM. The upper bar chart shows frame-wise Δ values, and the lower rows present the corresponding predictions of AVISM and Ours on adjacent frames. 
+
+simultaneously, AVISM produces imprecise correspondence and localization, whereas our method establishes clearer instance-level associations and more accurate masks. These results demonstrate that OT-MM improves cross-modal matching in acoustically and visually complex scenarios. 
+
+How does ADSM respond to modality-state changes? 
+
+To provide a more intuitive understanding of ADSM, we visu-alize the effective step size Δ together with representative frames exhibiting different modality-change states, as shown in Fig. 4. During temporally stable segments, the effective Δ remains at a relatively low level, indicating that the model preserves historical information and performs smoother state propagation. When the sounding object changes or the modality state undergoes abrupt transition, the effective Δ rises noticeably, allowing the model to update its hidden state more aggressively and quickly adapt to the new audio-visual configuration. This behavior is consistent with the design motivation of our ADSM, retaining long-range stability in steady segments while improving responsiveness under sudden modality-state alterations. 
+
+How does OT-MM improve cross-modal matching? SAMOT: State-Aware Step Modulation and Optimal Transport Matching for Audio-Visual Instance Segmentation MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil. Video      
+
+> Audio Before OT -MM
+> Video
+> Audio After OT -MM
+> Cross -Modal Feature Distributions Before OT -MM Cross -Modal Feature Distributions After OT -MM
+
+Figure 5: Visualization of cross-modal feature distributions before and after OT-MM. (a) Before OT-MM, the audio (or-ange) and video (blue) embeddings exhibit large distribu-tional divergence. (b) After OT-MM, the matched audio (pink) shows strong overlap with the video distribution. 48.18  47.05    
+
+> 47.23
+> 66.13
+> 66.43
+> 46.80
+> 46.94
+> 47.05
+> 47.05 66.76
+> 66.05 46.73
+> 47.10
+> 67.27 47.62
+> 47.62 67.27 48.18
+
+Figure 6: Comparison of alternative distance formulations for 𝑠 modality and 𝑠 diff in ADSM. The selected max-norm and cosine formulations achieve the best performance. 
+
+To further reveal how OT-MM improves cross-modal match-ing, we visualize the audio-video feature distributions before and after OT-MM using t-SNE [43] with Kernel Density Estimation (KDE) [59], as shown in Fig. 5. Before matching, the audio and visual embeddings form largely separated clusters, reflecting sub-stantial structural and distributional discrepancies between the two modalities. After OT-MM, the matched audio embeddings become significantly closer to the visual embeddings, and the correspond-ing density contours exhibit much stronger overlap. These results indicate that OT-MM does not merely fuse heterogeneous features, but instead establishes soft instance-level correspondence through transport-based matching while reducing residual distribution gaps, thereby producing more coherent multimodal representations for downstream segmentation and tracking. 
+
+## 4.3 Ablation Studies 
+
+Overall module ablation. To evaluate the contribution of the two core strategies in our framework, we progressively introduce ADSM and OT-MM into the reproduced baseline. As shown in Ta-ble 2, adding either ADSM or OT-MM consistently improves FSLA, HOTA, and mAP over the baseline, verifying that both temporal step modulation and explicit cross-modal matching are beneficial for AVIS. In particular, ADSM yields larger gains in FSLA, indicating its effectiveness in handling complex modality-state changes during long-range sequence modeling, while OT-MM provides more sta-ble improvements in HOTA and mAP by enhancing instance-level 
+
+Table 2: Ablation study of ADSM and OT-MM modules. 
+
+Index ADSM OT-MM FSLA HOTA mAP (1) 45.56 65.53 46.49 (2) ✓ 47.29 65.99 47.05 (3) ✓ 46.64 66.53 46.99 (4) ✓ ✓ 48.18 67.27 47.62 Table 3: Ablation study on ADSM. SP denotes state perception branch implemented by the joint use of 𝑠 modality and 𝑠 diff .
+
+Index SP DGR FSLA HOTA mAP (1) 46.64 66.53 46.99 (2) ✓ 47.08 66.78 47.03 (3) ✓ 47.21 66.92 47.17 (4) ✓ ✓ 48.18 67.27 47.62 Table 4: Ablation study on OT-MM, where RPP and TCP de-note the relative positional prior and temporal consistency prior, respectively. 
+
+Index RPP TCP FSLA HOTA mAP (1) 47.29 65.99 47.05 (2) ✓ 47.71 66.31 47.24 (3) ✓ 47.54 66.87 47.19 (4) ✓ ✓ 48.18 67.27 47.62 Table 5: Comparison of different Mamba scanning mecha-nisms and OT-based matching strategies. Mamba Scan OT Matching Metrics Std. Mamba SS2D ADSM OT-LA Sinkhorn OT-MM FSLA HOTA mAP                     
+
+> ✓✓45.64 65.09 43.98
+> ✓✓46.36 66.52 45.33
+> ✓✓46.68 65.67 44.34
+> ✓✓46.75 65.55 45.02
+> ✓✓48.18 67.27 47.62
+
+cross-modal correspondence. When the two modules are jointly ap-plied, the model achieves the best overall performance, demonstrat-ing that ADSM and OT-MM play complementary roles in improving temporal modeling and multimodal alignment. 
+
+Why choose ADSM and OT-MM? 
+
+Beyond module-level ablations, we also compare ADSM and OT-MM with several representative alternatives, including standard Mamba scanning [16], SS2D scanning [39], OT-LA [30], and vanilla Sinkhorn matching. Standard Mamba and SS2D mainly focus on generic sequence scanning, but they do not explicitly adapt the state update to modality-state changes, making them less effective when the sounding object switches over time. In contrast, ADSM explicitly modulates the effective step size according to current audio-visual cues and historical context, allowing the model to re-main stable in steady segments while responding rapidly to abrupt state transitions. On the matching side, OT-LA and vanilla Sinkhorn can provide basic transport-based alignment, but they do not jointly model structural and temporal priors as in OT-MM. As a result, they are less effective in establishing robust instance-level correspon-dence across heterogeneous modalities. The results in Table 5 verify our analysis, showing that the combination of ADSM and OT-MM consistently achieves the best performance. 
+
+Internal ablation of ADSM. To examine the effectiveness of ADSM, we analyze its two key components: the state perception branch (SP), implemented by the joint use of 𝑠 modality and 𝑠 diff , and the Delta Gating Router (DGR). As shown in Table 3, enabling either SP or DGR alone already brings measurable gains over the ADSM MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil. Peng et al. 45.5 46.0 46.5 47.0 47.5 48.0 48.5 41 42 43 44 45 46 47 48 49 FSLA FPS 
+
+> 400.0 403.3 406.5 409.8 413.0 416.3 419.5 422.8
+> GFLOPs
+> Ours
+> w/o ADSM AVISM ACVIS
+> ★
+> w/o OT-MM Parameters(M )
+> Para : 66.07
+> GFlops: 425.14
+> Para : 138.21
+> GFlops: 410.75
+> Para : 60.25
+> GFlops: 401.35
+> Para : 63.67
+> GFlops: 414.21
+> Para : 64.99
+> GFlops: 416.4
+
+Figure 7: Performance-efficiency comparison of AVISM, ACVIS, Ours, and our variants w/o ADSM or OT-MM. Bubble size and color denote parameters and GFLOPs, respectively. 399.2 407.8 416.4 424.7 432.7 48.55 47.59 46.6 45.69 44.81         
+
+> 66.35 66.83 67.27 66.93 67.01 46.2 47.34 48.18 47.64 46.91 46.8 47.01 47.62 47.25 47.31
+
+GFLOPs FPS     
+
+> 1234545 50 55 60 65 70
+
+Window Size HOTA FSLA mAP 
+
+Figure 8: Effect of window size on performance and efficiency in the hierarchical temporal tracker. 𝑤 = 3 achieves the best trade-off among FSLA, HOTA, mAP, GFLOPs, and FPS. 
+
+baseline, while combining both yields the strongest performance. These results indicate that accurate perception of modality-state changes and adaptive fusion of current and historical cues are both essential for effective step-size modulation. 
+
+Why use Max norm and Cosine distance? 
+
+Furthermore, we assess the state perception design in ADSM un-der alternative distance formulations. For 𝑠 modality , we compare the selected Max norm with L1 and L2 norms. The Max norm is adopted because abrupt modality-state transitions are better characterized by the dominant change across adjacent steps, whereas L1 and L2 tend to average out such localized but decisive variations. For 𝑠 diff ,we compare the selected Cosine formulation with Euclidean and Pearson alternatives. Cosine distance captures semantic inconsis-tency between the audio-conditioned and raw visual representa-tions while being less sensitive to magnitude variation. As shown in Fig. 6, the selected formulations achieve the best overall perfor-mance, confirming their effectiveness for modeling modality-state changes and cross-modal discrepancy in AVIS. 
+
+Internal ablation of OT-MM. To investigate which components are critical in OT-MM, we analyze the relative positional prior (RPP) and temporal consistency prior (TCP). RPP constrains structurally plausible audio-visual matching within each frame, while TCP im-proves temporal stability by encouraging consistent correspon-dence across adjacent time steps. As shown in Table 4, introducing either RPP or TCP improves performance over the OT-MM baseline, and combining both yields the best results. These results confirm that the two priors play complementary roles in establishing reliable transport-based instance-level matching over long video sequences. mAP 
+
+HOTA 
+
+FSLA 40 45 50 55 60 65 70  
+
+> 48.18 67.27 47.62 44.97 64.34 45.64 Offline Online
+> 1.98 2.93 3.21
+
+Figure 9: Comparison between offline and online settings. 
+
+Additional ablations of OT and the MMD regularizer contributions are provided in the supplementary material. 
+
+## 4.4 Efficiency Analysis 
+
+Can the performance gains be obtained efficiently? Beyond accuracy, we analyze the computational cost of our framework by comparing it with AVISM, ACVIS, and our variants without ADSM or OT-MM. As shown in Fig. 7, our method achieves a more favor-able performance-efficiency trade-off than the existing AVIS base-lines, delivering stronger segmentation and tracking performance with competitive parameter count, FLOPs, and inference speed. Moreover, the module-level comparison shows that both ADSM and OT-MM introduce limited overhead while bringing clear gains in FSLA, HOTA, and mAP. These results indicate that the proposed modules improve performance in a cost-effective manner rather than through excessive computational complexity. 
+
+## 5 Discussion and Future Work 
+
+Although our framework is developed in the offline AVIS setting, we observe that it retains reasonable performance after removing future-frame dependency and switching to causal inference. As shown in Fig. 9, the online variant remains competitive, although a noticeable gap to the offline version persists. This suggests that state-aware temporal modulation and explicit cross-modal align-ment may also be beneficial for online or streaming audio-visual understanding, while more effective causal memory propagation and incremental matching remain to be explored. In addition, the current hierarchical temporal tracker adopts a fixed local window size. As shown in Fig. 8, 𝑤 = 3 achieves the best trade-off in our ex-periments. But the optimal temporal receptive field may vary with the current modality state: rapidly changing segments may favor shorter windows, whereas stable segments may benefit from longer ones. We believe that extending the framework toward state-aware dynamic window selection is a promising future direction. 
+
+## 6 Conclusion 
+
+We propose a novel framework for audio-visual instance segmenta-tion (AVIS) that addresses two core challenges: complex modality-state changes in long-range modeling and structural and distribu-tional discrepancies across heterogeneous modalities. Our frame-work integrates Adaptive Dynamic Step Modulation (ADSM) for state-aware temporal step-size modulation and Optimal Transport-based Matching Modulation (OT-MM) for explicit instance-level audio-visual consistency with MMD regularization. Extensive ex-periments demonstrate that our method achieves state-of-the-art performance, while qualitative analyses further verify its effective-ness, especially in long-form and multi-instance scenarios. SAMOT: State-Aware Step Modulation and Optimal Transport Matching for Audio-Visual Instance Segmentation MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil. 
+
+## Acknowledgments 
+
+This work was supported in part by the National Natural Science Foundation of China under Grants 62372080 and 62376050, and in part by the Natural Science Foundation of Liaoning Province under Grant 2024-MSBA-24. 
+
+## References 
+
+[1] Rong Chao, Wenze Ren, You-Jin Li, Kuo-Hsuan Hung, Sung-Feng Huang, Szu-Wei Fu, Wen-Huang Cheng, and Yu Tsao. 2025. Leveraging Mamba with Full-Face Vision for Audio-Visual Speech Enhancement. arXiv preprint arXiv:2508.13624 
+
+(2025). [2] Yuanhong Chen, Chong Wang, Yuyuan Liu, Hu Wang, and Gustavo Carneiro. 2024. Cpm: Class-conditional prompting machine for audio-visual segmentation. In European Conference on Computer Vision . Springer, 438–456. [3] Bowen Cheng, Anwesa Choudhuri, Ishan Misra, Alexander Kirillov, Rohit Girdhar, and Alexander G. Schwing. 2021. Mask2Former for Video Instance Segmentation. arXiv:2112.10764 [cs.CV] https://arxiv.org/abs/2112.10764 [4] Bowen Cheng, Ishan Misra, Alexander G Schwing, Alexander Kirillov, and Rohit Girdhar. 2022. Masked-attention mask transformer for universal image segmen-tation. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 1290–1299. [5] Ying Cheng, Yang Li, Junjie He, and Rui Feng. 2024. Mixtures of experts for audio-visual learning. Advances in Neural Information Processing Systems 37 (2024), 219–243. [6] Yashar Deldjoo, Mihai Gabriel Constantin, Hamid Eghbal-Zadeh, Bogdan Ionescu, Markus Schedl, and Paolo Cremonesi. 2018. Audio-visual encoding of multimedia content for enhancing movie recommendations. In Proceedings of the 12th ACM conference on recommender systems . 455–459. [7] Mehmet Hamza Erol, Arda Senocak, Jiu Feng, and Joon Son Chung. 2024. Audio mamba: Bidirectional state space model for audio representation learning. IEEE Signal Processing Letters (2024). [8] Hao Fang, Tong Zhang, Xiaofei Zhou, and Xinxin Zhang. 2024. Learning better video query with sam for video instance segmentation. IEEE Transactions on Circuits and Systems for Video Technology (2024). [9] Shengyi Gao, Zhe Chen, Guo Chen, Wenhai Wang, and Tong Lu. 2024. Avseg-former: Audio-visual segmentation with transformer. In Proceedings of the AAAI conference on artificial intelligence , Vol. 38. 12155–12163. [10] Jort F Gemmeke, Daniel PW Ellis, Dylan Freedman, Aren Jansen, Wade Lawrence, R Channing Moore, Manoj Plakal, and Marvin Ritter. 2017. Audio set: An ontology and human-labeled dataset for audio events. In 2017 IEEE international conference on acoustics, speech and signal processing (ICASSP) . IEEE, 776–780. [11] Sitong Gong, Tianyu Yan, Caixin Kang, Bo Zheng, Xiang Ruan, Huchuan Lu, Kaipeng Zhang, Yoichi Sato, and Yifei Huang. 2026. Vinci2: Providing Proactive Assistance in Continuous Egocentric Videos. arXiv preprint arXiv:2607.11523 
+
+(2026). [12] Sitong Gong, Yunzhi Zhuge, Lu Zhang, Yifan Wang, Pingping Zhang, Lijun Wang, and Huchuan Lu. 2025. AVS-Mamba: Exploring Temporal and Multi-Modal Mamba for Audio-Visual Segmentation. IEEE Transactions on Multimedia 
+
+27 (2025), 5413–5425. doi:10.1109/TMM.2025.3542995 [13] Sitong Gong, Yunzhi Zhuge, Lu Zhang, Zongxin Yang, Pingping Zhang, and Huchuan Lu. 2025. The Devil Is in Temporal Token: High Quality Video Reasoning Segmentation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . 29183–29192. doi:10.1109/CVPR52734.2025.02717 [14] Sitong Gong, Yunzhi Zhuge, Lu Zhang, Jiazuo Yu, Pingping Zhang, Xu Jia, and Huchuan Lu. 2026. Reinforcing Video Object Segmentation to Think Before It Segments. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . 3835–3844. [15] Sitong Gong, Yunzhi Zhuge, Lu Zhang, Pingping Zhang, and Huchuan Lu. 2025. Complementary and Contrastive Learning for Audio-Visual Segmentation. IEEE Transactions on Multimedia 27 (2025), 7407–7418. doi:10.1109/TMM.2025.3599048 [16] Albert Gu and Tri Dao. 2023. Mamba: Linear-Time Sequence Modeling with Selective State Spaces. arXiv preprint arXiv:2312.00752 (2023). [17] Albert Gu, Karan Goel, Ankit Gupta, and Christopher Ré. 2022. On the parame-terization and initialization of diagonal state space models. Advances in Neural Information Processing Systems 35 (2022), 35971–35983. [18] Albert Gu, Isys Johnson, Karan Goel, Khaled Saab, Tri Dao, Atri Rudra, and Christopher Ré. 2021. Combining recurrent, convolutional, and continuous-time models with linear state space layers. Advances in neural information processing systems 34 (2021), 572–585. [19] Ruohao Guo, Xianghua Ying, Yaru Chen, Dantong Niu, Guangyao Li, Liao Qu, Yanyu Qi, Jinxing Zhou, Bowei Xing, Wenzhen Yue, et al. 2025. Audio-visual instance segmentation. In Proceedings of the Computer Vision and Pattern Recog-nition Conference . 13550–13560. [20] Dawei Hao, Yuxin Mao, Bowen He, Xiaodong Han, Yuchao Dai, and Yiran Zhong. 2024. Improving audio-visual segmentation with bidirectional generation. In 
+
+Proceedings of the AAAI conference on artificial intelligence , Vol. 38. 2067–2075. [21] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. 2016. Deep residual learning for image recognition. In Proceedings of the IEEE conference on computer vision and pattern recognition . 770–778. [22] Miran Heo, Sukjun Hwang, Seoung Wug Oh, Joon-Young Lee, and Seon Joo Kim. 2022. Vita: Video instance segmentation via object token association. Advances in neural information processing systems 35 (2022), 23109–23120. [23] Shawn Hershey, Sourish Chaudhuri, Daniel PW Ellis, Jort F Gemmeke, Aren Jansen, R Channing Moore, Manoj Plakal, Devin Platt, Rif A Saurous, Bryan Seybold, et al. 2017. CNN architectures for large-scale audio classification. In 
+
+2017 ieee international conference on acoustics, speech and signal processing (icassp) .IEEE, 131–135. [24] Shaofei Huang, Rui Ling, Tianrui Hui, Hongyu Li, Xu Zhou, Shifeng Zhang, Si Liu, Richang Hong, and Meng Wang. 2025. Revisiting audio-visual segmentation with vision-centric transformer. In Proceedings of the Computer Vision and Pattern Recognition Conference . 8352–8361. [25] Ziru Huang, Jia Li, Wenjie Zhao, Yunhui Guo, and Yapeng Tian. 2024. AV-Mamba: Cross-Modality Selective State Space Models for Audio-Visual Question Answering. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition Workshop (CVPRW) . 1–4. [26] Haichao Jiang, Tianming Liang, Wei-Shi Zheng, and Jian-Fang Hu. 2026. Refer-Agent: A Collaborative Multi-Agent System with Reasoning and Reflection for Referring Video Object Segmentation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . 39508–39517. [27] Kunchang Li, Xinhao Li, Yi Wang, Yinan He, Yali Wang, Limin Wang, and Yu Qiao. 2024. Videomamba: State space model for efficient video understanding. In 
+
+European conference on computer vision . Springer, 237–255. [28] Kexin Li, Zongxin Yang, Lei Chen, Yi Yang, and Jun Xiao. 2023. Catr: Combinatorial-dependence audio-queried transformer for audio-visual video segmentation. In Proceedings of the 31st ACM international conference on multi-media . 1485–1494. [29] Songtao Li and Hao Tang. 2024. Multimodal alignment and fusion: A survey. 
+
+arXiv preprint arXiv:2411.17040 (2024). [30] Yan Li, Yifei Xing, Xiangyuan Lan, Xin Li, Haifeng Chen, and Dongmei Jiang. 2025. Alignmamba: Enhancing multimodal mamba with local and global cross-modal alignment. In Proceedings of the Computer Vision and Pattern Recognition Conference . 24774–24784. [31] Tianming Liang, Qirui Du, Jian-Fang Hu, Haichao Jiang, Zicheng Lin, and Wei-Shi Zheng. 2026. Seg-ReSearch: Segmentation with Interleaved Reasoning and External Search. In Forty-third International Conference on Machine Learning .https://openreview.net/forum?id=H0tGv2kBi8 [32] Tianming Liang, Haichao Jiang, Yuting Yang, Chaolei Tan, Shuai Li, Wei-Shi Zheng, and Jian-Fang Hu. 2026. Long-RVOS: A Comprehensive Benchmark for Long-Term Referring Video Object Segmentation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . 39497–39507. [33] Jingyang Lin, Xinru Ying, Jiaqi Mo, Lina Wei, Fangfang Wang, Canghong Jin, and Guanlin Chen. 2025. Mamba-Based Multimodal Continual Learning for Audio-Visual Classification with Prototype-Enhanced Anti-Forgetting Mechanism. In 
+
+Proceedings of the 3rd International Workshop on Deep Multimodal Generation and Retrieval . 21–29. [34] Xinying Lin, Xuyang Liu, Yiyu Wang, Teng Ma, and Wenqi Ren. 2026. V-CAST: Video Curvature-Aware Spatio-Temporal Pruning for Efficient Video Large Lan-guage Models. arXiv preprint arXiv:2603.27650 (2026). [35] Leiye Liu, Miao Zhang, Jihao Yin, Tingwei Liu, Wei Ji, Yongri Piao, and Huchuan Lu. 2025. Defmamba: Deformable visual state space model. In Proceedings of the Computer Vision and Pattern Recognition Conference . 8838–8847. [36] Xuyang Liu, Xiyan Gui, Yuchao Zhang, and Linfeng Zhang. 2026. Mixing Im-portance with Diversity: Joint Optimization for KV Cache Compression in Large Vision-Language Models. In International Conference on Learning Representations .https://openreview.net/forum?id=B2iqbCQviR [37] Xuyang Liu, Yiyu Wang, Junpeng Ma, and Linfeng Zhang. 2025. Video Com-pression Commander: Plug-and-Play Inference Acceleration for Video Large Language Models. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing . Association for Computational Linguistics, 1910– 1924. doi:10.18653/v1/2025.emnlp-main.98 [38] Xuyang Liu, Ziming Wang, Junjie Chen, Yuhang Han, Yingyao Wang, Jiale Yuan, Jun Song, Siteng Huang, and Honggang Chen. 2026. Global Compression Com-mander: Plug-and-Play Inference Acceleration for High-Resolution Large Vision-Language Models. In Proceedings of the AAAI Conference on Artificial Intelligence ,Vol. 40. 7350–7358. doi:10.1609/aaai.v40i9.37673 [39] Yue Liu, Yunjie Tian, Yuzhong Zhao, Hongtian Yu, Lingxi Xie, Yaowei Wang, Qixiang Ye, Jianbin Jiao, and Yunfan Liu. 2024. Vmamba: Visual state space model. 
+
+Advances in neural information processing systems 37 (2024), 103031–103063. [40] Lidong Lu, Guo Chen, Zhu Wei, Zhiqi Li, Yicheng Liu, and Tong Lu. 2026. AV-Reasoner: Improving and Benchmarking Clue-Grounded Audio-Visual Counting for MLLMs. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . 33477–33487. MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil. Peng et al. 
+
+[41] Lidong Lu, Guo Chen, Zhu Wei, Yicheng Liu, and Tong Lu. 2025. Learning Visual Affordance from Audio. arXiv preprint arXiv:2512.02005 (2025). [42] Juncheng Ma, Peiwen Sun, Yaoting Wang, and Di Hu. 2024. Stepping stones: a progressive training strategy for audio-visual semantic segmentation. In European Conference on Computer Vision . Springer, 311–327. [43] Laurens van der Maaten and Geoffrey Hinton. 2008. Visualizing data using t-SNE. 
+
+Journal of machine learning research 9, Nov (2008), 2579–2605. [44] Kai Peng, Yunzhe Shen, Miao Zhang, Leiye Liu, Yidong Han, Wei Ji, Jingjing Li, Yongri Piao, and Huchuan Lu. 2026. Selective noise suppression and discrimina-tive mutual interaction for robust audio-visual segmentation. IEEE Transactions on Multimedia (2026). [45] Jinbae Seo, Hyeongjun Kwon, Kwonyoung Kim, Jiyoung Lee, and Kwanghoon Sohn. 2026. Learning What to Hear: Boosting Sound-Source Association for Ro-bust Audiovisual Instance Segmentation. In ICASSP 2026-2026 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, 16032– 16036. [46] Yunzhe Shen, Kai Peng, Leiye Liu, Wei Ji, Jingjing Li, Miao Zhang, Yongri Piao, and Huchuan Lu. 2025. Frequency-Domain Decomposition and Recomposition for Robust Audio-Visual Segmentation. arXiv preprint arXiv:2509.18912 (2025). [47] Jian Shi, Baoli Sun, Xinchen Ye, Zhihui Wang, Xiaolong Luo, Jin Liu, Heli Gao, and Haojie Li. 2023. Semantic Decomposition Network With Contrastive and Structural Constraints for Dental Plaque Segmentation. IEEE Trans. Medical Imaging 42, 4 (2023), 935–946. doi:10.1109/TMI.2022.3221529 [48] Peiwen Sun, Honggang Zhang, and Di Hu. 2024. Unveiling and Mitigating Bias in Audio Visual Segmentation. In Proceedings of the 32nd ACM International Conference on Multimedia . 7259–7268. [49] Jia Wang, Yunan Mei, Jiarui Liu, and Xin Fan. 2025. SAM-Guided Robust Repre-sentation Learning for One-Shot 3D Medical Image Segmentation. arXiv preprint arXiv:2504.20501 (2025). [50] Jia Wang, Yuchen Sun, Yunan Mei, Zihao Xu, and Xin Fan. 2025. Personalizing Federated Learning Guided by Site-Aggregated Representation for Multi-Site One-Shot Medical Image Segmentation. In 2025 IEEE International Conference on Bioinformatics and Biomedicine (BIBM) . IEEE, 7113–7120. [51] Xin-Cheng Wen, Jiaxin Ye, Yan Luo, Yong Xu, Xuan-Ze Wang, Chang-Li Wu, and Kun-Hong Liu. 2022. CTL-MTNet: A Novel CapsNet and Transfer Learning-Based Mixed Task Net for the Single-Corpus and Cross-Corpus Speech Emotion Recognition. In Proceedings of the Thirty-First International Joint Conference on Artificial Intelligence . 2305–2311. doi:10.24963/ijcai.2022/320 [52] Junfeng Wu, Yi Jiang, Song Bai, Wenqing Zhang, and Xiang Bai. 2022. Seqformer: Sequential transformer for video instance segmentation. In European Conference on Computer Vision . Springer, 553–569. [53] Linhui Xiao, Xiaoshan Yang, Xiangyuan Lan, Yaowei Wang, and Changsheng Xu. 2025. Towards Visual Grounding: A Survey. IEEE Transactions on Pattern Analysis and Machine Intelligence (2025). doi:10.1109/TPAMI.2025.3630635 [54] Zhenghao Xing, Hao Chen, Binzhu Xie, Jiaqi Xu, Ziyu Guo, Xuemiao Xu, Jianye Hao, Chi-Wing Fu, Xiaowei Hu, and Pheng-Ann Heng. 2025. EchoTraffic: En-hancing traffic anomaly understanding with audio-visual insights. In Proceedings of the Computer Vision and Pattern Recognition Conference . 19098–19108. [55] Qi Yang, Xing Nie, Tong Li, Pengfei Gao, Ying Guo, Cheng Zhen, Pengfei Yan, and Shiming Xiang. 2024. Cooperation does matter: Exploring multi-order bilateral relations for audio-visual segmentation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . 27134–27143. [56] Shusheng Yang, Xinggang Wang, Yu Li, Yuxin Fang, Jiemin Fang, Wenyu Liu, Xun Zhao, and Ying Shan. 2022. Temporally efficient vision transformer for video instance segmentation. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 2885–2895. [57] Jiaxin Ye, Xin-Cheng Wen, Xuan-Ze Wang, Yong Xu, Yan Luo, Chang-Li Wu, Li-Yan Chen, and Kunhong Liu. 2022. GM-TCNet: Gated Multi-Scale Temporal Convolutional Network Using Emotion Causality for Speech Emotion Recogni-tion. Speech Communication 145 (2022), 21–35. doi:10.1016/j.specom.2022.07.005 [58] Tao Zhang, Xingye Tian, Yu Wu, Shunping Ji, Xuebo Wang, Yuan Zhang, and Pengfei Wan. 2023. Dvis: Decoupled video instance segmentation framework. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision . 1282– 1291. [59] Yan Zheng, Jeffrey Jestes, Jeff M Phillips, and Feifei Li. 2013. Quality and efficiency for kernel density estimates in large data. In Proceedings of the 2013 ACM SIGMOD International Conference on Management of Data . 433–444. [60] Jialong Zhong, Tingwei Liu, Baokun Yue, Jingjing Li, Yongri Piao, Miao Zhang, Leiye Liu, Jiahong Jiang, Wei Ji, and Huchuan Lu. 2026. AdaSurvMamba: Dynamic Fusion and Semantic Scanning for Multimodal Survival Analysis. arXiv preprint arXiv:2607.16260 (2026). [61] Jinxing Zhou, Xuyang Shen, Jianyuan Wang, Jiayi Zhang, Weixuan Sun, Jing Zhang, Stan Birchfield, Dan Guo, Lingpeng Kong, Meng Wang, et al. 2025. Audio-visual segmentation with semantics. International Journal of Computer Vision 
+
+133, 4 (2025), 1644–1664. [62] Jinxing Zhou, Jianyuan Wang, Jiayi Zhang, Weixuan Sun, Jing Zhang, Stan Birchfield, Dan Guo, Lingpeng Kong, Meng Wang, and Yiran Zhong. 2022. Audio– visual segmentation. In European Conference on Computer Vision . Springer, 386– 403. [63] Xizhou Zhu, Weijie Su, Lewei Lu, Bin Li, Xiaogang Wang, and Jifeng Dai. 2021. Deformable DETR: Deformable Transformers for End-to-End Object Detection. In International Conference on Learning Representations .[64] Yunzhi Zhuge, Sitong Gong, Lu Zhang, Qi Xu, Wenda Zhao, Jin Zhan, and Huchuan Lu. 2026. Context-Infused Trajectories: Enhancing Context and Frame Consistency in Reasoning Video Object Segmentation. IEEE Transactions on Image Processing 35 (2026), 5239–5252. doi:10.1109/TIP.2026.3689427
