@@ -1,0 +1,388 @@
+Title: RbFT-Net: Rectify-Before-Fuse Temporal Radar Anchors for 4D Radar-Camera Depth Completion
+
+URL Source: https://arxiv.org/pdf/2608.13102v1
+
+Published Time: Fri, 14 Aug 2026 00:52:27 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# RbFT-Net: Rectify-Before-Fuse Temporal Radar Anchors for 4D Radar–Camera Depth Completion 
+
+## Wentao Zhao 1, Shouxuan Wu 2, Yongtao Cen 1, Tianchen Deng 1, Yuyang Zhang 3, Jingchuan Wang 1
+
+> 1
+
+School of Automation and Intelligent Sensing, Institute of Medical Robotics, Shanghai Jiao Tong University, Shanghai 200240, China 
+
+> 2
+
+School of Electronic and Information Engineering, Beijing Jiaotong University, Beijing, China 
+
+> 3
+
+State Key Laboratory of Advanced Rail Autonomous Operation and School of Electronic and Information Engineering, Beijing Jiaotong University, Beijing 100044, China 
+
+Abstract 
+
+Dense metric depth prediction from cameras and millimeter-wave radar offers a cost-effective sensing solution for au-tonomous systems. However, radar measurements are in-herently sparse and susceptible to clutter, multipath reflec-tions, and projection errors. While aggregating multiple radar frames provides denser metric cues, it also introduces tempo-ral misalignment and dynamic-object interference. Directly propagating such unreliable measurements can therefore cor-rupt large regions of the predicted depth map. To address this issue, we propose RbFT-Net, an end-to-end rectify-before-fuse 
+
+framework for multi-frame 4D radar–camera depth comple-tion. Rather than assuming accumulated radar returns to be accurate, RbFT-Net treats them as noisy temporal anchor can-didates. An image-conditioned rectification module jointly corrects their image-plane locations and metric depths while estimating pointwise reliability. The rectified anchors are then selectively propagated before high-level multi-modal fusion, suppressing the influence of unreliable measurements. Exper-iments on ZJU-4DRadarCam and a newly collected 4D radar– camera–LiDAR dataset show that RbFT-Net consistently out-performs the evaluated independent radar–camera methods and remains competitive with plug-in pipelines using auxil-iary monocular depth models. Cross-platform evaluation and component analyses further support the effectiveness of the proposed rectification and reliability-aware propagation strat-egy. 
+
+## Introduction 
+
+Dense metric depth estimation is fundamental to autonomous driving, robotic navigation, and 3D scene understanding. Cameras provide rich appearance cues but cannot directly resolve metric scale and may degrade under adverse visual conditions, whereas LiDAR provides accurate geometry at a relatively high cost. Millimeter-wave radar offers direct met-ric ranging and robustness to illumination changes, making it an attractive complementary sensor for dense depth pre-diction (Lin, Dai, and Van Gool 2020; Lo and Vandewalle 2021; Long et al. 2021; Singh et al. 2023). In particular, 4D radar resolves elevation in addition to range, azimuth, and Doppler, allowing height-aware radar returns to be projected into the camera view as sparse metric cues (Li et al. 2024b; Sun et al. 2024; Wang et al. 2025). 
+
+Copyright © 2027, Association for the Advancement of Artificial Intelligence (www.aaai.org). All rights reserved. 
+
+Existing radar–camera depth completion methods com-monly propagate projected radar measurements to dense im-age regions under visual guidance (Long et al. 2021; Singh et al. 2023; Li et al. 2024b; Sun et al. 2024, 2025b). However, radar returns are extremely sparse and may be inconsistent with visual structures because of limited angular resolution, multipath effects, clutter, calibration uncertainty, and radar-to-image misprojection. Once propagated, inaccurate radar measurements can contaminate much larger image regions, particularly around object boundaries, thin structures, and distant objects. Recent plug-in methods alleviate the limited structural information of radar by incorporating dense pre-dictions from separately trained monocular depth models (Li et al. 2024b; Qin et al. 2025; Wang et al. 2025). Although these predictions provide strong structural priors, they intro-duce an additional model dependency and increase the size and complexity of the complete inference pipeline. This mo-tivates an independent solution that directly predicts dense metric depth from radar and RGB inputs. A complementary source of information is the temporal measurements naturally available in radar streams. Consec-utive radar frames provide complementary metric observa-tions and can alleviate the sparsity of single-frame input. A conventional temporal fusion strategy is to use ego-motion to warp historical measurements into the current view (Zhou et al. 2025). Although such geometric alignment reduces rigid inter-frame displacement, it does not guarantee accu-rate radar-to-image anchors: the warped returns may still be affected by calibration uncertainty, radar depth noise, mul-tipath reflections, and independently moving objects. Direct accumulation further retains temporal misalignment while also aggregating clutter and other unreliable returns. Multi-frame radar can therefore become denser without becoming more reliable, potentially amplifying errors during subse-quent propagation. This raises the central question of this work: how can noisy temporal radar measurements be rec-tified and selectively exploited before their errors propagate into dense depth predictions? 
+
+To address this question, we propose RbFT-Net , an end-to-end rectify-before-fuse framework for multi-frame 4D radar–camera depth completion. Rather than assuming ac-cumulated radar returns to be accurate depth measurements, RbFT-Net treats them as noisy temporal anchor candidates. An image-conditioned rectification module jointly corrects arXiv:2608.13102v1 [cs.CV] 13 Aug 2026 their image-plane locations and metric depths while estimat-ing pointwise reliability. The resulting anchors are then se-lectively propagated according to their reliability and target– anchor compatibility before high-level multi-modal fusion and dense refinement. This design suppresses unreliable tem-poral measurements before their errors spread over the image. Operating directly on accumulated radar returns, RbFT-Net predicts dense metric depth from radar and RGB without relying on an auxiliary monocular depth model. Combined with an efficient dense prediction backbone, it forms a com-pact independent pipeline. We conduct extensive experiments on ZJU-4DRadarCam (Li et al. 2024b) and a newly collected dataset acquired us-ing a different 4D radar–camera platform. RbFT-Net achieves the strongest overall performance among independent meth-ods and remains competitive with plug-in pipelines across both datasets. Zero-shot and limited-data adaptation experi-ments further evaluate its cross-sensor transferability, while comprehensive ablations and efficiency analyses validate the proposed components and demonstrate a favorable accuracy– efficiency trade-off. Our main contributions are summarized as follows: 
+
+• We propose RbFT-Net, an end-to-end rectify-before-fuse framework that rectifies noisy temporal radar anchors be-fore reliability-aware propagation and high-level multi-modal fusion. 
+
+• We introduce an image-conditioned temporal anchor rec-tification module that jointly corrects the image-plane locations and metric depths of noisy radar returns while estimating their pointwise reliability. 
+
+• We develop a reliability-aware propagation strategy that combines anchor reliability with target–anchor compati-bility to selectively transfer trustworthy metric evidence to dense image regions. 
+
+• We collect a new 4D radar–camera–LiDAR dataset us-ing a different sensing platform and conduct in-domain, zero-shot, and limited-data cross-sensor evaluations. The dataset and evaluation protocol will be made publicly available. 
+
+## Related Work 
+
+Following TacoDepth (Wang et al. 2025), we categorize radar–camera depth completion methods as independent or plug-in. Independent methods directly predict metric depth from radar and RGB, whereas plug-in methods additionally rely on an auxiliary monocular depth model. We also review temporal fusion for depth estimation. 
+
+Independent Radar–Camera Depth Completion. Depth completion commonly propagates sparse measurements us-ing learned spatial affinities or image-conditioned weights. Representative methods such as CSPN++ (Cheng et al. 2020) and BP-Net (Tang et al. 2024) are effective for relatively accu-rate LiDAR samples, but can be sensitive to the substantially sparser and noisier measurements provided by radar. Independent radar–camera methods directly fuse radar and RGB inputs. Early studies explored sensor complementarity, pixel–depth association, and ordinal depth prediction (Lin, Dai, and Van Gool 2020; Long et al. 2021; Lo and Van-dewalle 2021; Singh et al. 2023). Subsequent methods im-prove radar utilization through confidence modeling (Sun et al. 2024), sparse supervision (Li et al. 2024a), geometric upsampling (Sun et al. 2025b), lightweight distillation (Sun et al. 2025a,c), transformer-based fusion (Huang et al. 2024), and structure-aware modeling (Zhang et al. 2025). Just-Depth (Yun, Kim, and Lee 2026) focuses on efficient estima-tion under sparse supervision, while TacoDepth (Wang et al. 2025) provides an independent one-stage configuration. De-spite recent efforts to recalibrate projected radar returns (Qin et al. 2025), existing methods generally do not jointly rec-tify their image locations and metric depths while estimating reliability before dense propagation. 
+
+Plug-in Radar–Camera Depth Completion. Plug-in methods combine radar measurements with predictions from a separately trained monocular depth model. RadarCam-Depth (Li et al. 2024b) incorporates 4D radar into an aux-iliary monocular depth representation, while radar-guided polynomial fitting (Rim et al. 2025) and RaCalNet (Qin et al. 2025) recover the metric scale and shift of affine-invariant depth predictions. TacoDepth (Wang et al. 2025) also sup-ports a plug-in configuration. Although these methods bene-fit from dense monocular structure, their complete inference pipelines require an additional depth network, motivating more compact independent alternatives. 
+
+Temporal Fusion for Depth Estimation. Multi-frame monocular methods exploit neighboring images through ge-ometric matching, cost volumes, or motion-aware model-ing (Watson et al. 2021; Guizilini et al. 2022; Zhou et al. 2025), typically relying on relative poses or geometric warp-ing. Radar–camera methods commonly accumulate consec-utive radar sweeps to increase input density (Lin, Dai, and Van Gool 2020; Long et al. 2021; Gasperini et al. 2021; Lo and Vandewalle 2021). However, direct accumulation can in-troduce temporal misalignment, dynamic returns, clutter, and multipath interference, making denser radar input not nec-essarily more reliable. In contrast, RbFT-Net treats accumu-lated returns as noisy temporal anchors and jointly rectifies their locations and depths while estimating their reliability before dense propagation. 
+
+## Method 
+
+Overview 
+
+Given the current RGB image It and a short temporal window of 4D radar frames {R t−k}T −1 
+
+> k=0
+
+, our goal is to predict a dense metric depth map Dt in the current camera view. As illustrated in Fig. 1, RbFT-Net follows a rectify-before-fuse 
+
+paradigm: it first rectifies temporal radar anchors using image context and then performs reliability-aware propagation and high-level multi-modal fusion. Radar returns from all T frames are directly projected into the current image using the calibrated radar–camera extrin-sics and camera intrinsics, without ego-motion compensa-tion: 
+
+At = {ai = ( pi, z i, ri)}Ni=1 , (1) Anchor Confidence Rectified Radar Anchors Anchor Aggregation 
+
+Reliability-Aware Propagation Module  
+
+> Metric Dense Depth Raw Temporal Radar Points RGB Image
+
+Radar Point Rectification Module 
+
+t-2 
+
+t-1 
+
+tFigure 1: Overview of RbFT-Net. Directly accumulated multi-frame 4D radar returns are treated as noisy temporal anchor candidates. Image-conditioned rectification corrects their image-plane locations and metric depths while estimating pointwise reliability. The resulting anchors are selectively propagated according to their reliability and target–anchor compatibility to produce dense metric depth. where pi = ( ui, v i) is the projected location in the current image, zi is the corresponding metric depth, and ri con-tains the radar attributes. The candidates are processed as an unordered set without explicit temporal-index encoding. Although direct accumulation increases observation density, it also introduces temporal misalignment under sensor or object motion and retains cluttered returns. Therefore, At is treated as a set of noisy anchor candidates rather than reliable depth measurements. The image-conditioned anchor rectification module sam-ples local visual context around each candidate and predicts its spatial offset, depth residual, and pointwise reliability. The resulting rectified anchor is represented as 
+
+ˆai = (ˆ pi, ˆzi, c i, f ai ) , (2) where ˆpi = (ˆ ui, ˆvi) and ˆzi are the rectified image location and metric depth, ci ∈ [0 , 1] is the estimated reliability, and 
+
+f ai is the anchor feature used for propagation. The reliability-aware propagation module evaluates nearby anchors according to their reliability and target– anchor compatibility, aggregates informative metric evi-dence, and performs image-guided refinement to produce the final depth map. The overall framework is summarized as 
+
+ˆAt = Frect (At, I t) , Dt = Fprop 
+
+
+
+It, Rt, ˆAt
+
+
+
+, (3) where Frect denotes image-conditioned anchor rectification, while Fprop includes reliability-aware propagation, high-level multi-modal fusion, and dense refinement. 
+
+Image-Conditioned Radar Anchor Rectification 
+
+Accumulated radar returns provide metric measurements but may contain inaccurate projections and depths due to limited angular resolution, multipath, clutter, and temporal inconsis-tency. We therefore rectify each temporal anchor candidate using local image evidence before propagation. As shown in Fig. 2, the module comprises a radar query sampler (RQS), radar-centered attention (RCA), multi-scale anchor fusion (MAF), and three prediction heads. RQS samples local image features, while RCA first models radar-neighborhood consistency through self-attention and weighted pooling and then retrieves compatible visual evi-dence through cross-attention. MAF integrates the resulting multi-scale representations before three prediction heads es-timate the spatial offset, depth residual, and reliability. For each candidate ai ∈ A t, its depth and radar attributes are encoded as 
+
+f ri = Erad ([ zi, ri]) . (4) Meanwhile, the image encoder extracts a multi-scale feature pyramid: 
+
+{Fs}Ss=1 = Eimg (It), (5) where psi denotes pi mapped to the coordinate system of Fs.
+
+Radar Query Sampler. Directly sampling at psi may pro-vide unreliable visual evidence when the radar projection is inaccurate. At each scale, RQS therefore predicts M radar-conditioned sampling offsets: 
+
+{δsi,m }Mm=1 = Hs 
+
+> off
+
+(f ri ), (6) and extracts the corresponding image features through bilin-ear sampling: 
+
+xsi,m = Bil  Fs, psi + δsi,m 
+
+ , m = 1 , . . . , M. (7) This local sampling allows visual evidence to be collected around the initial projection without requiring explicit cor-respondence search. 
+
+Radar-Centered Attention. RCA first models the local consistency among radar candidates and then retrieves visu-ally compatible evidence through cross-modal attention. For each candidate ai, we collect a local radar neighborhood N ri
+
+and form its radar tokens as 
+
+Gri = {gri,j | aj ∈ N ri }, gri,j = [ f rj , ϕ (pj − pi)] , (8) where ϕ(·) encodes the relative position with respect to the center candidate. Self-attention is first applied within the radar neighbor-hood: 
+
+Zri = Attn  Gri Wrq , Gri Wrk, Gri Wrv
+
+ . (9) The resulting neighbor features are summarized by weighted pooling: 
+
+¯f ri = X  
+
+> aj∈N ri
+
+βi,j zri,j , βi = softmax ( Hwp (Zri )) .
+
+(10) Radar Points RGB Image Conv. 1       
+
+> Conv. 2 Rectified Radar Anchors Anchor Reliability Conv. 3 Conv. 4
+> RQS
+> RCA RCA RCA RCA RQS RQS RQS
+> K/V K/V Q
+> RQS
+> Radar Guided Attention
+> Radar Centered Attention Radar Query Sampler RCA
+> W-Pooling W-Pooling  Spatial Head Confidence Head
+> Multi-Scale Anchor Fusion
+> Depth Head
+> W-Pooling W-Pooling
+
+Figure 2: Image-conditioned radar anchor rectification. RQS and RCA aggregate local visual evidence around each radar candidate across multiple scales, while MAF predicts spatial and depth corrections with pointwise reliability to produce rectified temporal anchors. This radar self-attention and weighted pooling characterize the local measurement consistency while suppressing unre-liable neighboring returns. At each image scale, the pooled radar representation serves as the query, while the image features sampled by RQS pro-vide the keys and values: 
+
+qsi = Wsq¯f ri , ksi,m = Wskxsi,m , vsi,m = Wsv xsi,m .
+
+(11) The cross-attention output is computed as 
+
+αsi,m = softmax m
+
+(qsi )⊤ksi,m 
+
+√d
+
+!
+
+, ¯f si =
+
+> M
+
+X
+
+> m=1
+
+αsi,m vsi,m .
+
+(12) Finally, the radar and visual representations are fused to pro-duce the scale-specific anchor feature: 
+
+˜f si = Fs
+
+> rca
+
+ [¯f ri , ¯f si ] . (13) 
+
+Multi-Scale Anchor Fusion. Fine-scale features preserve local boundaries, whereas coarse-scale features provide broader contextual information. MAF integrates the repre-sentations from all scales while retaining the original radar feature: 
+
+hi = Fmaf 
+
+˜f 1 
+
+> i
+
+, . . . , ˜f Si , f ri
+
+
+
+. (14) Three lightweight heads predict the image-plane offset, depth residual, and pointwise reliability: 
+
+∆pi = Hspa (hi), ∆zi = Hdep (hi), c i = σ(Hconf (hi)) .
+
+(15) The rectified location and depth are obtained through residual updates: 
+
+ˆpi = pi + ∆ pi, ˆzi = zi + ∆ zi. (16) Finally, we retain f ai = hi and define the rectified temporal anchor set as 
+
+ˆAt = {ˆai = (ˆ pi, ˆzi, c i, f ai )}Ni=1 . (17) Rather than serving as a binary mask, ci continuously mod-ulates each anchor’s contribution during subsequent dense propagation. Delta Coor. Depth Image Feature    
+
+> 𝐵×𝐶 !×1×𝑁 "
+> Conf.
+> k!
+> k"
+> k#
+> k$
+> 0.2 0.5 0.1 0.1
+> …
+> MLP K-Nearest Points CSPN++ Image Feature Raw Anchor Feature Aggregated Anchor Feature Multi-Modal Fusion & Refinement
+> Metric Dense Depth Raw Anchor Feature Image Feature
+> Top-4 Anchor Aggregation MFN
+> Top-4
+> 𝐵×1×𝐾×𝑁 "𝐵×2×𝐾×𝑁 "𝐵×𝐶 #×𝐾×𝑁 "
+> BP-Net (Tang et al. 2024)
+
+Figure 3: Reliability-aware anchor propagation. For each tar-get location, spatially neighboring anchors are scored, and the top four are aggregated using reliability-modulated weights. 
+
+Reliability-Aware Anchor Propagation 
+
+Although rectification improves the quality of temporal radar anchors, they remain sparse and unevenly distributed. More-over, directly propagating all nearby anchors may spread residual misalignment, clutter, and dynamic returns into dense image regions. We therefore introduce reliability-aware anchor propagation, which selects informative anchors for each target location and adaptively aggregates their metric evidence before dense refinement. 
+
+Reliability-Guided Anchor Selection. Given the rectified temporal anchors ˆAt, we first retrieve the K nearest anchors for each target location p on the propagation feature map: 
+
+NK (p) = KNN 
+
+
+
+p, ˆAt
+
+
+
+. (18) For each candidate ˆai ∈ N K (p), we construct a target– anchor representation from the target image context, anchor feature, rectified depth, and relative projected position: 
+
+mp,i = [ F(p), f ai , ˆzi, ϕ p(p − ˆpi)] , (19) where F(p) denotes the image feature at the target location, and ϕp(·) encodes the relative position between the target and rectified anchor. Table 1: Quantitative comparison on ZJU-4DRadarCam. All plug-in methods use the same DPT-Hybrid (Ranftl, Bochkovskiy, and Koltun 2021). N/A denotes results not reported in the original paper. Bold and underlined values indicate the category-wise best and second-best results, respectively, while best and second-best indicate the corresponding overall rankings. Type Method 0–50m 0–70m 0–80m MAE ↓ RMSE ↓ iMAE ↓ iRMSE ↓ Rel ↓ δ1 ↑ MAE ↓ RMSE ↓ iMAE ↓ iRMSE ↓ Rel ↓ δ1 ↑ MAE ↓ RMSE ↓ iMAE ↓ iRMSE ↓ Rel ↓ δ1 ↑                                                                                                                                               
+
+> Plug-in RadarCam (’24) 1067.5 2817.4 10.5 22.9 0.087 0.920 1157.0 3117.7 10.4 22.9 0.087 0.921 1183.5 3229.0 10.4 22.8 0.090 0.920
+> TacoDepth (’25) 930.2 2477.3 9.3 20.8 N/A N/A 983.1 2779.6 9.3 20.9 0.076 0.932 1032.5 2850.3 9.4 20.9 N/A N/A Indep-endent DORN (’21) 2210.2 4129.7 19.8 31.9 0.157 0.783 2402.2 4625.2 19.8 31.9 0.160 0.777 2447.6 4760.0 19.9 31.9 0.161 0.776 Singh (’23) 1785.4 3704.6 18.1 35.3 0.146 0.831 1932.7 4137.1 18.0 35.2 0.147 0.828 1979.5 4309.3 17.9 35.1 0.147 0.828 BP-Net (’24) 1404.8 2923.1 10.6 21.2 0.104 0.895 1531.0 3259.6 10.5 21.0 0.105 0.892 1568.2 3383.4 10.4 21.0 0.105 0.892 XD-RC (’25) 1155.0 2863.0 11.7 24.6 0.094 0.891 1248.0 3223.0 11.7 24.5 0.095 0.890 1275.0 3341.0 11.7 24.5 0.095 0.889 TacoDepth (’25) 1120.1 2686.7 12.8 25.0 N/A N/A 1181.8 2906.3 12.7 24.9 N/A N/A 1201.1 2990.7 12.7 24.9 N/A N/A JustDepth (’26) 1224.7 3157.5 12.8 25.2 0.096 0.888 1307.8 3479.0 12.7 25.2 0.096 0.888 1334.6 3618.1 12.7 25.2 0.096 0.888 SomeDepth (’26) 1029.2 2631.6 10.4 22.8 N/A N/A 1111.6 2946.9 10.4 22.8 N/A N/A 1137.2 3053.0 10.4 22.8 N/A N/A
+> RbFT-Net 917.4 2473.4 6.8 16.9 0.067 0.944 1001.0 2740.8 6.8 16.8 0.068 0.943 1023.7 2827.6 6.7 16.8 0.068 0.942
+
+A lightweight MLP predicts a compatibility score: 
+
+si(p) = Msel (mp,i ) . (20) Rather than propagating all neighboring anchors, we retain the Ks candidates with the highest compatibility scores: 
+
+TKs (p) = TopK  
+
+> ˆai∈N K(p)
+
+(si(p), K s) . (21) We set Ks = 4 in all experiments. The selected anchors are adaptively weighted according to both their target compatibility and predicted reliability: 
+
+wi(p) = ci exp( si(p)) 
+
+X  
+
+> ˆaj∈T Ks (p)
+
+cj exp( sj (p)) . (22) The propagated anchor representation is then obtained as 
+
+¯f a(p) = X 
+
+> ˆai∈T Ks (p)
+
+wi(p)Ea([ f ai , ˆzi]) , (23) where Ea embeds the anchor feature together with its rectified metric depth. This two-stage strategy first restricts candidates by spa-tial proximity and then selects visually compatible anchors through learned relevance. The explicit reliability modula-tion suppresses residual erroneous returns during propaga-tion. 
+
+Multi-Modal Fusion and Refinement. After rectification and reliability-aware propagation, the temporal anchors form the propagated feature map ¯Fa. We then adopt the lightweight MFN-CSPN++ architecture of BP-Net (Tang et al. 2024) for high-level multi-modal fusion and dense refinement: 
+
+Dt = Rref 
+
+ F, Ft
+
+> rad
+
+, ¯Fa , (24) where Ft 
+
+> rad
+
+preserves the directly observed current-frame measurements, while ¯Fa provides reliability-aware metric evidence from the rectified temporal anchors. Unlike BP-Net, which directly aggregates the four near-est sparse measurements, RbFT-Net performs reliability-aware aggregation over rectified temporal anchors before lightweight MFN-CSPN refinement. 
+
+Training Objectives 
+
+The network is trained end-to-end using LiDAR-projected depth supervision. The overall objective is 
+
+L = λdLdepth + λaLanchor + λcLconf + λpLprop . (25) Here, Ldepth supervises the final depth prediction, while 
+
+Lanchor constrains the rectified anchor depths. Lconf provides error-aware supervision for anchor reliability, and Lprop en-courages the propagation module to favor depth-consistent anchors. Detailed loss definitions and supervision construc-tion are provided in the supplementary material. 
+
+## Experiments 
+
+Experimental Setup 
+
+Datasets. We evaluate RbFT-Net on ZJU-4DRadarCam (Li et al. 2024b) and a newly collected dataset from a different 4D radar–camera platform. Both provide synchronized radar, camera, and LiDAR data, with projected radar as input and LiDAR depth as ground truth. 
+
+Compared Methods. We compare with representative plug-in methods (Li et al. 2024b; Wang et al. 2025) and independent methods (Lo and Vandewalle 2021; Singh et al. 2023; Sun et al. 2025c; Wang et al. 2025; Yun, Kim, and Lee 2026; Hou and Ohtsuki 2026). The evaluated plug-in meth-ods use DPT-Hybrid (Ranftl, Bochkovskiy, and Koltun 2021) for auxiliary monocular depth. We also adapt BP-Net (Tang et al. 2024) to radar inputs as a propagation baseline without anchor rectification or reliability modeling. 
+
+Evaluation Metrics. We report MAE and RMSE in mil-limeters, iMAE and iRMSE in 1/km , and the unitless AbsRel and δ1 over valid ground-truth pixels. Lower values are better except for δ1.
+
+Implementation Details. RbFT-Net is trained at 288 ×
+
+864 on ZJU-4DRadarCam and 288 × 832 on our dataset, using five accumulated radar frames by default. For each target location, it retrieves K = 8 rectified anchors and aggregates the top Ks = 4 based on learned compatibility scores. Additional settings and dataset statistics are provided in the supplementary material. RGB Image Ground Truth RadarCam (’24), Plug-in XD-RC (’25), Independent JustDepth (’26), Independent RbFT-Net, Independent Figure 4: Qualitative comparison on ZJU-4DRadarCam. Table 2: Evaluation on our newly collected dataset within the 0–70 m range under different target-domain data regimes. Zero-shot models are trained only on ZJU-4DRadarCam; adaptation models are fine-tuned for three epochs using 10% of the target-domain training set. Setting Method MAE ↓ RMSE ↓ iMAE ↓ iRMSE ↓ Rel ↓ δ1 ↑
+
+Standard 100% DORN 2243.2 4928.2 6.4 16.6 0.106 0.884 Singh 1824.6 4685.2 5.9 15.7 0.092 0.918 RadarCam 1644.9 4120.7 5.7 14.4 0.078 0.938 JustDepth 1559.7 4229.3 4.5 15.4 0.072 0.938 
+
+RbFT-Net 1430.4 3622.1 4.1 12.4 0.069 0.941 
+
+Zero-shot 0% RadarCam 9373.0 13073.8 32.4 44.8 0.412 0.284 JustDepth 9286.3 13431.7 27.9 38.2 0.360 0.331 
+
+RbFT-Net 7185.9 10692.7 21.5 31.1 0.319 0.421 
+
+Adaptation 10% RadarCam 3416.7 5792.0 8.0 16.1 0.137 0.835 JustDepth 4082.6 6821.5 11.2 27.1 0.186 0.752 
+
+RbFT-Net 2312.3 4696.8 6.4 15.0 0.105 0.895 
+
+Comparison with State-of-the-Art Methods 
+
+ZJU-4DRadarCam. Table 1 reports the quantitative re-sults on ZJU-4DRadarCam. RbFT-Net consistently achieves the best performance among independent methods across all metrics and evaluation ranges. Compared with the strongest independent baseline for each metric, it reduces MAE by ap-proximately 10%, iMAE by about 35%, and iRMSE by over 25%. Without relying on the auxiliary DPT-Hybrid monoc-ular depth model, RbFT-Net remains competitive with, and in most reported settings surpasses, the plug-in TacoDepth configuration. The qualitative comparisons in Fig. 4 show cleaner depth predictions with sharper object boundaries and fewer artifacts in distant regions. 
+
+Evaluation on the Newly Collected Dataset. Table 2 com-pares the methods under standard training, zero-shot trans-fer, and limited-data adaptation. With the full target-domain training set, RbFT-Net achieves the strongest overall per-formance. For cross-platform evaluation, ZJU-4DRadarCam serves as the source domain and the newly collected dataset as the target domain. Under zero-shot transfer, RbFT-Net con-sistently outperforms the compared methods despite differ-ences in sensing platforms and scene distributions, reducing MAE by 22.6% relative to JustDepth and RMSE by 18.2% Table 3: 0–70 m accuracy–efficiency comparison on ZJU-4DRadarCam. FPS is measured on an NVIDIA RTX PRO 5000. RbFT-Net uses five radar frames; all other methods use one. Plug-in parameter counts include auxiliary depth models.                                       
+
+> Type Method Params (M) ↓FPS ↑MAE ↓RMSE ↓δ1↑
+> Plug-in RadarCam (Li et al. 2024b) 156.26 12.04 1157.0 3117.7 0.921 TacoDepth (Wang et al. 2025) 137.25 N/A 983.1 2779.6 0.932 Indep-endent DORN (Lo and Vandewalle 2021) 107.88 24.74 2402.2 4625.2 0.777 BP-Net (Tang et al. 2024) 89.87 12.04 1531.0 3259.6 0.892 JustDepth (Yun, Kim, and Lee 2026) 16.07 110.06 1307.8 3479.0 0.888
+> RbFT-Net (Ours) 44.20 44.88 1001.0 2740.8 0.943
+
+relative to RadarCam. When fine-tuned for three epochs us-ing the same 10% target-domain subset, RbFT-Net again achieves the best results across all metrics, demonstrating ef-fective adaptation under limited target-domain supervision. 
+
+Accuracy and Efficiency. Table 3 compares representa-tive methods under their default input configurations. RbFT-Net uses only about 1/3 of the parameters of complete plug-in pipelines, whose parameter counts include the auxil-iary 123M-parameter DPT-Hybrid, while achieving the best overall accuracy. Despite processing five radar frames, it runs in real time at 44.88 FPS. Table 5 further shows that directly extending competing methods to multiple frames yields only limited accuracy gains, demonstrating the favor-able accuracy–efficiency trade-off of RbFT-Net. 
+
+Ablation Studies 
+
+We conduct ablation studies on ZJU-4DRadarCam under the 0–70 m evaluation range to analyze the contributions of the proposed components and the effect of temporal radar input. 
+
+Component Analysis. Table 4 evaluates the proposed rec-tification and propagation designs. With reliability estimation retained, spatial and depth rectification individually reduce RMSE by 258.2 and 180.2 mm, respectively, and their com-bination provides further improvement. Given fully rectified anchors, learned propagation outperforms direct 4-NN ag-gregation, while confidence guidance further reduces RMSE from 2980.1 to 2740.8 mm. These results demonstrate the complementary effects of anchor rectification and reliability-aware propagation. Table 4: Component ablation on ZJU-4DRadarCam. All vari-ants use five radar frames. 4-NN directly aggregates the four nearest anchors, whereas Learned denotes feature-based propagation. 
+
+Rectification Anchor Metrics [0–70 m] Spatial Depth Conf. Propagation MAE ↓ RMSE ↓ Rel ↓ δ1 ↑
+
+✓ Learned 1287.1 3064.6 0.087 0.920 
+
+✓ ✓ Learned 1055.5 2806.4 0.071 0.938 
+
+✓ ✓ Learned 1135.7 2884.4 0.077 0.929 
+
+✓ ✓ 4-NN 1355.7 3062.6 0.096 0.904 
+
+✓ ✓ Learned 1207.3 2980.1 0.081 0.923 
+
+✓ ✓ ✓ Learned 1001.0 2740.8 0.068 0.943 
+
+Table 5: Effect of the number of radar frames within the 0– 70 m range in RMSE (mm). Radar points denote the average number of valid projected returns per sample.                          
+
+> Method Number of Radar Frames 12357Avg. radar points 493.5 987.2 1480.9 2468.0 3455.3 RadarCam (Li et al. 2024b) 3117.7 3104.1 3092.4 3071.9 3085.1 BP-Net (Tang et al. 2024) 3259.6 3172.4 3135.8 3121.3 3156.8
+> RbFT-Net (Ours) 2987.3 2841.5 2794.0 2740.8 2760.2
+
+Effect of Temporal Input. Table 5 compares methods re-trained for each temporal window under the same direct-accumulation setting. Despite the near-linear increase in pro-jected points, RadarCam and BP-Net gain only modestly from additional frames, whereas RbFT-Net reduces RMSE by 246.5 mm from one to five frames, demonstrating the ben-efit of rectifying temporal returns before propagation. The slight degradation at seven frames suggests increased mis-alignment and noise, while processing more radar points also incurs additional computational cost. We therefore use five frames by default as a practical trade-off among observation density, temporal noise, and efficiency. 
+
+Analysis and Visualization 
+
+Reliability Analysis. Fig. 5 examines the relationship among predicted reliability, anchor depth error, and prop-agation usage. Both the point-wise correlation and binned statistics show that anchor depth error generally decreases with increasing reliability. High-reliability anchors also tend to contribute more frequently to the learned target–anchor associations. This relationship is not absolute, since anchor selection additionally depends on target–anchor compatibil-ity and the relative quality of nearby candidates. Overall, these results indicate that the predicted reliability provides an effective cue for identifying accurate and informative rec-tified anchors during dense depth propagation. 
+
+Structure-Consistent Propagation. Fig. 6 visualizes target–anchor associations from two complementary per-spectives. Fig. 6(a) shows the anchors aggregated for selected target locations, while Fig. 6(b) shows the target regions influenced by selected anchors. Without reliability-guided 0.0 0.2 0.4 0.6 0.8 1.0 0 20 40         
+
+> Anchor depth error (m)
+> Predicted confidence
+> 02468
+> log(1 + propagation usage count)
+> 0.0-0.2 0.2-0.4 0.4-0.6 0.6-0.8 0.8-1.0
+> Predicted confidence bin
+> 0510 15 20 25 30 0250 500 750 1000 1250 1500
+> Mean anchor depth error (m) Mean propagation usage count
+> Usage count Depth error (m)
+> (a) Confidence--Error Correlation (b) Anchor Reliability Statistics
+> 257.7 427.9 801.8 1246.0 907.0 25.13 8.19 4.89 2.20 0.75
+
+Figure 5: Reliability analysis of rectified radar anchors. Higher reliability corresponds to lower depth error and greater propagation usage. (a) Target-to-Anchor Contributions (b) Anchor Influence Regions   
+
+> w/o Reliability-Guided Selection RbFT-Net (Ours) w/o Reliability-Guided Selection RbFT-Net (Ours)
+
+Figure 6: Visualization of learned target–anchor associations. (a) Anchors contributing to selected target regions. (b) Target regions influenced by selected anchors. Reliability-guided selection reduces propagation across unrelated structures and object boundaries. selection, the four nearest anchors are directly aggregated based on spatial proximity, often propagating information across unrelated structures and object boundaries. In con-trast, RbFT-Net selects reliable anchors compatible with each target location, favoring depth evidence from the same local surface and reducing propagation across object boundaries. This structure-consistent behavior emerges without explicit semantic supervision. 
+
+## Conclusion 
+
+This paper presented RbFT-Net, a compact independent framework for multi-frame 4D radar–camera depth com-pletion. Its rectify-before-fuse design corrects noisy tempo-ral anchors before reliability-aware propagation and multi-modal fusion. By modeling anchor locations, depths, and reliability, RbFT-Net exploits denser temporal cues while suppressing unreliable propagation. Experiments on a pub-lic benchmark and a newly collected dataset, including cross-platform transfer and limited-data adaptation, demonstrate its robustness across radar–camera platforms. References 
+
+Cheng, X.; Wang, P.; Guan, C.; and Yang, R. 2020. Cspn++: Learning context and resource aware convolutional spatial propagation networks for depth completion. In Proceedings of the AAAI conference on artificial intelligence , volume 34, 10615–10622. Gasperini, S.; Koch, P.; Dallabetta, V.; Navab, N.; Busam, B.; and Tombari, F. 2021. R4dyn: Exploring radar for self-supervised monocular depth estimation of dynamic scenes. In 2021 International Conference on 3D Vision (3DV) , 751– 760. IEEE. Guizilini, V.; Ambrus, R.; Chen, D.; Zakharov, S.; and Gaidon, A. 2022. Multi-Frame Self-Supervised Depth with Transformers. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 160–170. Hou, Z.; and Ohtsuki, T. 2026. Selection, Not Fusion: Radar-Modulated State Space Models for Radar-Camera Depth Es-timation. arXiv preprint arXiv:2605.11840 .Huang, X.; Ma, Y.; Yu, Z.; and Zhao, H. 2024. RCDformer: Transformer-based dense depth estimation by sparse radar and camera. Neurocomputing , 589: 127668. Li, H.; Jing, M.; Jin, W.; Dong, S.; Liang, J.; Fan, H.; and Ji, R. 2024a. Sparse beats dense: Rethinking supervision in radar-camera depth completion. In European Conference on Computer Vision , 127–143. Springer. Li, H.; Ma, Y.; Gu, Y.; Hu, K.; Liu, Y.; and Zuo, X. 2024b. Radarcam-depth: Radar-camera fusion for depth estimation with learned metric scale. In 2024 IEEE International Con-ference on Robotics and Automation (ICRA) , 10665–10672. IEEE. Lin, J.-T.; Dai, D.; and Van Gool, L. 2020. Depth estima-tion from monocular images and sparse radar data. In 2020 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) , 10233–10240. IEEE. Lo, C.-C.; and Vandewalle, P. 2021. Depth estimation from monocular images and sparse radar using deep ordinal re-gression network. In 2021 IEEE International Conference on Image Processing (ICIP) , 3343–3347. IEEE. Long, Y.; Morris, D.; Liu, X.; Castro, M.; Chakravarty, P.; and Narayanan, P. 2021. Radar-camera pixel depth associa-tion for depth completion. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,12507–12516. Qin, X.; Zhao, W.; Cao, C.; Niu, Y.; Deng, T.; Jiang, H.; Guo, R.; and Wang, J. 2025. RaCalNet: Radar Calibration Network for Sparse-Supervised Metric Depth Estimation. 
+
+arXiv preprint arXiv:2506.15560 .Ranftl, R.; Bochkovskiy, A.; and Koltun, V. 2021. Vi-sion transformers for dense prediction. In Proceedings of the IEEE/CVF international conference on computer vision ,12179–12188. Rim, P.; Park, H.; Ezhov, V.; Moon, J.; and Wong, A. 2025. Radar-guided polynomial fitting for metric depth estimation. 
+
+arXiv preprint arXiv:2503.17182 .Singh, A. D.; Ba, Y.; Sarker, A.; Zhang, H.; Kadambi, A.; Soatto, S.; Srivastava, M.; and Wong, A. 2023. Depth esti-mation from camera image and mmwave radar point cloud. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 9275–9285. Sun, H.; Feng, H.; Ott, J.; Servadei, L.; and Wille, R. 2024. Cafnet: A confidence-driven framework for radar camera depth estimation. In 2024 IEEE/RSJ International Confer-ence on Intelligent Robots and Systems (IROS) , 2734–2740. IEEE. Sun, H.; Vysotskaya, N.; Sukianto, T.; Feng, H.; Ott, J.; Peng, X.; Servadei, L.; and Wille, R. 2025a. Lircdepth: Lightweight radar-camera depth estimation via knowledge distillation and uncertainty guidance. In ICASSP 2025-2025 IEEE Interna-tional Conference on Acoustics, Speech and Signal Process-ing (ICASSP) , 1–5. IEEE. Sun, H.; Wang, Z.; Feng, H.; Ott, J.; Servadei, L.; and Wille, R. 2025b. Get-up: Geometric-aware depth estimation with radar points upsampling. In 2025 IEEE/CVF Winter Con-ference on Applications of Computer Vision (WACV) , 1850– 1860. IEEE. Sun, H.; Wang, Z.; Peng, X.; Ott, J.; Stettinger, G.; Servadei, L.; and Wille, R. 2025c. XD-RCDepth: Lightweight Radar-Camera Depth Estimation with Explainability-Aligned and Distribution-Aware Distillation. arXiv preprint arXiv:2510.13565 .Tang, J.; Tian, F.-P.; An, B.; Li, J.; and Tan, P. 2024. Bilateral propagation network for depth completion. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 9763–9772. Wang, Y.; Li, J.; Hong, C.; Li, R.; Sun, L.; Song, X.; Wang, Z.; Cao, Z.; and Lin, G. 2025. Tacodepth: Towards efficient radar-camera depth estimation with one-stage fusion. In Pro-ceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 10523–10533. Watson, J.; Mac Aodha, O.; Prisacariu, V.; Brostow, G.; and Firman, M. 2021. The temporal opportunist: Self-supervised multi-frame monocular depth. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , 1164–1174. Yun, W.; Kim, D.; and Lee, S. 2026. JustDepth: Real-Time Radar-Camera Depth Estimation With Single-Scan LiDAR Supervision. IEEE Robotics and Automation Letters .Zhang, F.; Yu, Z.; Li, C.; Zhang, R.; Bai, X.; Zhou, Z.; Cao, S.-Y.; Wang, F.; and Shen, H.-L. 2025. Structure-Aware Radar-Camera Depth Estimation. In 2025 IEEE In-ternational Conference on Robotics and Automation (ICRA) ,13028–13035. IEEE. Zhou, K.; Bian, J.-W.; Zheng, J.-Q.; Zhong, J.; Xie, Q.; Trigoni, N.; and Markham, A. 2025. Manydepth2: Motion-aware self-supervised monocular depth estimation in dy-namic scenes. IEEE Robotics and Automation Letters .

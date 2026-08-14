@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-08-13</span>
+      <span class="dpr-home-dashboard-kicker">2026-08-14</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 10 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 15 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>5</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>5</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>4</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-08-13 21:57:35 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-08-14 21:52:31 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,7 +62,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日精读5篇、速读5篇，重点聚焦生成式与开放词汇语义分割，并涉猎高效ViT与手术器械分割。最值得关注的是两篇9.0分工作：通过可观测语义-图像接口与层级生成器证据对齐的生成式分割，以及利用多模态伪标签提升开放词汇实例/全景分割鲁棒性。建议优先精读这两篇，若对效率感兴趣可顺带看HSMLA线性注意力方法。</p>
+<p>今日精读2篇、速读11篇，聚焦4D雷达-相机深度补全与实例分割的SDF预测新思路。最值得看：RbFT-Net通过“先校正再融合”时间雷达锚点提升深度补全精度，以及用符号距离函数统一视觉实例分割的几何表达。普通读者可优先关注雷达-相机融合方向，后续留意其在自动驾驶中的落地验证。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -71,12 +71,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">5 篇</strong>
+    <strong class="dpr-home-dashboard-count">4 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Generative Semantic Segmentation via an Observable Semantic-Image Interface and Hierarchical Generator Evidence Alignment">Generative Semantic Segmentation via an Observable Semantic-Image Interface and Hierarchical Generator Evidence Alignment</span></li><li><span class="dpr-home-dashboard-paper-title" title="Learning from Multimodal Pseudo-Labels for Robust Open-Vocabulary Instance and Panoptic Segmentation">Learning from Multimodal Pseudo-Labels for Robust Open-Vocabulary Instance and Panoptic Segmentation</span></li><li><span class="dpr-home-dashboard-paper-title" title="LiteKD-Net: Lightweight Knowledge-Distilled Network for Mobile Image Denoising">LiteKD-Net: Lightweight Knowledge-Distilled Network for Mobile Image Denoising</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="RbFT-Net: Rectify-Before-Fuse Temporal Radar Anchors for 4D Radar-Camera Depth Completion">RbFT-Net: Rectify-Before-Fuse Temporal Radar Anchors for 4D Radar-Camera Depth Completion</span></li><li><span class="dpr-home-dashboard-paper-title" title="Predicting Signed Distance Functions for Visual Instance Segmentation">Predicting Signed Distance Functions for Visual Instance Segmentation</span></li><li><span class="dpr-home-dashboard-paper-title" title="LiteKD-Net: Lightweight Knowledge-Distilled Network for Mobile Image Denoising">LiteKD-Net: Lightweight Knowledge-Distilled Network for Mobile Image Denoising</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">seg <strong>3</strong></span><span class="dpr-home-dashboard-tag">lite-vision <strong>1</strong></span><span class="dpr-home-dashboard-tag">mono-depth <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">lite-vision <strong>2</strong></span><span class="dpr-home-dashboard-tag">depth-refine <strong>1</strong></span><span class="dpr-home-dashboard-tag">seg <strong>1</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -84,12 +84,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">5 篇</strong>
+    <strong class="dpr-home-dashboard-count">11 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="HSMLA: Hierarchical Softmax Multi-scale Linear Attention for Efficient Vision Transformers">HSMLA: Hierarchical Softmax Multi-scale Linear Attention for Efficient Vision Transformers</span></li><li><span class="dpr-home-dashboard-paper-title" title="Topology-Aware Query Selection for Surgical Instrument Instance Segmentation">Topology-Aware Query Selection for Surgical Instrument Instance Segmentation</span></li><li><span class="dpr-home-dashboard-paper-title" title="RayLift: Lifting Complementary Ray-Wise Evidence with 3D Geometry Priors for Semantic Scene Completion">RayLift: Lifting Complementary Ray-Wise Evidence with 3D Geometry Priors for Semantic Scene Completion</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Flow-Map Distillation on Relation Manifolds for Image Restoration">Flow-Map Distillation on Relation Manifolds for Image Restoration</span></li><li><span class="dpr-home-dashboard-paper-title" title="AeroReformer2: Spoken-Query Referring Segmentation for Aerial Images">AeroReformer2: Spoken-Query Referring Segmentation for Aerial Images</span></li><li><span class="dpr-home-dashboard-paper-title" title="Grid-Preserving Knowledge Distillation: Transferring Convolutional Inductive Bias to Vision Transformers under Data Scarcity">Grid-Preserving Knowledge Distillation: Transferring Convolutional Inductive Bias to Vision Transformers under Data Scarcity</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">vfm <strong>3</strong></span><span class="dpr-home-dashboard-tag">lite-vision <strong>1</strong></span><span class="dpr-home-dashboard-tag">seg <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">depth-refine <strong>2</strong></span><span class="dpr-home-dashboard-tag">lite-vision <strong>2</strong></span><span class="dpr-home-dashboard-tag">mono-depth <strong>2</strong></span><span class="dpr-home-dashboard-tag">seg <strong>2</strong></span><span class="dpr-home-dashboard-tag">vfm <strong>2</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>1</strong></span></div>
 </section>
 </div>
 
