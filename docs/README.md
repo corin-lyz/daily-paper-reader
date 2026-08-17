@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-08-16</span>
+      <span class="dpr-home-dashboard-kicker">2026-08-17</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 8 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 12 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>0</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>4</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>8</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-08-16 20:52:36 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-08-17 21:03:53 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,9 +62,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日共速读8篇论文，无精读，重点关注多模态表示、视觉Transformer蒸馏及视频物体分割三个方向。</p>
-<p>最值得看的是《UniSpace》（统一视觉表示与多模态建模）和《Grid-Preserving Knowledge Distillation》（在数据稀缺下向ViT迁移卷积归纳偏置），两篇均为7.0分。</p>
-<p>建议先读这两篇的摘要与图表，后续可围绕多模态统一架构做精读拓展。</p>
+<p>今日精读4篇、速读8篇，聚焦医学影像分割与视觉模型效率；最值得关注的是“文本提示SAM3实现内镜器械免标注分割”及“ViT低数据优势源于预训练一致性而非归纳偏置”；下一步可延伸关注多模态表示与驾驶场景重建相关方法。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -73,12 +71,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">0 篇</strong>
+    <strong class="dpr-home-dashboard-count">4 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p class="dpr-home-dashboard-empty">今日暂无推荐。</p>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Toward Mask Annotation-Free Surgical Instrument Segmentation from Endoscopic Images Using Text-Prompted Segment Anything Model 3 (SAM3)">Toward Mask Annotation-Free Surgical Instrument Segmentation from Endoscopic Images Using Text-Prompted Segment Anything Model 3 (SAM3)</span></li><li><span class="dpr-home-dashboard-paper-title" title="Rethinking Data Efficiency in Industrial Dense Prediction: Pretraining Coherence, Not Inductive Bias, Determines ViTs Low-Data Advantage">Rethinking Data Efficiency in Industrial Dense Prediction: Pretraining Coherence, Not Inductive Bias, Determines ViTs Low-Data Advantage</span></li><li><span class="dpr-home-dashboard-paper-title" title="Grid-Preserving Knowledge Distillation: Transferring Convolutional Inductive Bias to Vision Transformers under Data Scarcity">Grid-Preserving Knowledge Distillation: Transferring Convolutional Inductive Bias to Vision Transformers under Data Scarcity</span></li></ul>
   </div>
-
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">lite-vision <strong>1</strong></span><span class="dpr-home-dashboard-tag">mono-depth <strong>1</strong></span><span class="dpr-home-dashboard-tag">seg <strong>1</strong></span><span class="dpr-home-dashboard-tag">vfm <strong>1</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -89,9 +87,9 @@
     <strong class="dpr-home-dashboard-count">8 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="UniSpace: Unified Visual Representation and Scalable Multimodal Modeling">UniSpace: Unified Visual Representation and Scalable Multimodal Modeling</span></li><li><span class="dpr-home-dashboard-paper-title" title="Grid-Preserving Knowledge Distillation: Transferring Convolutional Inductive Bias to Vision Transformers under Data Scarcity">Grid-Preserving Knowledge Distillation: Transferring Convolutional Inductive Bias to Vision Transformers under Data Scarcity</span></li><li><span class="dpr-home-dashboard-paper-title" title="VOS-Agent: The 1st Place Solution for the 8th LSVOS Challenge (MOSEv2 Track)">VOS-Agent: The 1st Place Solution for the 8th LSVOS Challenge (MOSEv2 Track)</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="UniSpace: Unified Visual Representation and Scalable Multimodal Modeling">UniSpace: Unified Visual Representation and Scalable Multimodal Modeling</span></li><li><span class="dpr-home-dashboard-paper-title" title="Visual Geometry Foundation-Aware Gaussians for Single-Frame Surround-View Driving Reconstruction">Visual Geometry Foundation-Aware Gaussians for Single-Frame Surround-View Driving Reconstruction</span></li><li><span class="dpr-home-dashboard-paper-title" title="When Latents Forget Pixels: Restoring Fidelity in Diffusion Transformer Super-Resolution">When Latents Forget Pixels: Restoring Fidelity in Diffusion Transformer Super-Resolution</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">vfm <strong>3</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>2</strong></span><span class="dpr-home-dashboard-tag">depth-refine <strong>1</strong></span><span class="dpr-home-dashboard-tag">lite-vision <strong>1</strong></span><span class="dpr-home-dashboard-tag">seg <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">stereo-depth <strong>2</strong></span><span class="dpr-home-dashboard-tag">cv-render <strong>1</strong></span><span class="dpr-home-dashboard-tag">depth-refine <strong>1</strong></span><span class="dpr-home-dashboard-tag">mono-depth <strong>1</strong></span><span class="dpr-home-dashboard-tag">neural-bokeh <strong>1</strong></span><span class="dpr-home-dashboard-tag">seg <strong>1</strong></span></div>
 </section>
 </div>
 
