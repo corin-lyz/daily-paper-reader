@@ -1,0 +1,443 @@
+Title: InterPruner: Interactive Structured Pruning via Taylor-Implicit Criterion and Language-Prior Modulator for Multimodal Object Detection
+
+URL Source: https://arxiv.org/pdf/2608.10724v1
+
+Published Time: Wed, 12 Aug 2026 01:06:30 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# InterPruner: Interactive Structured Pruning via Taylor-Implicit Criterion and Language-Prior Modulator for Multimodal Object Detection 
+
+## Qi Ming 1, Zihan Yang 2, Shaoguang Huang 3, Si Sun 4, Hanqing Zhang 5,Nanqing Liu 6, Jiahui Lv 7, Juan Fang 1, Aleksandra Pizurica 8
+
+> 1
+
+Beijing University of Technology, 2Southwest University, 3China University of Geosciences Wuhan 
+
+> 4
+
+Tsinghua University, 5Beijing Institute of Technology, 6Yunnan Normal University, 7Beijing Forestry University 
+
+> 8
+
+Department of Telecommunications and Information Processing (TELIN), Ghent University 
+
+chaser.ming@gmail.com, yangzihan0211@163.com, Aleksandra.Pizurica@ugent.be 
+
+## Abstract 
+
+Multimodal object detection proves effective in remote sensing, especially the RGB-Infrared paradigm. The paral-lel feature extractors provide rich multimodal information for robust detection, yet introduce substantial channel re-dundancy and computational overhead. Existing pruning methods can reduce channel redundancy, but they are de-signed for unimodal backbones, overlooking cross-modal interactions and dynamic scene-wise redundancy. In this paper, we propose InterPruner, the first interactive struc-tured channel pruning framework for RGB–infrared object detectors. Specifically, we first derive a Taylor-Implicit Cri-terion(TIC) to quantify channel importance via high-order Taylor expansion and implicit function theorem. Then, a Modality Interaction Redundancy Analyzer (MIRA) identi-fies redundant channels via mutual compensability assess-ment. Finally, a Scene-Prior Channel Anchor (SPCA) uses language priors as semantic anchors to measure channel-scene relevance for dynamic channel importance estima-tion. Cross-modality channel pruning for RGB-Infrared de-tection is yet unexplored. Extensive experiments on RGB-infrared object detection dataset demonstrate that Inter-Pruner maintains high performance with negligible degra-dation. Specifically, it even achieves a 0.6% mAP increase on the FLIR dataset when pruning 50% of the channels. Code will be available on GitHub to facilitate future work. 
+
+## 1. Introduction 
+
+Multimodal object detection plays an important role in remote sensing applications [8]. By integrating visual cues from RGB [30], infrared [6], depth [22] and radar [15], mul-timodal systems seek to enhance scene understanding under adverse conditions. Among these modalities, RGB-infrared 
+
+Figure 1. Feature visualizations of the RGB and Infrared branches before and after unimodal pruning at the P4 stage. Compared to the unpruned baseline (top), pruning the RGB branch (bottom) has a negligible impact on the RGB feature but leads to feature mis-alignment in the infrared branch. 
+
+object detection [16, 23] serves as a representative applica-tion scenario. Specifically, RGB images provide rich tex-ture and semantic information, while infrared images offer reliable temperature cues that are insensitive to illumina-tion changes. Existing RGB-infrared detectors employ two modality-specific branches with feature fusion modules to extract features [18, 21, 28]. However, the dual-branch ar-chitecture introduces substantial cross-modal redundancy, since many channels in the two streams contain correlated features that contribute little to detection accuracy. This re-dundancy causes unnecessary computation, making deploy-ment on resource-constrained platforms challenging. Pruning offers a promising solution to mitigate this effi-ciency problem via unstructured [13] or structured [12] ap-proaches. Structured pruning, in particular, operates at dif-ferent granularities depending on the backbone: token-level [1] for transformers and Mamba [25], versus channel-level for convolutional neural networks [3]. Given the high res-olution of remote sensing imagery, most RGB-Infrared de-tectors still adopt CNN backbones for their efficient multi-arXiv:2608.10724v1 [cs.CV] 11 Aug 2026 scale feature extraction. But these channel-level pruning techniques are mainly designed for single-stream CNNs. Directly extending single-stream pruning methods to the dual-stream setting results in performance degradation. We attribute this degradation to two factors: (1) Channel Im-portance is Coupled Across Modalities. The two branches are inherently coupled via cross-modal interactions. Prun-ing one branch can impair the other’s representation, even if the pruned channels appear unimportant in isolation. (2) Channel Importance Varies with Scenes. Pruning deci-sions optimal for one scene may become suboptimal under another, as the redundancy distribution changes with envi-ronmental conditions [20]. A fixed pruning criterion cannot adapt to such changes. To overcome these limitations, we propose InterPruner ,the first interactive structured channel pruning framework for RGB–infrared object detection. First, we formulate a Taylor-Implicit Criterion (TIC) that approximates the post-removal loss change through Taylor expansion and implicit function theorem to reveal each channel’s genuine contri-bution. Next, we employ a Modality Interaction Redun-dancy Analyzer (MIRA) that alternately masks each modal-ity and checks for compensation by the other to identify re-dundant channels. Finally, a Scene-Prior Channel Anchor (SPCA) harnesses language priors to dynamically evaluate channel importance. These modules produce a unified im-portance score that guides structured channel removal, pre-serving critical cross-modal information while adjusting to different scenes. InterPruner bridges the gap of structured pruning for RGB-infrared object detection, which remains unexplored to the best of our knowledge. In summary, the major contributions of our work are: • We propose a Taylor-Implicit Criterion (TIC) that es-timates channel importance via high-order loss expan-sion, providing a robust pruning basis for modalities. • A Modality Interaction Redundancy Analyzer (MIRA) is designed to identify cross-modal redundant channels via compensability assessment, ensuring that only in-formative features are retained for detection. • To make pruning decisions scene-aware, we introduce a Scene-Prior Channel Anchor (SPCA) that leverages scene priors, thereby enabling the model to identify re-dundancy across different visual contexts. 
+
+## 2. Related Work 
+
+2.1. Multimodal Object Detection 
+
+Multimodal detection integrates features from diverse sensors to enable robust perception. RGB-infrared detec-tion, in particular, combines the visual cues with the ther-mal features, proving effective under adverse conditions [18, 28]. Various backbones have been explored for this task. Vision Transformers [16] and their adapter-based vari-ants [24] suffer from high computational cost. Emerging mamba-based models [11] excel at global context modeling, yet their efficiency bottlenecks lie at the sequence level. In practice, CNNs [18, 28, 29] remain the dominant backbone for RGB-Infrared detection, offering a favorable balance of efficiency and representational power. Despite their effec-tiveness, these dual-branch architectures introduce substan-tial channel redundancy, as many channels across the two streams encode correlated features with limited contribu-tion to final detection accuracy. In this paper, we aim to reduce this redundancy and computational overhead while maintaining detection performance. 
+
+2.2. Structured Channel Pruning 
+
+Channel pruning removes entire filters or feature maps to achieve structured sparsity and produce compact mod-els. Early approaches prune channels with small BN scal-ing factors [12], and later variants further separate important from unimportant channels via regularization [7]. More re-cent works attempt to estimate the post-pruning loss change via influence functions [2] or unify static and dynamic pruning through bi-level optimization [3]. Furthermore, domain-specific channel pruning has also been explored. IRPruneDeXt [27] introduces wavelet-regularized channel pruning for infrared small target detection, while CSP [9] performs joint channel and space pruning for general CNNs. Despite these advances, the assumption remains that chan-nels can be judged independently. But this assumption fails in multimodal detectors, where a channel pruned from one branch may be compensated by the other. 
+
+## 3. Methodology 
+
+3.1. Preliminaries 
+
+Let xrgb i and xir i denote aligned RGB and infrared im-ages, and yi be the detection annotation. W and M denote the model weights and channel-wise binary masks respec-tively. Therefore, a RGB-infrared detector is formulated as: 
+
+ˆyi = f (xrgb i , x ir i ; W, M). (1) For modality m ∈ { rgb, ir }, we define Wm = {W(l) 
+
+> m
+
+}Ll=1 
+
+and Mm = {M (l,c ) 
+
+> m
+
+∈ { 0, 1}} L, C (l)
+
+> m
+> l=1 ,c =1
+
+, with C(l) 
+
+> m
+
+being the number of output channels in layer l. Each mask M (l,c ) 
+
+> m
+
+= 0 
+
+indicates that the c-th channel in the l-th layer of branch m
+
+is pruned during inference. Given a pretrained detector, we seek an optimal compact mask cM under pruning ratio ρ, formulated as an optimiza-Figure 2. Overveiw of InterPruner: Given multi-scale channels from RGB and infrared backbones, TIC evaluates each channel’s contribu-tion Cq via loss variation. MIRA then exposes cross-modal redundancy Rq through alternating masking and compensability assessment. In parallel, SPCA extracts scene semantics from VLM using RGB-IR pairs and prompts to produce a semantic weight w(x). These three cues are aggregated into Sq for channel ranking and pruning, yielding a compact detector. 
+
+tion over detection loss L and training loss ℓ [2]: 
+
+min 
+
+> cM∈S
+
+L W∗(cM), cM,
+
+s.t. W∗(cM) = arg min  
+
+> W
+
+ℓ cM ⊙ W + R(W),
+
+(2) where R(·) is a regularization term, and S denotes the fea-sible set of masks satisfying the pruning ratio ρ.
+
+3.2. Taylor-Implicit Criterion 
+
+The original model parameters W are trained to conver-gence W∗ under the mask M. Removing a single chan-nel gives a new mask fM and its retrained optimum is fW∗.Here, we define two types of loss changes. The immediate loss change ∆Lel is the post-pruning loss increase without parameter update: 
+
+∆Lel = L(W∗, fM) − L (W∗, M). (3) The real loss change ∆Lrl is the loss increase after pruning with full retraining to convergence: 
+
+∆Lrl = L( fW∗, fM) − L (W∗, M). (4) Directly computing ∆Lrl for each channel is infeasible. By subtracting Eq.3 and Eq.4, ∆Lrl can be rewritten as: 
+
+∆Lrl = ∆ Lel + L( fW∗, fM) − L (W∗, fM). (5) Since ∆Lel can be directly computed from the weights 
+
+W∗, our goal is to estimate the recovery loss without fine-tuning, which is defined as 
+
+∆Lrec = L( fW∗, fM) − L (W∗, fM). (6) Let ∆W = fW∗ − W∗ denote the parameter displace-ment after pruning and fine-tuning. Since fW∗ is a local optimum under fM, it satisfies: 
+
+∇WL( fW∗, fM) = ∇WL(W∗ + ∆ W, fM) = 0 (7) 
+
+Taylor Expansion We expand the real loss function and its gradient (Eq.7) around W∗ in Eq.8 and Eq.9, respec-tively. 
+
+L( fW∗, fM) = L(W∗ + ∆ W, fM) (8) 
+
+= L(W∗, fM) + gT ∆W + 12 ∆WT H∆W
+
++ 16 T(∆ W, ∆W, ∆W) + O(∥∆W∥4),
+
+∇WL(W∗ + ∆ W, fM) = 0 = g + H∆W + 12 T(∆ W, ∆W) + o(∥∆W∥3). (9) where we assume ∥∆W∥ is small, so higher-order terms are negligible. Here g, H, and T are the first-, second-, and third-order derivatives of L evaluated at (W∗, fM).Implicit Function By the implicit function theorem, for sufficiently small g, ∆W admits a unique power series ex-pansion in g, with ∆W(1) and ∆W(2) being the first- and second-order terms: 
+
+∆W = ∆ W(1) + ∆ W(2) + O(∥g∥3). (10) Substituting Eq.10 into Eq.9 and collecting terms by or-der yields: 
+
+∆W(1) = −H−1g, (11) 
+
+∆W(2) = − 12 H−1T(∆ W(1) , ∆W(1) ). (12) Thus, the second-order approximation of ∆W is 
+
+∆W ≈ − H−1g − 12 H−1T(∆ W(1) , ∆W(1) ) + O(∥g∥3).
+
+(13) 
+
+Taylor-Implicit Criterion Combining Eq.13 with Eq.8 and eliminating higher-order terms via Eq.11–12 yields: 
+
+∆Lrec = − 12 gT H−1g− 16 T(H−1g, H−1g, H−1g) (14) Finally, our Taylor-Implicit Criterion is defined as 
+
+Cq = ∆ Lq
+
+> el
+
+−
+
+ 12 g⊤ 
+
+> q
+
+H−1 
+
+> q
+
+gq + 16 Tq (H−1 
+
+> q
+
+gq , H−1 
+
+> q
+
+gq , H−1 
+
+> q
+
+gq )
+
+
+
+.
+
+(15) This criterion estimates each channel’s importance via its contribution to the detection loss. Channels with smaller 
+
+Cq are less critical and prioritized for pruning. 
+
+3.3. Modality Interaction Redundancy Analyzer 
+
+To analyze the role of each channel under cross-modal interaction, we alternately mask all channels in one modal-ity by setting Mrgb = 0 or Mir = 0, and observe the loss variation of the other branch after short adaptation. 
+
+Reactivation via Short Adaptation. The discrete mask 
+
+M (l,c ) 
+
+> m
+
+∈ {0, 1} controls channel retention but is non-differentiable for gradient-based optimization. Therefore, we introduce a continuous scalar gate zq ∈ [0 , 1] for each channel q = ( m, l, c ), which scales the corresponding chan-nel weights as W(l,c ) 
+
+> m
+
+(zq ) = zq · W(l,c ) 
+
+> m
+
+. Here, zq = 1 
+
+preserves the channel while zq = 0 effectively disables it. Take the infrared branch as the active modality for exam-ple. Each reactivation measurement starts from W∗, so the two modalities do not affect each other’s results. With the RGB branch disabled, the model undergoes B-step gradient adaptation on the infrared branch. 
+
+Wb+1 = Wb − η∇WL Wb), b = 0 , 1, . . . , B − 1, (16) where η is the short-adaptation learning rate. During this procedure, the masked RGB branch is disabled, forcing the active infrared branch to update its parameters. Here, un-derutilized channels originally masked by the RGB branch contribute substantially more to loss reduction. We term this reactivation and it serves as an indicator of cross-modal redundancy. Strong reactivation reveals channels that were suppressed, while essential channels show little change. 
+
+Channel Redundancy Measurement. We further quan-tify the loss variation during the B-batch adaptation. Gq
+
+is defined as the directional derivative of the detection loss with respect to zq . This value reflects each channel’s impor-tance under the current mask configuration: 
+
+Gq (W) = ∂L(W, z q )
+
+∂z q zq =1 
+
+=
+
+
+
+W(l,c ) 
+
+> m
+
+, ∂L(W)
+
+∂W(l,c )
+
+> m
+
+
+
+.
+
+(17) Given a set of B batches, we compute the variation of 
+
+Gq as redundency measurement. 
+
+Rq = 1
+
+B
+
+> B
+
+X
+
+> b=1
+
+ Gq (WB ) − Gq (W0) . (18) A large Rq indicates that the channel becomes more re-sponsive when the opposite modality is absent. This sug-gests its functionality is suppressed in the original dual-stream model. Conversely, a small Rq implies that the chan-nel’s contribution remains largely unchanged regardless of whether the other modality is present. This indicates that it carries modality-specific information and cannot be easily compensated. Therefore, Rq serves as a reliable indicator of cross-modal redundancy. Channels with higher reactiva-tion scores are more dispensable and should be prioritized for pruning. 
+
+3.4. Scene-Prior Channel Anchor 
+
+The relative reliability of RGB and thermal modalities varies with imaging conditions. To adapt pruning deci-sions accordingly, we introduce a Scene-Prior Channel An-chor (SPCA) that extracts structured scene knowledge from each image pair and converts it into channel-wise pruning weights. SPCA is implemented as a lightweight MLP and applied only to intermediate layers, where effective cross-modal fusion and task-relevant visual pattern recognition primarily occur. 
+
+Modality-aware prompt learning. For each aligned RGB-Infrared pair, we use a frozen Qwen2.5-VL model with a fixed text prompt to generate structured scene de-scriptions. Additionally, K learnable soft prompts P ∈
+
+RK×dQ is also inserted into the multimodal input to make the encoding sensitive to modality reliability. Figure 3. Comparison of the Pruning Method. While existing methods are suboptimal and fragile under varying lighting condi-tions, our SPCA enables adaptive pruning decisions conditioned on scene context. 
+
+We optimize P using modality-difference supervision from a frozen CLIP image encoder. Specifically, we de-fine the RGB-Infrared discrepancy direction v− 
+
+> i
+
+and com-mon direction v+ 
+
+> i
+
+from the normalized CLIP embeddings of each pair. Let HPi be the prompt tokens’ hidden states. Their pooled representation is projected into the CLIP space via a linear layer A to obtain ui. The prompt-learning ob-jective is: 
+
+Lprompt = 1
+
+B
+
+> B
+
+X
+
+> i=1
+
+(1 −u⊤ 
+
+> i
+
+v− 
+
+> i
+
+)+ λ1
+
+1
+
+B
+
+> B
+
+X
+
+> i=1
+
+(u⊤ 
+
+> i
+
+v+ 
+
+> i
+
+)2+λ2Lcon ,
+
+(19) which aligns prompts with RGB-thermal discrepancy, sup-presses common information, and separates different pairs, with only P and A trainable. 
+
+Structured semantic encoding. With the learned prompt 
+
+P∗, Qwen2.5-VL generates a structured description for each RGB-IR pair: 
+
+Di = GQwen (xri , x ti; P∗) = {denv  
+
+> i
+
+, d scene  
+
+> i
+
+, d obj  
+
+> i
+
+, d therm  
+
+> i
+
+},
+
+(20) covering illumination, scene context, object-level evidence, and thermal properties. These four text fields are encoded by the CLIP text encoder and averaged along the field di-mension to obtain a scene-level semantic embedding zi ∈
+
+R768 .
+
+Channel-wise pruning modulation. Prompt learning and semantic description generation are performed offline before pruning calibration. The core of SPCA is to trans-form scene representation into channel-wise weights that modulate the pruning criterion. Let b = (m, l ) denote layer l in modality branch m ∈ { r, t }, and let Cb be its number of output channels. We implement the modula-tion network as a lightweight two-layer MLP that maps the 768-dimensional CLIP text embedding zi to channel-wise weights: 
+
+δi,b = tanh ( W2 ReLU ( W1zi + b1) + b2) ∈ RCb .
+
+(21) To prevent the semantic module from uniformly scaling all channels in a branch, we center and normalize the resid-ual: 
+
+bδi,b = δi,b − Mean( δi,b )max  1, ∥δi,b − Mean( δi,b )∥∞
+
+ . (22) The channel-wise semantic weights are defined as fol-low, where γ controls the modulation range, yielding wi,b ∈
+
+[1 − γ, 1 + γ]Cb .
+
+wi,b = 1 + γ bδi,b , (23) The lightweight MLP is optimized via the detection ob-jective with differentiable channel masks. Since physi-cal pruning requires a fixed architecture, we average the sample-dependent weights over the calibration set: 
+
+wm,l,c = 1
+
+Ncal 
+
+> Ncal
+
+X
+
+> i=1
+
+wi,m,l,c . (24) The averaged weights are substituted into Eq. (25) to deter-mine the final channel ranking. 
+
+3.5. Unified Channel Selection 
+
+With the channel contribution Cq from TIC and the cross-modal redundancy Rq from MIRA established, we now integrate them into a unified importance score. Achannel should be preserved if it is highly contributive to the detection task, and penalized if it is redundantly sub-stitutable by the other modality. Besides, we introduce a scene-conditioned weight wi,m,l,c , predicted by our SPCA module, which adaptively adjusts the redundancy penalty according to the semantic context. The final importance score for channel c in layer l of modality branch m is for-mulated as: 
+
+Si,m,l,c = α C m,l,c − β w i,m,l,c Rm,l,c , (25) where Cm,l,c and Rm,l,c are the normalized contribution and redundancy scores, and α, β are fixed global weights. The sample-dependent wi,m,l,c ∈ [1 − γ, 1 + γ] modu-lates the redundancy penalty: wi,m,l,c > 1 amplifies the penalty, making the channel more likely to be pruned, while 
+
+wi,m,l,c < 1 reduces it, allowing retention even if redun-dant. With the unified importance score Si,m,l,c , we jointly prune the RGB and infrared backbones. For each modal-ity, channels in each layer are sorted in ascending order of Channel Criterion DroneVehicle FLIR 
+
+30% 50% 70% 30% 50% 70% 
+
+ℓ1 Norm Pruning [5] 67.6 66.3 46.7 64.4 56.4 41.5 Network Slimming [12] 67.8 66.0 64.8 49.8 49.2 44.2 Intra-Fusion [19] 75.8 64.6 47.9 66.6 48.3 31.3 BilevelPruning [3] 77.2 72.3 70.4 75.6 74.8 73.5 REPrune [14] 67.0 63.5 59.4 55.3 53.7 53.1 IRPruneDeXt [27] 76.7 76.1 63.7 73.1 72.5 45.4 Probabilistic Pruning [4] 74.2 71.8 65.3 70.5 67.1 58.7 CSP [9] 78.5 76.2 72.1 76.3 73.9 68.4 HOT-MKS [10] 80.4 78.0 73.4 74.1 70.3 63.3 
+
+InterPruner (Ours) 81.0 80.3 79.0 77.5 76.7 72.6  
+
+> Table 1. Comparison of mAP 50 (%) across different channel importance criteria and pruning ratios on the DroneVehicle and FLIR datasets. The best results are highlighted in bold.
+
+their scores, with lower scores indicating higher dispens-ability. Under an equal-width constraint, we prune the same number of channels from both modalities within each layer pair to preserve structural compatibility for subsequent fu-sion modules. To maintain robustness, we pre-select the top 10% of channels with the highest contribution scores Cq
+
+and exclude them from pruning. The global pruning bud-get is then allocated across all layers via a greedy strategy. At each step, the lowest-scored available channel across all layers is pruned, and the next channel from the same layer enters the candidate pool, until the target ratio ρ is met. This enables global competition across layers while maintaining per-layer RGB/IR balance. Thus, we obtain the compact model. 
+
+## 4. Experiments 
+
+4.1. Datasets 
+
+FLIR. FLIR [26] focuses on complex outdoor driving scenarios, comprising 10,228 images (8,862 training, 1,366 testing) with annotations for Person, Car, Bicycle. It is char-acterized by crowded streets, significant scale variations, and cluttered backgrounds. These conditions pose a sub-stantial challenge to the model’s ability to preserve struc-tural details and distinguish objects in dense environments. 
+
+DroneVehicle. DroneVehicle [17] consists of 56,878 im-age pairs collected by UAVs, featuring an aerial perspec-tive. It covers five vehicle categories (Car, Truck, Bus, Van, Freight-Car) and provides oriented bounding box annota-tions. The dataset introduces unique challenges such as small object scales, high density, and complex background textures, setting a high standard for evaluating the adaptabil-ity of multimodal detectors in aerial surveillance scenarios. 
+
+4.2. Implementation Details 
+
+We evaluate all models using mAP and mAP 50 , and re-port their FLOPs and parameter counts. We implement In-terPruner using the Ultralytics YOLOv8 framework with a pretrained C2DFF model [28] on NVIDIA RTX 3090 GPUs. For TIC and MIRA, we perform 8-batch adaptation with a learning rate of 1 × 10 −3. For SPCA, the learnable 16-token Qwen2.5-VL prompt is optimized using AdamW at 1 × 10 −2, with a frozen CLIP ViT-L/14 encoder provid-ing modality-difference supervision. The pruned detector is fine-tuned with SGD at 1 × 10 −3. The balancing coef-ficients α and β are both set to 1. For baselines requiring fine-tuning, we use 1 × 10 −4 for 80 epochs at 30% and 50% pruning, and 1 × 10 −3 for 70% pruning. 
+
+4.3. Main Results 
+
+We conduct extensive experiments to validate the ef-fectiveness of our proposed InterPruner. As seldom prun-ing method is specifically designed for the infrared-visible dual-modality setting, we adapt existing single-modality pruning methods to serve as baselines. This allows us to perform a comprehensive analysis and ultimately evaluate the superiority of our cross-modal pruning strategy. Specif-ically, we compare against L1 Norm, Network Slimming [12], Intra-Fusion [19], BilevelPruning [3], REPrune [14], IRPruneDecX [19], and CSP [9]. 
+
+Comparison with Single Model Pruning Criteria. As shown in Table 1, directly applying existing single-branch pruning criteria to RGB-infrared detectors leads to perfor-mance degradation, especially under large pruning ratios. Magnitude-based methods ( ℓ1 Norm Pruning [5], Network Slimming [12]) perform the worst in multimodal scenarios. This confirms that single-channel weights or scaling fac-tors cannot discern cross-modal complementarity, thus in-Figure 4. Comparison with other pruning methods on the Dron-eVehicle dataset in terms of mAP 50 and model size. 
+
+evitably remove vital branches. Recent works have explored structured pruning from var-ious perspectives. Similarity-based approaches (Bilevel-Pruning [3], REPrune [14]) achieve 72.3% on DroneVehi-cle dataset at 50% pruning, demonstrating moderate perfor-mance. However, they merely focus on intra-modal geomet-ric redundancy while completely ignoring inter-modal de-pendencies. Gradient-based method [10] outperforms other baselines (80.4% at 30% pruning on DroneVehicle), prov-ing that Taylor expansion effectively retains loss-sensitive channels. Yet, localized gradient estimation proves brit-tle under extreme pruning, as evidenced by a 6.8% mAP 50 
+
+drop on FLIR dataset at the 70% ratio. Reconstruction-based methods (Intra-Fusion [19]) partially compensate for pruning-induced loss through feature reconstruction, but this comes at the cost of substantial computational over-head and limited scalability to high pruning ratios. Al-though some of these single-modality metrics perform well at low pruning ratios, they fundamentally lack the capacity to model cross-modal complementarity and thus fail under aggressive pruning. Therefore, InterPruner jointly assesses channel importance across modalities, achieving state-of-the-art performance across all settings and maintaining ro-bustness even at 70% pruning. 
+
+Comparison with the Original Model under Varying Pruning Ratios Table 2 presents the performance and complexity of InterPruner across varying pruning ratios on FLIR and DroneVehicle. As pruning intensifies, parame-ter and FLOP counts decline substantially, yet mAP 50 ex-hibits only negligible degradation on both datasets. This underscores InterPruner’s insensitivity to specific pruning levels, achieving a flexible accuracy-efficiency trade-off and affirming the robustness of the proposed strategy. 
+
+Figure 5. Feature visualizations of the RGB and Infrared branches before and after pruning under extremely dark condition. The pruned model focuses on more salient regions in both modalities, showing the effectiveness of InterPruner.                                       
+
+> Dataset Pruning Ratio mAP 50 (%) mAP(%) Params (M) FLOPs (G) FLIR 30% 77.5 41.5 4.695 11.4 50% 76.7 41.4 3.696 10.4 70% 72.6 38.7 2.767 7.9 -76.8 40.8 6.580 14.6 DroneVehicle 30% 81.0 60.4 4.446 9.5 50% 80.3 59.7 3.415 8.1 70% 79.0 58.4 2.598 7.2 -80.2 59.8 6.580 14.6
+
+Table 2. Performance comparison of pruned models at different ratios and the original model. TIC MIRA SPCA 30% 50% 70% mAP 50 mAP mAP 50 mAP mAP 50 mAP 
+
+✓ 72.4 39.2 70.2 38.1 62.7 33.7 
+
+✓ ✓ 76.3 41.2 74.4 40.0 67.1 35.4 
+
+✓ ✓ ✓ 77.5 41.5 76.7 41.4 72.6 38.7 
+
+Table 3. Ablation study of the proposed components on FLIR un-der different pruning ratios. Results are percentage. 
+
+4.3.1 Component Ablations. 
+
+The ablation results are summarized in Table 3. TIC ef-fectively estimates channel importance using high-order ex-pansion and establishes a moderate baseline across pruning ratios. MIRA further boosts the performance and the gain grows with sparsity. We attribute this to its explicit cross-modal modeling, which prevents the removal of channels that are individually less important but provide complemen-tary information to the other modality. Adding SPCA im-proves mAP 50 by 5.5% at 70% pruning, and the improve-ment widens as pruning becomes aggressive. This sug-gests SPCA adapts selection to scene-dependent distribu-tions, which is critical at high sparsity, where fixed criteria often fail. Ultimately, the full model preserves high preci-sion across pruning ratios, confirming that TIC, MIRA, and SPCA collectively address dynamic channel importance. TIC Approximation 30% 50% 70% First-order Taylor 38.2 37.9 35.1 Second-order Taylor 39.4 39.1 36.4 Third-order Taylor 41.5 41.4 38.7 
+
+Params (M) 4.695 3.696 2.767 
+
+> Table 4. Effect of Taylor expansion order in TIC on FLIR under different pruning ratios. Results are reported in mAP(%).
+
+4.3.2 Analysis of Taylor-Implicit Criterion. 
+
+We investigate the influence of different Taylor approxi-mation orders in TIC in Table 4. First-order Taylor only captures the immediate gradient response after channel re-moval, and it exhibits the poorest performance across all pruning ratios, yielding only 38.2% mAP at 30% channel pruning. While introducing the second-order term effec-tively improves the results by considering local curvature, it remains insufficient to model the nonlinearity inherent in our compensation-aware strategy. By incorporating the third-order term, TIC better models the nonlinear loss vari-ation caused by channel removal and parameter compensa-tion, leading to the best performance under all pruning ra-tios. These results confirm that high-order Taylor expansion outperforms lower-order alternatives by effectively model-ing the loss induced by pruning and compensation, ensuring reliable channel importance estimation. 
+
+4.3.3 Sensitivity Analysis of Hyper-parameters in Uni-fied Channel Selection 
+
+We ablate the trade-off ratio β/α in Eq. (25) on the FLIR dataset under three distinct pruning ratios. As shown in Fig. 6, the mAP consistently peaks at β/α = 1 .0, reach-ing 41.5%, 41.4%, and 38.7% respectively. This unified peak shows the optimal ratio is pruning-agnostic. In fact, deviations from this setting cause performance degradation. A small ratio ignores compensation potential, while a large one overemphasizes it and may discard vital features, espe-cially under limited capacity. Therefore, setting β/α = 1 .0
+
+ensures an optimal trade-off between information retention and pruning efficiency, validating that our criterion remains effective even under aggressive pruning. 
+
+## 5. Conclusion 
+
+In this paper, we propose InterPruner, an interactive structured pruning framework for RGB-infrared object de-tectors. The framework first assesses channel importance via a Taylor-Implicit Criterion, then identifies cross-modal redundancy through a Modality Interaction Redundancy Analyzer, and finally leverages a Scene-Prior Channel An-                                           
+
+> β/α 30% 50% 70% mAP 50 mAP mAP 50 mAP mAP 50 mAP 0.0 72.4 39.2 70.2 38.1 62.7 33.7 0.25 73.5 39.4 72.2 38.6 67.1 35.6 0.50 74.3 39.8 73.6 39.0 69.7 37.2 1.00 77.5 41.5 76.7 41.4 72.6 38.7
+> 2.00 72.0 38.5 71.2 38.2 67.5 35.8 Table 5. Ablation study of the β/α on the FLIR dataset across different pruning ratios. Results are percentage.
+> Figure 6. Visualization of the β/α ablation study in Table 5.
+
+chor that adapts pruning to semantic context. This prun-ing paradigm offers new insights for lightweight multi-modal perception, with natural extensions to other resource-constrained applications, such as heterogeneous segmenta-tion, medical imaging, and autonomous systems, where pre-serving cross-modal information with minimal overhead is critical. References 
+
+[1] Benjamin Bergner, Christoph Lippert, and Aravindh Mahen-dran. Token cropr: Faster vits for quite a few tasks, 2024. 1[2] Hongrong Cheng, Miao Zhang, and Javen Qinfeng Shi. Influence function based second-order channel pruning-evaluating true loss changes for pruning is possible without retraining, 2023. 2, 3 [3] Shangqian Gao, Yanfu Zhang, Feihu Huang, and Heng Huang. Bilevelpruning: Unified dynamic and static chan-nel pruning for convolutional neural networks. In 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 16090–16100, 2024. 1, 2, 6, 7 [4] Kwanhee Lee and Hyang-Won Lee. Dynamic network com-pression via probabilistic channel pruning. Neural Networks ,193:108080, 2026. 6 [5] Hao Li, Asim Kadav, Igor Durdanovic, Hanan Samet, and Hans Peter Graf. Pruning filters for efficient convnets. arXiv preprint arXiv:1608.08710 , 2016. 6 [6] Ting Li, Mao Ye, Tianwen Wu, Nianxin Li, Shuaifeng Li, Song Tang, and Luping Ji. Pseudo visible feature fine-grained fusion for thermal object detection. In 2025 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 6710–6719, 2025. 1 [7] Yawei Li, Kamil Adamczewski, Wen Li, Shuhang Gu, Radu Timofte, and Luc Van Gool. Revisiting random channel pruning for neural network compression, 2022. 2 [8] Yuxuan Li, Xiang Li, Yunheng Li, Yicheng Zhang, Yimian Dai, Qibin Hou, Ming-Ming Cheng, and Jian Yang. Sm3det: A unified model for multi-modal remote sensing object de-tection, 2025. 1 [9] Yang Li, Liejun Wang, and Minchi Kuang. Csp: Channel and space pruning for compressing deep convolutional neu-ral networks. IEEE Transactions on Multimedia , 28:4146– 4157, 2026. 2, 6 [10] Suyun Lian, Yang Zhao, Jiajian Cai, Muxin Liao, Stefan Poslad, and Jihong Pei. A lightweight pruning framework with minimal retraining using taylor expansion and multi-knowledge preservation strategy. Engineering Applications of Artificial Intelligence , 168:114004, 2026. 6, 7 [11] Chang Liu, Xin Ma, Xiaochen Yang, Yuxiang Zhang, and Yanni Dong. Como: Cross-mamba interaction and offset-guided fusion for multimodal object detection, 2024. 2 [12] Zhuang Liu, Jianguo Li, Zhiqiang Shen, Gao Huang, Shoumeng Yan, and Changshui Zhang. Learning efficient convolutional networks through network slimming. In 2017 IEEE International Conference on Computer Vision (ICCV) ,pages 2755–2763, 2017. 1, 2, 6 [13] Mingge Lu, Jingwei Sun, Junqing Lin, Zechun Zhou, and Guangzhong Sun. Lua-llm: Learning unstructured-sparsity allocation for large language models. In D. Belgrave, C. Zhang, H. Lin, R. Pascanu, P. Koniusz, M. Ghassemi, and N. Chen, editors, Advances in Neural Information Process-ing Systems , volume 38, pages 123455–123481. Curran As-sociates, Inc., 2025. 1 [14] Mincheol Park, Dongjin Kim, Cheonjun Park, Yuna Park, Gyeong Eun Gong, Won Woo Ro, and Suhyun Kim. Reprune: Channel pruning via kernel representative selec-tion, 2024. 6, 7 [15] Loveneet Saini, Mirko Meuter, Hasan Tercan, and Tobias Meisen. Attentivegru: Recurrent spatio-temporal model-ing for advanced radar-based bev object detection. In 2025 IEEE/CVF Conference on Computer Vision and Pattern Recognition Workshops (CVPRW) , pages 2406–2415. IEEE, 2025. 1 [16] Jifeng Shen, Haibo Zhan, Xin Zuo, Heng Fan, Xiaohui Yuan, Jun Li, and Wankou Yang. IRDFusion: Iterative relation-map difference guided feature fusion for multispectral object detection. Pattern Recognition , 176:113189, 2026. 1, 2 [17] Yiming Sun, Bing Cao, Pengfei Zhu, and Qinghua Hu. Drone-based rgb-infrared cross-modality vehicle detection via uncertainty-aware learning. IEEE Transactions on Cir-cuits and Systems for Video Technology , pages 1–1, 2022. 6[18] Zhanyan Tang, Zhihao Wu, Mu Li, Jie Wen, Bob Zhang, Yong Xu, and Jianqiang Li. Adaptive fine-grained fusion network for multimodal uav object detection. IEEE Trans-actions on Image Processing , 35:1870–1882, 2026. 1, 2 [19] Alexander Theus, Olin Geimer, Friedrich Wicke, Thomas Hofmann, Sotiris Anagnostidis, and Sidak Pal Singh. To-wards meta-pruning via optimal transport, 2024. 6, 7 [20] Kunyu Wang, Xueyang Fu, Xin Lu, Chengjie Ge, Chengzhi Cao, Wei Zhai, and Zheng-Jun Zha. Efficient test-time adap-tive object detection via sensitivity-guided pruning, 2025. 2 [21] Jiaqi Wu, Zhen Wang, Enhao Huang, Kangqing Shen, Yulin Wang, Yang Yue, Yifan Pu, and Gao Huang. Bridging the rgb-ir gap: Consensus and discrepancy modeling for text-guided multispectral detection, 2026. 1 [22] Lanhu Wu, Zilin Gao, Hao Fei, Mong-Li Lee, and Wynne Hsu. Leaf-mamba: Local emphatic and adaptive fusion state space model for rgb-d salient object detection. In Proceed-ings of the 33rd ACM International Conference on Multime-dia , MM ’25, page 1013–1022. ACM, October 2025. 1 [23] Haitian Yang, Juan Fang, Yiren Zhu, et al. Crossweaver: To-wards efficient cross-modal interweaving and decoupling for weakly-aligned multispectral object detection. In Proceed-ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Findings , 2026. 1 [24] Maoxun Yuan, Bo Cui, Tianyi Zhao, Jiayi Wang, Shan Fu, Xue Yang, and Xingxing Wei. Unirgb-ir: A unified frame-work for visible-infrared semantic tasks via adapter tuning. In Proceedings of the 33rd ACM International Conference on Multimedia , MM ’25, page 2409–2418. ACM, October 2025. 2 [25] Zheng Zhan, Zhenglun Kong, Yifan Gong, Yushu Wu, Zi-chong Meng, Hangyu Zheng, Xuan Shen, Stratis Ioannidis, Wei Niu, Pu Zhao, and Yanzhi Wang. Exploring token prun-ing in vision state space models. In The Thirty-eighth An-nual Conference on Neural Information Processing Systems ,2024. 1 [26] Heng Zhang, Elisa Fromont, S´ ebastien Lef` evre, and Bruno Avignon. Multispectral fusion for object detection with cyclic fuse-and-refine blocks. In 2020 IEEE International Conference on Image Processing (ICIP) , pages 1–5, October 2020. 6 [27] Mingjin Zhang, Jin Feng, Handi Yang, Jie Guo, Yunsong Li, and Xinbo Gao. Irprunedext: Efficient infrared small target detection via musical wavelet-regularized channel pruning. 
+
+IEEE Transactions on Neural Networks and Learning Sys-tems , 36(12):20229–20242, 2025. 2, 6 [28] Yue Zhang, Jinbao Chen, Jianyuan Wang, Donghao Shi, Shu Han, and Lixiao Deng. C2dff-net for object detection in mul-timodal remote sensing images. IEEE Transactions on Geo-science and Remote Sensing , 63:1–16, 2025. 1, 2, 6 [29] Tianyi Zhao, Maoxun Yuan, Feng Jiang, Nan Wang, and Xingxing Wei. Removal then selection: A coarse-to-fine fu-sion perspective for rgb-infrared object detection, 2024. 2 [30] Haodong Zhu, Wenhao Dong, Linlin Yang, Hong Li, Yuguang Yang, Yangyang Ren, Qingcheng Zhu, Zichao Feng, Changbai Li, Shaohui Lin, Runqi Wang, Xiaoyan Luo, and Baochang Zhang. Wavemamba: Wavelet-driven mamba fusion for rgb-infrared object detection, 2025. 1

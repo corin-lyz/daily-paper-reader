@@ -1,0 +1,372 @@
+Title: SOS! : A Streamlined Object-Conditional Transformer for Model-free Segmentation
+
+URL Source: https://arxiv.org/pdf/2608.15295v1
+
+Published Time: Tue, 18 Aug 2026 00:42:54 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+> arXiv:2608.15295v1 [cs.CV] 15 Aug 2026
+
+HU ET AL.: SOS: SINGLE-REFERENCE OBJECT SEGMENTATION 1
+
+# SOS! : A Streamlined Object-Conditional Transformer for Model-free Segmentation 
+
+Jiaqi Hu 1,2 
+
+jiaqi.hu@tum.de 
+
+Junwen Huang 1,3 
+
+junwen.huang@tum.de 
+
+Hongli Xu 1
+
+hongli.xu@tum.de 
+
+Peter KT Yu 4
+
+peterkty@gmail.com 
+
+Nassir Navab 1,3 
+
+nassir.navab@tum.de 
+
+Benjamin Busam 1,3 
+
+b.busam@tum.de 
+
+Slobodan Ilic 1,2 
+
+slobodan.ilic@tum.de  
+
+> 1
+
+Technical University of Munich Munich, Germany  
+
+> 2
+
+Siemens AG Munich, Germany  
+
+> 3
+
+Munich Center for Machine Learning Munich, Germany  
+
+> 4
+
+ROBOX Cambridge, MA, USA 
+
+Abstract 
+
+Foundation segmentation models excel at generating high-quality, class-agnostic masks, but they struggle to associate these proposals with specific target objects. This semantic gap severely hinders their deployment in downstream applications like robotic manipula-tion, which demand precise unseen objects segmentation. Existing approaches attempt to resolve this by relying on exhaustive 3D object model priors, inherently introducing pro-hibitive computational overhead and complex, multi-stage pipelines. To address these limitations, we propose SOS (Streamlined Object-conditional Transformer for model-free Segmentation). SOS completely eliminates the reliance on 3D models, requiring only a single reference image per target object. Central to our framework is a novel 
+
+Object-Conditional Transformer that learns identity-anchored queries , unifying mask generation and target identification into a single feed-forward pass. This streamlined de-sign drastically improves both structural and computational efficiency. Extensive evalua-tions across multiple benchmarks demonstrate that SOS establishes a new state-of-the-art for model-free unseen objects segmentation, delivering accurate and high-efficiency per-formance. The project page and code are available at https://sos-seg.github. io/ .
+
+# 1 Introduction 
+
+Foundation models for segmentation, like SAM family[3, 23, 38, 50] can segment any ob-ject in images. Even though, when coupled with text prompts, they can segment certain 
+
+© 2026. The copyright of this document resides with its authors. It may be distributed unchanged freely in print or electronic forms. 2 HU ET AL.: SOS: SINGLE-REFERENCE OBJECT SEGMENTATION Object-Conditioned Generation Onboarding   
+
+> …
+> CAD Models Scene Image Templates
+> Object Masks Seg model Mask Proposals Onboarding Templates Feature Matching
+> …
+> CAD Models Scene Image
+> Object Masks Object-Conditioned Attention
+> …
+> Scene Image
+> Object Masks Single-reference view
+> (a) Model-based two-stage pipeline (b) Model-based one-stage pipeline (c) Model-free one-stage pipeline (Ours)
+
+Figure 1: Comparison of unseen objects segmentation pipelines. (a) Model-based two-stage pipeline (e.g., CNOS [32], SAM6D [23]) uses SAM [21] for mask proposals and DINO [34] for feature matching, heavily relying on cumbersome 3D CAD onboarding. 
+
+(b) Model-based one-stage pipeline (e.g., OC-DiT [42]) predicts masks directly but still requires exhaustive multi-view rendering from 3D CAD priors, while iterative denoising severely bottlenecks inference. (c) Model-free one-stage pipeline (SOS) completely elim-inates 3D CAD reliance. Driven by identity-anchored queries, it requires only a single 2D reference view per object to output identity-aware masks in a single feed-forward pass, en-abling real-world deployment. object classes, in general settings, they output a large number of segments. Identifying ex-act segments that belong to the particular object instance is not trivial. This is exactly the first step in tasks like 6D object pose estimation [16, 17, 22, 33, 35, 45] and robotic ma-nipulation [11, 18, 31, 47]. Recent research in 6D object pose estimation aims to develop foundation models that can segment and estimate the 6D pose of any object. Such networks are trained once on a large number of objects, each represented by its 3D model, and should generalize to novel objects unseen during training. To know which object to segment and estimate its pose, the majority of methods [23, 45] accept a CAD model of the unseen object at input together with the query image containing the object that needs to be found. How-ever, in real-world environments, a practical perception system should be able to segment and localize novel targets with minimal prior knowledge. This remains challenging due to the heavy reliance of current methods on extensive object priors, such as CAD models, and complex, multi-stage pipelines. Existing unseen objects segmentation approaches are model-based [5, 23, 27, 32] and typically employ complex, disjointed two-stage pipelines as shown in Fig. 1(a). In the first stage, a pre-trained segmentation models [12, 19, 21, 50] are used to extract class-agnostic masks. In the second stage, these methods match the generated mask proposals against object templates rendered from multi-view CAD models. This matching process relies on extracting and comparing separate visual descriptors, typically using DINO [34, 39], for both the segments and the templates. This separation fundamentally breaks semantic coher-ence, since these methods are forced to rely on a cumbersome onboarding stage relying on expensive renderings of 3D CAD models to produce a large number of object templates and establish matches with SAM over-segmentation. HU ET AL.: SOS: SINGLE-REFERENCE OBJECT SEGMENTATION 3
+
+One-stage approaches like OC-DiT [42] attempt to overcome these disjointed pipelines by predicting masks directly. By unifying the architecture, they successfully preserve seman-tic coherence and eliminate the need for heuristic matching against external SAM proposals. However, as shown in Fig. 1(b), OC-DiT still requires excessive rendering of multi-view templates. While this exhaustive 3D prior can compensate for their representational limita-tions in controlled settings, precise CAD models are inherently difficult to obtain in the wild. Furthermore, its diffusion-based [36] architecture requires iterative denoising steps, which significantly increases inference latency. Overall, whether hindered by disjointed two-stage heuristic matching or slow diffusion mechanisms, the shared reliance on cumbersome CAD-based onboarding introduces signif-icant computational overhead. This precludes fast inference and severely restricts on-the-fly deployment. Consequently, if one attempts to adapt these methods to a practical "model-free" setting by providing only a single reference view, their performance degrades drasti-cally. Stripped of exhaustive 3D information, the inherent representational fragility shared by both paradigms becomes evident. They inherently require CAD-based templates to com-pensate for their weak feature spaces. In the absence of this multi-view prior, both struggle severely to associate target identities in complex scenes. To address these issues, we present SOS, a streamlined, model-free framework for un-seen objects segmentation. Instead of relying on extensive 3D priors, SOS requires only a single RGB scene image and one reference view per target, as depicted in Fig. 1(c). By treating these reference views as explicit visual conditions, our method establishes an object-conditional Transformer framework driven by identity-anchored queries . Consequently, rather than generating class-agnostic proposals via external models for subsequent heuris-tic matching, SOS directly outputs identity-aware masks in a single feed-forward pass. This unified design simultaneously eliminates the disjointed feature extraction of two-stage pipelines [5, 23, 32] and the slow, iterative denoising of single-stage diffusion architec-tures [42], yielding a lightweight solution that achieves high accuracy at fast speed. We evaluate SOS across multiple benchmarks, where it establishes a new state of the art for model-free segmentation of unseen objects. Notably, SOS substantially outperforms existing model-based methods when restricted to a single reference image and performs on par with their original setups that rely on complete 3D CAD models. In summary, our main contributions are: 1. Unified Model-Free Framework: We propose SOS, a streamlined, one-stage archi-tecture for unseen objects segmentation. Conditioned only on a single reference view per object, SOS completely eliminates both object CAD onboarding phase and the reliance on external region proposal networks. 2. Object-Conditional Transformer: We introduce a novel architecture to learn the 
+
+identity-anchored query that unifies mask generation and instance identification into a single feed-forward pass. This design concurrently localizes and identifies the objects in the scene, achieving high-efficient inference while bypassing the bottlenecks of iterative denoising or dense template matching. 3. Computational Efficiency and Robustness. We present an efficient network with minimal inference latency, achieving competitive performance on multiple bench-marks compare to with state-of-the-art model-based baselines, and demonstrates ro-bustness to clutter in "in-the-wild" scenarios. 4 HU ET AL.: SOS: SINGLE-REFERENCE OBJECT SEGMENTATION 
+
+# 2 Related Work 
+
+## 2.1 Model-Based segmentation of unseen objects 
+
+The task of unseen objects segmentation requires a perception model to localize and seg-ment novel targets without prior object-specific training. To identify these unknown targets, the perception model must rely on explicit object priors. Driven by this requirement, most existing methods [23, 27, 32, 42] adopt a model-based paradigm, demanding full 3D CAD models of the targets to render comprehensive offline reference templates. To utilize these templates during inference, CNOS [32] introduced what has become the standard two-stage pipeline. The approach is straightforward: a foundation model like SAM [21] extracts class-agnostic masks, and a separate descriptor network like DINOv2 [34] subsequently matches them against the CAD templates to assign identities. Because this hard decoupling of localization and identification is inherently prone to correspondence errors, later works have focused heavily on patching the matching step. SAM-6D [23], for example, attempts to refine the matching stage of CNOS with novel appearance and geometric match-ing scores. MUSE [5] takes this a step further, deploying GroundingDINO [24] to filter out background clutter before routing the remaining masks through an even denser match-ing mechanism. Ultimately, compensating for a disjointed architecture by stacking heavier models and convoluted rules creates severe computational bottlenecks, making real-world deployment hard. In an attempt to bypass these fragmented pipelines, OC-DiT [42] recasts the segmenta-tion problem as a conditional diffusion process. While this generative approach successfully eliminates explicit mask matching, it cannot escape the fundamental reliance on dense 3D CAD priors. More critically, the iterative denoising required by diffusion introduces massive inference delays, effectively trading one computational bottleneck for another. 
+
+SOS addresses these limitations by shifting to a purely transformer-based [43], one-stage architecture. Unlike previous methods, SOS operates without 3D CAD models, relying in-stead on a single reference view to condition the segmentation process. This design elim-inates the primary sources of inference latency and correspondence errors, resulting in a simple, real-world solution suitable for practical deployment. 
+
+## 2.2 Visual Reference Segmentation 
+
+Visual reference segmentation has emerged as a powerful paradigm for isolating specific objects guided by visual prompts. While rooted in Referring Image Segmentation (RIS), which traditionally centers on language-to-image grounding, this line of research focuses on using images as query prompts to define the target. Current state-of-the-art methods, such as [15, 41, 48], predominantly emphasize category-level generalization [14, 25, 30, 37, 44]. By treating the reference image as a semantic prototype, these approaches successfully identify all objects within a broader class. However, this focus on category-level consistency often comes at the expense of instance-level identity, leading models to ignore distinctive visual cues such as unique textures, brand logos, or subtle wear-and-tear patterns. This limitation is particularly evident in unseen objects segmentation, a task that inher-ently demands instance-specific identification. Unlike category-oriented frameworks that might treat any cup as a valid match, SOS leverages the visual prompt as a unique iden-tity constraint to isolate the exact individual shown. By shifting the objective from "finding any object of a class" to "distinguishing a specific target from intra-class distractors," our ap-HU ET AL.: SOS: SINGLE-REFERENCE OBJECT SEGMENTATION 5
+
+proach achieves a level of fine-grained discrimination previously overlooked. This capability is essential for practical deployment in robotic manipulation and long-term object tracking, where interacting with a specific entity is far more critical than recognizing a general cate-gory. 
+
+# 3 Methodology 
+
+SOS is a model-free framework designed for unseen objects segmentation using only one reference view per object as condition. We introduce a novel Object-conditional Trans-former to learn the Identity-Anchored Query that unifies the mask generation and target identification into a single feed-forward pass. An overview of our pipeline is illustrated in Fig. 2. 
+
+## 3.1 Problem Formulation 
+
+Our framework aims to achieve one-shot semantic segmentation of arbitrary objects within a scene, guided by a single reference exemplar, while maintaining the ability to process multiple objects within a single forward pass. Formally, given a target RGB scene Is ∈
+
+RH×W ×3 and a set of N object conditions C = {(Ci, Mc,i)}Ni=1, where each Ci ∈ RHi×Wi×3
+
+denotes a reference image and Mc,i ∈ { 0, 1}Hi×Wi defines its corresponding foreground mask, the model predict a set of binary masks M = {Mi}Ni=1. Each predicted mask Mi ∈ { 0, 1}H×W
+
+represents the 2D pixel occupancy of the i-th target object within Is. To ensure robustness against false positives, the model explicitly handles negative conditions : if the target object is absent from the scene, the framework is expected to yield a null response, resulting in an empty mask Mi = 0.
+
+## 3.2 Identity-Anchored Query 
+
+Human visual search is inherently target-driven; rather than exhaustively parsing every en-tity in a cluttered scene, the human visual system leverages a prototypical representation of a target to selectively modulate the visual field. Inspired by this cognitive efficiency, we rethink the standard query-based formulation in DETR [2]. Current DETR-like architec-tures [4, 6, 28, 49, 51] typically employ anonymous queries constrained by learned spatial priors. This "segment-then-classify" paradigm necessitates a decoupled process: the model first generates class-agnostic mask proposals and subsequently relies on a classification head for post hoc identity assignment. While effective for closed-set semantic segmentation where inter-category variance is high, this approach is sub-optimal for one-shot tasks. Unseen ob-jects segmentation requires identifying the exact same instance , demanding precise intra-category discrimination against visually similar distractors. In current architectures, the vi-sual reference is often injected late in the pipeline, depriving the mask generation process of early-stage semantic guidance. Consequently, anonymous queries lack the discriminative signal required for fine-grained instance matching in unconstrained scenes. To address this bottleneck, we propose the Identity-Anchored Query , a novel representa-tion that shifts the paradigm from class-agnostic proposal generation to target-specific refer-encing through the proposed Object-conditional Transformer. The network learns a universal semantic probe that undergoes dual path updates: it absorbs the reference identity while si-multaneously grounding the target within the scene. This unified reasoning merges mask 6 HU ET AL.: SOS: SINGLE-REFERENCE OBJECT SEGMENTATION Object Conditions       
+
+> …
+> Scene Image
+> DINO
+> ……
+> 𝐹 !
+> 𝐹 "
+> Object-Conditional Transformer
+> …
+> Masked Cross-Attn Masked Cross-Attn Self-Attn FFN Initial Queries 𝑄 𝑇 "K, V
+> ……
+> Scene Embedder Condition Embedder
+> 𝑇 !
+> 𝑇 "
+> 𝑀 !
+> 𝒜 #$%
+> L×
+> …
+> Identity-Anchored Queries &𝑄
+> Initial Queries 𝑄
+> Mask K, V Mask
+> 𝑇 !
+> Identity-Anchored Queries &𝑄
+> Object Masks
+> Feature Encoder
+> MLP Upscale
+> Mask Decoder
+
+Figure 2: Overview of the SOS framework. (1) Feature Encoder : A frozen DINO back-bone extracts feature maps ( Fs, Fc) from the scene and object conditions respectively. The Scene and Condition Embedders subsequently process these maps into token sequences (Ts, Tc) augmented with spatial and identity positional encodings. (2) Object Condi-tional Transformer : Initial queries Q iteratively evolve into deterministic identity-anchored queries. Within each block, queries perform masked cross attention with the condition tokens 
+
+Tc and condition masks Mc to absorb target identities, followed by masked cross attention with the scene tokens Ts restricted by the preceding attention masks Al−1 for spatial ground-ing, and self attention to resolve overlapping targets and occlusions. (3) Mask Decoder : The identity-anchored queries ˆ Q are decoded, interacting with the scene tokens to directly output the final masks for each object. generation and identity verification into a single step. In the end, the probe becomes a deter-ministic descriptor that predicts masks directly, removing the need for post hoc classification. We will discuss the technical details in Sec 3.3.2 
+
+## 3.3 Network Architecture 
+
+Our framework for unseen objects segmentation consists of three core components: (1) a Feature Encoder that extracts scene and condition tokens; (2) an Object-conditional Transformer that progressively transforms the universal semantic cue into an Identity-Anchored Query by concurrently injecting target reference features and retrieving scene context; and (3) a Mask Decoder that decodes these identity-aware descriptors into precise, instance-aware segmentation masks. 
+
+3.3.1 Feature Encoder. 
+
+Given a scene image Is ∈ RH×W ×3 and a set of N object conditions {Ci}Ni=1, we first project them into a shared semantic space using a pre-trained ViT [9] encoder which partitions the scene and condition images into non-overlapping patches to extract dense feature maps. Let 
+
+Fs ∈ Rh×w×d denote the scene feature map and Fc ∈ RN×h′×w′×d denote the stacked object condition feature maps, where (h, w) and (h′, w′) represent the respective feature map reso-lutions and d is the embedding dimension. HU ET AL.: SOS: SINGLE-REFERENCE OBJECT SEGMENTATION 7
+
+Scene Embedder. The scene feature map Fs ∈ Rh×w×d is flattened into scene tokens 
+
+Ts ∈ RS×d . To preserve the structural layout, we augment these tokens by directly adding a learnable positional embedding Ps ∈ R1×S×d . This explicit coordinate injection provides the spatial anchoring necessary for precise object localization. 
+
+Condition Embedder. Similarly, the condition feature map Fc ∈ RN×h′×w′×d is flattened into condition tokens Tc ∈ RN×S′×d , where S′ = h′ × w′ and N denotes the distinct object conditions. To uniquely identify each target, we augment these tokens with two learnable po-sitional embedding tensors: a spatial embedding Pc,patch ∈ R1×1×S′×d preserving the internal layout of each reference view, and an identity embedding Pc,id ∈ R1×N×1×d differentiating the N conditions. The final condition tokens are obtained via element wise addition utilizing tensor broadcasting. 
+
+3.3.2 Object-conditional Transformer. 
+
+We first define a learnable universal semantic probe q ∈ R1×d . By replicating this probe 
+
+N times, we generate the initial queries Q ∈ RN×d to match the number of object condi-tions. As illustrated in Fig. 2, the Object Conditional Transformer transforms these initial queries into deterministic identity-anchored queries ˆ Q. Through continuous dual path fusion with both condition and scene tokens, the network gradually implants target identities into the queries while learning their spatial boundaries. This process outputs the final identity-anchored queries ˆ Q for mask decoding. Within each block l ∈ { 1, 2, . . . , L}, the intermediate queries ˆQ(l−1) (where ˆQ(0) = Q)perform masked cross attention with their assigned condition tokens Tc,i and condition masks 
+
+Mc,i. This operation explicitly extracts target identities while preventing crosstalk between conditions. To efficiently localize targets and suppress distractors, these identity enriched queries then attend to the scene tokens Ts via masked cross attention. This grounding step is restricted by a boolean mask A(l−1) derived from the preceding block, with the initial block attending globally. The spatially grounded queries subsequently exchange contextual information via self attention to resolve overlapping targets and occlusions. A Feed Forward Network (FFN) then processes these features to yield the refined identity-anchored queries ˆQ(l).
+
+3.3.3 Mask Decoder. 
+
+After each transformer block l, we decode the refined identity-anchored queries ˆ Q(l) to com-pute the attention mask A(l) for the next block. We pass the queries through a lightweight MLP and compute the spatial dot product with the scene tokens Ts:
+
+P(l) = MLP ( ˆQ(l)) ⊗ Ts
+
+where ⊗ denotes the spatial dot product producing the mask logits P(l). Following standard masked attention [4], we binarize these logits via sigmoid activation and thresholding to obtain the mask prediction M(l). The boolean attention mask A(l) at spatial location (x, y) is defined as: 
+
+A(l)(x, y) = 
+
+(
+
+0 if M(l)(x, y) = 1
+
+−∞ otherwise Adding this mask to the attention logits before the softmax operation restricts the cross at-tention span entirely to the predicted foreground regions. 8 HU ET AL.: SOS: SINGLE-REFERENCE OBJECT SEGMENTATION 
+
+After the final block L, we upscale the mask logits P(L) to the target image dimensions. These high resolution logits are then passed through a sigmoid function and thresholded to output the final mask predictions M = {Mi}Ni=1 ∈ { 0, 1}N×H×W .
+
+## 3.4 Training Objectives 
+
+Our Identity-Anchored Query formulation eliminates the bipartite matching (e.g., the Hun-garian algorithm) required by conventional DETR [6, 49, 51] architectures. Because each query is deterministically anchored to an input condition, the predicted masks naturally maintain a one to one correspondence with the ground truth. With this direct correspondence established, we drop the classification loss entirely and rely solely on mask supervision. We adopt the mask loss from Mask2Former [4], which combines Binary Cross Entropy (BCE) and Dice loss [29]. The mask loss for block l is: 
+
+L(l) = λbce L(l) 
+
+> bce
+
++ λdice L(l)
+
+> dice
+
+where λbce and λdice denote the loss weights. To stabilize training and supervise the intermediate boolean attention masks, we employ deep supervision across our transformer architecture by defining the total objective as: 
+
+Ltotal = ∑
+
+> l∈{ 2,4,6,8}
+
+L(l)
+
+where l represents the one-based index of the supervised block. 
+
+# 4 Experiments 
+
+## 4.1 Datasets and Evaluation metric. 
+
+We evaluate our method on four core BOP challenge datasets [40]: YCB-Video (YCB-V) [46], TUD-L [13], LineMod Occlusion (LM-O) [1], and HomebrewedDB (HB) [20]. Combined, these benchmarks contain 65 objects in cluttered and occluded scenes. The object set covers a wide range of properties, including textured or untextured surfaces, symmetric or asymmetric geometries, and both household and industrial categories. We evaluate our method using the Average Precision (AP) metrics, following the COCO metric and the BOP challenge evaluation protocol[40]. The AP metric is calculated as the mean of AP values at different Intersection over Union (IoU) thresholds ranging from 0.50 to 0.95 with an increment of 0.05. 
+
+## 4.2 Implementation Details 
+
+4.2.1 Architecture. 
+
+SOS is built upon a pre-trained, frozen DINOv3-L/16 [39] backbone. To balance computa-tional efficiency with feature granularity, scene images are processed at 480 ×640 resolution, while condition images are resized to 224 × 224. These features are integrated via an object-conditioned transformer consisting of 8 blocks with a hidden size of 1024 and 16 attention heads. A 2-layer MLP is appended as the mask decoder to produce the final segmentation. HU ET AL.: SOS: SINGLE-REFERENCE OBJECT SEGMENTATION 9
+
+4.2.2 Training data. 
+
+We train the model using large synthetic dataset provided by FoundationPose [45]. The training assets are sourced from Objaverse [7] and GSO [10], comprising approximately 41K unique objects in total. The full dataset consists of roughly 680K scenes, each containing multiple objects in cluttered environments. 
+
+4.2.3 Data Augmentation. 
+
+To improve generalization, we apply both geometric and photometric augmentations. For geometric transforms, images are randomly cropped with a probability of 0.8 at a scale between [0.7, 0.99 ], followed by random horizontal flips. Photometric augmentations include random adjustments to brightness, contrast, sharpness, and color, alongside Gaussian blur, to enhance the model’s robustness to varying lighting and imaging conditions. 
+
+4.2.4 Training Setup. 
+
+To enable the model to handle an arbitrary number of conditions, we employ a dynamic condition sampling strategy. For each training sample, we randomly select n ∈ [1, 20 ] object conditions, including both positive and negative ones. To enhance robustness against view-point variations, each condition is instantiated by drawing a single image from a predefined set of 12 rendered perspectives. The entire training process spans 120K steps with a total batch size of 16 using the AdamW optimizer [26]. We set the initial learning rate to 1 × 10 −4, beginning with a 2K-step linear warmup. This learning rate is maintained constantly until 70K steps, after which a cosine annealing schedule is applied to gradually decay it to a final value of 1 × 10 −6.Training is conducted on 2 NVIDIA RTX 4090 GPUs and takes approximately 25 hours. 
+
+## 4.3 Main Results                                                                                 
+
+> Method Model-based Onboarding (s / per-obj) Ref. Image(s) YCB-V TUD-L LM-O HB Average Inference (s / per-img)
+> ∗CNOS [32] ✓18.82 42 - CAD 59.9 48.0 39.7 51.1 49.7 0.221
+> ∗SAM6D [23] ✓18.82 42 - CAD 59.5 49.8 44.4 55.7 52.3 0.249
+> ∗NIDS-Net[27] ✓18.82 42 - CAD 65.0 55.6 43.9 62.0 56.6 0.485
+> ∗MUSE[5] ✓18.82 42 - CAD 69.0 57.3 47.7 63.5 59.3 0.505
+> ∗OC-DiT [42] ✓18.82 42 - CAD 71.7 59.4 40.1 61.5 58.2 -CNOS ×0.0 155.3 45.2 41.1 42.5 46.0 -SAM6D ×0.0 156.3 47.9 41.8 44.7 47.6 -Ours ×0.0 161.7 57.6 50.3 65.6 58.8 0.120
+
+Table 1: Results on the BOP challenge datasets. We report the AP for the task unseen objects segmentation. The highest value in each column is denoted in bold , and the second highest is underlined. For baseline methods requiring CAD models, the reported onboarding time includes both template rendering via BlenderProc [8] and templates feature extraction, measured on a single NVIDIA RTX 4090 GPU. AP and inference time of methods marked with ∗ are sourced directly from the original papers. 
+
+We evaluate our method in a model free setup against CNOS [32] and SAM6D [23]. Because these baselines typically rely on multiple templates, we adapt them to support sin-10 HU ET AL.: SOS: SINGLE-REFERENCE OBJECT SEGMENTATION 
+
+gle reference view inputs. To ensure a fair comparison, we evaluate all methods using the exact same reference images provided to SOS, which are directly cropped from real scenes. 
+
+Visualizations of all reference objects are provided in the supplementary material. 
+
+4.3.1 Accuracy. 
+
+Tab. 1 reports the quantitative results on YCB-V [46], TUD-L [13], LM-O [1], and HB [20] and Fig. 3 shows the qualitative results. Under the single-view setting, our method signif-icantly outperforms adapted baselines. SOS achieves an average AP of 58.8 compared to 46.0 for CNOS [32] and 47.6 for SAM6D [23], yielding an absolute improvement of +11.2 AP over the strongest baseline. Furthermore, despite relying on only one reference image, SOS achieves performance highly competitive with state-of-the-art methods that require 42 CAD-rendered templates. Notably, it sets a new state-of-the-art on the heavily occluded LM-O dataset (50.3 AP) and the HB dataset (65.6 AP), surpassing all model-based base-lines. This confirms that our model effectively extracts robust identity priors from a single view, eliminating the necessity for exhaustive templates and CAD models. CNOS SAM6D Ground Truth SOS (Ours) Scene Image 
+
+> LMO (8 objects) YCBV (21 objects) TUDL (3 objects)
+
+Figure 3: Qualitative results on LM-O [1], YCB-V [46] and TUD-L [13]. The first column shows the input RGB image and the following columns depict the detections produced by CNOS [32], SAM6D [23] and SOS with confidence scores greater than 0.5. The last column shows the Ground Truth. 
+
+4.3.2 Speed. 
+
+SOS achieves an average inference latency of 0.120 seconds per image with multiple target objects, using a single NVIDIA RTX 4090 GPU and outperforming all evaluated baselines. It is nearly twice as fast as CNOS (0.221s) and over four times faster than recent state-of-the-art models like NIDS-Net (0.485s) and MUSE (0.505s). More importantly, the reported inference times for model-based methods exclude their offline onboarding stage. As shown in Tab. 1, these baselines require an additional 18.82 seconds per object to render CAD models and extract multi-template features. This initialization overhead scales linearly with the number of targets, severely limiting their applicability in dynamic environments. SOS, being entirely model-free, reduces this preparation cost to zero, ensuring highly efficient real-world deployment. HU ET AL.: SOS: SINGLE-REFERENCE OBJECT SEGMENTATION 11 
+
+## 4.4 Ablation Study 
+
+4.4.1 Architecture ablation. 
+
+We conduct ablations on different architectural design choices of SOS across multiple BOP benchmarks, while keeping the training data and training strategy fixed. First, we investigate how the attention formulations within our decoder affect the overall framework, focusing on cross-attention with scene tokens and self-attention among identity-anchored queries. Our experimental results indicate that both components are indispens-able, as removing either one leads to a significant reduction in accuracy. Eliminating cross-attention with scene tokens results in a massive drop of 15.8 points, demonstrating that the network relies heavily on this cross-modal interaction to ground conditional prompts into the scene image. Furthermore, discarding the self-attention mechanism among the queries causes a 6.2 points decrease in performance. This drop highlights the necessity of contextu-alized reasoning among identity queries, which prevents redundant predictions and stabilizes instance-level identification. Configuration YCB-V TUD-L LM-O HB Average w/o self-attn 59.3 50.3 44.3 56.6 52.6 ↓6.2
+
+w/o scene cross-attn 41.0 51.2 31.2 48.4 43.0 ↓15 .8
+
+w/o deep supervision 47.0 52.0 31.1 48.2 44.6 ↓14 .2
+
+w/ anonymous query (instead of identity-anchored query) 47.0 25.8 37.5 51.4 40.4 ↓18 .4
+
+Full model 61.7 57.6 50.3 65.6 58.8 
+
+Table 2: Ablation study of SOS architectural design choices on BOP benchmarks. We report AP for unseen object segmentation on YCB-V, TUD-L, LM-O, and HB, together with the average AP. All ablation variants are trained on the same dataset for the same number of iterations. We further examine the effectiveness of the proposed identity-anchored queries by com-paring them with anonymous queries. To ensure a fair comparison with minimal architectural changes, we adopt the similar design of Mask2Former [4] for the anonymous query vari-ant. Specifically, we initialize N=100 learnable queries, remove cross-attention with condi-tional tokens, and instead employ separate mask and classification heads for mask prediction and classification. Consequently, this modification triggers the most significant performance drop among all ablation studies, with a steep decline of 18.4 (yielding 40.4). This massive gap directly confirms the effectiveness of our identity-anchored queries, demonstrating their substantial performance gain over traditional anonymous queries. Additionally, we investigate the impact of the auxiliary training strategies. We evaluate the necessity of deep supervision by restricting the loss computation exclusively to the final layer output. This modification leads to a significant decline in accuracy, confirming that supervising intermediate decoder layers is essential for guiding progressive mask refinement and stabilizing the optimization process. Finally, we investigate the impact of the backbone. Since CNOS and SAM6D originally use DINOv2 [34], we replace their default backbone with DINOv3 [39] for a fair compari-son under the same single-reference setting. As shown in Tab. 3, SOS consistently outper-12 HU ET AL.: SOS: SINGLE-REFERENCE OBJECT SEGMENTATION 
+
+Method Backbone YCB-V TUD-L LM-O HB Average CNOS DINOv3 63.6 48.3 43.7 50.5 51.5 SAM6D DINOv3 63.7 43.6 43.7 50.3 50.3 Ours DINOv3 61.7 57.6 50.3 65.6 58.8 
+
+Table 3: Backbone ablation under the single-reference setting. CNOS, SAM6D, and SOS are compared with DINOv3 using the same real cropped reference images. forms CNOS and SAM6D on most datasets and achieves the best average performance. This demonstrates that SOS can better benefit from the stronger representation capabilities and richer semantic features of DINOv3, which are essential for precise object-centric matching. 
+
+4.4.2 Efficiency. 1 3 8 21 33 100 
+
+> number of conditions
+> 0.0 0.1 0.2 0.3 0.4 0.5 0.6
+> time (s) Time (s) GPU Memory (GB)
+> 2.0 2.5 3.0 3.5 4.0 4.5 5.0
+> memory (GB)
+
+Figure 4: Inference Efficiency. Time and memory consumption during inference across varying numbers of input conditions. View 1 View 2 View 3 View 4 
+
+> reference view
+> 30 35 40 45 50 55 60
+> mAP
+> Sym. objects Asym. objects Overall Average
+
+Figure 5: Condition sensitivity. The performance variance for symmetric ob-jects, asymmetric objects and overall aver-age across different reference views. We evaluate the relationship between the number of input conditions and inference effi-ciency in Fig . 4. Our model operates at 20 FPS with a single object condition and maintains 10 FPS when simultaneously processing 10 conditions. Coupled with a consistently low GPU memory footprint, these results demonstrate that our architecture is practical for real world deployment. 
+
+4.4.3 Condition Sensitivity. 
+
+Intuitively, segment unseen objects from a single reference view inherently exposes the model to performance variations based on the chosen perspective. To quantify how these visual conditions influence accuracy, we evaluate our model on the LM-O [1] dataset using different reference views. For each object, we render four distinct perspectives at azimuth angles of 45, 135, 225, and 315 degrees (Fig. 6). By independently measuring the average precision for each view, we isolate the impact of the visual condition. Results in Tab. 4 and Fig. 5 confirm that performance varies across different reference perspectives. This sensitivity is fundamentally tied to object geometry. To analyze this effect, HU ET AL.: SOS: SINGLE-REFERENCE OBJECT SEGMENTATION 13 
+
+Figure 6: Visual condition templates. This grid illustrates the four distinct rendered per-spectives used for our sensitivity analysis on the LM-O [1] dataset. For each object, the images arranged from left to right correspond sequentially to view 1, view 2, view 3, and view 4 in Tab. 4. we categorize the objects into symmetric ( can, driller, duck, eggbox, glue ) and asymmetric (ape, cat, holepuncher ) groups. View Asymmetric Objects Symmetric Objects Overall Avg.                                                                  
+
+> ape cat holepuncher Avg. can driller duck eggbox glue Avg.
+> view 1 39.8 47.2 34.7 40.6 55.8 63.8 58.9 47.6 41.7 53.6 48.7 view 2 30.8 46.5 36.2 37.8 56.4 64.1 58.0 47.5 42.0 53.6 47.3 view 3 45.6 41.2 46.3 44.4 56.1 64.0 62.2 48.2 43.1 54.7 50.4 view 4 45.1 44.0 30.3 39.8 55.9 64.3 62.0 47.5 43.1 54.6 49.0
+> ∆(Max - Min) 14.8 6.0 16.0 6.6 0.6 0.5 4.2 0.7 1.4 1.1 3.1
+
+Table 4: Ablation on view condition sensitivity. We report the average precision across different azimuth angles for eight objects from the LM-O [1] dataset. Symmetric objects maintain stable scores, while asymmetric objects show significant variance depending on the provided perspective. Symmetric objects exhibit robustness to perspective changes, with a minimal average fluctuation ( ∆) of only 1.1 AP. In contrast, asymmetric objects are sensitive to the reference view; their performance variance reflects the difficulty of extracting a reliable identity prior when distinctive geometric features are occluded. Despite these instance level variations, the aggregate performance remains stable. As shown by the flat trend line in Fig. 5, the mean average precision across the dataset fluctuates by a maximum of only 3.1 AP between the most and least favorable global perspectives. 
+
+4.4.4 View Scaling. 
+
+Previous experiments show that using only one reference view limits the performance on asymmetric objects. To address this, we leverage the high inference speed of our architecture to incorporate multiple reference views. Rather than introducing complex fusion modules, we perform independent inference for each available view to generate a mask prediction. For masks with significant spatial overlap (IoU > 0.5), we retain only the candidate with the highest confidence score. This strategy allows us to improve robustness without structural modifications. Fig. 7(a) illustrates the quantitative results of this view scaling strategy. Most notably, this approach proves exceptionally effective for the asymmetric objects. By aggregating complementary geometric context, the average precision improves significantly when in-creasing the reference count from one to three views. The performance eventually reaches a 14 HU ET AL.: SOS: SINGLE-REFERENCE OBJECT SEGMENTATION 1 2 3 4
+
+> number of views
+> 35 40 45 50 55 60
+> mAP
+> Sym. objects Asym. objects Average
+
+(a) Internal scaling. 1 2 3 4 10 20 42  
+
+> number of views
+> 30 35 40 45 50 55
+> mAP
+> Ours SAM6D CNOS
+
+(b) Comparative scaling. 
+
+Figure 7: Ablation on reference views. (a) Internal scaling : Performance improves sig-nificantly by aggregating complementary geometric context, particularly for highly sensitive asymmetric objects, reaching a saturation point around three to four views. (b) Compara-tive scaling : Compared to baselines, our method achieves higher initial accuracy and reaches peak performance much earlier with only a fraction of the reference views. saturation point around three to four views, after which additional images provide minimal accuracy gains. We compare this scaling behavior against baselines in Fig. 7(b). Our architecture estab-lishes a higher initial accuracy with a single image and demonstrates a steeper improvement trajectory during early scaling. While baseline methods require dense templates to accu-mulate geometric context, our approach saturates much earlier with only a fraction of the views. This suggests that explicit multi template aggregation modules are computationally redundant when the underlying feature fusion is inherently robust. 
+
+## 4.5 In-the-Wild Robustness 
+
+To demonstrate practical applicability, we evaluate SOS in unconstrained, cluttered real-world environments. As shown in Fig. 8, the model successfully segments everyday objects despite severe occlusions and significant viewpoint variations. Object Condition Scene Image Object Mask Object Condition Scene Image Object Mask 
+
+Figure 8: Qualitative evaluation in unconstrained environments. Our model accurately isolates target items in highly cluttered everyday scenes, handling severe occlusions and complex backgrounds entirely without domain specific training data. Notably, SOS demonstrates robust discriminative power against high inter-class similar-ity. In the left example, given a pea can as the object condition, our model accurately targets it while entirely bypassing the neighboring corn can and other distracting containers. Anal-ogously, in the right example, when prompted with a specific detergent bottle, SOS avoids false positives and successfully distinguishes the target from a row of multiple alternative HU ET AL.: SOS: SINGLE-REFERENCE OBJECT SEGMENTATION 15 
+
+cleaning products that possess highly similar shapes and labels. These results underscore the precise instance-level matching capability and robustness of our model in resolving real-world semantic ambiguities. 
+
+# 5 Limitations 
+
+SOS currently focuses on the single-reference setting and assumes that each query image contains at most one target instance corresponding to the given reference. Therefore, it can-not handle cases where multiple identical target instances appear in the same query image. This limitation is partly due to the lack of suitable supervision. To the best of our knowledge, existing open-source reference-conditioned training datasets do not provide annotations for multiple identical target instances in one query image. Future work will extend SOS toward multi-instance reference-conditioned segmentation by introducing instance-aware prediction mechanisms and constructing training data with explicit multi-instance supervision. 
+
+# 6 Conclusion 
+
+In this work, we propose SOS , a streamlined, model-free architecture for unseen objects segmentation. By conditioning on just one reference view, our method eliminates com-plex 3D rendering and achieves fast inference suitable for real-world applications. De-spite this lightweight setup, our approach delivers accuracy comparable to state-of-the-art model-based methods, and crucially outperforms them by a significant improvement when they are restricted to the exact same single-view condition. Furthermore, empirical analysis demonstrates that without any domain-specific training, our model seamlessly accommo-dates sparse-view inputs to further elevate performance. Together, SOS serves as a viable alternative to CAD-based designs for unseen objects segmentation which can pave the way to more broadly applicable practical setups. 
+
+# References 
+
+[1] Eric Brachmann, Alexander Krull, Frank Michel, Stefan Gumhold, Jamie Shotton, and Carsten Rother. Learning 6d object pose estimation using 3d object coordinates. In 
+
+European conference on computer vision , pages 536–551. Springer, 2014. [2] Nicolas Carion, Francisco Massa, Gabriel Synnaeve, Nicolas Usunier, Alexander Kir-illov, and Sergey Zagoruyko. End-to-end object detection with transformers. In Euro-pean conference on computer vision , pages 213–229. Springer, 2020. [3] Nicolas Carion, Laura Gustafson, Yuan-Ting Hu, Shoubhik Debnath, Ronghang Hu, Didac Suris, Chaitanya Ryali, Kalyan Vasudev Alwala, Haitham Khedr, An-drew Huang, et al. Sam 3: Segment anything with concepts. arXiv preprint arXiv:2511.16719 , 2025. [4] Bowen Cheng, Ishan Misra, Alexander G Schwing, Alexander Kirillov, and Rohit Gird-har. Masked-attention mask transformer for universal image segmentation. In Proceed-ings of the IEEE/CVF conference on computer vision and pattern recognition , pages 1290–1299, 2022. 16 HU ET AL.: SOS: SINGLE-REFERENCE OBJECT SEGMENTATION 
+
+[5] Sungmin Cho, Sungbum Park, and Insoo Oh. Muse: Model-based uncertainty-aware similarity estimation for zero-shot 2d object detection and segmentation. arXiv preprint arXiv:2510.17866 , 2025. [6] Xiyang Dai, Yinpeng Chen, Jianwei Yang, Pengchuan Zhang, Lu Yuan, and Lei Zhang. Dynamic detr: End-to-end object detection with dynamic attention. In Proceedings of the IEEE/CVF international conference on computer vision , pages 2988–2997, 2021. [7] Matt Deitke, Dustin Schwenk, Jordi Salvador, Luca Weihs, Oscar Michel, Eli Vander-Bilt, Ludwig Schmidt, Kiana Ehsani, Aniruddha Kembhavi, and Ali Farhadi. Obja-verse: A universe of annotated 3d objects. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 13142–13153, 2023. [8] Maximilian Denninger, Martin Sundermeyer, Dominik Winkelbauer, Youssef Zidan, Dmitry Olefir, Mohamad Elbadrawy, Ahsan Lodhi, and Harinandan Katam. Blender-proc. arXiv preprint arXiv:1911.01911 , 2019. [9] Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Syl-vain Gelly, et al. An image is worth 16x16 words: Transformers for image recognition at scale. arXiv preprint arXiv:2010.11929 , 2020. [10] Laura Downs, Anthony Francis, Nate Koenig, Brandon Kinman, Ryan Hickman, Krista Reymann, Thomas B McHugh, and Vincent Vanhoucke. Google scanned objects: A high-quality dataset of 3d scanned household items. In 2022 International Conference on Robotics and Automation (ICRA) , pages 2553–2560. Ieee, 2022. [11] Hao-Shu Fang, Chenxi Wang, Minghao Gou, and Cewu Lu. Graspnet-1billion: A large-scale benchmark for general object grasping. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 11444–11453, 2020. [12] Kaiming He, Georgia Gkioxari, Piotr Dollár, and Ross Girshick. Mask r-cnn. In Pro-ceedings of the IEEE international conference on computer vision , pages 2961–2969, 2017. [13] Tomas Hodan, Frank Michel, Eric Brachmann, Wadim Kehl, Anders GlentBuch, Dirk Kraft, Bertram Drost, Joel Vidal, Stephan Ihrke, Xenophon Zabulis, et al. Bop: Bench-mark for 6d object pose estimation. In Proceedings of the European conference on computer vision (ECCV) , pages 19–34, 2018. [14] Sunghwan Hong, Seokju Cho, Jisu Nam, Stephen Lin, and Seungryong Kim. Cost aggregation with 4d convolutional swin transformer for few-shot segmentation. In Eu-ropean Conference on Computer Vision , pages 108–126. Springer, 2022. [15] Mir Rayat Imtiaz Hossain, Mennatullah Siam, Leonid Sigal, and James J Little. Visual prompting for generalized few-shot segmentation: A multi-scale approach. In Proceed-ings of the IEEE/CVF conference on computer vision and pattern recognition , pages 23470–23480, 2024. [16] Junwen Huang, Hao Yu, Kuan-Ting Yu, Nassir Navab, Slobodan Ilic, and Benjamin Busam. Matchu: Matching unseen objects for 6d pose estimation from rgb-d images. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recog-nition , pages 10095–10105, 2024. HU ET AL.: SOS: SINGLE-REFERENCE OBJECT SEGMENTATION 17 
+
+[17] Junwen Huang, Shishir Reddy Vutukur, Peter KT Yu, Nassir Navab, Slobodan Ilic, and Benjamin Busam. Raypose: Ray bundling diffusion for template views in unseen 6d object pose estimation. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 9102–9112, 2025. [18] Yunfan Jiang, Agrim Gupta, Zichen Zhang, Guanzhi Wang, Yongqiang Dou, Yanjun Chen, Li Fei-Fei, Anima Anandkumar, Yuke Zhu, and Linxi Fan. Vima: General robot manipulation with multimodal prompts. In Fortieth International Conference on Machine Learning , 2023. [19] Glenn Jocher, Ayush Chaurasia, Jing Qiu, et al. Yolo by ultralytics, 2023. [20] Roman Kaskman, Sergey Zakharov, Ivan Shugurov, and Slobodan Ilic. Home-breweddb: Rgb-d dataset for 6d pose estimation of 3d objects. in 2019 ieee. In CVF International Conference on Computer Vision Workshop (ICCVW) , pages 2767–2776, 2019. [21] Alexander Kirillov, Eric Mintun, Nikhila Ravi, Hanzi Mao, Chloe Rolland, Laura Gustafson, Tete Xiao, Spencer Whitehead, Alexander C Berg, Wan-Yen Lo, et al. Seg-ment anything. In Proceedings of the IEEE/CVF international conference on computer vision , pages 4015–4026, 2023. [22] Yann Labbé, Lucas Manuelli, Arsalan Mousavian, Stephen Tyree, Stan Birchfield, Jonathan Tremblay, Justin Carpentier, Mathieu Aubry, Dieter Fox, and Josef Sivic. Megapose: 6d pose estimation of novel objects via render & compare. arXiv preprint arXiv:2212.06870 , 2022. [23] Jiehong Lin, Lihua Liu, Dekun Lu, and Kui Jia. Sam-6d: Segment anything model meets zero-shot 6d object pose estimation. In Proceedings of the IEEE/CVF Confer-ence on Computer Vision and Pattern Recognition , pages 27906–27916, 2024. [24] Shilong Liu, Zhaoyang Zeng, Tianhe Ren, Feng Li, Hao Zhang, Jie Yang, Qing Jiang, Chunyuan Li, Jianwei Yang, Hang Su, et al. Grounding dino: Marrying dino with grounded pre-training for open-set object detection. In European conference on com-puter vision , pages 38–55. Springer, 2024. [25] Yang Liu, Muzhi Zhu, Hengtao Li, Hao Chen, Xinlong Wang, and Chunhua Shen. Matcher: Segment anything with one shot using all-purpose feature matching. arXiv preprint arXiv:2305.13310 , 2023. [26] Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization. arXiv preprint arXiv:1711.05101 , 2017. [27] Yangxiao Lu, Yunhui Guo, Nicholas Ruozzi, Yu Xiang, et al. Adapting pre-trained vision models for novel instance detection and segmentation. In 2025 IEEE/RSJ Inter-national Conference on Intelligent Robots and Systems (IROS) , pages 13341–13348. IEEE, 2025. [28] Depu Meng, Xiaokang Chen, Zejia Fan, Gang Zeng, Houqiang Li, Yuhui Yuan, Lei Sun, and Jingdong Wang. Conditional detr for fast training convergence. In Proceed-ings of the IEEE/CVF international conference on computer vision , pages 3651–3660, 2021. 18 HU ET AL.: SOS: SINGLE-REFERENCE OBJECT SEGMENTATION 
+
+[29] Fausto Milletari, Nassir Navab, and Seyed-Ahmad Ahmadi. V-net: Fully convolutional neural networks for volumetric medical image segmentation. In 2016 fourth interna-tional conference on 3D vision (3DV) , pages 565–571. Ieee, 2016. [30] Juhong Min, Dahyun Kang, and Minsu Cho. Hypercorrelation squeeze for few-shot segmentation. In Proceedings of the IEEE/CVF international conference on computer vision , pages 6941–6952, 2021. [31] Arsalan Mousavian, Clemens Eppner, and Dieter Fox. 6-dof graspnet: Variational grasp generation for object manipulation. In Proceedings of the IEEE/CVF international conference on computer vision , pages 2901–2910, 2019. [32] Van Nguyen Nguyen, Thibault Groueix, Georgy Ponimatkin, Vincent Lepetit, and Tomas Hodan. Cnos: A strong baseline for cad-based novel object segmentation. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 2134–2140, 2023. [33] Van Nguyen Nguyen, Thibault Groueix, Mathieu Salzmann, and Vincent Lepetit. Gi-gapose: Fast and robust novel object pose estimation via one correspondence. In Pro-ceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 9903–9913, 2024. [34] Maxime Oquab, Timothée Darcet, Théo Moutakanni, Huy Vo, Marc Szafraniec, Vasil Khalidov, Pierre Fernandez, Daniel Haziza, Francisco Massa, Alaaeldin El-Nouby, et al. Dinov2: Learning robust visual features without supervision. arXiv preprint arXiv:2304.07193 , 2023. [35] Evin Pınar Örnek, Yann Labbé, Bugra Tekin, Lingni Ma, Cem Keskin, Christian Forster, and Tomas Hodan. Foundpose: Unseen object pose estimation with foundation features. In European Conference on Computer Vision , pages 163–182. Springer, 2024. [36] William Peebles and Saining Xie. Scalable diffusion models with transformers. In Pro-ceedings of the IEEE/CVF international conference on computer vision , pages 4195– 4205, 2023. [37] Bohao Peng, Zhuotao Tian, Xiaoyang Wu, Chengyao Wang, Shu Liu, Jingyong Su, and Jiaya Jia. Hierarchical dense correlation distillation for few-shot segmentation. In 
+
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition ,pages 23641–23651, 2023. [38] Nikhila Ravi, Valentin Gabeur, Yuan-Ting Hu, Ronghang Hu, Chaitanya Ryali, Tengyu Ma, Haitham Khedr, Roman Rädle, Chloe Rolland, Laura Gustafson, et al. Sam 2: Segment anything in images and videos. arXiv preprint arXiv:2408.00714 , 2024. [39] Oriane Siméoni, Huy V Vo, Maximilian Seitzer, Federico Baldassarre, Maxime Oquab, Cijo Jose, Vasil Khalidov, Marc Szafraniec, Seungeun Yi, Michaël Ramamonjisoa, et al. Dinov3. arXiv preprint arXiv:2508.10104 , 2025. [40] Martin Sundermeyer, Tomáš Hodaˇ n, Yann Labbe, Gu Wang, Eric Brachmann, Bertram Drost, Carsten Rother, and Jiˇ rí Matas. Bop challenge 2022 on detection, segmenta-tion and pose estimation of specific rigid objects. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 2785–2794, 2023. HU ET AL.: SOS: SINGLE-REFERENCE OBJECT SEGMENTATION 19 
+
+[41] Wei Suo, Lanqing Lai, Mengyang Sun, Hanwang Zhang, Peng Wang, and Yanning Zhang. Rethinking and improving visual prompt selection for in-context learning seg-mentation. In European Conference on Computer Vision , pages 18–35. Springer, 2024. [42] Maximilian Ulmer, Wout Boerdijk, Rudolph Triebel, and Maximilian Durner. Con-ditional latent diffusion models for zero-shot instance segmentation. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 24360–24369, 2025. [43] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia Polosukhin. Attention is all you need. Advances in neural information processing systems , 30, 2017. [44] Xinlong Wang, Xiaosong Zhang, Yue Cao, Wen Wang, Chunhua Shen, and Tiejun Huang. Seggpt: Segmenting everything in context. arXiv preprint arXiv:2304.03284 ,2023. [45] Bowen Wen, Wei Yang, Jan Kautz, and Stan Birchfield. Foundationpose: Unified 6d pose estimation and tracking of novel objects. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 17868–17879, 2024. [46] Yu Xiang, Tanner Schmidt, Venkatraman Narayanan, and Dieter Fox. Posecnn: A convolutional neural network for 6d object pose estimation in cluttered scenes. arXiv preprint arXiv:1711.00199 , 2017. [47] Hongli Xu, Lei Zhang, Xiaoyue Hu, Boyang Zhong, Kaixin Bai, Zoltán-Csaba Márton, Zhenshan Bing, Zhaopeng Chen, Alois Christian Knoll, and Jianwei Zhang. Funcanon: Learning pose-aware action primitives via functional object canonicalization for gen-eralizable robotic manipulation. arXiv preprint arXiv:2509.19102 , 2025. [48] Anqi Zhang, Guangyu Gao, Jianbo Jiao, Chi Liu, and Yunchao Wei. Bridge the points: Graph-based few-shot segment anything semantically. Advances in Neural Information Processing Systems , 37:33232–33261, 2024. [49] Hao Zhang, Feng Li, Shilong Liu, Lei Zhang, Hang Su, Jun Zhu, Lionel M Ni, and Heung-Yeung Shum. Dino: Detr with improved denoising anchor boxes for end-to-end object detection. arXiv preprint arXiv:2203.03605 , 2022. [50] Xu Zhao, Wenchao Ding, Yongqi An, Yinglong Du, Tao Yu, Min Li, Ming Tang, and Jinqiao Wang. Fast segment anything. arXiv preprint arXiv:2306.12156 , 2023. [51] Xizhou Zhu, Weijie Su, Lewei Lu, Bin Li, Xiaogang Wang, and Jifeng Dai. De-formable detr: Deformable transformers for end-to-end object detection. arXiv preprint arXiv:2010.04159 , 2020.

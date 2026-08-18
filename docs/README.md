@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-08-17</span>
+      <span class="dpr-home-dashboard-kicker">2026-08-18</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 12 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 13 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>4</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>8</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>9</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-08-17 21:03:53 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-08-18 21:31:23 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,7 +62,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日精读4篇、速读8篇，聚焦医学影像分割与视觉模型效率；最值得关注的是“文本提示SAM3实现内镜器械免标注分割”及“ViT低数据优势源于预训练一致性而非归纳偏置”；下一步可延伸关注多模态表示与驾驶场景重建相关方法。</p>
+<p>今日共读13篇论文，精读4篇、速读9篇，其中两篇高分工作聚焦高分辨率遥感图像分割与视觉Transformer知识蒸馏。</p>
+<p>最值得关注的是《Hierarchical Adaptive Feature Refinement Network》以9.0分领跑VHR遥感分割，《Grid-Preserving Knowledge Distillation》则用卷积归纳偏置增强ViT在数据稀缺下的表现。</p>
+<p>下一步建议优先复现或试用上述两个模型，并留意速读中的轻量U-Net变体，平衡精度与效率。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -74,9 +76,9 @@
     <strong class="dpr-home-dashboard-count">4 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Toward Mask Annotation-Free Surgical Instrument Segmentation from Endoscopic Images Using Text-Prompted Segment Anything Model 3 (SAM3)">Toward Mask Annotation-Free Surgical Instrument Segmentation from Endoscopic Images Using Text-Prompted Segment Anything Model 3 (SAM3)</span></li><li><span class="dpr-home-dashboard-paper-title" title="Rethinking Data Efficiency in Industrial Dense Prediction: Pretraining Coherence, Not Inductive Bias, Determines ViTs Low-Data Advantage">Rethinking Data Efficiency in Industrial Dense Prediction: Pretraining Coherence, Not Inductive Bias, Determines ViTs Low-Data Advantage</span></li><li><span class="dpr-home-dashboard-paper-title" title="Grid-Preserving Knowledge Distillation: Transferring Convolutional Inductive Bias to Vision Transformers under Data Scarcity">Grid-Preserving Knowledge Distillation: Transferring Convolutional Inductive Bias to Vision Transformers under Data Scarcity</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Hierarchical Adaptive Feature Refinement Network for VHR Remote Sensing Image Segmentation">Hierarchical Adaptive Feature Refinement Network for VHR Remote Sensing Image Segmentation</span></li><li><span class="dpr-home-dashboard-paper-title" title="Grid-Preserving Knowledge Distillation: Transferring Convolutional Inductive Bias to Vision Transformers under Data Scarcity">Grid-Preserving Knowledge Distillation: Transferring Convolutional Inductive Bias to Vision Transformers under Data Scarcity</span></li><li><span class="dpr-home-dashboard-paper-title" title="From Dense Prediction to Visual Editing: Structured Supervision for Unified Image and Video Creation">From Dense Prediction to Visual Editing: Structured Supervision for Unified Image and Video Creation</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">lite-vision <strong>1</strong></span><span class="dpr-home-dashboard-tag">mono-depth <strong>1</strong></span><span class="dpr-home-dashboard-tag">seg <strong>1</strong></span><span class="dpr-home-dashboard-tag">vfm <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">seg <strong>2</strong></span><span class="dpr-home-dashboard-tag">lite-vision <strong>1</strong></span><span class="dpr-home-dashboard-tag">vfm <strong>1</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -84,12 +86,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">8 篇</strong>
+    <strong class="dpr-home-dashboard-count">9 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="UniSpace: Unified Visual Representation and Scalable Multimodal Modeling">UniSpace: Unified Visual Representation and Scalable Multimodal Modeling</span></li><li><span class="dpr-home-dashboard-paper-title" title="Visual Geometry Foundation-Aware Gaussians for Single-Frame Surround-View Driving Reconstruction">Visual Geometry Foundation-Aware Gaussians for Single-Frame Surround-View Driving Reconstruction</span></li><li><span class="dpr-home-dashboard-paper-title" title="When Latents Forget Pixels: Restoring Fidelity in Diffusion Transformer Super-Resolution">When Latents Forget Pixels: Restoring Fidelity in Diffusion Transformer Super-Resolution</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="EA-LiteUNet: An Edge-Adaptive and Resource-Efficient U-Net for Boundary-Sensitive Dermoscopic Image Segmentation">EA-LiteUNet: An Edge-Adaptive and Resource-Efficient U-Net for Boundary-Sensitive Dermoscopic Image Segmentation</span></li><li><span class="dpr-home-dashboard-paper-title" title="InterPruner: Interactive Structured Pruning via Taylor-Implicit Criterion and Language-Prior Modulator for Multimodal Object Detection">InterPruner: Interactive Structured Pruning via Taylor-Implicit Criterion and Language-Prior Modulator for Multimodal Object Detection</span></li><li><span class="dpr-home-dashboard-paper-title" title="SPARGen: Unifying Spatial Perception and Reasoning through Native Multimodal Generation">SPARGen: Unifying Spatial Perception and Reasoning through Native Multimodal Generation</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">stereo-depth <strong>2</strong></span><span class="dpr-home-dashboard-tag">cv-render <strong>1</strong></span><span class="dpr-home-dashboard-tag">depth-refine <strong>1</strong></span><span class="dpr-home-dashboard-tag">mono-depth <strong>1</strong></span><span class="dpr-home-dashboard-tag">neural-bokeh <strong>1</strong></span><span class="dpr-home-dashboard-tag">seg <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">seg <strong>5</strong></span><span class="dpr-home-dashboard-tag">vfm <strong>2</strong></span><span class="dpr-home-dashboard-tag">lite-vision <strong>1</strong></span><span class="dpr-home-dashboard-tag">mono-depth <strong>1</strong></span></div>
 </section>
 </div>
 

@@ -1,0 +1,522 @@
+Title: TinyDETR-Pose: Towards End-to-End Real-Time Single-Stage 6DoF Object Pose Estimation with Lightweight Transformers
+
+URL Source: https://arxiv.org/pdf/2608.15297v1
+
+Published Time: Tue, 18 Aug 2026 00:53:37 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+# TINY DETR-P OSE : T OWARDS END -TO -E ND REAL -T IME 
+
+# SINGLE -S TAGE 6D OF O BJECT POSE ESTIMATION WITH 
+
+# LIGHTWEIGHT TRANSFORMERS 
+
+Paul Julius Kühn 
+
+Fraunhofer IGD 64283 Darmstadt, Germany 
+
+paul.julius.kuehn@igd.fraunhofer.de 
+
+Duc Anh Nguyen 
+
+Fraunhofer IGD, 64283 Darmstadt, Germany TU Darmstadt, 64289 Darmstadt, Germany 
+
+duc.anh.nguyen@stud.tu-darmstadt.de 
+
+Saptarshi Neil Sinha 
+
+Fraunhofer IGD 64283 Darmstadt, Germany 
+
+saptarshi.neil.sinha@igd.fraunhofer.de 
+
+Michael Weinmann 
+
+TU Delft 2628 CD Delft, Netherlands 
+
+m.weinmann@tudelft.nl 
+
+Arjan Kuijper 
+
+Fraunhofer IGD, 64283 Darmstadt, Germany TU Darmstadt, 64289 Darmstadt, Germany 
+
+arjan.kuijper@igd.fraunhofer.de 
+
+## ABSTRACT 
+
+Real-time 6DoF object pose estimation on resource-constrained hardware remains challenging, as accurate correspondence-based and refinement pipelines typically rely on non-differentiable PnP/RANSAC stages or costly iterative refinement, while recent foundation-model-based approaches incur inference costs that are prohibitive for edge deployment. We present TinyDETR-Pose , a lightweight, end-to-end, single-stage framework that jointly detects objects and regresses their full 6D pose in a single forward pass. Built on the efficient LW-DETR architecture, TinyDETR-Pose formulates detection and pose estimation as a set-prediction problem and attaches dedicated MLP heads for rotation, monocular depth, and projected object center regression to each decoder query, eliminating the need for PnP, NMS (non-maximum suppression), or iterative pose refinement. Object symmetries are handled through a ADD-S loss applied uniformly to all objects, without the need for object-specific loss schedules or separate geodesic/ADD supervision. In addition, predictions are assigned to ground truth using a symmetry-safe Hungarian matcher based on class and 2D spatial cues, yielding stable assignment under symmetry and depth ambiguity. On YCB-V, TinyDETR-Pose achieves a comparable ADD-S AUC of 85.9 , while requiring up to 72 .7% fewer parameters than other DETR-based single-stage pose-estimation approaches. Due to its compact design, TinyDETR-Pose runs in real time and achieves an inference latency of only ∼4.5 ms per frame on an NVIDIA Jetson Nano using TensorRT, demonstrating that accurate end-to-end transformer-based 6D pose estimation can be made practical for edge deployment. 
+
+Keywords 6DoF pose estimation · single-stage · detection transformer · real-time · edge deployment 
+
+## 1 Introduction 
+
+Accurately estimating an object’s 6DoF (six degrees of freedom) pose, meaning its full 3D rotation and translation relative to the camera, is essential in various fields such as robotics and augmented reality [1, 2]. Despite remarkable progress, there is still a basic trade-off between the accuracy and efficiency of these methods, which makes it challenging arXiv:2608.15297v1 [cs.CV] 15 Aug 2026 A PREPRINT - A UGUST 18, 2026 to deploy them in real-time systems [3]. The baseline methods rely on multi-stage pipelines that establish dense 2D–3D correspondences and recover the pose via RANSAC-based PnP solvers [4, 5, 6, 7], making them non-differentiable and expensive. Direct regression approaches [8, 9, 10, 11] bypass PnP but still depend on a separate 2D detector, preserving a two-stage structure. Foundation models [12, 13, 14, 15] achieve impressive zero-shot generalization, but ttheir inference times are unsuitable for real-time systems; for example, FoundationPose [12] requires ∼1.3 s per object on high-end desktop GPUs, precluding edge deployment. This performance limitation motivates single-stage architectures that jointly detect all objects and estimate their 6D poses in a single forward pass [16, 17, 18, 19]. However, existing single-stage methods struggle with monocular depth ambiguity, lack principled symmetry handling, and provide limited rotation supervision. We present TinyDETR-Pose , an end-to-end, single-stage 6D pose estimation framework built on the lightweight detection transformer LW-DETR [20] compatible with edge devices. We treat joint detection and pose estimation as a set-prediction problem [21, 18], regressing each instance’s full 6D pose directly from the decoder output via dedicated MLP heads for rotation, monocular depth, and projected object center—achieving inference in 4.5 ms on Jetson Nano. Our main contributions are: - A single-stage, query-based architecture that jointly detects objects and regresses their full 6D pose without PnP, NMS, or iterative refinement. - A unified ADD-S training objective that supervises the complete pose without requiring geodesic losses or per-object loss curricula. - A projected-center-based bipartite matcher that excludes rotation and depth from the assignment cost, ensuring stable matching under symmetry and depth ambiguity. We evaluate on YCB-V [8], comparing against single-stage methods [16, 17, 18, 19] and direct-regression baselines [9, 8]. Feature extraction  Transformer 
+
+encoder - decoder 
+
+> Hungarian matching
+> + center term (ours)
+> Ø - no object
+
+Figure 1: Overview of TinyDETR-Pose. Given a single RGB image, our model jointly detects all objects and regresses their full 6D pose in one forward pass via set prediction. 
+
+## 2 Related Work 
+
+Deep learning approaches to 6D object pose estimation broadly fall into three categories: indirect correspondence-based methods, direct regression frameworks, and foundation models. Orthogonally, DETR-style set-prediction architectures have been extended beyond 2D detection to end-to-end 6D pose estimation, motivating our query-based formulation. 
+
+2.1 Indirect and Direct Regression Methods Indirect methods establish 2D–3D correspondences and recover the pose via PnP [7]. BB8 [22] regresses projections of bounding-box corners; PVNet [4] improves occlusion robustness through pixel-wise voting with RANSAC [23]; DPOD [5] and Pix2Pose [6] extend this to dense UV and per-pixel 3D coordinate maps, respectively. While robust, these pipelines remain multi-stage and are typically not end-to-end differentiable due to the PnP/RANSAC step. As a result, intermediate prediction errors can propagate to the final pose, the correspondence estimator cannot be trained directly from the final pose objective, and the overall pipeline depends on additional hand-tuned components such as RANSAC thresholds. 
+
+Direct methods regress object rotation and translation directly from the image. PoseCNN [8] regressed quaternions but suffered from representation discontinuities later addressed by the continuous 6D parameterization of Zhou et al. [24]. CDPN [11] disentangles rotation and translation into separate branches, and GDR-Net [9] bridges direct and indirect paradigms by guiding regression with dense correspondence maps. SO-Pose [10] adds self-occlusion cues for complementary supervision, while CosyPose [25] extends the paradigm to multi-object scenes via iterative render-and-compare refinement, achieving top results on the BOP benchmark [26]. Despite their accuracy, most direct methods still rely on a separate 2D detector [9, 11], making them two-stage at inference. 2A PREPRINT - A UGUST 18, 2026 
+
+2.2 Foundation Models for Unseen Objects 
+
+Recent zero-shot 6D pose estimation methods aim to improve generalization by leveraging synthetic rendering, template matching, and foundation-model features. MegaPose [13] introduced a render-and-compare strategy for zero-shot pose estimation but requires over 15 s per object. GigaPose [14] achieves a 35 × speedup through discriminative templates, yet still needs several hundred milliseconds. FoundationPose [12] combines large-scale synthetic training with neural implicit representations for state-of-the-art BOP results [26], and FoundPose [15] shows that frozen DINOv2 [27] features suffice for synthetic-to-real matching without task-specific training. Despite their generalization capabilities, these models are prohibitively heavy for edge devices; for example FoundationPose requires ∼1.3 s per object even on high-end desktop GPUs. 
+
+2.3 Single-Stage and Transformer-based Approaches 
+
+Single-stage architectures unify detection and pose regression in one forward pass. YOLO-6D-Pose [16] extends YOLOX [28] to infer all poses simultaneously. EfficientPose [29] adapts EfficientDet [30] for scalable end-to-end estimation. Transformer-based variants further improve accuracy through global context: T6D-Direct [18] treats multi-object pose estimation as set prediction, PoET [17] leverages multi-scale features from pre-trained detectors, and YOLOPose [31, 19] combines keypoint regression with a learnable rotation module to eliminate non-differentiable PnP solvers at real-time speed. However, such transformer-based designs typically require substantially larger models, with approximately 3.5× more parameters than our approach. More recently, RACE-6D [32] pushes this paradigm further by predicting detections and poses for cluttered multi-object scenes in a single transformer forward pass, combining keypoint-conditioned rotation refinement, bounding-box normalization for scale invariance, and proportional depth refinement to reach competitive accuracy at up to 5× lower latency than prior pipelines. Our work differs in three respects: (i) it uses no object-corner or multi-keypoint supervision beyond the projected object center; (ii) it uses a unified ADD-S pose loss without explicit symmetry labels and omits keypoint-conditioned refinement; and (iii) it explicitly targets edge deployment. 
+
+## 3 Methodology 
+
+In this section, we present TinyDETR-Pose , an end-to-end 6D object pose estimation pipeline suitable for edge devices. While our approach builds on LW-DETR [20], we introduce three methodological extensions for 6D object pose estimation: (i) dedicated pose prediction heads for translation and rotation estimation, (ii) a pose-aware loss formulation for supervising 6D pose predictions, and (iii) a 2D center-based matching strategy that incorporates the projected object center (u, v ) into the Hungarian assignment to improve pose-query association while remaining robust to symmetry and depth ambiguity. An architectural overview is provided in Fig. 2. Backbone 
+
+> CAEv2 ViT
+
+Encoder  
+
+> Multi-scale
+
+Dec oder  
+
+> No refinement
+
+Rotation head ★
+
+> Direct 6D, no keypoints
+
+Translation heads ★
+
+> Decomposed: UV + depth
+
+ADD-S loss ★
+
+> Symmetry-aware
+
+Matching cost ★
+
+> + center term (ours)
+
+Pose heads and bipartite matching 
+
+> Ø - no object
+> Pos. encoding
+
+Figure 2: Architecture of TinyDETR-Pose. A CAEv2-pretrained ViT backbone [33] feeds multi-scale features into a 3-layer transformer decoder operating on N learnable object queries. Hungarian matching [34] assigns predictions to ground truth during training, using our projected object-center cost (Sec. 3.1). Each matched query is decoded by shared, parallel MLP heads for class, box, rotation, and translation, see Sec. 3.2 for details on the translation decomposition and rotation parameterization. 
+
+⋆ differs from T6D-Direct [18] / RACE-6D [32]. 
+
+3A PREPRINT - A UGUST 18, 2026 
+
+3.1 6D Object Pose Estimation as Set Prediction 
+
+Inspired by the set-based prediction paradigm of DETR [21] and its extension to 6DoF pose estimation in T6D-Direct [18], we jointly regress 2D object detections and their corresponding 6D poses in a single forward pass. Building upon LW-DETR [20], our method inherits its lightweight design, making it particularly suited for edge deployment. In contrast to prior transformer-based pose estimation methods [18, 17] that regress the full translation vector directly, we decompose translation estimation into two distinct sub-problems [35]: instead of directly regressing the full metric translation vector, we estimate the projected object center in normalized UV space and the depth tz separately. The lateral translation components (tx, t y ) are then recovered using the camera intrinsic matrix K. This factorization separates image-plane localization from monocular depth estimation, reducing the coupling between lateral position and scale/depth and leading to a more stable and camera-aware regression problem. 
+
+Set Prediction. Given an input image of size ( H×W ×3), our model predicts a fixed-size set of N tuples {ˆqi}Ni=1 .Each tuple is represented as ˆqi =  γi, bi, uv cntr i , t zi , r6D i
+
+ comprising class label probabilities ( γi), a bounding box ( bi), and a 6DoF object pose split into translation ( uv cntr i , tzi ) and a 6D rotation vector ( r6D i ). Bounding boxes and projected centers are normalized to [0,1]. Rotation is represented by an unconstrained continuous 6D vector, and depth is predicted in positive metric units. For rotation, we adopt the continuous 6D representation of Zhou et al. [24], which has been shown to yield superior training stability and downstream performance. Following the set prediction formulation of DETR [21], the decoder operates on N learnable object queries, where N is a hyperparameter set to exceed the maximum number of objects expected in any given image. Predictions not matched to a ground-truth target are supervised against a dedicated ∅ (no-object ) class, enabling the model to explicitly learn to suppress false positives. 
+
+Enhanced Bipartite Matching. Following DETR [21], we use Hungarian matching to assign each predicted query 
+
+ˆqi to a ground-truth instance yj by minimizing a pairwise cost matrix C(ˆ qi, y j ) composed of class confidence ( Ccls ), bounding-box ℓ1 distance ( Cbbox ), and IoU ( CIoU ). We additionally introduce a center cost ( Ccntr ), defined as the ℓ1
+
+distance between predicted and ground-truth 3D object centers projected onto the image plane. 
+
+Final matching cost. We define our matching cost as: 
+
+C(ˆ qi, y j ) = λC 
+
+> cls
+
+Ccls + λC 
+
+> bbox
+
+Cbbox + λC 
+
+> IoU
+
+CIoU + λC 
+
+> cntr
+
+Ccntr , (1) Because rotation and depth are inherently ambiguous, we supervise them only through the post-matching loss, with rotation and depth are excluded from matching and supervised after assignment; ADD-S provides symmetry-tolerant rotation supervision. This design is consistent with the matching philosophy of DETR [21] and its successors [20, 36, 37, 38, 39, 40], which rely exclusively on 2D geometric quantities in the assignment cost to ensure stable convergence, deferring task-specific supervision entirely to the training loss. We set the matching cost weights in C(ˆ qi, y j ) to: 
+
+(λC
+
+> cls
+
+, λ C
+
+> bbox
+
+, λ C
+
+> IoU
+
+, λ C
+
+> cntr
+
+) = (2 .0, 5.0, 2.0, 5.0)  (2) The λC
+
+> cls
+
+, λC
+
+> bbox
+
+, and λC 
+
+> IoU
+
+weights follow the default matching configuration of LW-DETR [20]. The center term is specific to our pose-estimation formulation and was chosen empirically; setting λC 
+
+> cntr
+
+= 5 .0 balances the center localization cost with the bounding-box regression cost and yielded stable matching in our experiments. 
+
+3.2 Model Architecture & Training Objective 
+
+In the following, we detail the network architecture, the design of our pose estimation head, and the training strategy including our proposed loss for 6DoF object pose regression. 
+
+Network architecture. Our pose estimation model builds upon the 2D detection framework LW-DETR [20]. We retain its default configuration, including the CAEv2 [33] autoencoder backbone, the plain ViT encoder stack, the projector structure, and a shallow 3-layer decoder, preserving its efficiency. Specifically, we adopt the same number of encoder and decoder layers, attention heads, hidden dimensions, and feed-forward network settings as LW-DETR. Our pose estimation head comprises three MLPs that share the same input dimension ( dh) and a single hidden layer, differing only in their output dimensions, as detailed below. 
+
+Pose estimation head design. All 6DoF pose parameters are predicted by three lightweight MLPs (Fig. 3), each with input dimension dh=256 and a single hidden layer. The rotation head outputs a 6-dimensional vector using the continuous 6D parameterization [24], from which the rotation matrix is recovered by orthogonalization. For translation, following Simonelli et al. [35], we decompose the 3D translation vector into two complementary subproblems instead of directly regressing it in camera coordinates. The projected object center (u, v ) is estimated in image space and supervised as a keypoint prediction task, while the metric depth tz is treated as monocular depth estimation. This decomposition separates image-plane localization from depth regression and allows each subproblem to be supervised with an appropriate loss. For each matched instance  i, let  ˆci = (ˆ ui, ˆvi)⊤ denote the predicted projected object center, and let  ci = ( ui, v i)⊤ be the ground-truth center obtained by projecting the 3D object center into the image using the camera intrinsics K. The decoder produces N predictions, but pose supervision is applied only to queries assigned to 4A PREPRINT - A UGUST 18, 2026 Rotation head 
+
+> Direct 6D, no keypoints
+
+Translation heads 
+
+> Decomposed: UV + depth
+
+Pose estimation heads 
+
+> mlp
+> mlp
+> mlp
+> mlp
+> 6D
+> Obj.
+> center
+> Depth
+> Pose
+> heads
+> Obj. center UV
+> Depth
+> Continuous 6D
+
+6DoF 
+
+Pose 
+
+Figure 3: Pose estimation head. Rotation is predicted in 6D [24] and orthogonalized to a 3 × 3 matrix. Translation follows [35]: the object center is predicted in normalized UV space for Hungarian matching, while tz is estimated as depth. Back-projecting UV and tz through K recovers the translation; combined with the predicted rotation, this yields the full 6DoF pose. ground-truth objects by Hungarian matching. We therefore denote the number of matched prediction–target pairs by 
+
+Nmatch and average all pose-specific losses over these matched instances. We supervise the projected center using an OKS-based loss [16, 41]: 
+
+OKS i = exp − ∥ˆci − ci∥22
+
+2s2 
+
+> i
+
+σ2cntr 
+
+!
+
+, Lcntr = 1
+
+Nmatch Nmatch X
+
+> i=1
+
+(1 − OKS i) , (3) where  si = √wihi denotes the object scale from the ground-truth bounding box and  σcntr  controls the center-keypoint tolerance. For metric depth, we regress  tz in log-space: 
+
+ezi = log ˆ tz,i − log tz,i = log 
+
+ ˆtz,i 
+
+tz,i 
+
+
+
+, (4) 
+
+Ltz = 1
+
+Nmatch Nmatch X
+
+> i=1
+
+Smooth βℓ1 (ezi ) , (5) with 
+
+Smooth βℓ1 (e) = 
+
+
+
+12β e2, if |e| < β, 
+
+|e| − β
+
+2 , otherwise .
+
+(6) We set β = 0 .01 . At inference, the full translation (tx, t y , t z ) is recovered by back-projecting the predicted center (u, v )
+
+through K−1 at the predicted depth tz .
+
+Training strategy & loss. TinyDETR-Pose is a single-stage model that jointly optimizes detection and 6D pose. For detection, we use an IoU-aware classification loss Lcls (IA-BCE [42]), an ℓ1 bounding-box loss Lbbox , and a generalized IoU loss LIoU [43]. For pose estimation, we use the center loss Lcntr , the log-depth loss Ltz , and a geometry-grounded ADD-S loss. Rotation receives no direct component-wise supervision; instead, it is optimized implicitly through an ADD-S objective. Because ADD-S measures the distance to the nearest transformed model point, it provides a single pose-level signal for both symmetric and asymmetric objects without requiring symmetry labels. Let Mi = {xij }Mi
+
+> j=1
+
+denote the set of 3D model points for object instance i; for each object mesh, we uniformly sample 512 points to construct Mi. Given the predicted pose ( ˆRi, ˆti) and ground-truth pose (Ri, ti), we define: 
+
+ˆpij = ˆRixij + ˆ ti, pij = Rixij + ti.
+
+We use the symmetry-agnostic ADD-S distance for every instance: 
+
+di = 1
+
+MiMiX
+
+> k=1
+
+min  
+
+> j∈{ 1,...,M i}
+
+∥ˆpij − pik ∥2 .
+
+The final ADD-S loss over all matched instances is: 
+
+LADD -S = 1
+
+Nmatch Nmatch X
+
+> i=1
+
+di. (7) 5A PREPRINT - A UGUST 18, 2026 We use the following loss weight configuration: λL 
+
+> cls
+
+= 1 .0, λL 
+
+> bbox
+
+= 5 .0, λL 
+
+> IoU
+
+= 2 .0, λL 
+
+> cntr
+
+= 2 .5, λL 
+
+> ADD-S
+
+= 30 .0, and 
+
+λL 
+
+> tz
+
+= 15 .0. The weights were chosen such that the individual loss terms operate in roughly the same value range, while λL 
+
+> ADD-S
+
+was determined through our ablation experiments (Sec. 4.3). Combining the loss criteria leads us to the following equation: 
+
+Ltotal = λL 
+
+> cls
+
+· L cls + λL 
+
+> bbox
+
+· L bbox + λL 
+
+> IoU
+
+· L IoU 
+
++ λL 
+
+> cntr
+
+· L cntr + λL 
+
+> tz
+
+· L tz + λL 
+
+> ADD -S
+
+· L ADD -S
+
+(8) We use a ViT-Tiny initialized with CAEv2 [33], followed by LW-DETR [20] detector pretraining on Objects365 [44] with a batch size of 32 for 60 epochs. We use AdamW [45] with a learning rate of 1e−4. N is set to 100 .
+
+## 4 Experiments 
+
+We describe the datasets and metrics, compare against state-of-the-art methods, and present ablation studies. Best results are highlighted .
+
+4.1 Setup 
+
+We evaluate on YCB-V [8], which contains 21 household objects across 92 RGB-D sequences ( 640 × 480 ). Following the standard protocol, we train on the training sequences and 80K synthetic images and evaluate on 2,949 keyframes from the 12 test sequences [8]. For the BOP evaluation (Tab. 2), we use the official 900-image YCB-V subset [46]. We report AUC for ADD(-S) and ADD-S, as well as the official BOP average recall (AR) and its VSD, MSSD, and MSPD components. 
+
+4.2 Comparison with state-of-the-art baselines 
+
+We compare TinyDETR-Pose against representative methods across three tiers: single-stage real-time methods, direct regression baselines, and refinement-based upper bounds. Tab. 1 reports results on the YCB-V benchmark [8]. Our method attains an AUC of ADD-S comparable to the state of the art while using only 14 .5M parameters. In contrast, DETR-based approaches that reach state-of-the-art accuracy rely on substantially larger parameter budgets, primarily owing to their deeper decoder stacks and larger backbones. Despite this reduction in model size, the gap between our model and the state of the art on AUC of ADD-S remains small. Notably, the CNN-based approach YOLO-6D-Pose (s) [16] achieves state-of-the-art AUC of ADD(-S) with as few as 11 .6M parameters, yet it relies on NMS as a hand-crafted post-processing step and is therefore not truly end-to-end. Competing single-stage transformer-based methods, in turn, typically require roughly 5× more parameters to reach comparable accuracy [31, 19]. Our method departs from this trend: with only 14 .5M parameters, it nearly matches the compactness of CNN-based models while retaining the advantages of a fully end-to-end, NMS-free transformer detector that directly predicts a set of poses. Its accuracy on the AUC of ADD(-S) nonetheless leaves some headroom, which we attribute to fine-grained pose precision and analyze in detail in our ablation studies. 
+
+Qualitative results. Fig. 4 (a,b,d,e) shows successful predictions of TinyDETR-Pose. The model aligns the predicted poses well with the ground truth even in cluttered scenes and handles both small and large objects reliably. Fig. 4 (c,f) depicts representative failure cases. We assume these errors are mainly caused by strong occlusion and partial visibility, especially for the scissors, where large parts of the object geometry are hidden and the pose becomes ambiguous. 
+
+4.3 Ablation studies Matcher analysis. In the ablation of the projected object center matching cost Ccntr (see Tab. 3 (a)), we observe that adding the center term to the matching cost improves pose accuracy over matching on class and bounding-box cues alone. 
+
+Effect of the ADD-S Loss Weight. Tab. 3 (b) shows that the λL 
+
+> ADD -S
+
+weight has a clear impact on pose-estimation performance. Increasing λL 
+
+> ADD -S
+
+from 10 .0 to 20 .0 leads to a gradual improvement in both AUC of ADD-S and AUC of ADD(-S), indicating that stronger geometric supervision is beneficial. The best overall performance is obtained with 
+
+λL 
+
+> ADD -S
+
+= 30 .0, achieving the highest AUC for both ADD-S and ADD(-S). Further increasing the coefficient to 50 .0 or 
+
+75 .0 degrades the AUC metrics, suggesting that an overly large ADD-S loss weight disturbs the balance between the loss terms. Therefore, we use λL 
+
+> ADD -S
+
+= 30 .0 as it provides the best trade-off across the evaluated metrics. 
+
+Pose loss analysis. Tab. 3(c) evaluates the contribution of individual pose-loss terms by setting one term to zero while retaining all remaining weights. Removing the ADD-S loss causes the largest drop, from 64.6 to 33.1 ADD(-S) AUC 6A PREPRINT - A UGUST 18, 2026 
+
+Method RGB-only Refinement Real-time Params (M) Num. AUC of AUC of Decoders ADD(-S) ↑ ADD-S ↑
+
+Refinement-based 
+
+CosyPose (ECCV’20) [25] ✓ ✓ ✗ – – 84.5 89.8 DeepIM (ECCV’18) [47] ✓ ✓ ✗ – – 81.9 88.1 
+
+Direct regression 
+
+GDR-Net (CVPR’21) [9] ✓ ✗ ✓ – – 84.4 89.1 SO-Pose (ICCV’21) [10] ✓ ✗ ✓ – – 83.9 90.9 PoseCNN (RSS’18) [8] ✓ ✗ ✓ – – 61.3 75.9 
+
+Single-stage 
+
+T6D-Direct ⋄ (GCPR’21) [18] ✓ ✗ ✓ – 6 74.6 86.2 PoET ⋄ (CoRL’22) [17] ✓ ✗ ✓ – 5 – 87.1 YOLO-6D-Pose (s)(3DV’24) [16] ✓ ✗ ✓ 11.6 – 84.4 –YOLOPoseV2 ⋄ (RAS’23) [19] ✓ ✗ ✓ 48.6 6 82.6 90.1 YOLOPoseV2-A ⋄ (RAS’23) [19] ✓ ✗ ✓ 53.2 6 83.3 91.2 TinyDETR-Pose ⋄ (Ours) ✓ ✗ ✓ 14.5 3 64.6 85.9 
+
+Table 1: Comparison on YCB-V. ⋄ marks single-stage DETR-based methods; decoder layers and parameter counts are reported where available. TinyDETR-Pose achieves competitive ADD-S AUC with 14.5M parameters, 70.2–72.7% fewer than the DETR-based baselines with reported model sizes. 
+
+BOP-Metrics. RACE-6D achieves the highest reported AR of 76.7% among the listed methods. TinyDETR-Pose instead prioritizes efficiency, reaching the lowest reported latency of 7 ms—a reduction of approximately 42% over RACE-6D, 59% over YOLO-6D-Pose, and 98% over CosyPose. This efficiency comes at the cost of lower recall, reflecting a clear accuracy–latency trade-off.                           
+
+> Method AR AR VSD AR MSSD AR MSPD ms
+> CosyPose (ECCV’20) [25] 65.5 –––395 YOLO-6D-Pose (s) (3DV’24) [16] 70.8 65.9 72.3 74.2 16.9 RACE-6D (CVPR’26) [32] 76.7 70.3 79.9 79.8 12
+> TinyDETR-Pose ∗(Ours) 34.4 41.2 35.3 26.6 7
+
+Table 2: Comparison on the YCB-V BOP benchmark using the official BOP metrics (Average Recall %). Higher is better for all AR metrics, while lower is better for inference time. Runtime values are reported by the respective methods. ∗Results: https: //bop.felk.cvut.cz/sub_info/41155/ 
+
+and from 85.9 to 74.9 ADD-S AUC, confirming that it is essential for accurate pose estimation. Removing the depth translation loss or center loss also degrades performance, reducing ADD(-S) AUC to 59.9 and 62.2, respectively. Overall, all pose-loss components contribute to performance, with the ADD-S term having the strongest impact. 
+
+Setting AUC ofADD(-S) ↑ AUC ofADD-S ↑
+
+(a) λC
+
+> cntr
+
+0.0 63.1 84.5 
+
+1.0 62.9 84.9 
+
+2.5 63.3 85.3 
+
+5.0 64.6 85.9 
+
+(b) λL
+
+> ADD -S
+
+10 .0 57.1 79.5 
+
+20 .0 58.5 81.0 
+
+30 .0 64.6 85.9 
+
+50 .0 59.4 83.1 
+
+75 .0 57.5 78.6 (c) Ablated loss weights 
+
+λL 
+
+> tz
+
+= 0 .0 59.9 84.4 
+
+λL 
+
+> cntr
+
+= 0 .0 60.7 82.6 
+
+λL 
+
+> ADD −S
+
+= 0 .0 33.1 74.9 
+
+Table 3: Sensitivity of pose accuracy to the matching-cost (a) and loss weights (b,c) on YCB-V. One factor is varied at a time; all remaining weights are kept at the configuration described in Sec. 3. 
+
+Runtime analysis. Tab. 4 reports the measured inference latency of the proposed model variants on a consumer-grade NVIDIA RTX 4090 GPU. TinyDETR-Pose is designed to address the efficiency requirements of edge deployment. 7A PREPRINT - A UGUST 18, 2026 
+
+Successful predictions Failure cases     
+
+> (a) (b) (c)
+> (d) (e) (f)
+
+Figure 4: Qualitative results of TinyDETR-Pose on YCB-V [8]. Each row shows two successful predictions followed by one representative failure case. Failure cases: Green denotes ground-truth poses, and red denotes predictions from our model. The failure cases are mainly caused by strong occlusion. It achieves a per-frame latency of approximately 7ms in a PyTorch runtime environment. To further assess the edge-deployment capability of our method, we deploy our model on an NVIDIA Jetson Nano using TensorRT-optimized weights. The optimized model attains an inference latency of approximately 4.5ms per frame while largely preserving its pose-estimation accuracy, demonstrating the suitability of our approach for real-time edge applications. TinyDETR-Pose achieves a comparable AUC of ADD-S while running ∼ 59% lower latency than any other model evaluated on that metric; when additionally deployed through the TensorRT runtime, latency drops to 4.5 ms/frame – a ∼ 36% reduction over our own PyTorch runtime, and a 60.7% reduction relative to the fastest prior single-stage method (RACE-6D [32], 12.0 ms), without a notable loss in performance.                                                    
+
+> Method Backbone Num. Decoders ms/frame ↓AUC of ADD-S ↑
+> CosyPose †[25] EfficientNet-B3 –395 89.8 GDR-Net ‡[9] ResNet-34 –65 89.1 YOLO-6D-Pose (s) ∗[16] CSPDarkNet-s –16.9 –T6D-Direct [18] ResNet-50 617 86.2 YOLOPoseV2 [19] ResNet-50 617 90.1 YOLOPoseV2-A [19] ResNet-50 622 91.2 PoET [17] Scaled-YOLOv4 5–87.1 RACE-6D [32] ResNet-50 –12 –
+> TinyDETR-Pose (ours) ViT-Tiny 3785.9 TinyDETR-Pose (TRT) (ours) ViT-Tiny 34.5 85.3
+
+Table 4: Runtime comparison on YCB-V. †: refinement-based, ‡: direct-regression, ∗: NMS post-processing; all others are end-to-end. If reported for DETR-based methods, decoder layers are reported. Latency is given in ms/frame. TinyDETR-Pose maintains comparable AUC of ADD-S with substantially lower latency, further improved by TensorRT deployment on the NVIDIA Jetson Nano. 8A PREPRINT - A UGUST 18, 2026                                                                                                                                                                                                                                                  
+
+> Metric AUC of ADD-S AUC of ADD(-S) Object TinyDETR-Pose (ours) PoET [17] YOLO Pose [19] YOLO Pose-A [19] T6D [18] TinyDETR-Pose (ours) PoET [17] YOLO PoseV2 [19]
+> YOLO PoseV2-A [19] T6D [18] master chef can 90.3 88.4 91.3 91.7 91.1 64.6 -64.0 71.3 61.5 cracker box 78.5 80.5 86.8 92.0 86.6 6.5 -77.9 83.3 76.3 sugar box 83.6 92.4 92.6 91.5 90.3 67.1 -87.3 83.6 81.8 tomato soup can 89.7 91.4 90.5 87.8 88.9 64.7 -77.8 72.9 72.0 mustard bottle 88.8 91.7 93.6 96.6 94.7 62.8 -87.9 93.4 85.7 tuna fish can 93.3 90.4 94.3 94.9 92.2 50.3 -74.4 70.5 59.0 pudding box 85.0 89.0 92.3 92.6 85.1 61.4 -87.9 87.0 72.7 gelatin box 88.3 91.7 90.1 92.2 86.9 73.1 -83.4 85.7 74.4 potted meat can 90.1 91.2 85.8 85.0 83.5 62.7 -76.7 71.4 67.8 banana 87.7 89.5 95.0 95.8 93.8 46.1 -88.2 90.0 87.4 pitcher base 90.4 91.7 93.6 95.2 92.3 68.2 -88.5 90.8 84.5 bleach cleanser 79.5 85.4 85.3 83.1 83.0 53.2 -73.0 70.8 65.0 bowl ∗83.8 90.5 92.3 93.4 91.6 83.8 -92.3 93.4 91.6 mug 91.0 91.4 84.9 95.5 89.8 70.0 -69.6 90.0 72.1 power drill 86.3 88.8 92.6 92.5 88.8 66.1 -86.1 85.2 77.7 wood block ∗83.9 75.7 84.3 93.0 90.7 83.9 -84.3 93.0 90.7 scissors 80.8 75.2 93.3 80.9 83.0 51.0 -87.0 71.2 59.7 large marker 86.5 81.2 84.9 85.2 74.9 74.6 -76.6 77.0 63.9 large clamp ∗80.3 88.6 92.0 94.7 78.3 80.3 -92.0 94.7 78.3 extra large clamp ∗74.1 83.5 88.9 80.7 54.7 74.1 -88.9 80.7 54.7 foam brick ∗92.1 81.3 90.7 93.8 89.9 92.1 -90.7 93.8 89.9
+> MEAN 85.9 87.1 90.1 91.2 86.2 64.6 –82.6 83.3 74.6
+
+Table 5: Per-object results on YCB-V. ∗ marks symmetric objects. We compare single-stage end-to-end DETR-based methods using AUC of ADD-S and ADD(-S), where available. Results within 3.0 AUC points of the state-of-the-art are highlighted in blue . 
+
+Per object analysis. Tab. 5 provides a detailed per-object comparison on YCB-V benchmark dataset [8]. Overall, TinyDETR-Pose achieves competitive ADD-S performance on several objects despite its lightweight design, and obtains the best result for the large marker . In addition, our model performs on par with the strongest competing methods for objects such as master chef can , tomato soup can , tuna fish can , potted meat can , foam brick and large marker .However, the ADD(-S) results reveal larger performance gaps for some asymmetric objects, most notably the cracker box , banana and scissors , indicating difficulty with fine-grained rotational alignment for several asymmetric objects. We attribute this primarily to heavy occlusions in these instances, compounded by the limited refinement capacity of our shallow three-layer decoder. Increasing decoder depth or adding occlusion-aware reasoning could address this gap. 
+
+## 5 Conclusion 
+
+We presented TinyDETR-Pose , a lightweight end-to-end framework for single-stage 6D object pose estimation. By building on LW-DETR and formulating joint object detection and pose estimation as a set-prediction problem, TinyDETR-Pose directly regresses rotation, projected object center, and metric depth from decoder queries, without requiring PnP, NMS, or iterative pose refinement. The proposed symmetry-agnostic ADD-S supervision further allows a unified training objective for both symmetric and asymmetric objects, removing the need for explicit symmetry labels or object-specific pose losses. Experiments on YCB-V show that TinyDETR-Pose achieves competitive pose accuracy while being substantially more efficient than existing DETR-based single-stage pose-estimation approaches. In particular, our model obtains an AUC of ADD-S of 85.9 while requiring up to 72 .7% fewer parameters than other DETR-based methods. Moreover, TinyDETR-Pose runs in real time and reaches an inference latency of only ∼4.5 ms per frame on an NVIDIA Jetson Nano using TensorRT. These results demonstrate that accurate transformer-based 6D pose estimation can be made practical for resource-constrained edge deployment. 
+
+Future Work & Limitations. Although our ADD-S AUC is within 4.2–5.3 points of the strongest single-stage transformer methods, our ADD(-S) AUC is 19.8 points lower than YOLO-6D-Pose (s) and 18.7 points lower than YOLOPoseV2-A. We attribute this gap to two main factors. First, a loss–metric mismatch: our model is trained with the symmetry-agnostic ADD-S objective, which computes the nearest-neighbor distance between transformed model points and may not sufficiently penalize rotational ambiguities of asymmetric objects, such as flips of box-like shapes, whereas ADD(-S) explicitly penalizes these errors. The per-object results in Tab. 5 support this observation, as the largest gaps occur for asymmetric, box- or plane-dominated objects such as the cracker box and scissors, while 9A PREPRINT - A UGUST 18, 2026 symmetric objects and cans are largely unaffected. Second, limited model capacity and the lack of a refinement stage: TinyDETR-Pose uses a three-layer decoder and a ViT-Tiny backbone ( 70 .2 − 72 .7% fewer parameters than larger alternatives[31, 19]) and does not include iterative or keypoint-conditioned pose refinement [32]. We therefore position TinyDETR-Pose as an efficiency-oriented approach rather than one targeting state-of-the-art pose accuracy. Despite its efficiency and strong real-time performance, several directions remain open. The evaluation should be extended beyond YCB-V to benchmarks such as LM-O [48] and industrial datasets with stronger occlusions, textureless objects, and domain-specific geometries. Pose-specific augmentations, as used in YOLO-6D-Pose [16], could improve robustness to occlusion, truncation, and illumination changes. The Hungarian matcher, currently symmetry-safe via class and 2D spatial cues, could be extended with occlusion- or pose-aware costs without destabilizing symmetric objects. Because some implementations use fewer queries [31, 18], N could be reduced to lower computational cost. Recently presented rotation representations such as SARR [49] may improve accuracy on ambiguous or partially symmetric objects, and edge-oriented optimizations (quantization, pruning, distillation, improved TensorRT deployment) could further increase runtime efficiency. Finally, systematic analysis of pretrained weights and scaling behavior—following the strong pretraining benefits seen in DETR-based 2D detectors—could improve representation quality and close the remaining accuracy gap while preserving TinyDETR-Pose’s efficiency advantages. 
+
+## Acknowledgements 
+
+This project was funded in part by the European Union’s Horizon Europe research and innovation programme under grant agreement No. 101120726 
+
+## References 
+
+[1] Jonathan Tremblay, Thang To, Balakumar Sundaralingam, Yu Xiang, Dieter Fox, and Stan Birchfield. Deep object pose estimation for semantic robotic grasping of household objects. In Aude Billard, Anca Dragan, Jan Peters, and Jun Morimoto, editors, Proceedings of The 2nd Conference on Robot Learning , volume 87 of Proceedings of Machine Learning Research , pages 306–316. PMLR, 29–31 Oct 2018. [2] Eric Marchand, Hideaki Uchiyama, and Fabien Spindler. Pose estimation for augmented reality: A hands-on survey. IEEE Transactions on Visualization and Computer Graphics , 22(12):2633–2651, 2016. [3] Jiaming Zang, Tianhan Gao, Zichen Zhu, and Xinbei Jiang. 6d pose estimation of novel objects: A survey. In 
+
+2025 10th International Conference on Image, Vision and Computing (ICIVC) , pages 309–315, 2025. [4] Sida Peng, Yuan Liu, Qixing Huang, Xiaowei Zhou, and Hujun Bao. Pvnet: Pixel-wise voting network for 6dof pose estimation. In CVPR , 2019. [5] Sergey Zakharov, Ivan Shugurov, and Slobodan Ilic. Dpod: 6d pose object detector and refiner. In ICCV , 2019. [6] Kiru Park, Timothy Patten, and Markus Vincze. Pix2pose: Pixel-wise coordinate regression of objects for 6d pose estimation. In ICCV , 2019. [7] Lipu Zhou and Michael Kaess. An efficient and accurate algorithm for the perspecitve-n-point problem. In 2019 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) , pages 6245–6252, 2019. [8] Yu Xiang, Tanner Schmidt, Venkatraman Narayanan, and Dieter Fox. Posecnn: A convolutional neural network for 6d object pose estimation in cluttered scenes. 2018. [9] Gu Wang, Fabian Manhardt, Federico Tombari, and Xiangyang Ji. GDR-Net: Geometry-guided direct regression network for monocular 6d object pose estimation. In CVPR , 2021. [10] Yan Di, Fabian Manhardt, Gu Wang, Xiangyang Ji, Nassir Navab, and Federico Tombari. SO-Pose: Exploiting self-occlusion for direct 6d pose estimation. In ICCV , 2021. [11] Zhigang Li, Gu Wang, and Xiangyang Ji. CDPN: Coordinates-based disentangled pose network for real-time rgb-based 6-dof object pose estimation. In ICCV , 2019. [12] Bowen Wen, Wei Yang, Jan Kautz, and Stan Birchfield. FoundationPose: Unified 6d pose estimation and tracking of novel objects. In CVPR , 2024. [13] Yann Labbé, Lucas Manuelli, Arsalan Mousavian, Stephen Tyree, Stan Birchfield, Jonathan Tremblay, Justin Carpentier, Mathieu Aubry, Dieter Fox, and Josef Sivic. MegaPose: 6D Pose Estimation of Novel Objects via Render & Compare. In CoRL .[14] Van Nguyen Nguyen, Thibault Groueix, Mathieu Salzmann, and Vincent Lepetit. Gigapose: Fast and robust novel object pose estimation via one correspondence. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024. 10 A PREPRINT - A UGUST 18, 2026 [15] Evin Pınar Örnek, Yann Labbé, Bugra Tekin, Lingni Ma, Cem Keskin, Christian Forster, and Tomáš Hodaˇ n. Foundpose: Unseen object pose estimation with foundation features. European Conference on Computer Vision (ECCV) , 2024. [16] Debapriya Maji, Soyeb Nagori, Manu Mathew, and Deepak Poddar. Yolo-6d-pose: Enhancing yolo for single-stage monocular multi-object 6d pose estimation. In 2024 International Conference on 3D Vision (3DV) , pages 1616–1625, 2024. [17] Thomas Georg Jantos, Mohamed Amin Hamdad, Wolfgang Granig, Stephan Weiss, and Jan Steinbrener. Poet: Pose estimation transformer for single-view, multi-object 6d pose estimation. In Conference on Robot Learning ,pages 1060–1070. PMLR, 2023. [18] Arash Amini, Arul Selvam Periyasamy, and Sven Behnke. T6d-direct: Transformers for multi-object 6d pose direct regression. In Pattern Recognition: 43rd DAGM German Conference, DAGM GCPR 2021, Bonn, Germany, September 28 – October 1, 2021, Proceedings , page 530–544, Berlin, Heidelberg, 2021. Springer-Verlag. [19] Arul Selvam Periyasamy, Arash Amini, Vladimir Tsaturyan, and Sven Behnke. Yolopose v2: Understanding and improving transformer-based 6d pose estimation. Robot. Auton. Syst. , 168(C), October 2023. [20] Qiang Chen, Xiangbo Su, Xinyu Zhang, Jian Wang, Jiahui Chen, Yunpeng Shen, Chuchu Han, Ziliang Chen, Weixiang Xu, Fanrong Li, et al. LW-DETR: A transformer replacement to YOLO for real-time detection. arXiv preprint arXiv:2406.03459 , 2024. [21] Nicolas Carion, Francisco Massa, Gabriel Synnaeve, Nicolas Usunier, Alexander Kirillov, and Sergey Zagoruyko. End-to-end object detection with transformers. In European Conference on Computer Vision (ECCV) , pages 213–229. Springer, 2020. [22] Mahdi Rad and Vincent Lepetit. Bb8: A scalable, accurate, robust to partial occlusion method for predicting the 3d poses of challenging objects without using depth. In ICCV , 2017. [23] Martin A. Fischler and Robert C. Bolles. Random sample consensus: a paradigm for model fitting with applications to image analysis and automated cartography. Commun. ACM , 24(6):381–395, June 1981. [24] Yi Zhou, Connelly Barnes, Jingwan Lu, Jimei Yang, and Hao Li. On the continuity of rotation representations in neural networks. 2019 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 5738–5746, 2019. [25] Yann Labbé, Justin Carpentier, Mathieu Aubry, and Josef Sivic. Cosypose: Consistent multi-view multi-object 6d pose estimation. In Andrea Vedaldi, Horst Bischof, Thomas Brox, and Jan-Michael Frahm, editors, Computer Vision – ECCV 2020 , pages 574–591, Cham, 2020. Springer International Publishing. [26] Tomas Hodan, Frank Michel, Eric Brachmann, Wadim Kehl, Anders Glent Buch, Dirk Kraft, Bertram Drost, Joel Vidal, Stephan Ihrke, Xenophon Zabulis, Caner Sahin, Fabian Manhardt, Federico Tombari, Tae-Kyun Kim, Jiri Matas, and Carsten Rother. Bop: Benchmark for 6d object pose estimation, 2018. [27] Maxime Oquab, Timothée Darcet, Theo Moutakanni, Huy V. Vo, Marc Szafraniec, Vasil Khalidov, Pierre Fernandez, Daniel Haziza, Francisco Massa, Alaaeldin El-Nouby, Russell Howes, Po-Yao Huang, Hu Xu, Vasu Sharma, Shang-Wen Li, Wojciech Galuba, Mike Rabbat, Mido Assran, Nicolas Ballas, Gabriel Synnaeve, Ishan Misra, Herve Jegou, Julien Mairal, Patrick Labatut, Armand Joulin, and Piotr Bojanowski. Dinov2: Learning robust visual features without supervision, 2023. [28] Zheng Ge, Songtao Liu, Feng Wang, Zeming Li, and Jian Sun. Yolox: Exceeding yolo series in 2021. arXiv preprint arXiv:2107.08430 , 2021. [29] Yannick Bukschat and Marcus Vetter. Efficientpose: An efficient, accurate and scalable end-to-end 6d multi object pose estimation approach, 2020. [30] Mingxing Tan, Ruoming Pang, and Quoc V. Le. Efficientdet: Scalable and efficient object detection, 2020. [31] Arash Amini, Arul Selvam Periyasamy, and Sven Behnke. Yolopose: Transformer-based multi-object 6d pose estimation using keypoint regression. In Ivan Petrovic, Emanuele Menegatti, and Ivan Markovi´ c, editors, Intelligent Autonomous Systems 17 , pages 392–406, Cham, 2023. Springer Nature Switzerland. [32] Yoonwoo Ha and Hyungpil Moon. Race-6d: Real-time accurate coarse-to-fine object 6d pose transformer. In 
+
+CVPR 2026 (Findings) , 2026. [33] Xinyu Zhang, Jiahui Chen, Junkun Yuan, Qiang Chen, Jian Wang, Xiaodi Wang, Shumin Han, Xiaokang Chen, Jimin Pi, Kun Yao, Junyu Han, Errui Ding, and Jingdong Wang. CAE v2: Context autoencoder with CLIP latent alignment. Transactions on Machine Learning Research , 2023. [34] Harold W. Kuhn. The Hungarian Method for the Assignment Problem , pages 29–47. Springer Berlin Heidelberg, Berlin, Heidelberg, 2010. 11 A PREPRINT - A UGUST 18, 2026 [35] Andrea Simonelli, Samuel Rota Bulò, Lorenzo Porzi, Manuel Lopez-Antequera, and Peter Kontschieder. Disen-tangling monocular 3d object detection. In 2019 IEEE/CVF International Conference on Computer Vision (ICCV) ,pages 1991–1999, 2019. [36] Depu Meng, Xiaokang Chen, Zejia Fan, Gang Zeng, Houqiang Li, Yuhui Yuan, Lei Sun, and Jingdong Wang. Conditional DETR for fast training convergence. In IEEE/CVF International Conference on Computer Vision (ICCV) , pages 3651–3660, 2021. [37] Feng Li, Hao Zhang, Shilong Liu, Jian Guo, Lionel M. Ni, and Lei Zhang. DN-DETR: Accelerate DETR training by introducing query denoising. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) ,pages 13619–13627, 2022. [38] Shilong Liu, Feng Li, Hao Zhang, Xiao Yang, Xianbiao Qi, Hang Su, Jun Zhu, and Lei Zhang. DAB-DETR: Dynamic anchor boxes are better queries for DETR. In International Conference on Learning Representations (ICLR) , 2022. [39] Yian Zhao, Wenyu Lv, Shangliang Xu, Jinman Wei, Guanzhong Wang, Qingqing Dang, Yi Liu, and Jie Chen. DETRs beat YOLOs on real-time object detection. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2024. [40] Zhiqing Sun, Shengcao Cao, Yiming Yang, and Kris Kitani. Rethinking transformer-based set prediction for object detection. In ICCV , 2021. [41] Debapriya Maji, Soyeb Nagori, Manu Mathew, and Deepak Poddar. Yolo-pose: Enhancing yolo for multi person pose estimation using object keypoint similarity loss. In 2022 IEEE/CVF Conference on Computer Vision and Pattern Recognition Workshops (CVPRW) , pages 2636–2645, 2022. [42] Zhi Cai, Songtao Liu, Guodong Wang, Zheng Ge, Xiangyu Zhang, and Di Huang. Align-detr: Improving detr with simple iou-aware bce loss, 2023. [43] Hamid Rezatofighi, Nathan Tsoi, JunYoung Gwak, Amir Sadeghian, Ian Reid, and Silvio Savarese. Generalized intersection over union: A metric and a loss for bounding box regression. In 2019 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 658–666, 2019. [44] Shuai Shao, Zeming Li, Tianyuan Zhang, Chao Peng, Gang Yu, Xiangyu Zhang, Jing Li, and Jian Sun. Objects365: A large-scale, high-quality dataset for object detection. In 2019 IEEE/CVF International Conference on Computer Vision (ICCV) , pages 8429–8438, 2019. [45] Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization. In International Conference on Learning Representations , 2019. [46] Tomáš Hodaˇ n, Martin Sundermeyer, Bertram Drost, Yann Labbé, Eric Brachmann, Frank Michel, Carsten Rother, and Jiˇ rí Matas. Bop challenge 2020 on 6d object localization. In Computer Vision – ECCV 2020 Workshops: Glasgow, UK, August 23–28, 2020, Proceedings, Part II , page 577–594, Berlin, Heidelberg, 2020. Springer-Verlag. [47] Yi Li, Gu Wang, Xiangyang Ji, Yu Xiang, and Dieter Fox. DeepIM: Deep iterative matching for 6d pose estimation. In ECCV , 2018. [48] Eric Brachmann, Alexander Krull, Frank Michel, Stefan Gumhold, Jamie Shotton, and Carsten Rother. Learning 6d object pose estimation using 3d object coordinates. In David Fleet, Tomas Pajdla, Bernt Schiele, and Tinne Tuytelaars, editors, Computer Vision – ECCV 2014 , pages 536–551, Cham, 2014. Springer International Publishing. [49] Andreas Kriegler, Csaba Beleznai, and Margrit Gelautz. Towards Symmetry-sensitive Pose Estimation: A Rotation Representation for Symmetric Object Classes. International Journal of Computer Vision , 134:212, 2026. 12
