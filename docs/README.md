@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-08-19</span>
+      <span class="dpr-home-dashboard-kicker">2026-08-20</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 14 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 7 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>2</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>12</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>1</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>6</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-08-19 21:27:10 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-08-20 21:29:15 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,7 +62,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日共推荐14篇论文，聚焦3D视觉与底层图像处理，其中2篇精读、12篇速读。最值得关注的是《PXDepth》以像素空间建模实现结构保持的单目深度估计（9.0分），以及《GeoWeaver》通过分层几何组装完成长序列3D重建（8.0分）。建议优先研读这两篇精读论文，快速浏览速读列表中的Gaussian Splatting与RAW视频恢复方向。</p>
+<p>今日精读1篇、速读3篇，聚焦轻量语义分割与多模态生成等方向。最值得关注的是《When Simplicity Wins》提出瓶颈感知上下文建模，以9.0分登顶；《SPARGen》与《MaLViL》分别在多模态推理与医学图像分割上各有亮点。建议优先精读高分解法，再按需速读其余三篇，关注轻量化与跨模态融合趋势。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -71,12 +71,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">2 篇</strong>
+    <strong class="dpr-home-dashboard-count">1 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="PXDepth: Pixel-Space Modeling for Structure Preserving Monocular Depth Estimation">PXDepth: Pixel-Space Modeling for Structure Preserving Monocular Depth Estimation</span></li><li><span class="dpr-home-dashboard-paper-title" title="GeoWeaver: Accurate Long-Sequence 3D Reconstruction via Hierarchical Geometric Assembly">GeoWeaver: Accurate Long-Sequence 3D Reconstruction via Hierarchical Geometric Assembly</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="When Simplicity Wins: Bottleneck-Aware Context Modeling for Lightweight Semantic Segmentation">When Simplicity Wins: Bottleneck-Aware Context Modeling for Lightweight Semantic Segmentation</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">depth-refine <strong>1</strong></span><span class="dpr-home-dashboard-tag">mono-depth <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">seg <strong>1</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -84,12 +84,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">12 篇</strong>
+    <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Grid-Preserving Knowledge Distillation: Transferring Convolutional Inductive Bias to Vision Transformers under Data Scarcity">Grid-Preserving Knowledge Distillation: Transferring Convolutional Inductive Bias to Vision Transformers under Data Scarcity</span></li><li><span class="dpr-home-dashboard-paper-title" title="Binarized High-Efficiency RAW Video Restoration and Beyond">Binarized High-Efficiency RAW Video Restoration and Beyond</span></li><li><span class="dpr-home-dashboard-paper-title" title="GroupForward: Building Referable 3D Scenes via Instance-Grouped Feed-Forward Gaussian Splatting">GroupForward: Building Referable 3D Scenes via Instance-Grouped Feed-Forward Gaussian Splatting</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="SPARGen: Unifying Spatial Perception and Reasoning through Native Multimodal Generation">SPARGen: Unifying Spatial Perception and Reasoning through Native Multimodal Generation</span></li><li><span class="dpr-home-dashboard-paper-title" title="MaLViL: Multi-axis Low-rank Vision-LSTM for Medical Image Segmentation">MaLViL: Multi-axis Low-rank Vision-LSTM for Medical Image Segmentation</span></li><li><span class="dpr-home-dashboard-paper-title" title="Differentiable Voronoi Ray Tracing Beyond Rasterization Speeds">Differentiable Voronoi Ray Tracing Beyond Rasterization Speeds</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">lite-vision <strong>4</strong></span><span class="dpr-home-dashboard-tag">seg <strong>3</strong></span><span class="dpr-home-dashboard-tag">vfm <strong>2</strong></span><span class="dpr-home-dashboard-tag">cv-render <strong>1</strong></span><span class="dpr-home-dashboard-tag">depth-refine <strong>1</strong></span><span class="dpr-home-dashboard-tag">mono-depth <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">cv-render <strong>2</strong></span><span class="dpr-home-dashboard-tag">seg <strong>2</strong></span><span class="dpr-home-dashboard-tag">mono-depth <strong>1</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>1</strong></span></div>
 </section>
 </div>
 
