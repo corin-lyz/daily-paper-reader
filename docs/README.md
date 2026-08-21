@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-08-20</span>
+      <span class="dpr-home-dashboard-kicker">2026-08-21</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 7 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 8 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>1</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>6</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>7</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-08-20 21:29:15 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-08-21 21:21:59 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,7 +62,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日精读1篇、速读3篇，聚焦轻量语义分割与多模态生成等方向。最值得关注的是《When Simplicity Wins》提出瓶颈感知上下文建模，以9.0分登顶；《SPARGen》与《MaLViL》分别在多模态推理与医学图像分割上各有亮点。建议优先精读高分解法，再按需速读其余三篇，关注轻量化与跨模态融合趋势。</p>
+<p>今日精读论文1篇，速读7篇，核心聚焦4D场景重建与高效渲染新突破。最值得关注的是《Depth Anything V4》---结合黎曼流匹配与4D高斯泼溅实现动态场景重建，评分高达9.0。建议普通读者优先了解多模态几何与神经渲染的交叉应用，后续可留意更轻量化的实时方案。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -74,9 +74,9 @@
     <strong class="dpr-home-dashboard-count">1 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="When Simplicity Wins: Bottleneck-Aware Context Modeling for Lightweight Semantic Segmentation">When Simplicity Wins: Bottleneck-Aware Context Modeling for Lightweight Semantic Segmentation</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Depth Anything V4: Dynamic 4D Scene Reconstruction via Riemannian Flow Matching on 4D Gaussian Splatting">Depth Anything V4: Dynamic 4D Scene Reconstruction via Riemannian Flow Matching on 4D Gaussian Splatting</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">seg <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">mono-depth <strong>1</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -84,12 +84,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">6 篇</strong>
+    <strong class="dpr-home-dashboard-count">7 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="SPARGen: Unifying Spatial Perception and Reasoning through Native Multimodal Generation">SPARGen: Unifying Spatial Perception and Reasoning through Native Multimodal Generation</span></li><li><span class="dpr-home-dashboard-paper-title" title="MaLViL: Multi-axis Low-rank Vision-LSTM for Medical Image Segmentation">MaLViL: Multi-axis Low-rank Vision-LSTM for Medical Image Segmentation</span></li><li><span class="dpr-home-dashboard-paper-title" title="Differentiable Voronoi Ray Tracing Beyond Rasterization Speeds">Differentiable Voronoi Ray Tracing Beyond Rasterization Speeds</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Differentiable Voronoi Ray Tracing Beyond Rasterization Speeds">Differentiable Voronoi Ray Tracing Beyond Rasterization Speeds</span></li><li><span class="dpr-home-dashboard-paper-title" title="SAM2Dual: Training-Free, Dual Memory for Long-Term Video Object Segmentation">SAM2Dual: Training-Free, Dual Memory for Long-Term Video Object Segmentation</span></li><li><span class="dpr-home-dashboard-paper-title" title="Online Learning of Correspondences between Images">Online Learning of Correspondences between Images</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">cv-render <strong>2</strong></span><span class="dpr-home-dashboard-tag">seg <strong>2</strong></span><span class="dpr-home-dashboard-tag">mono-depth <strong>1</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">mono-depth <strong>3</strong></span><span class="dpr-home-dashboard-tag">cv-render <strong>1</strong></span><span class="dpr-home-dashboard-tag">neural-bokeh <strong>1</strong></span><span class="dpr-home-dashboard-tag">seg <strong>1</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>1</strong></span></div>
 </section>
 </div>
 

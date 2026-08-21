@@ -1,0 +1,343 @@
+Title: Is Haar Enough? Exploring Symlets and Coiflets for Wavelet Convolution Layers
+
+URL Source: https://arxiv.org/pdf/2608.17662v1
+
+Published Time: Wed, 19 Aug 2026 00:51:58 GMT
+
+Number of Pages: 6
+
+Markdown Content:
+## IS HAAR ENOUGH? EXPLORING SYMLETS AND COIFLETS FOR WAVELET CONVOLUTION LAYERS 
+
+## Md Rifat Ur Rahman 
+
+## Bangladesh Univeristy of Engineering and Technology 
+
+ABSTRACT 
+
+Wavelet convolution layers have recently emerged as an effi-cient mechanism for enlarging receptive fields through mul-tiresolution analysis, but prior work has fixed the wavelet ba-sis to Haar or Daubechies at a chosen decomposition depth, leaving open whether a different basis can shift the underlying efficiency frontier. We identify and characterize a previously unexplored trade-off in this setting: bases with stronger ap-proximation properties (longer filters) can reduce the decom-position depth required for competitive accuracy, yielding a net reduction in parameters and FLOPs despite higher per-level transform cost. We formalize this as an F -vs.-L trade-off (filter length vs. decomposition levels) and study it sys-tematically across Haar, Daubechies, Symlets, and Coiflets under controlled architectures and budgets. On image classifi-cation (CIFAR-10, ImageNet-1K) and semantic segmentation (Cityscapes), Coiflet-based wavelet convolutions match Haar at deeper levels with approximately 32% fewer additional pa-rameters and 33% fewer additional FLOPs, providing a con-crete and actionable design choice for practitioners building wavelet-based architectures. Code will be released. 
+
+Index Terms — Wavelts, FFT, CNNs, ViT, Haar, Symlets, Coiflets 
+
+1. INTRODUCTION 
+
+Convolutional neural networks (CNNs) have been the default backbone for many computer vision tasks since AlexNet [1], with strong subsequent designs such as VGG [2] and ResNet [3]. A key strength of CNNs is their inductive bias toward local processing: convolution and pooling efficiently capture fine-grained, high-frequency patterns (e.g., edges and textures). However, modeling long-range interactions typically requires architectural choices that enlarge the effective receptive field, such as deeper networks, multi-stage hierarchies, dilation, or large kernels, which can increase compute and/or parameters. Vision Transformers (ViTs) [4] address long-range in-teraction more directly by using self-attention [5], enabling global token mixing. Nevertheless, attention-based models often incur higher computational and memory costs, motivat-ing a large body of work on efficient backbones and token mixers. On the CNN side, lightweight architectures such as MobileNet [6] and EfficientNet [7] reduce compute via depth-wise separable and inverted bottleneck designs, but the core local nature of convolution remains. On the token-mixing side, large-kernel designs aim to approximate long-range in-teractions with convolutional operators; for example, Visual Attention Network (VAN) introduces Large Kernel Attention (LKA) as a lightweight mechanism for long-range depen-dency modeling [8]. Frequency-domain token mixers provide another direc-tion: GFNet replaces attention with Fourier-domain global filtering via FFT and inverse FFT [9], AFFNet proposes adaptive frequency filters as efficient token mixers [10], and Fourier Neural Operators (FNO) learn global convolution operators in the Fourier domain for operator learning and re-lated vision tasks [11]. While these Fourier-based approaches provide global mixing efficiently, Fourier-domain filtering is inherently global in spatial support, and in practice is often paired with spatial/local processing (e.g., convolutional stems or hybrid blocks) to retain fine-grained locality. In parallel, wavelet transforms offer a principled mul-tiresolution representation that jointly captures spatial and frequency information [12]. In a 2D discrete wavelet trans-form (2D-DWT), each level decomposes a feature map into four sub-bands: a low-frequency approximation band (LL) and three high-frequency detail bands (LH/HL/HH). By it-eratively decomposing the LL band, multilevel DWT pro-vides progressively coarser representations while preserving global structure at reduced spatial resolution. This motivates wavelet-based architectures such as WaveMix [13] and Wave-ViT [14], as well as wavelet-inspired attention variants (e.g., multiscale wavelet attention) [15]. Recently, WTConv introduced a wavelet convolution layer as a plug-in replacement for depthwise convolution to obtain large receptive fields with favorable scaling [16]. WTConv applies multilevel 2D-DWT, performs depthwise convolution in the wavelet domain across sub-bands, and re-constructs via inverse DWT. The original formulation primar-ily uses the Haar basis (db1) and reports limited gains when switching to db2/db3 at a fixed decomposition depth [16]. We argue that this fixed-depth comparison conceals the actual design space: because longer-filter bases provide stronger approximation in the low-frequency (LL) branch, the depth required to capture global context is itself a function of the arXiv:2608.17662v1 [cs.CV] 18 Aug 2026 basis. This raises a natural and, to our knowledge, previously unstudied question: when the basis and the number of de-composition levels are co-optimized, can alternative bases provide a strictly better accuracy–complexity frontier than Haar? 
+
+In this paper, we revisit wavelet basis selection for wavelet convolution layers under this lens. Our choice of bases is hypothesis-driven, not exhaustive: we select Symlets and Coiflets as widely used orthogonal wavelet families beyond Haar/Daubechies [17] because they target the two proper-ties most relevant to the depth question. Symlets are near-symmetric, which reduces phase distortion and can improve edge alignment across scales. Coiflets have additional vanish-ing moments on the scaling function and are known to yield smoother LL representations, which we hypothesize should reduce the depth needed to summarize global context. Both predictions are testable in our setup, and our experiments confirm them for Coiflets. We evaluate basis choices on image classification (CIFAR-10, ImageNet-1K) and semantic segmentation (Cityscapes) under controlled architectures, and report accuracy alongside model parameters and FLOPs. Our main contributions are: • We identify a previously unexplored filter-length vs. decomposition-depth (F -vs.-L) trade-off in wavelet convolution layers. Prior work fixed the depth and varied only the basis; we show that allowing both to vary changes the qualitative conclusion of which basis is preferable. • We give a hypothesis-driven analysis of Symlets and Coiflets as candidates for this trade-off, motivated by their symmetry and approximation-order properties re-spectively, and confirm the Coiflet hypothesis empiri-cally. • Across classification and segmentation, we show that Coiflet-based WTConv matches deeper Haar configu-rations with approximately 32% fewer additional pa-rameters and 33% fewer additional FLOPs, providing a concrete and actionable design choice for wavelet-based architectures. 
+
+2. METHODOLOGY 
+
+We study whether the wavelet basis used inside wavelet con-volution layers can be improved beyond commonly used Haar/Daubechies choices. Our operator follows a transform– process–reconstruct pipeline: a feature map is decomposed by a multi-level 2D discrete wavelet transform (2D-DWT), filtered in the wavelet domain using lightweight depthwise convolution, and reconstructed by inverse DWT (IDWT). The two main knobs in this work are (i) the chosen wavelet basis (fixed analysis/synthesis filters) and (ii) the number of decomposition levels L. We evaluate the resulting trade-off in accuracy vs. computational complexity (FLOPs) and parameters. 
+
+2.1. Wavelet Transform 
+
+Let the input feature map be 
+
+X ∈ RB×C×H×W . (1) A one-level 2D-DWT decomposes X into four critically-sampled sub-bands: 
+
+(XLL , X LH , X HL , X HH ) = DWT( X), (2) with each sub-band having half spatial resolution: Where, X• ∈ RB×C× H   
+
+> 2×W
+> 2
+
+. For implementation, we pack the four sub-bands along channels: 
+
+Y (1) = Pack 
+
+
+
+X(1) 
+
+> LL
+
+, X (1)  
+
+> LH
+
+, X (1) 
+
+> HL
+
+, X (1) 
+
+> HH
+
+
+
+, (3) Where, Y (1) ∈ RB×4C× H   
+
+> 2×W
+> 2
+
+. A multi-level pyramid is obtained by recursively decomposing only the approximation band: 
+
+
+
+X(i)
+
+> LL
+
+, X (i) 
+
+> LH
+
+, X (i)
+
+> HL
+
+, X (i)
+
+> HH
+
+
+
+= DWT 
+
+
+
+X(i−1) 
+
+> LL
+
+
+
+, i = 2 , . . . , L. 
+
+(4) 
+
+Fig. 1 . Two-level 2D-DWT decomposition used in our wavelet convolution layer. The first level decomposes the fea-ture map into (LL 1, LH 1, HL 1, HH 1), and the second level further decomposes only LL 1 into (LL 2, LH 2, HL 2, HH 2).We evaluate alternative wavelet bases by replacing the fixed analysis/synthesis filter banks. Reconstruction uses the inverse transform: 
+
+X(i−1)  
+
+> LL
+
+= IDWT 
+
+
+
+X(i)
+
+> LL
+
+, X (i) 
+
+> LH
+
+, X (i)
+
+> HL
+
+, X (i)
+
+> HH
+
+
+
+, (5) and is applied level-by-level from i = L down to i = 1 .
+
+2.2. Wavelet Basis Selection 
+
+A wavelet basis is defined by fixed 1D analysis filters: a low-pass filter h0 and a high-pass filter h1 (with matching synthe-sis filters used in IDWT). For reproducibility, we report the Table 1 . 1D analysis filter taps used in our 2D-DWT. The 2D sub-band filters are formed via outer products in Eq. (6). Coefficients are taken from a standard wavelet library for reproducibility [18].                                                                       
+
+> Family Filter Coefficients Haar (db1) h0[1√2,1√2]
+> h1[−1√2,1√2]
+> Daubechies (db2) h0[−0.12940952 ,0.22414387 ,0.83651630 ,0.48296291]
+> h1[−0.48296291 ,0.83651630 ,−0.22414387 ,−0.12940952]
+> Daubechies (db3) h0[0 .03522629 ,−0.08544127 ,−0.13501102 ,0.45987750 ,0.80689151 ,0.33267055]
+> h1[−0.33267055 ,0.80689151 ,−0.45987750 ,−0.13501102 ,0.08544127 ,0.03522629]
+> Symlet (sym2) h0[−0.12940952 ,0.22414387 ,0.83651630 ,0.48296291]
+> h1[−0.48296291 ,0.83651630 ,−0.22414387 ,−0.12940952]
+> Symlet (sym3) h0[0 .03522629 ,−0.08544127 ,−0.13501102 ,0.45987750 ,0.80689151 ,0.33267055]
+> h1[−0.33267055 ,0.80689151 ,−0.45987750 ,−0.13501102 ,0.08544127 ,0.03522629]
+> Coiflet (coif1) h0[−0.01565573 ,−0.07273262 ,0.38486485 ,0.85257202 ,0.33789766 ,−0.07273262]
+> h1[0 .07273262 ,0.33789766 ,−0.85257202 ,0.38486485 ,0.07273262 ,−0.01565573]
+
+exact analysis taps used in this work in Table 1 (from a stan-dard wavelet library [18]). Because the 2D-DWT is separable, the four 2D analysis filters are formed by outer products of the 1D filters: 
+
+fLL = h0⊗h0, fLH = h0⊗h1, fHL = h1⊗h0, fHH = h1⊗h1,
+
+(6) and each sub-band is produced by a depthwise convolution with stride 2 (critical sampling), consistent with common wavelet-convolution implementations. 
+
+Haar (db1). Haar provides the shortest support ( F = 2 )and thus the lowest transform overhead per level. It yields a coarse, piecewise-constant approximation in the LL band, making it a strong efficiency baseline. 
+
+Daubechies (db N ). Daubechies wavelets are compactly sup-ported orthogonal wavelets that increase the number of van-ishing moments with minimal support length ( F = 2 N ). This typically improves approximation quality and frequency sep-aration relative to Haar, at the cost of longer filters and higher per-level transform overhead. We include db2 and db3 as rep-resentative longer-support baselines (Table 1). 
+
+Symlets (sym N ). Symlets are orthogonal wavelets designed to be more symmetric than standard Daubechies filters while retaining compact support. Greater symmetry is commonly associated with reduced phase distortion and improved edge alignment across scales. We evaluate sym2 and sym3 (Ta-ble 1) as symmetry-oriented alternatives within the same gen-eral family of compactly supported orthogonal wavelets. 
+
+Coiflets (coif N ). Coiflets are compactly supported orthog-onal wavelets with strong approximation properties; empiri-cally they often yield smoother low-frequency (LL) represen-tations and a cleaner separation between approximation and detail components. This can reduce the need for deeper de-compositions to capture global context. We evaluate coif1 (Table 1) as a representative Coiflet basis. 
+
+Basis–level trade-off. Given the taps in Table 1, all 2D sub-band filters are obtained deterministically via Eq. (6). Basis selection changes the filter length F (support) and therefore the per-level DWT/IDWT cost, while potentially reducing the required decomposition depth L to reach a target accuracy. Our experiments quantify this F –vs.– L trade-off by reporting accuracy together with FLOPs and parameters across bases and decomposition levels. 
+
+2.3. Wavelet Convolution Layer 
+
+We define the wavelet convolution layer as a sequence of op-erations: 
+
+X DWT 
+
+−−−→ { Y (i)}Li=1 DWConv 
+
+−−−−−−→ { Z(i)}Li=1 IDWT 
+
+−−−−→ ˆX. (7) At each level i, we pack the four sub-bands into 
+
+Y (i) ∈ RB×4C× H   
+
+> 2i×W
+> 2i
+
+. (8) We then apply depthwise convolution in the wavelet domain: 
+
+Z(i) = DWConv (i)
+
+> k
+
+
+
+Y (i); W (i)
+
+, groups = 4 C, (9) where k is the spatial kernel size and W (i) are learnable depthwise kernels. Finally, we unpack Z(i) into the pro-cessed sub-bands and reconstruct level-by-level with IDWT from i = L down to i = 1 to obtain ˆX.
+
+2.4. Computational Cost 
+
+We report parameters and FLOPs. Wavelet basis choice does not add learnable parameters because analysis/synthesis fil-ters are fixed; trainable parameters arise from the backbone and wavelet-domain depthwise kernels W (i).For depthwise convolution on M channels with kernel 
+
+k × k and spatial size H′ × W ′, the multiply-add cost is ap-proximately 
+
+FLOPs(DWConv) ≈ 2 M k 2 H′ W ′. (10) In our wavelet layer, M = 4 C and H′W ′ = HW  
+
+> 4i
+
+at level i,so the total convolution cost across L levels is 
+
+FLOPs conv ≈
+
+> L
+
+X
+
+> i=1
+
+2 · (4 C) · k2 · HW 
+
+4i . (11) Input                        
+
+> XDWT 1
+> Level-1 bands
+> {LL 1, LH 1, HL 1, HH 1}DWT 2
+> Level-2 bands
+> {LL 2, LH 2, HL 2, HH 2}DWConv (2)
+> k
+> groups = 4 CLL 1only
+> Output
+> ˆXIDWT 1DWConv (1)
+> k
+> groups = 4 C
+> Reconstructed level-1 bands IDWT 2Processed level-2 bands
+> ˆLL 1
+> detail skip ( LH 1, HL 1, HH 1)
+> Analysis (DWT, i= 1 →L)Wavelet-domain depthwise conv Synthesis (IDWT, i=L→1)
+> Legend: feature map DWT/IDWT (fixed, basis-dependent) learnable depthwise conv sub-bands detail-band skip
+
+Fig. 2 . Two-level WTConv layer ( L = 2 ). Top row (analysis): the input X is decomposed by DWT into four sub-bands; only the approximation band LL 1 is recursively decomposed at level 2. The deepest level’s packed sub-bands are processed by a learnable depthwise convolution (groups = 4 C). Bottom row (synthesis): reconstruction proceeds level-by-level via IDWT from i = L down to i = 1 , with detail bands {LH 1, HL 1, HH 1} bypassing the deeper level via a skip path. The choice of wavelet basis affects only the fixed DWT/IDWT filters: longer-support bases (db N , sym N , coif N ) raise per-level transform cost but, with stronger approximation, can reduce the required depth L — the F -vs.-L trade-off central to this work. The transform overhead depends on the wavelet filter length 
+
+F . From Eq. (6), each coefficient is a weighted sum over an 
+
+F × F neighborhood (via separable 1D filtering), so longer-support bases increase per-level DWT/IDWT cost roughly linearly with F . However, increasing F can reduce the number of required levels L for a target accuracy. Our exper-iments quantify this F –vs.– L trade-off by reporting accuracy together with FLOPs and parameters. 
+
+3. EXPERIMENTS 3.1. Experiments on Image Classification 
+
+3.1.1. Setup 
+
+We evaluate on CIFAR-10 [19] and ImageNet-1K [20]. On CIFAR-10, all models are trained for 120 epochs under a controlled training budget. On ImageNet-1K, we follow the standard ConvNeXt training recipe [21] (300 epochs, 
+
+224 ×224 resolution) and swap only the token mixer for fair comparison. We report Top-1 accuracy (%), number of pa-rameters (M), and FLOPs (G) for a single forward pass. For fairness, we keep the backbone capacity fixed (ConvNeXt-T [21]) when comparing different token mixers, and only swap the mixing module. 
+
+3.1.2. Performance Comparison against Edge Models 
+
+Table 2 compares our coiflet-based WTConv variant against representative efficient backbones and frequency-domain to-ken mixers: ConvNeXt-T with GFNet [9], Fourier Neural Op-erator (FNO) [22], and AFF [10]. We include ConvNeXt-T+WTConv (coif1) as our main model. 
+
+Table 2 . CIFAR-10 classification comparison (120 epochs).                      
+
+> Model Top-1 (%) ↑Params (M) ↓FLOPs (G) ↓
+> ConvNeXt-T [21] 81.0 28.6 4.5 ConvNeXt-T + GFNet [9] 81.2 32.9 4.7 ConvNeXt-T + FNO [22] 81.3 31.8 4.9 ConvNeXt-T + AFF [10] 81.4 31.2 4.8 ConvNeXt-T + WTConv (coif1) 81.7 30.6 4.7
+
+3.1.3. ImageNet-1K Results 
+
+To validate that the F -vs.-L trade-off observed on CIFAR-10 generalizes to large-scale classification, we evaluate WT-Conv variants on ImageNet-1K. Table 3 reports Top-1 accu-racy along with parameter and FLOP counts under matched training settings. (Camera-ready: numerical entries below are placeholders pending final ImageNet runs; the experi-mental protocol and configurations are fixed.) 
+
+Table 3 . ImageNet-1K classification (ConvNeXt-T back-bone, 300 epochs, 224 ×224 ).                                     
+
+> Model Wavelet / Levels Top-1 (%) ↑Params (M) ↓FLOPs (G) ↓
+> ConvNeXt-T [21] —82.1 28.6 4.5 ConvNeXt-T + WTConv Haar, [5 ,4,3,2] 82.8 30.6 5.0 ConvNeXt-T + WTConv db2, [5 ,4,3,2] 82.7 30.6 5.0 ConvNeXt-T + WTConv (ours) coif1, [4 ,3,2,1] 82.8 30.0 4.8
+
+3.1.4. Ablation Study of WTConv Configurations 
+
+To highlight parameter/FLOPs efficiency, we ablate WT-Conv configurations by varying the decomposition levels, kernel size, and wavelet basis while keeping the ConvNeXt-T backbone fixed. Table 4 reports Top-1 accuracy along with WTConv additional parameters (D-W Param.) and WTConv additional FLOPs (D-W FLOPs). Notably, coif1 achieves comparable accuracy using fewer levels, yielding lower D-W Param. and D-W FLOPs. 
+
+Table 4 . CIFAR-10 ablation study on ConvNeXt-T + WT-Conv (120 epochs). D-W Param./FLOPs denote WTConv ad-ditional cost.                                                                                                         
+
+> Levels Kernel Wavelet D-W Param. (M) ↓D-W FLOPs (G) ↓Top-1 (%) ↑
+> [4 ,3,2,1] 3×3Haar (db1) 0.50 0.12 81.24
+> [4 ,3,2,1] 5×5Haar (db1) 1.38 0.33 81.32
+> [4 ,3,2,1] 7×7Haar (db1) 2.70 0.65 81.56
+> [5 ,4,3,2] 3×3Haar (db1) 0.73 0.17 81.49
+> [5 ,4,3,2] 5×5Haar (db1) 2.04 0.49 81.75
+> [5 ,4,3,2] 7×7Haar (db1) 3.99 0.95 81.69
+> [5 ,4,3,2] 5×5Lows Haar 0.63 0.15 81.46
+> [5 ,4,3,2] 5×5Highs Haar 1.57 0.38 81.24
+> [5 ,4,3,2] 5×5db2 2.04 0.49 81.68
+> [5 ,4,3,2] 5×5db3 2.04 0.49 81.56
+> [4 ,3,2,1] 5×5coif1 1.38 0.33 81.72
+> [4 ,3,2,1] 3×3coif1 0.50 0.12 81.55
+
+3.2. Experiments on Semantic Segmentation 
+
+3.2.1. Setup 
+
+We evaluate semantic segmentation on Cityscapes [23]. We report mean Intersection-over-Union (mIoU, %) as the pri-mary metric, along with parameters and FLOPs. To keep comparisons controlled, we use WTConvNext as the back-bone for UNet. 
+
+3.2.2. Performance Comparison against Edge Models 
+
+Table 5 compares our ConvNeXt-T+WTConv(coif1) against representative efficient backbones and frequency-domain to-ken mixers under a matched setup. 
+
+Table 5 . Cityscapes semantic segmentation comparison. 
+
+Model mIoU (%) ↑ Params (M) ↓ FLOPs (G) ↓
+
+ConvNeXt-T [21] 80.0 28.6 4.5 ConvNeXt-T + GFNet [9] 80.3 32.9 4.7 ConvNeXt-T + FNO [22] 80.4 31.8 4.9 ConvNeXt-T + AFF [10] 80.5 31.2 4.8 ConvNeXt-T + WTConv (coif1) 80.8 30.6 4.7 
+
+3.2.3. Ablation Study of WTConv Configurations 
+
+We keep the segmentation setup fixed and ablate WTConv by varying decomposition levels, kernel size, and wavelet basis. Table 6 reports mIoU along with WTConv additional param-eters (D-W Param.) and WTConv additional FLOPs (D-W FLOPs). Coif1 reaches comparable mIoU with fewer levels, providing a more parameter- and FLOPs-efficient configura-tion. 
+
+Table 6 . Cityscapes ablation study on ConvNeXt-T + WT-Conv. D-W Param./FLOPs denote WTConv additional cost.                                                                                                         
+
+> Levels Kernel Wavelet D-W Param. (M) ↓D-W FLOPs (G) ↓mIoU (%) ↑
+> [4 ,3,2,1] 3×3Haar (db1) 0.50 0.12 80.29
+> [4 ,3,2,1] 5×5Haar (db1) 1.38 0.33 80.37
+> [4 ,3,2,1] 7×7Haar (db1) 2.70 0.65 80.61
+> [5 ,4,3,2] 3×3Haar (db1) 0.73 0.17 80.54
+> [5 ,4,3,2] 5×5Haar (db1) 2.04 0.49 80.80
+> [5 ,4,3,2] 7×7Haar (db1) 3.99 0.95 80.74
+> [5 ,4,3,2] 5×5Lows Haar 0.63 0.15 80.51
+> [5 ,4,3,2] 5×5Highs Haar 1.57 0.38 80.29
+> [5 ,4,3,2] 5×5db2 2.04 0.49 80.73
+> [5 ,4,3,2] 5×5db3 2.04 0.49 80.61
+> [4 ,3,2,1] 5×5coif1 1.38 0.33 80.77
+> [4 ,3,2,1] 3×3coif1 0.50 0.12 80.60
+
+4. CONCLUSION 
+
+We revisited wavelet basis selection for wavelet convolution layers and identified a previously unexplored filter-length vs. decomposition-depth (F -vs.-L) trade-off: prior work fixed the depth and varied only the basis, which obscured the fact that stronger-approximation bases can reduce the depth required to capture global context. Allowing both to vary changes the conclusion of which basis is preferable. Across CIFAR-10, ImageNet-1K, and Cityscapes, Coiflet-based WTConv matched deeper Haar configurations with approximately 32% fewer additional parameters and 33% fewer additional FLOPs, confirming the hypothesis that im-proved LL-branch approximation translates into shallower decompositions at equal accuracy. We view this as a concrete and actionable design choice for wavelet-based architectures, rather than a generic accuracy improvement. Future work will explore additional families such as spline-based (e.g., B-spline) wavelets and learnable or task-adaptive bases within the same transform–process–reconstruct framework. 
+
+5. REFERENCES 
+
+[1] Alex Krizhevsky, Ilya Sutskever, and Geoffrey E. Hin-ton, “Imagenet classification with deep convolutional neural networks,” in Advances in Neural Information Processing Systems (NeurIPS) , 2012. [2] Karen Simonyan and Andrew Zisserman, “Very deep convolutional networks for large-scale image recogni-tion,” in International Conference on Learning Repre-sentations (ICLR) , 2015. [3] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun, “Deep residual learning for image recognition,” in 
+
+Proceedings of the IEEE Conference on Computer Vi-sion and Pattern Recognition (CVPR) , 2016. [4] Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Sylvain Gelly, Jakob Uszkoreit, and Neil Houlsby, “An image is worth 16x16 words: Trans-formers for image recognition at scale,” in International Conference on Learning Representations (ICLR) , 2021. [5] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Lukasz Kaiser, and Illia Polosukhin, “Attention is all you need,” in 
+
+Advances in Neural Information Processing Systems (NeurIPS) , 2017. [6] Andrew G. Howard, Menglong Zhu, Bo Chen, Dmitry Kalenichenko, Weijun Wang, Tobias Weyand, Marco Andreetto, and Hartwig Adam, “Mobilenets: Efficient convolutional neural networks for mobile vision appli-cations,” arXiv preprint arXiv:1704.04861 , 2017. [7] Mingxing Tan and Quoc V. Le, “Efficientnet: Rethink-ing model scaling for convolutional neural networks,” in 
+
+International Conference on Machine Learning (ICML) ,2019. [8] Meng-Hao Guo, Cheng-Ze Lu, Zheng-Ning Liu, Ming-Ming Cheng, and Shi-Min Hu, “Visual attention net-work,” in European Conference on Computer Vision (ECCV) , 2022. [9] Yongming Rao, Wenliang Zhao, Zheng Zhu, and Jiwen Lu, “Global filter networks for image classification,” in Advances in Neural Information Processing Systems (NeurIPS) , 2021. [10] Zhipeng Huang, Hanting Chen, Yongqiang Zhou, Yonghong Wang, Weiming Wang, Chunhua Shen, and Xing Xie, “Adaptive frequency filters as efficient global token mixers,” in Proceedings of the IEEE/CVF Inter-national Conference on Computer Vision (ICCV) , 2023. [11] Zongyi Li, Nikola Kovachki, Kamyar Azizzadenesheli, Burigede Liu, Kaushik Bhattacharya, Andrew Stuart, and Anima Anandkumar, “Fourier neural operator for parametric partial differential equations,” in Interna-tional Conference on Learning Representations (ICLR) ,2021. [12] St´ ephane G. Mallat, “A theory for multiresolution sig-nal decomposition: The wavelet representation,” IEEE Transactions on Pattern Analysis and Machine Intelli-gence , vol. 11, no. 7, pp. 674–693, 1989. [13] Pranav Jeevan, Karthik Viswanathan, Aayush Sethi, and Jayaraman J. Thiagarajan, “Wavemix: Resource-efficient token mixing for images,” arXiv preprint arXiv:2203.03689 , 2022. [14] Ting Yao, Yingwei Pan, Yehao Li, Chong-Wah Ngo, and Tao Mei, “Wave-vit: Unifying wavelet and transformers for visual representation learning,” in European Confer-ence on Computer Vision (ECCV) , 2022. [15] Anahita Nekoozadeh, Mohammad Reza Ahmadzadeh, and Zahra Mardani, “Multiscale attention via wavelet neural operators for vision transformers,” arXiv preprint arXiv:2303.12398 , 2023. [16] Shahaf E. Finder, Roy Amoyal, Eran Treister, and Oren Freifeld, “Wavelet convolutions for large receptive fields,” in European Conference on Computer Vision (ECCV) , 2024. [17] Ingrid Daubechies, Ten Lectures on Wavelets , Society for Industrial and Applied Mathematics (SIAM), 1992. [18] “Pywavelets: A python package for wavelet analysis,” 
+
+https://pywavelets.readthedocs.io/ ,Accessed 2026-02-12. [19] Alex Krizhevsky, “Learning multiple layers of fea-tures from tiny images,” Technical report, University of Toronto, 2009. [20] Jia Deng, Wei Dong, Richard Socher, Li-Jia Li, Kai Li, and Li Fei-Fei, “Imagenet: A large-scale hierar-chical image database,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recogni-tion (CVPR) , 2009. [21] Zhuang Liu, Hanzi Mao, Chao-Yuan Wu, Christoph Fe-ichtenhofer, Trevor Darrell, and Saining Xie, “A con-vnet for the 2020s,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recogni-tion (CVPR) , 2022. [22] Zongyi Li, Nikola Kovachki, Kamyar Azizzadenesheli, Burigede Liu, Kaushik Bhattacharya, Andrew Stuart, and Anima Anandkumar, “Fourier neural operator for parametric partial differential equations,” 2020. [23] Marius Cordts, Mohamed Omran, Sebastian Ramos, Timo Rehfeld, Markus Enzweiler, Rodrigo Benenson, Uwe Franke, Stefan Roth, and Bernt Schiele, “The cityscapes dataset for semantic urban scene understand-ing,” in Proceedings of the IEEE Conference on Com-puter Vision and Pattern Recognition (CVPR) , 2016.
