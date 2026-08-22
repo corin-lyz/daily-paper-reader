@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-08-21</span>
+      <span class="dpr-home-dashboard-kicker">2026-08-22</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 8 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 5 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>1</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>7</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>0</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>5</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-08-21 21:21:59 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-08-22 20:59:00 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,7 +62,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日精读论文1篇，速读7篇，核心聚焦4D场景重建与高效渲染新突破。最值得关注的是《Depth Anything V4》---结合黎曼流匹配与4D高斯泼溅实现动态场景重建，评分高达9.0。建议普通读者优先了解多模态几何与神经渲染的交叉应用，后续可留意更轻量化的实时方案。</p>
+<p>今日完成5篇论文速读，无精读，整体偏向3D重建与视觉表征方向。最值得关注的是《GeoWeaver》（长序列3D重建）和《Core-KAN》（KAN视觉核），均获7.0分。建议优先精读这两篇，快速把握近期热点方法。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -71,12 +71,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">1 篇</strong>
+    <strong class="dpr-home-dashboard-count">0 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Depth Anything V4: Dynamic 4D Scene Reconstruction via Riemannian Flow Matching on 4D Gaussian Splatting">Depth Anything V4: Dynamic 4D Scene Reconstruction via Riemannian Flow Matching on 4D Gaussian Splatting</span></li></ul>
+<p class="dpr-home-dashboard-empty">今日暂无推荐。</p>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">mono-depth <strong>1</strong></span></div>
+
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -84,12 +84,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">7 篇</strong>
+    <strong class="dpr-home-dashboard-count">5 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Differentiable Voronoi Ray Tracing Beyond Rasterization Speeds">Differentiable Voronoi Ray Tracing Beyond Rasterization Speeds</span></li><li><span class="dpr-home-dashboard-paper-title" title="SAM2Dual: Training-Free, Dual Memory for Long-Term Video Object Segmentation">SAM2Dual: Training-Free, Dual Memory for Long-Term Video Object Segmentation</span></li><li><span class="dpr-home-dashboard-paper-title" title="Online Learning of Correspondences between Images">Online Learning of Correspondences between Images</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="GeoWeaver: Accurate Long-Sequence 3D Reconstruction via Hierarchical Geometric Assembly">GeoWeaver: Accurate Long-Sequence 3D Reconstruction via Hierarchical Geometric Assembly</span></li><li><span class="dpr-home-dashboard-paper-title" title="Core-KAN: Continuous Vision Kernels with Kolmogorov-Arnold Networks">Core-KAN: Continuous Vision Kernels with Kolmogorov-Arnold Networks</span></li><li><span class="dpr-home-dashboard-paper-title" title="Fast Implicit Neural Light Field Representation via Geometric Decomposition and Multi-Resolution Low-Rank Features">Fast Implicit Neural Light Field Representation via Geometric Decomposition and Multi-Resolution Low-Rank Features</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">mono-depth <strong>3</strong></span><span class="dpr-home-dashboard-tag">cv-render <strong>1</strong></span><span class="dpr-home-dashboard-tag">neural-bokeh <strong>1</strong></span><span class="dpr-home-dashboard-tag">seg <strong>1</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">mono-depth <strong>2</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>2</strong></span><span class="dpr-home-dashboard-tag">cv-render <strong>1</strong></span></div>
 </section>
 </div>
 

@@ -1,0 +1,226 @@
+Title: Fast Implicit Neural Light Field Representation via Geometric Decomposition and Multi-Resolution Low-Rank Features
+
+URL Source: https://arxiv.org/pdf/2608.13949v1
+
+Published Time: Mon, 17 Aug 2026 00:24:33 GMT
+
+Number of Pages: 6
+
+Markdown Content:
+# Fast Implicit Neural Light Field Representation via Geometric Decomposition and Multi-Resolution Low-Rank Features 
+
+Yao Guo, Ligen Shi, Shuchen Sun, Jun Qiu and Chang Liu ∗
+
+Abstract — Implicit neural representations provide a compact and continuous way to reconstruct dense light fields from sampled ray coordinates. However, fast light field reconstruction remains challenging because a light field is a high-dimensional signal with strong spatial–angular redundancy and structured disparity variations. Directly fitting 4D ray coordinates with a neural network often requires considerable optimiza-tion time to recover both view appearance and cross-view consistency. To address this issue, this paper proposes a fast implicit light field representation based on geometric decomposition and multi-resolution low-rank features. The proposed method decomposes a 4D light field into a horizontal disparity plane, a spatial texture plane, and a vertical disparity plane. Each plane is represented by a low-rank structure that combines a low-resolution 2D grid with the element-wise product of two high-resolution 1D line features at multiple resolution levels. The fused features are decoded by a lightweight multilayer perceptron to predict RGB values. Experiments on public light field datasets show that the proposed method achieves competitive recon-struction quality while providing a better trade-off among model parameters, training time, and inference efficiency. 
+
+I. I NTRODUCTION 
+
+Light fields (LFs) record both the spatial positions and angular directions of scene rays, and have been used in free-viewpoint synthesis, 3D perception, dig-ital refocusing, virtual reality, and autostereoscopic display [1], [2]. These applications often require LF representations that support dense ray querying, compact storage, and efficient rendering. However, an LF is a high-dimensional signal with spatial–angular redundancy, and its large data volume remains a ma-jor challenge for real-time processing, transmission,       
+
+> Yao Guo, Shuchen Sun, Jun Qiu and Chang Liu are with the Institute of Computational Imaging, Beijing Information Science and Technology University, Beijing 102206, China (e-mail: 2024020607@bistu.edu.cn; sunshuchen1210@163.com; qi-ujun@bistu.edu.cn; changliuct@gmail.com). Ligen Shi is with the College of Computer Science (College of Software), In-ner Mongolia University, Hohhot 010021, China (e-mail: ligen-shi0826@gmail.com). Corresponding author: Chang Liu.
+
+and storage [3]. Directly storing dense ray samples or fitting the full 4D signal with a generic neural network can lead to storage and optimization costs. Therefore, an efficient continuous representation is needed for LF modeling, especially when per-scene optimization and rendering efficiency are considered. Under the standard two-plane parameterization, a light ray is represented by four coordinates (u, v, x, y),where (u, v) denote angular coordinates and (x, y)
+
+denote spatial coordinates [1]. In this parameteriza-tion, the projection of the same scene point across different viewpoints forms disparity-dependent linear structures in epipolar plane images (EPIs) [4], [5]. The slope of an EPI line reflects scene disparity, indicating that angular and spatial coordinates in an LF are not independent but coupled by disparity. This spatial–angular coupling should be considered when designing an efficient implicit representation for LFs. Implicit neural representations (INRs) model vi-sual signals as continuous coordinate-based func-tions. Representative methods include NeRF [6] for neural radiance field representation, SIREN [7] for implicit signal representation with periodic activation functions, and Fourier feature mapping [8] for high-frequency coordinate fitting. To improve neural repre-sentation efficiency, explicit feature grids, tensor de-composition, and multi-resolution encoding have also been studied. Instant-NGP [9] uses multi-resolution hash encoding, TensoRF [10] represents radiance fields through tensor decomposition, K-Planes [11] decomposes high-dimensional neural fields into 2D feature planes, and GA-Planes [12] introduces a low-rank plane representation. These methods indicate that structured feature representations can reduce the optimization burden of neural fields. Neural light field (NLF) representations extend INR-based modeling to continuous light field rep-resentation and view synthesis. SIGNET [13] intro-duces Gegenbauer polynomial encoding for compact NLF representation; NeuLF [14] represents an LF as a mapping from 4D ray coordinates to color values; Light Field Networks [15] support single-arXiv:2608.13949v1 [cs.CV] 14 Aug 2026 evaluation neural scene rendering; and Ray-Space Embedding models NLFs through learned ray-space embeddings [16]. In addition to ray-color modeling, neural disparity field [17] uses an INR to repre-sent a continuous disparity field reconstructed from discrete LF observations. Recently, ray displacement fields [18] have been used to decompose NLF recon-struction into radiance representation and geometric displacement modeling. However, many existing NLF methods for ray-color representation still rely on direct 4D coordinate fitting or generic ray embed-dings. Since the coordinates (u, v, x, y) are coupled by disparity, directly fitting the full 4D function may require more parameters and optimization iterations to recover both view appearance and multi-view consistency. Although generic feature decompositions can im-prove neural representation efficiency, they are not specifically designed for the EPI geometry of LFs. In rectified two-plane LFs, horizontal disparity is mainly represented by the coupling between (u, x), vertical disparity by the coupling between (v, y), and intra-view texture by (x, y). This structure can be used as a prior for designing efficient light field INR models. Motivated by these observations, this paper pro-poses a fast implicit NLF representation based on ge-ometric decomposition and multi-resolution low-rank features. Instead of directly fitting the 4D LF with a generic coordinate multilayer perceptron (MLP), the proposed method decomposes the LF into ahorizontal disparity plane, a spatial texture plane, and a vertical disparity plane. Each plane is represented by a multi-resolution low-rank structure, where a low-resolution 2D grid is combined with the element-wise product of two high-resolution 1D line features. The fused features are decoded by a lightweight MLP to predict RGB values. This design uses the spatial–angular structure of LFs while maintaining the continuous querying ability of INR models. The main contributions of this paper are threefold. First, we propose a geometric tri-plane decomposition for LF INR, where a 4D LF is represented by a horizontal disparity plane, a spatial texture plane, and a vertical disparity plane, thereby considering the spatial–angular coupling in rectified LFs. Second, we introduce a multi-resolution low-rank plane represen-tation that combines low-resolution 2D plane grids with high-resolution 1D line-feature products to re-duce the redundancy of dense 2D feature grids. Third, we build an efficient continuous LF representation framework and evaluate its trade-offs among recon-struction quality, model parameters, training time, and inference efficiency on public LF datasets. II. M ETHOD 
+
+This section presents the proposed fast implicit LF representation. As shown in Fig. 1, a queried ray 
+
+r = ( u, v, x, y) is mapped onto three geometry-related planes: the horizontal disparity plane Pux , the spatial texture plane Pxy , and the vertical disparity plane 
+
+Pvy . Each plane is modeled by a multi-resolution low-rank structure that combines a low-resolution 2D grid with high-resolution 1D line features. The extracted features are concatenated and decoded by a lightweight multilayer perceptron (MLP) to predict the RGB color. 
+
+A. Problem Formulation 
+
+Under the two-plane parameterization, a light ray is represented as 
+
+r = ( u, v, x, y), (1) where (u, v) and (x, y) denote angular and spatial coordinates, respectively. Given an LF with observed ray-color samples, the training set is denoted as 
+
+D = {(ri, ci)}Ni=1, ri = ( ui, vi, xi, yi), ci ∈ R3, (2) where N is the number of samples used for opti-mization. Implicit LF representation aims to learn a continuous mapping 
+
+FΘ : r 7 → c, (3) which predicts the RGB color for a ray coordinate within the LF domain. Since LF coordinates are coupled by disparity, treating (u, v, x, y) as an unstructured 4D input may be inefficient. We therefore decompose the LF into geometry-related 2D feature planes. 
+
+B. Geometric Tri-Plane Decomposition 
+
+For rectified LFs, we define three 2D feature planes: 
+
+S = {(u, x), (x, y), (v, y)}. (4) Here, (u, x), (x, y), and (v, y) correspond to the hor-izontal disparity plane Pux , spatial texture plane Pxy ,and vertical disparity plane Pvy , respectively. For each (a, b) ∈ S, let Φab (a, b) be the learnable feature function on plane Pab . The structured feature of a queried ray is defined as 
+
+f(r) = M
+
+> (a,b)∈S
+
+Φab (a, b), (5) where ⊕ denotes channel-wise concatenation. Fig. 1. Overview of the proposed framework. A queried ray r = ( u, v, x, y) is mapped onto three feature planes. Each plane uses a multi-resolution low-rank representation that combines a low-resolution 2D grid Gℓ    
+
+> ab with the element-wise product of two high-resolution 1D line features Lℓ
+> aand Lℓ
+> b. The concatenated features are decoded by a lightweight MLP to predict the ray color.
+
+C. Multi-Resolution Low-Rank Plane Representation 
+
+Each plane Pab is represented by L resolution levels. At the ℓ-th level, we use a low-resolution 2D grid Gℓ 
+
+> ab
+
+and two high-resolution 1D line features Lℓ
+
+> a
+
+and Lℓ
+
+> b
+
+. The grid feature is obtained by 
+
+gℓ
+
+> ab
+
+(a, b) = ψ2D
+
+
+
+Gℓ
+
+> ab
+
+, a, b
+
+
+
+, (6) where ψ2D(·) denotes bilinear interpolation. The line-product feature is defined as 
+
+qℓ
+
+> ab
+
+(a, b) = ψ1D
+
+
+
+Lℓ
+
+> a
+
+, a
+
+
+
+⊙ ψ1D
+
+
+
+Lℓ
+
+> b
+
+, b
+
+
+
+, (7) where ψ1D(·) denotes linear interpolation and ⊙
+
+denotes element-wise multiplication. The final feature on plane Pab is 
+
+Φab (a, b) = 
+
+> L
+
+M
+
+> ℓ=1
+
+h
+
+gℓ
+
+> ab
+
+(a, b) ⊕ qℓ
+
+> ab
+
+(a, b)
+
+i
+
+. (8) This representation combines coarse 2D plane fea-tures with separable 1D line-product features, reduc-ing parameter growth compared with dense high-resolution 2D grids. 
+
+D. Color Decoding and Training Objective 
+
+Given the structured feature f(r), a lightweight decoder Dθ predicts the ray color: ˆc(r) = Dθ (f(r)) , (9) where the overall LF representation is denoted as 
+
+FΘ(r) = Dθ (f(r)) .For a mini-batch B ⊂ D, the loss is 
+
+Lr = 1
+
+|B| ∑
+
+> (ri,ci)∈B
+
+∥FΘ(ri) − ci∥22 . (10) The model parameters are optimized by 
+
+Θ∗ = arg min  
+
+> Θ
+
+Lr, (11) where Θ includes the plane grids, line features, and decoder parameters. After optimization, Eq. (9) can be used to query continuous ray coordinates within the LF domain. III. E XPERIMENTS 
+
+This section evaluates the proposed method on public LF datasets from three aspects: reconstruction quality, representation efficiency, and the effective-ness of the proposed structural design. 
+
+A. Experimental Setup 
+
+We evaluate the proposed method on three pub-lic LF datasets: EPFL (10 scenes), INRIA Lytro (5 scenes), and Stanford Gantry (2 scenes). These real and controlled-capture datasets have been used in the NTIRE 2025 LF Image Super-Resolution benchmark [19], and include different textures, depth variations, occlusions, and view-dependent effects. Reconstruction quality is measured by PSNR, SSIM, and LPIPS, while efficiency is evaluated by model parameters, training time, and inference time. All methods are evaluated under the same 9 × 9LF setting on an NVIDIA GeForce RTX 4090 GPU with 24 GB memory. The implementation is based on Python 3.12 and PyTorch 2.8.0 with CUDA mixed-precision training. Our model uses three geometry-related planes, Pux , Pxy , and Pvy , each containing a 2D grid branch and a 1D line-product branch. For the TABLE I QUANTITATIVE COMPARISON ON PUBLIC LF DATASETS . B EST RESULTS ARE MARKED IN BOLD . T HE AVERAGE IS COMPUTED OVER DATASETS .Dataset Method PSNR (dB) ↑ SSIM ↑ LPIPS ↓                                                
+
+> EPFL SIGNET 33.96 ±2.67 0.93 ±0.04 0.09 ±0.05 RSEN 30.10 ±1.64 0.87 ±0.05 0.19 ±0.06 RDF 31.85 ±1.73 0.94 ±0.02 0.07 ±0.05 Ours 35.45 ±2.55 0.93 ±0.03 0.02 ±0.02
+> INRIA SIGNET 35.43 ±3.07 0.91 ±0.06 0.12 ±0.05 RSEN 30.99 ±1.81 0.85 ±0.09 0.24 ±0.07 RDF 30.40 ±3.63 0.90 ±0.04 0.10 ±0.05 Ours 37.61 ±3.61 0.92 ±0.05 0.04 ±0.03
+> Stanford SIGNET 39.37 ±2.68 0.97 ±0.07 0.04 ±0.01 RSEN 36.76 ±0.77 0.97 ±0.04 0.07 ±0.04 RDF 29.36 ±4.09 0.95 ±0.03 0.03 ±0.02 Ours 37.30 ±5.22 0.97 ±0.01 0.01 ±0.06
+> Average SIGNET 36.25 ±2.80 0.94 ±0.03 0.08 ±0.04 RSEN 32.63 ±3.69 0.90 ±0.06 0.16 ±0.09 RDF 30.54 ±1.25 0.93 ±0.03 0.07 ±0.04 Ours 36.79 ±1.17 0.94 ±0.03 0.02 ±0.02
+
+2D grid branch, the spatial plane Pxy uses 8 square-grid levels ranging from 16 × 16 to 256 × 256. For the two disparity planes Pux and Pvy , the angular resolution ranges from 3 to 9 and is paired with the spatial resolution ranging from 16 to 128 at each level, forming multi-resolution 2D grids from 3 × 16 to 9 × 128. In the 1D line-product branch, the spatial line resolutions range from 64 to 512, while the angular line resolutions follow the corresponding angular levels from 3 to 9. Each feature level has 8 channels, each plane outputs a 128-dimensional feature, and the concatenated tri-plane feature has 384 dimensions. The decoder is a ReLU MLP with hidden width 256 and a linear RGB output layer. Following the optimization practice in high-fidelity INR recon-struction [20], we train the model for 300 epochs using Muon for the hidden-layer weights of the MLP decoder and Adam for the remaining parameters, with learning rates of 0.02 and 1 × 10 −2, respectively, together with a cosine annealing scheduler. We compare the proposed method with three rep-resentative NLF methods, including SIGNET, RSEN, and RDF. For all baselines, we follow the settings and default hyperparameters reported in the original papers. 
+
+B. Quantitative and Qualitative Results 
+
+Table I reports quantitative results on EPFL, INRIA Lytro, and Stanford Gantry. Our method achieves the best macro-average PSNR and LPIPS, with SSIM                                                   
+
+> TABLE II EFFICIENCY COMPARISON OF DIFFERENT METHODS ON THE
+> INRIA L YTRO DATASET .Method Params. (M) Train. (min) Infer. (s) SIGNET 2.37 360 20 RSEN 1.40 180 9RDF 0.66 72 12 Ours 1.55 21 8TABLE III TRAINING TIME REQUIRED TO REACH THE SAME TARGET
+> PSNR ON THE INRIA L YTRO DATASET .Scene Target PSNR (dB) Train.(min) SIGNET RSEN RDF Ours Bee 25.33 11 29 75 0.8
+> Building 29.93 37 168 70 2.0
+> Hublai 29.17 45 155 73 1.5
+> MessyDesk 33.44 72 173 62 2.0
+> Sculpture 32.19 60 180 68 2.0
+> Average 30.01 45.0 141.0 69.6 1.7
+
+comparable to the strongest baseline. It obtains the best PSNR and LPIPS on EPFL and INRIA Lytro, while achieving the lowest LPIPS on Stanford Gantry, showing a favorable balance between reconstruction quality and perceptual fidelity. Fig. 2 shows representative reconstruction results and error maps using pixel-wise absolute differ-ences. Compared with SIGNET, RSEN, and RDF, our method generally preserves finer structures and pro-duces lower error responses around textures, edges, and occlusion boundaries. However, in the challeng-ing Tarot scene with specular reflection and transpar-ent glass, local blurring and ghosting artifacts can still be observed. This suggests that highly view-dependent non-Lambertian effects may violate the low-rank assumption of the proposed representation and remain a limitation of our method. 
+
+C. Efficiency Analysis 
+
+Since one of the main objectives of the proposed method is efficient light field reconstruction, Table II compares the model parameters, average convergence time, and inference time of different methods under their default configurations. Our method achieves the shortest average convergence time and inference time with a moderate number of parameters. To further ensure a fair comparison, Table III reports the training time required to reach the same target PSNR on five INRIA Lytro scenes. The results show that our Fig. 2. Qualitative visual comparison of different methods on representative images selected from the EPFL, INRIA Lytro, and Stanford Gantry datasets, including the challenging Tarot scene. The results are shown for the center views, including reconstructed images and corresponding error maps. TABLE IV ABLATION STUDY RESULTS ON THE INRIA L YTRO DATASET .Setting PSNR (dB) ↑ SSIM ↑ LPIPS ↓
+
+w/o multi-res. 34.67 ±3.21 0.90 ±0.06 0.05 ±0.03 w/o line prod. 35.46 ±3.21 0.91 ±0.05 0.04 ±0.02 w/o 2D grid. 33.60 ±3.26 0.87 ±0.07 0.09 ±0.05 Full model 37.61 ±3.61 0.92 ±0.05 0.04 ±0.03 
+
+method remains significantly faster than SIGNET, RSEN, and RDF under the same reconstruction qual-ity. This advantage comes from the proposed geomet-ric tri-plane decomposition and multi-resolution low-rank features, which reduce the optimization burden of direct 4D coordinate fitting and avoid explicitly optimizing an additional displacement field. 
+
+TABLE V IMPACT OF MULTI -RESOLUTION LEVELS ON THE STANFORD 
+
+GANTRY DATASET .Levels PSNR (dB) ↑ SSIM ↑ LPIPS ↓ Train. (min) 4 levels 36.10 ±5.61 0.96 ±0.02 0.02 ±0.01 13 6 levels 36.91 ±5.36 0.96 ±0.01 0.02 ±0.01 17 8 levels 37.30 ±5.22 0.97 ±0.01 0.01 ±0.01 21 
+
+D. Ablation Study 
+
+We conduct ablation experiments on the INRIA Lytro dataset (5 scenes) to evaluate the contribution of the main components, including the multi-resolution design, the 1D line-feature product, and the 2D plane grid. As shown in Table IV, the full model achieves the best PSNR and SSIM, while maintaining the best or comparable LPIPS. In addition, we analyze the influence of the number of resolution levels on the Stanford Gantry dataset (2 scenes), as shown in Table V. Increasing the number of levels improves reconstruction quality by capturing richer multi-scale details. Although more levels increase training time, the additional cost is acceptable compared with the quality gain. Therefore, we use the 8-level setting as the default configuration. IV. C ONCLUSION 
+
+This paper presented a fast implicit LF represen-tation based on geometric decomposition and multi-resolution low-rank features. The proposed method decomposes a 4D LF into three geometry-related planes and represents each plane using low-resolution 2D grids and high-resolution 1D line-feature prod-ucts. This design reduces the redundancy of dense 2D feature grids while preserving structured LF information. Experiments on public datasets show that the proposed method provides a favorable trade-off among reconstruction quality, model parame-ters, training time, and inference efficiency. Future work will explore sparse-view reconstruction, dy-namic LFs, and real-time rendering. ACKNOWLEDGMENT 
+
+This work was supported by National Natural Science Foundation of China (under Grant Nos. 62171044, 61931003). REFERENCES 
+
+[1] Marc Levoy and Pat Hanrahan. Light field rendering. In 
+
+Proceedings of the 23rd Annual Conference on Computer Graphics and Interactive Techniques , SIGGRAPH, pages 31–42, 1996. [2] Chen Jia, Fan Shi, Meng Zhao, and Shengyong Chen. Light field imaging for computer vision: A survey. Fron-tiers of Information Technology & Electronic Engineering ,23(7):1077–1097, 2022. [3] Shiyu Feng, Yun Zhang, Linwei Zhu, and Sam Kwong. Lfic-drasc: Deep light field image compression using disen-tangled representation and asymmetrical strip convolution. 
+
+IEEE Transactions on Broadcasting , 71(3):889–902, 2025. [4] Robert C Bolles, H Harlyn Baker, and David H Marimont. Epipolar-plane image analysis: An approach to determining structure from motion. International journal of computer vision , 1(1):7–55, 1987. [5] Sven Wanner and Bastian Goldluecke. Variational light field analysis for disparity estimation and super-resolution. IEEE Transactions on Pattern Analysis and Machine Intelligence ,36(3):606–619, 2014. [6] Ben Mildenhall, Pratul P. Srinivasan, Matthew Tancik, Jonathan T. Barron, et al. NeRF: Representing scenes as neural radiance fields for view synthesis. Communications of the ACM , 65(1):99–106, 2021. [7] Vincent Sitzmann, Julien N. P. Martel, Alexander W. Bergman, David B. Lindell, et al. Implicit neural represen-tations with periodic activation functions. In Advances in Neural Information Processing Systems , volume 33, pages 7462–7473, 2020. [8] Matthew Tancik, Pratul P. Srinivasan, Ben Mildenhall, Sara Fridovich-Keil, et al. Fourier features let networks learn high frequency functions in low dimensional domains. In 
+
+Advances in Neural Information Processing Systems , vol-ume 33, pages 7537–7547, 2020. [9] Thomas M¨ uller, Alex Evans, Christoph Schied, and Alexan-der Keller. Instant neural graphics primitives with a mul-tiresolution hash encoding. ACM Transactions on Graphics ,41(4):1–15, 2022. [10] Anpei Chen, Zexiang Xu, Andreas Geiger, et al. TensoRF: Tensorial radiance fields. In Proceedings of the European Conference on Computer Vision , pages 333–350, 2022. [11] Sara Fridovich-Keil, Giacomo Meanti, Frederik Rahbæk Warburg, Benjamin Recht, and Angjoo Kanazawa. K-planes: Explicit radiance fields in space, time, and appear-ance. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 12479– 12488, 2023. [12] Ilke Sivgin, Sara Fridovich-Keil, Gordon Wetzstein, and Mert Pilanci. Geometric algebra planes: Convex implicit neural volumes. In The Second Conference on Parsimony and Learning , 2024. [13] Brandon Yushan Feng and Amitabh Varshney. SIGNET: Ef-ficient neural representation for light fields. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 14224–14233, 2021. [14] Zhong Li, Liangchen Song, Celong Liu, Junsong Yuan, and Yi Xu. Neulf: Efficient novel view synthesis with neural 4d light field. In Eurographics Symposium on Rendering ,2022. [15] Vincent Sitzmann, Semon Rezchikov, William T. Freeman, Joshua B. Tenenbaum, et al. Light field networks: Neural scene representations with single-evaluation rendering. In 
+
+Advances in Neural Information Processing Systems , vol-ume 34, pages 19313–19325, 2021. [16] Benjamin Attal, Jia-Bin Huang, Michael Zollh¨ ofer, Jo-hannes Kopf, et al. Learning neural light fields with ray-space embedding networks. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 19819–19829, 2022. [17] Ligen Shi, Chang Liu, Xing Zhao, et al. Iterative approach to reconstructing neural disparity fields from light-field data. 
+
+IEEE Transactions on Computational Imaging , 11:410–420, 2025. [18] Chang Liu, Ligen Shi, Lina Wu, et al. Neural light field rep-resentation and reconstruction based on a ray displacement field. Optics Express , 34(8):15468–15483, 2026. [19] Yingqian Wang, Zhengyu Liang, Fengyuan Zhang, et al. Ntire 2025 challenge on light field image super-resolution: Methods and results. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 1227– 1246, 2025. [20] Julian McGinnis, Florian A H¨ olzl, Suprosanna Shit, Flo-rentin Bieder, Paul Friedrich, Mark M¨ uhlau, Bj¨ orn Menze, Daniel Rueckert, and Benedikt Wiestler. Optimizing rank for high-fidelity implicit neural representations. arXiv preprint arXiv:2512.14366 , 2025.
