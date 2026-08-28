@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-08-26</span>
+      <span class="dpr-home-dashboard-kicker">2026-08-28</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 10 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 12 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>3</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>7</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>6</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-08-26 22:49:58 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-08-28 04:37:26 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,9 +62,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日精读聚焦立体匹配扩散模型与果园小目标检测优化，速读覆盖视频分割、多视图蒸馏及KAN视觉核，共处理10篇论文。</p>
-<p>最值得关注：StereoDiffuer利用显著性感知的渐进几何建模，显著提升立体匹配精度；YOLOv26/11/8跨代优化在复杂果园小目标检测与实例分割中表现突出。</p>
-<p>建议下一步优先精读这两篇高分工作，并关注速读中RS$^3$-Prune的稀疏剪枝思路，可迁移至视频任务加速。</p>
+<p>今日聚焦语义分割与数据增强，精选12篇论文，精读2篇高分工作。最值得关注的方向：扩散模型重用于开放词汇分割的文本到种子生成（满分推荐），以及难度感知的样本分配自适应增强。建议先精读满分论文，再对比速读中的推理式分割与Token剪枝方法。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -73,12 +71,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">3 篇</strong>
+    <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="StereoDiffuer: Diffusion-based Progressive Geometry Modeling with Saliency Attention Perception for Stereo Matching">StereoDiffuer: Diffusion-based Progressive Geometry Modeling with Saliency Attention Perception for Stereo Matching</span></li><li><span class="dpr-home-dashboard-paper-title" title="Cross-Generation Optimization of YOLOv26, YOLOv11, and YOLOv8 for Fine-Grained Small-Object Detection and Instance Segmentation in Complex Orchards">Cross-Generation Optimization of YOLOv26, YOLOv11, and YOLOv8 for Fine-Grained Small-Object Detection and Instance Segmentation in Complex Orchards</span></li><li><span class="dpr-home-dashboard-paper-title" title="CRISP: Calibration-Aware Visual State Space Duality for Remote Sensing Semantic Segmentation">CRISP: Calibration-Aware Visual State Space Duality for Remote Sensing Semantic Segmentation</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Text-to-seed generation: Training-free open-vocabulary seeded semantic segmentation via re-purposing diffusion as text-guided seed generator">Text-to-seed generation: Training-free open-vocabulary seeded semantic segmentation via re-purposing diffusion as text-guided seed generator</span></li><li><span class="dpr-home-dashboard-paper-title" title="Difficulty-Aware Sample Allocation for Adaptive Data Augmentation in Semantic Segmentation">Difficulty-Aware Sample Allocation for Adaptive Data Augmentation in Semantic Segmentation</span></li><li><span class="dpr-home-dashboard-paper-title" title="StereoDiffuer: Diffusion-based Progressive Geometry Modeling with Saliency Attention Perception for Stereo Matching">StereoDiffuer: Diffusion-based Progressive Geometry Modeling with Saliency Attention Perception for Stereo Matching</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">seg <strong>2</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">seg <strong>4</strong></span><span class="dpr-home-dashboard-tag">mono-depth <strong>1</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>1</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -86,12 +84,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">7 篇</strong>
+    <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="RS$^3$-Prune: Read-Sparse, Store-Sparse Token Pruning for Video Object Segmentation">RS$^3$-Prune: Read-Sparse, Store-Sparse Token Pruning for Video Object Segmentation</span></li><li><span class="dpr-home-dashboard-paper-title" title="DDMS: Discriminative Distillation of Multi-view Foundational Features into Single-view Models">DDMS: Discriminative Distillation of Multi-view Foundational Features into Single-view Models</span></li><li><span class="dpr-home-dashboard-paper-title" title="Core-KAN: Continuous Vision Kernels with Kolmogorov-Arnold Networks">Core-KAN: Continuous Vision Kernels with Kolmogorov-Arnold Networks</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="DRAgent: Discriminative Reasoning Agent for Referring Expression Segmentation">DRAgent: Discriminative Reasoning Agent for Referring Expression Segmentation</span></li><li><span class="dpr-home-dashboard-paper-title" title="Core-KAN: Continuous Vision Kernels with Kolmogorov-Arnold Networks">Core-KAN: Continuous Vision Kernels with Kolmogorov-Arnold Networks</span></li><li><span class="dpr-home-dashboard-paper-title" title="RS$^3$-Prune: Read-Sparse, Store-Sparse Token Pruning for Video Object Segmentation">RS$^3$-Prune: Read-Sparse, Store-Sparse Token Pruning for Video Object Segmentation</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">seg <strong>4</strong></span><span class="dpr-home-dashboard-tag">cv-render <strong>1</strong></span><span class="dpr-home-dashboard-tag">mono-depth <strong>1</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">mono-depth <strong>2</strong></span><span class="dpr-home-dashboard-tag">seg <strong>2</strong></span><span class="dpr-home-dashboard-tag">cv-render <strong>1</strong></span><span class="dpr-home-dashboard-tag">matting <strong>1</strong></span></div>
 </section>
 </div>
 
