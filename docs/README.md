@@ -47,11 +47,11 @@
     <strong class="dpr-home-dashboard-count">共 3 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
-    <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>2 次</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>1</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>2</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-08-29 04:07:13 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-08-29 23:04:40 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,7 +62,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日精读1篇、速读2篇，聚焦立体匹配、体积分割与薄物体重建三方向；最值得关注的是《StereoDiffuer》以扩散式渐进建模配合显著性感知，将立体匹配得分拉至8.0，值得精读；下一步可顺此思路，尝试将几何引导采样策略迁移至多模态重建任务中验证效果。</p>
+<p>今日精读立体匹配新作《StereoDiffuer》（8.0分），速读覆盖体分割与薄物体重建（7.0/6.0分）。最值关注扩散式几何建模与显著性感知的立体匹配方向，兼顾采样引导与多模态重建问题。下一步建议先复现精读论文代码，再按分数排序浏览速读要点。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
