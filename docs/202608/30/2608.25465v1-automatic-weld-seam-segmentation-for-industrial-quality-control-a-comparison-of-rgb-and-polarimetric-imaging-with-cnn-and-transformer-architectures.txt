@@ -1,0 +1,361 @@
+Title: Automatic weld seam segmentation for industrial quality control: a comparison of RGB and polarimetric imaging with CNN and transformer architectures
+
+URL Source: https://arxiv.org/pdf/2608.25465v1
+
+Published Time: Thu, 27 Aug 2026 00:47:25 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# Automatic weld seam segmentation for industrial quality control: a comparison of RGB and polarimetric imaging with CNN and transformer architectures 
+
+## Simone Garbin Leonardo Venturoso * Marco Todescato Fraunhofer Italia Research, Via A. Volta 13/A, 39100 Bolzano, Italy 
+
+{simone.garbin, leonardo.venturoso, marco.todescato}@fraunhofer.it 
+
+## Abstract 
+
+Visual inspection of welded assemblies remains one of the least automated stages in many industrial production pro-cesses, still depending largely on the experience of hu-man operators and thus subject to inter-operator variabil-ity; the manufacturing of special-purpose machinery cab-ins, the setting of this study, is one representative case. This work evaluates the feasibility of automatic weld seam seg-mentation from RGB and polarimetric imagery, compar-ing controlled laboratory acquisitions with images captured under real, uncontrolled conditions. Convolutional neural network (CNN) architectures (YOLOv8/YOLOv11 segmen-tation variants) and transformer-based architectures (RF-DETR-Seg, Mask2Former) are benchmarked under a uni-fied, threshold-independent protocol, training each CNN with three random seeds to separate genuine effects from seed noise. In controlled RGB conditions, CNN models reach a mean mask mAP 50 (averaged over three training seeds) of up to 0.87, but drop to 0.22–0.48 under uncon-trolled acquisition, showing that the acquisition setup is a first-order component of the inspection system. Polari-metric imaging with alignment-preserving geometric aug-mentation localizes previously unseen welds with a mean mask mAP 50 up to 0.93: on par with, rather than ahead of, the best controlled-RGB result, but reaching that ac-curacy on uncontrolled RGB without requiring acquisition control. The clearest architectural finding concerns ro-bustness to viewpoint change. In-distribution, transformers and CNNs are broadly comparable; but when the camera viewpoint shifts at test time (zero-shot transfer to a close-range, robot-relevant viewpoint), the transformer models, and RF-DETR in particular, retain high accuracy while ev-ery CNN collapses. This gap holds across three training seeds and survives a resolution-matched control, indicating it reflects the architecture rather than training resolution. Within the CNN family, in contrast, model capacity gives no reliable in-distribution advantage once seed variance is ac- 
+
+> *Corresponding author: leonardo.venturoso@fraunhofer.it
+
+counted for. Small, fast CNNs are therefore a safe default when the deployment viewpoint matches training, whereas transformer-based models deserve consideration wherever that viewpoint may vary. 
+
+## 1. Introduction 
+
+Quality control of welded assemblies remains one of the least automated stages in the manufacturing process [10]. Post-weld inspection is typically performed visually by spe-cialized operators, a process that is time-consuming, incon-sistent, and sensitive to environmental conditions [1, 24]. Inaccurate quality monitoring compromises product in-tegrity, driving up production costs and reducing customer satisfaction [31]. Locating weld seams in workpiece im-agery is the critical first step; automating this process is essential for downstream defect detection and automated robotic inspection [15]. From a computer vision stand-point, welded metallic surfaces are a challenging domain. Brushed and galvanized steel can produce strong specular reflections that complicate weld imaging; welds can also present irregular and variable geometry; and real shop-floor imagery adds background disturbance, reflections, shad-ows, blur, and viewpoint variation [34, 38]. These fac-tors degrade the performance of deep learning segmenta-tion models in industrial inspection, especially under small annotated datasets, since collecting and labeling industrial images is costly and time-consuming [32]. The goal of this work is to assess the feasibility of automatic weld seam in-stance segmentation across acquisition scenarios and imag-ing modalities, and to identify the factors that dominate performance in practice. Specifically, we compare: (i) RGB images acquired in a controlled laboratory setup ver-sus handheld acquisition in an uncontrolled shop-floor en-vironment; (ii) conventional RGB imaging versus polari-metric imaging, from which six per-pixel maps (Intensity, AoLP, DoLP, Imax , Imin , Specular) are derived; (iii) seg-mentation architectures spanning two families (single-stage CNNs and transformers) and more than an order of magni-1arXiv:2608.25465v1 [cs.CV] 26 Aug 2026 tude in parameter count; and (iv) training factors including input resolution, weight initialization, optimizer, and data augmentation. All experiments follow a unified protocol with data partitions defined at the level of the physically ac-quired weld sample. 
+
+## 2. Literature review 
+
+Literature on automated weld inspection spans five core themes: seam segmentation, architecture selection, po-larization imaging, small-data learning, and deployment efficiency. While lightweight vision pipelines dominate practical implementations, evidence for polarimetric weld segmentation remains sparse, drawing largely on general reflective-surface inspection [6, 25, 39]. 
+
+2.1. Vision-based weld inspection 
+
+Although vision-based weld inspection has progressed from classical edge- and morphology-based pipelines toward learned segmentation, classical methods persist in robotic welding for their interpretability and ease of closed-loop integration [27]. Manual inspection remains common in robotic quality control due to subtle defect appearances, long training times, and variable inspection standards [25, 27]. Recent deep learning research focuses on pixel-level seam segmentation capable of handling arc light, spat-ter, and weak boundaries [39]. A prominent example is CvT-UNet, which uses a U-shaped convolution-transformer encoder–decoder to reach mean IoUs up to 93.75% across varied environments [39]. DSNet targets the real-time regime, reporting 78.01% IoU, 87.64% Dice (the overlap-based F1 score on the predicted masks) and 100 FPS [2]. 
+
+2.2. Segmentation architectures 
+
+Instance segmentation has historically been dominated by detection-then-segmentation designs such as Mask R-CNN [8], while newer query-based methods enable direct end-to-end prediction. Mask2Former serves as a primary baseline, framing semantic, instance, and panoptic seg-mentation through a shared masked-attention decoder [4], though it relies on heavy pixel decoders and has not es-tablished clear superiority on real-time benchmarks [7]. FastInst mitigates this computational bottleneck with lighter decoders, reporting 32.5 FPS and 40.5 AP on COCO [7], while DN-DETR accelerates convergence in DETR-style networks via query denoising [17]. For weld inspection, however, YOLO variants remain far more prevalent than DETR-family models. Some segment weld seams directly, such as an improved YOLOv8s-Seg for seam tracking [41] and the boundary-enhanced SABE-YOLO [36]; others tar-get detection and ROI localization, including S-YOLO [33], tailored architectures for seam identification [28, 37], and active–passive vision-fusion frameworks [9]. These imple-mentations uniformly prioritize low latency, minimal foot-print, and edge deployment. 
+
+2.3. Polarimetric imaging 
+
+Polarimetric imaging measures the polarization state of light reflected by a surface, which depends on the surface’s geometry, roughness and material and is largely invisible to conventional intensity imaging. This makes it well suited to reflective metallic inspection: it captures surface and mate-rial cues that RGB misses, suppressing glare and improving uniformity [40, 42]. Recent sensor-level advances, such as chip-integrated full-Stokes imagers, enable single-shot ac-quisition in CMOS-compatible form factors, and division-of-focal-plane systems reconstruct Stokes parameters with DoLP and AoLP at full resolution [3, 42]. Polarimetric cues further support per-pixel material discrimination [16] and 3D reconstruction of specular surfaces when fused with de-flectometry [35]. Applied industrial evidence is strongest in adjacent defect-inspection domains rather than in weld segmentation itself. A polarization system for highly reflective curved surfaces removed glare and improved image uniformity, with its YOLOv11 detector gaining 3.9% in precision over the best baseline [40], while a dual-stream polarization-plus-RGB network for rail defects reached 73.00% mIoU on low-contrast segmentation [26]. However, direct evalu-ation of polarimetric imaging for weld-seam instance seg-mentation remains largely unexplored. 
+
+2.4. Deep learning with small industrial datasets 
+
+Small and imbalanced industrial datasets remain a pri-mary constraint in applied deep learning, since collect-ing defective samples is expensive and limited diversity undermines robustness [5, 20]. Transfer learning from natural-image pretraining is the standard mitigation strat-egy. On injection-molding defects, model-based transfer learning with augmentation reached about 99% accuracy from only 200 images per class, against 88.7% for con-ventional CNNs [20]; on small fused-deposition-modeling (FDM), ImageNet fine-tuning with augmentation exceeded 90% accuracy on low-cost hardware [14]. Welding shares these constraints, with severe class imbalance motivating GAN-based augmentation and pretrained backbones [5]. Cross-domain evidence further warns that larger models do not automatically transfer better, and that random valida-tion splits can overestimate deployment quality [6]. Conse-quently, the trade-off between model capacity and general-ization is critical for small weld datasets, where nano-scale CNNs may match larger transformers that lack the data for stable optimization [17, 39]. 22.5. Real-time deployment 
+
+For robotic and workstation-based inspection, the litera-ture consistently prioritizes computational efficiency along-side segmentation accuracy rather than peak benchmark scores [22, 30]; DSGNet, for instance, reaches competi-tive surface-defect mIoU with only 0.49M parameters [22]. This requirement is particularly pronounced in weld in-spection, where high headline scores are typically obtained under controlled acquisition and for task-specific formu-lations: an improved YOLOv8s-Seg seam-tracking robot reports a weld-recognition mAP 50 of about 97.8% with a 4.88 MB model and roughly 54 ms inference on a Jet-son Nano [41], while SABE-YOLO attains 127 FPS with 6.6M parameters [36]. Such figures, obtained in favorable and often single-task settings, leave open how segmenta-tion behaves when acquisition is uncontrolled or the view-point changes at deployment time, precisely the regime this study targets. System-level studies reinforce that segmen-tation quality alone is insufficient: path planning, view-point placement and workflow integration all matter in prac-tice [25, 30]. Few studies, however, evaluate weld seg-mentation on partner-owned industrial data under both con-trolled and uncontrolled acquisition [7, 25]. 
+
+2.6. Research gap and contribution 
+
+While existing literature demonstrates the viability of deep weld segmentation, the benefits of polarization for reflec-tive surface, and the need for lightweight models, it lacks a unified evaluation comparing RGB and polarimetric imag-ing under matched protocols [7, 26, 40]. Furthermore, cur-rent studies rarely isolate the impact of acquisition setup relative to architecture choice when operating on actual shop-floor data, despite evidence that real-world domain shift heavily influences model behaviour [6]. Finally, de-spite the strong performance of transformer-based archi-tectures on standard benchmarks, there is little empirical evidence regarding their transferability to small industrial weld datasets, leaving it unclear whether higher-capacity models offer any practical benefit over compact CNN al-ternatives in this regime [4, 7, 20]. Building on these gaps, this study delivers three key findings. We first present a unified, threshold-independent evaluation comparing RGB and polarimetric imaging for weld seam instance segmen-tation, testing both convolutional and transformer archi-tectures on identical dataset splits and evaluation proto-cols. Next, we measure the impact of acquisition condi-tions relative to model selection. The data demonstrates that transitioning from controlled to uncontrolled environ-ments causes a performance degradation that outweighs the variances between model families, while multi-map polari-metric imaging effectively restores robustness on unman-aged surfaces without physical illumination controls. Fi-nally, we analyze model behavior under deployment-time viewpoint shifts, observing that detection transformers gen-eralize to unseen, close-range perspectives significantly bet-ter than the evaluated CNNs, an effect confirmed to be in-dependent of input resolution and evaluation threshold pa-rameters. Rather than searching for an optimal model ar-chitecture, this work serves as a controlled feasibility study. The goal is to isolate how acquisition modality, illumination control, and architectural choices interact under realistic in-dustrial constraints. Accordingly, quantitative performance figures are presented to evaluate these trade-offs rather than to assert a single state-of-the-art result. 
+
+## 3. Materials and methods 
+
+Figure 1 summarizes the end-to-end validation pipeline fol-lowed in this study, from data acquisition to the final met-rics; the remainder of this section details each stage. 
+
+3.1. Materials 
+
+All images depict weld seams on metallic specimens pro-vided by the industrial partner specialized in custom op-erator cabin manufacturing. Ground-truth annotations are polygonal instance masks of a single class ( Weld ), produced manually. Table 1 summarizes the datasets. 
+
+Controlled RGB dataset. Images were acquired with an OAK-D RGB camera [23] fixed at 20 cm from the workpiece, with two auxiliary polarizer-equipped spotlights and a neutral black background, minimizing environmental variability. This setup provides an upper-bound scenario for model performance under consistent acquisition. Three metal specimens were imaged, for a total of 78 source im-ages. 
+
+Industrial RGB dataset. A second set of 54 images was captured directly at the industrial production facility under unconstrained conditions. These acquisitions lack back-ground or illumination control and include specular reflec-tions, cluttered backgrounds, variable perspective angles, and non-uniform lighting to reflect operational deployment conditions. 
+
+PolarSens datasets. A division-of-focal-plane polariza-tion camera (Baumer PolarSens, 0◦/45 ◦/90 ◦/135 ◦ micro-polarizer array) was used to acquire 67 physically distinct weld scenes under polarized illumination. From each ac-quisition, six per-pixel maps are derived, namely Intensity, angle of linear polarization (AoLP), degree of linear polar-ization (DoLP), Imax , Imin and Specular, each stored as a 3-channel image. These maps carry complementary infor-mation on surface structure, orientation and roughness, and allow assessing the contribution of polarization cues on re-flective metallic surfaces. Because the polarization camera has a different viewpoint, this dataset is not pixel-aligned with the RGB ones. Figure 2 illustrates an example of the 3① Data & preprocessing     
+
+> RGB Controlled
+> OAK-D · 51/15/12
+> RGB Industrial
+> OAK-D · 35/11/8
+> PolarSens 6 maps
+> 47/15/5
+> Close-range
+> 62 img · eval-only
+> Leakage-free split
+> + train-only augmentation
+> ②Architecture
+> CNN family
+> YOLOv8 / YOLOv11-seg
+> 2.8–22.4 M · COCO-
+> pretrained
+> Transformer family
+> RF-DETR-Seg · Mask2Former
+> 36–69 M · COCO-pretrained
+> ③Training
+> Training
+> ≤1000 epochs · early stop
+> checkpoint = best val
+> Seeds
+> CNN ×3
+> Transf ×1 (in-dist)
+> Transf ×3 (domain-shift)
+> ④Evaluation & metrics
+> Unified pycocotools ·
+> COCOeval
+> conf 0.01 ·
+> full PR sweep
+> Setting A
+> In-distribution
+> (per scenario)
+> Setting B
+> Zero-shot →
+> close-range
+> mask mAP ₅₀ · mAP ₅₀₋₉₅
+> Precision / Recall / F1
+> Latency (ms/img)
+> nano 24 … M2F 454
+> zero-shot
+
+Figure 1. End-to-end validation pipeline. Data partitions are split at the physical-weld level before any augmentation (Sec. 3.5); all six models are evaluated with the same pycocotools protocol at a fixed confidence threshold (Sec. 3.5), both in-distribution and, zero-shot, on the close-range set (Sec. 5). Table 1. Datasets used in this study. “Train” counts physically distinct source acquisitions, with augmented training images in parentheses; augmented variants are generated from training sources only (Sec. 3.5). Acquisition conditions are detailed in the text. The close-range set is evaluation-only: by design it has no train or validation split (Sec. 3.1, “Close-range test set”), and all 62 images are used exclusively for zero-shot cross-evaluation of models trained on the other scenarios. 
+
+Dataset Camera Resolution Train (aug.) Val Test RGB controlled OAK-D 1920 ×1080 51 (510) 15 12 RGB industrial OAK-D 1920 ×1080 35 (175) 11 8PolarSens multi-map PolarSens 2448 ×2048 47 (1384) 15 5PolarSens Intensity PolarSens 1224 ×1024 45 (450) 14 10 Close-range test OAK-D 1920 ×1080 — — 62 
+
+six polarization maps for a representative weld seam. Un-like the five magnitude-based maps (intensity, DoLP, Imax ,
+
+Imin , and specular), which present similar grayscale appear-ances with distinct highlight distributions, the AoLP map exhibits a characteristic hue-like angular pattern. This spa-tial variance across representations provides the rationale for the multi-map strategy detailed in Sec. 3.4. 
+
+Close-range test set. An additional evaluation-only dataset of 62 close-range images ( ∼ 10 cm, single weld per image, manually captured) evaluates model generalization to the acquisition geometry expected in a robot-mounted camera setup. 
+
+3.2. Segmentation models 
+
+We compare six instance segmentation models span-ning two architectural families and more than an or-der of magnitude in parameter count (Table 2): four single-stage CNN detectors with mask heads from the YOLO family (YOLOv11-n/s/m-seg [11, 13], YOLOv8-s-seg [12]), and two transformer-based models: RF-DETR-Seg (Small) [29], a DINOv2-backbone detection trans-former with a segmentation head, and Mask2Former (Swin-Small) with masked-attention segmentation [4]. This mod-els selection balances inference throughput and capacity for industrial deployment. Transformer architectures are in-cluded to assess their transferability to data-scarce manu-facturing settings and to anchor the upper bound of model capacity within our benchmark. All architectures are fine-tuned from COCO-pretrained weights. 
+
+3.3. Training strategies 
+
+All models are trained to convergence, with a maximum budget of 1000 epochs and early stopping. To train the CNN models, we use the Ultralytics pipeline [11] with its default hyperparameters: the SGD optimizer with an initial learning rate lr 0=0 .01 and a batch size of 2 at full resolution. The transformer models are trained with the AdamW optimizer [21] within their respective ref-erence implementations: a learning rate of 5×10 −5 for Mask2Former, and the RF-DETR defaults with an effec-tive batch size of 16 obtained through gradient accumula-tion. All experiments run on a single NVIDIA RTX 3090 4Figure 2. The six PolarSens per-pixel maps derived from one acquisition (weld 20, test split), ground-truth weld outline in green. Table 2. Evaluated architectures. End-to-end latency (preprocessing, inference, postprocessing) per image on a single NVIDIA RTX 3090, measured on the polarimetric validation split at each model’s input resolution; transformer figures include amortized model loading.                             
+
+> Model Family Params (M) Input res. (px) Latency (ms/img) YOLOv11-n-seg CNN 2.8 2464 24 YOLOv11-s-seg CNN 10.1 2464 49 YOLOv11-m-seg CNN 22.4 2464 111 YOLOv8-s-seg CNN 11.8 2464 42 RF-DETR-Seg-S Transformer 36.3 1120 132 Mask2Former (Swin-S) Transformer 69 1024 †454
+> †shorter side; transformer models are trained at reduced resolution due to GPU memory constraints, a caveat discussed in Sec. 5.
+
+(24 GB). Wall-clock training time scales with both model capacity and dataset size (largest for the augmented Po-larSens multi-map set, smallest for industrial RGB): across scenarios and seeds, CNN training took on average 1.5 h (YOLOv11-n, range 0.2–7.6 h), 1.8 h (YOLOv11-s, range 0.3–6.2 h), 4.7 h (YOLOv11-m, range 0.8–15.6 h) and 1.6 h (YOLOv8-s, range 0.3–4.4 h); the transformers took 0.7– 5.5 h (RF-DETR-Seg-S) and 0.9–9.6 h (Mask2Former), the same industrial-RGB-to-PolarSens range as the CNNs but consistently at the upper end of it, consistent with their larger parameter counts (Table 2). For the RGB sce-narios, we additionally compare pretrained versus from-scratch initialization; native ( 1920 ×1080 ) versus halved (960 ×540 ) input resolution; and, for the best configura-tions, a hyperparameter-optimization stage comparing the SGD and AdamW optimizers, using Ultralytics’ built-in genetic-algorithm tuner. Each “iteration” is one hyperpa-rameter trial: it trains an independent model for 50 epochs with its own sampled hyperparameter values, and only the best-performing trial’s hyperparameters are carried forward to the final model. The search spends on the order of 
+
+100 × 50 = 5000 epochs of training compute in total, split across 100 short, independent 50-epoch runs. Some datasets are augmented offline: augmented image variants 5are generated once from the training images and stored on disk, rather than being produced on the fly during train-ing (the procedure is detailed in Sec. 3.5). For these pre-augmented datasets, the online augmentation of the train-ing pipeline is disabled, so that all image-level variability comes from the stored offline augmentation and is identical across the models being compared. 
+
+Seed repetition. Reported metrics are mask mAP (mean average precision computed on the predicted segmentation masks, as opposed to bounding boxes). To separate gen-uine architectural effects from run-to-run randomness on our small test sets, each of the four CNN configurations is trained with three random seeds (varying weight initial-ization and data shuffling), and we report the mean and standard deviation across these seeds throughout Sec. 4. Training the transformer models is substantially more ex-pensive, so their in-distribution results (Tables 3, 5, 7) are obtained with a single seed. The practical consequence is that small in-distribution gaps involving the transform-ers should be read with caution: for example, RF-DETR’s in-distribution lead over the best CNN on industrial RGB (Sec. 4.2) is only about three to four times the CNN seed standard deviation, so we cannot yet rule out that part of it is seed noise. Confirming these smaller in-distribution mar-gins would require training the transformers with multiple seeds as well, which we leave to future work. The one com-parison for which we train the transformers with three seeds is the domain-shift cross-evaluation to the close-range set (Sec. 5), where both transformers are retrained with three seeds for each source scenario (controlled and industrial RGB). Here the effect is an order of magnitude larger than the CNN seed variance, as the transformer-versus-CNN gap in mask mAP 50 spans 0.6 to 0.8, compared to a maximum CNN seed standard deviation of 0.05. The multi-seed cost is therefore justified precisely where the claim is strongest. These same three industrial-RGB seeds are additionally re-evaluated in-distribution under the identical protocol, to check that RF-DETR’s out-of-distribution advantage repro-duces across runs rather than resting on one lucky seed; this does not extend multi-seed training to the general in-distribution rankings of Sec. 4.2. 
+
+3.4. Polarimetric strategies 
+
+We evaluate four strategies to leverage the polarimetric in-formation (Figure 3): 1. Single-map (baseline): only the intensity map is used, as a standard 3-channel input, discarding the polarization cues. 2. Multi-map : all six maps are treated as independent 3-channel training samples that share the same ground-truth annotation, leaving the network architecture un-modified. In practice this multiplies the effective training-set size sixfold, since each map of a given weld is added to the dataset as a separate image with the same mask. 3. Single-backbone fusion : the six maps are stacked into an 18-channel input processed by a single backbone, evalu-ated with both a direct 18-channel first-layer convolution and an explicit channel-split layer. 4. Multi-backbone fusion : six parallel backbones, one per map, with feature-level fusion preceding the neck. For the two fusion strategies (3 and 4), data augmentation must strictly preserve spatial alignment across all six maps. Geometric transformations (horizontal/vertical flips, rota-tions within ±15 ◦, and shears within ±10 ◦) are therefore sampled once per sample and applied identically to all six maps and to the polygon masks. Photometric augmenta-tions are intentionally omitted, since they would corrupt the physical meaning of the polarimetric quantities. Results for strategies 3 and 4 are presented in Sec. 4.4. 
+
+3.5. Experimental protocol 
+
+Data partitions are strictly structured at the physical acqui-sition level: all original images and augmented variants of a given weld sample reside within the same partition to pre-vent data leakage. Augmentation is restricted exclusively to the training set, while validation and test sets consist solely of unaugmented original images. Within each experimen-tal scenario, all models are trained and evaluated on iden-tical splits. Evaluation metrics comprise COCO-style box and mask mAP 50 and mAP 50–95 , alongside precision, re-call, and F1 score at the selected operating point. To en-sure a fair comparison across architectural paradigms, all CNN and transformer models are evaluated using a uni-fied pycocotools pipeline [19] at a fixed low confidence threshold ( 0.01 ). This allows COCOeval [18] to sweep confidence thresholds across the full precision–recall spec-trum. This threshold adjustment accounts for the lower calibrated confidence scores of query-based transformers. Applying higher operational thresholds (e.g., 0.5) truncates valid predictions and biases average precision against CNN baselines. The validation split plays a single, specific role: it is the signal used to pick the checkpoint that is later evaluated, for every architecture in this study. Concretely, the CNN training pipeline retains the checkpoint with the best validation fitness at each epoch [11], Mask2Former retains the checkpoint with the lowest validation loss, and RF-DETR retains the checkpoint with the best validation mAP 50-95 . The test split is never seen during training or checkpoint selection; it is touched only for the final, single evaluation reported in each table. Checkpoint selection op-timizes a validation-set criterion, so validation scores could plausibly run systematically higher than test scores; empir-ically they don’t, in this study, in either direction. We veri-fied that validation and test partitions never share a physical weld or an augmented variant of one, across every scenario, 6Polarimetric input strategies.  Six per-pixel maps (3-ch each): Intensity, AoLP, DoLP, I max , I min , Specular: combined in four ways. 
+
+(a) Single-map (baseline) — intensity only, polarization cues discarded    
+
+> Intensity map
+> (3-ch)
+> other 5 maps discarded
+> Backbone Neck Seg head Predicted
+> Weld mask
+
+(b) Multi-map — six independent 3-ch samples through one unmodified network (6× effective data)   
+
+> 6 maps
+> (independent 3-ch samples)
+> each map = separate training sample, sharing the
+> same GT · ×6 effective dataset
+> Backbone Neck Seg head
+> single shared network — architecture unmodified
+> Predicted
+> Weld mask
+> ×6 samples
+
+(c) Single-backbone fusion — six maps stacked into an 18-channel input 
+
+> 6 maps
+> (3-ch each)
+
+⊕ 18-ch   
+
+> tensor
+> Backbone
+> (18-ch conv / channel-
+> split)
+> Neck Seg head Predicted
+> Weld mask
+
+(d) Multi-backbone fusion — six parallel backbones, feature-level fusion before the neck  
+
+> 6 maps
+> (3-ch each)
+> 6× parallel
+> backbones
+
+⊗  
+
+> feature fusion
+> Neck Seg head Predicted
+> Weld mask
+> split per map
+
+Legend    
+
+> Input / tensor (maps, 18-ch) Network module (backbone / neck / head) ⊕/⊗Fusion operator (concat / feature fusion)
+> Predicted Weld mask (output)
+
+Figure 3. The four polarimetric strategies of Sec. 3.4. (a)–(b) use an unmodified YOLO11-seg architecture, single 3-channel input; they differ only in what is fed as training data. (c)–(d) use custom Split / ConvMultiInput 
+
+layers to fuse all six maps inside the network, either through one shared backbone on the stacked 18-channel input (c) or through six parallel backbones concatenated at three feature scales before a shared neck (d). Verified against 
+
+config/yolo11-seg-custom-polarsens-{singlebackbone,multibackbone}.yaml .
+
+ruling out a split-leakage bug. Two factors explain the pat-tern instead. The validation and test splits are both small (8– 15 and 5–12 images respectively, per scenario), so ranking noise from a handful of images is comparable in size to any genuine gap between splits. And the checkpoint-selection criterion (validation fitness, validation loss, or validation mAP 50-95 , depending on the framework) differs from the mask mAP 50 column reported in the tables, so the check-point favored by the selection criterion can score differently on that specific metric. Results tables report both test and validation for every model so this can be inspected directly. Within each results table, models are listed in descending order of test-split mask mAP 50 , independently in every ta-ble; this produces a different row order in different tables and is not a stable per-model ranking carried over from one scenario to the next, which is the point being illustrated (Sec. 4.5). 74. Results 
+
+Figure 4 previews the three acquisition scenarios qualita-tively before the detailed quantitative evaluation: correct segmentation in controlled RGB and PolarSens maps, and a representative CNN failure mode under cluttered industrial RGB (false-positive background clutter and a missed weld), providing a concrete example of the limitations detailed in Sec. 4.2. 
+
+4.1. Controlled RGB 
+
+Table 3 reports model performance under controlled condi-tions using the uniform pycocotools evaluation proto-col (Sec. 3.5) for seed 0. On the test split, RF-DETR-Seg achieves the highest performance (mask mAP 50 of 0.900 ), though it converges to the CNN cluster on the validation set (0.755 , compared to 0.72 –0.81 for CNNs). Mask2Former lags across both splits ( 0.61 –0.69 ). The four CNN architec-tures cluster tightly on both splits (test 0.79–0.82), with no consistent ranking by size. To quantify variance within the CNN family, Table 8 provides multi-seed statistics across three random runs, evaluated under the Ultralytics-native validation protocol rather than the uniform pycocotools 
+
+protocol used in Table 3: the two protocols score the same checkpoint differently, so for a given architecture the seed-0 entry in Table 3 and the seed-0 sample underlying Ta-ble 8 are not the same number, only the same trained model. In the controlled RGB rows of Table 8, every CNN archi-tecture yields a three-seed mean mask mAP 50–95 between 
+
+0.46 and 0.55 , with standard deviations ranging from 0.005 
+
+to 0.026 . The YOLOv11 variants (nano, small, medium) fall within half a standard deviation of one another, with YOLOv8-s showing the largest deviation ( ∼ 1.6 pooled standard deviations on test). Given the small test partitions (8–15 images per split) and three-seed sampling, these mi-nor variations remain within expected noise bounds, pre-venting a definitive ranking among CNN backbones. Earlier feasibility trials showed that dedicated hyperparameter op-timization (100 SGD tuning iterations) boosted YOLOv11-s/m mask mAP 50 to 0.89 –0.90 (and up to 0.85 on the close-range set). However, achieving these gains over the default baselines requires significant tuning overhead. Direct zero-shot evaluation on the close-range set yields a distinct trend (Table 4). Averaged over three seeds, RF-DETR-Seg gen-eralizes best to the new domain (mAP 50 = 0.842, mAP 50–95 
+
+= 0.537), outperforming CNN baselines ( 0.08 –0.17 ) and Mask2Former ( 0.41 ) by a wide margin. In Sec. 5, we ana-lyze these results and run a resolution-matched ablation to isolate architectural effects from image resolution. 
+
+4.2. Industrial RGB 
+
+Under uncontrolled shop-floor acquisition, performance drops sharply for the four CNN architectures (Table 5): on the seed-0 checkpoints, the best CNN reaches test mask mAP 50 0.47 (YOLOv8-s, mAP 50–95 0.24), against 0.79– 0.82 for the same four models in controlled conditions (Ta-ble 3), a performance drop that far exceeds any differ-ence among the CNN variants. Table 8 confirms this with three-seed statistics: CNN test means cluster at 0.22–0.48 mask mAP 50 , with standard deviations of 0.04–0.05; un-der this multi-seed average, YOLOv11-n emerges as the top-performing CNN (mean 0.477) rather than YOLOv8-s (mean 0.440), which led under seed 0 alone. This shift underscores the instability of single-seed rankings. Across runs, only YOLOv11-m consistently underperforms be-yond seed variance, whereas the relative rankings among the nano, small, and YOLOv8-s variants remain statisti-cally indistinguishable. RF-DETR is the best model over-all on both splits (test 0.619/0.243, validation 0.643/0.311), clearly ahead of every CNN. Mask2Former is second on test (0.523/0.198) but drops into the CNN cluster on valida-tion (0.435/0.212, below three of the four CNNs). This is the only in-distribution scenario in which a transformer out-performs every CNN outright. Zero-shot cross-evaluation on the close-range set (Table 6) provides the clearest evi-dence of this trend across all model comparisons. When both transformers are fine-tuned on the industrial RGB im-ages and then evaluated, without any further training, on the close-range set, they outperform every CNN baseline by a large margin under three-seed statistics. RF-DETR reaches a three-seed mean mask mAP 50 of 0.810 (mAP 50–95 0.537 )and Mask2Former 0.461 (0.300 ), whereas the four CNNs span only 0.043 –0.189 (0.018 –0.089 ). In other words, the weakest transformer result is still more than twice the strongest CNN result on this set. Two caveats temper the Mask2Former figure specifically. Its three-seed mean is in-flated by a single unusually strong seed: the three runs score 
+
+0.352 , 0.338 and 0.693 , giving a standard deviation ( 0.164 )far above the ≤ 0.05 seen everywhere else in this study. Even so, its worst individual seed ( 0.338 ) still exceeds the 
+
+best individual CNN seed ( 0.200 ), so the ranking does not depend on that lucky run; the high variance is a separate finding, revisited in Sec. 5. RF-DETR, by contrast, is sta-ble across seeds (std 0.007 ), so its advantage rests on firm ground. This close-range result mirrors the one obtained when the same models are instead fine-tuned on controlled RGB (Table 4): the transformers’ advantage on the shifted, close-range viewpoint therefore holds regardless of which RGB scenario they were trained on. Because this pattern is the paper’s central finding, it is analyzed in full, together with a resolution-matched ablation that separates an archi-tectural explanation from a resolution artifact, in Sec. 5. On the CNN side, a typical failure mode on this set is back-ground structure misclassified as weld in visually cluttered scenes.These findings illustrate the drop from lab conditions to field deployment, underpinning our acquisition recom-mendations in Sec. 5. In comparison, the preliminary feasi-8Figure 4. Qualitative segmentation results (ground truth in solid green, prediction in dashed red) across the three main acquisition scenarios. Industrial RGB shows a representative CNN failure mode: a false-positive mask on cluttered background (bottom) alongside a missed weld (top right, green outline with no matching prediction). Table 3. Controlled RGB scenario, uniform pycocotools protocol, seed-0 checkpoints (test: 12 images; validation: 15 images).                              
+
+> Test Validation Model mask mAP 50 mAP 50–95 mask mAP 50 mAP 50–95
+> RF-DETR-Seg-S 0.900 0.471 0.755 0.395 YOLOv11-n 0.819 0.452 0.792 0.436
+> YOLOv11-s 0.797 0.475 0.814 0.433 YOLOv11-m 0.795 0.437 0.783 0.433 YOLOv8-s 0.791 0.454 0.723 0.422 Mask2Former (Swin-S) 0.610 0.355 0.686 0.361
+
+Table 4. Zero-shot cross-evaluation on the close-range test set (62 images) of the six models trained on controlled RGB (Table 3), uniform pycocotools protocol; no fine-tuning on close-range data. Mean ± population standard deviation over three training seeds for every model. Even the worst individual Mask2Former seed (0.357) exceeds the best individual CNN seed (YOLOv11-s, 0.215), so the transformer advantage is not an artifact of seed selection.                                       
+
+> Model mask mAP 50 mAP 50–95
+> RF-DETR-Seg-S 0.842 ±0.015 0.537 ±0.027
+> Mask2Former (Swin-S) 0.406 ±0.050 0.243 ±0.042
+> YOLOv11-s 0.168 ±0.037 0.091 ±0.019
+> YOLOv11-n 0.116 ±0.005 0.066 ±0.004
+> YOLOv11-m 0.102 ±0.011 0.048 ±0.008
+> YOLOv8-s 0.081 ±0.005 0.045 ±0.004
+
+bility study scored mask mAP 50 of 0.43/0.36 for YOLOv11-s and 0.49/0.17 for YOLOv11-m (half vs. native resolution, default hyperparameters), consistent with our CNN base-lines. 
+
+4.3. PolarSens 
+
+Single map. Using the Intensity map alone yields lim-ited performance (best: mask mAP 50 0.40, mAP 50–95 0.23, YOLOv11-s pretrained; not tabulated, as this baseline is not the focus of the comparison), below the controlled RGB baseline: the intensity content of the polarimetric sensor, by itself, does not compensate for the reduced dataset size. 
+
+Multi-map without augmentation. Feeding all six maps as independent samples to an unmodified YOLOv11 im-proves results markedly (mask mAP 50 up to 0.70, mAP 50–95 
+
+0.36), indicating that the complementary polarization maps carry discriminative information about the weld region even when processed independently. 
+
+Multi-map with geometric augmentation. Adding the alignment-preserving geometric augmentation of Sec. 3.4 produces the strongest results of the study (Table 7). On welds never seen in training, all four CNN architectures localize welds reliably (test mask mAP 50 0.74–0.91) and RF-DETR-Seg is essentially tied with the best CNN on this metric using the same seed-0 checkpoints as Table 7 9Table 5. Industrial RGB scenario, uniform pycocotools protocol, seed-0 checkpoints (test: 8 images; validation: 11 images).                              
+
+> Test Validation Model mask mAP 50 mAP 50–95 mask mAP 50 mAP 50–95
+> RF-DETR-Seg-S 0.619 0.243 0.643 0.311
+> Mask2Former (Swin-S) 0.523 0.198 0.435 0.212 YOLOv8-s 0.471 0.244 0.500 0.224 YOLOv11-s 0.414 0.167 0.477 0.209 YOLOv11-n 0.408 0.130 0.507 0.251 YOLOv11-m 0.247 0.088 0.432 0.219
+
+Table 6. Zero-shot cross-evaluation on the close-range test set of the six models trained on industrial RGB (Table 5), uniform 
+
+pycocotools protocol; no fine-tuning on close-range data. Mean ± population standard deviation over three training seeds for every model. Mask2Former’s variance here is exceptional (seeds 0.352, 0.338, 0.693): one seed nearly doubles the other two. Even so, its worst individual seed (0.338) exceeds the best individual CNN seed (YOLOv11-n, 0.200), so the ranking is unaffected; this high transformer variance is itself discussed in Sec. 5.                                       
+
+> Model mask mAP 50 mAP 50–95
+> RF-DETR-Seg-S 0.810 ±0.007 0.537 ±0.014
+> Mask2Former (Swin-S) 0.461 ±0.164 0.300 ±0.124
+> YOLOv11-n 0.189 ±0.008 0.089 ±0.005
+> YOLOv11-s 0.102 ±0.037 0.037 ±0.011
+> YOLOv8-s 0.061 ±0.016 0.025 ±0.007
+> YOLOv11-m 0.043 ±0.015 0.018 ±0.010
+
+(0.904 versus 0.914). Against the three-seed mean of the best CNN (0.926, YOLOv11-n, Table 8) the tie widens slightly, though still by less than the seed-to-seed variance discussed below. The stricter mAP 50–95 suggests otherwise: every CNN baseline ( 0.38 –0.50 ) outperforms RF-DETR (0.421 ) and Mask2Former ( 0.309 ), indicating that trans-formers achieve comparable coarse localization to CNNs, but with less precise boundaries. Table 8 quantifies CNN seed variance directly: three-seed test means span 0.537– 0.570 mask mAP 50–95 with standard deviations of 0.012– 0.030, i.e. the four architectures perform comparably on this metric, though YOLOv11-n has the highest mean on both splits. The gap between the lenient and strict metrics for the CNNs themselves indicates that residual errors concentrate in boundary precision rather than in weld localization. 
+
+Transformer baselines. When evaluated under the same threshold-independent protocol as the CNNs, RF-DETR-Seg closes the gap on PolarSens significantly more than raw scores suggest: it matches the best CNN on mask mAP 50 
+
+(Table 7) and trails only on the strict mAP 50–95 metric, where all four CNNs maintain a distinct lead (0.38–0.50 versus 0.421). Mask2Former remains the weakest model on both splits and both metrics (0.52/0.31 test). Both trans-formers show early validation-loss saturation during train-ing, indicative of over-parameterization relative to the ∼50 training welds; this training-curve evidence is independent of evaluation thresholding, offering the strongest support for how model capacity limits performance in low-data regimes. Their latency (132 and 454 ms/img respectively, versus 24 ms/img for YOLOv11-n) remains a practical de-ployment overhead regardless of accuracy. Part of the re-maining performance gap likely stems from resolution con-straints imposed by GPU memory limits (Tab. 2); disentan-gling resolution from architecture effects for this scenario specifically is left to future work (Sec. 5 reports a resolution ablation for the RGB scenarios). 
+
+4.4. Polarimetric channel fusion 
+
+Table 9 reports the two fusion variants (nano scale, trained on the alignment-preserving augmented dataset of Sec. 3.4), evaluated with a dedicated multimodal validator that mir-rors the training-time dataset construction. Both variants perform far below the multi-map baseline of Table 7 (test mask mAP 50–95 0.03–0.04 versus a 0.54–0.57 three-seed mean, Table 8), and below the single-map baseline of Sec. 4.3 as well. Explicit channel fusion is therefore not competitive with treating the six polarization maps as in-dependent training samples on this dataset. We attribute this to the combination of a small training set ( ∼47 welds) with architectures of substantially larger effective capacity (a channel-split layer plus, for the multi-backbone variant, six parallel backbones): both training curves plateau within the first 5–10 epochs, well before the 30–50-epoch budget that suffices for the multi-map CNNs, indicating an opti-mization regime dominated by insufficient data rather than by insufficient training time. The primary takeaway remains robust: even with a corrected architecture and a leakage-free split, both fusion variants perform well below the un-modified multi-map approach. In contrast, the relative rank-ing between the two fusion variants varies across metrics (multi-backbone leads only on test mAP 50 , while single-backbone wins on the remaining three), so we draw no firm conclusion on their ordering. 10 Table 7. PolarSens multi-map with geometric augmentation, uniform pycocotools protocol, seed-0 checkpoints: leakage-free sample-level splits (test: 5 unseen welds / 30 images; validation: 15 unseen welds / 90 images).                              
+
+> Test Validation Model mask mAP 50 mAP 50–95 mask mAP 50 mAP 50–95
+> YOLOv11-n 0.914 0.501 0.756 0.350
+> RF-DETR-Seg-S 0.904 0.421 0.701 0.295 YOLOv8-s 0.862 0.500 0.700 0.336 YOLOv11-s 0.807 0.479 0.679 0.323 YOLOv11-m 0.743 0.382 0.644 0.289 Mask2Former (Swin-S) 0.519 0.309 0.595 0.278
+
+Table 8. CNN seed variance across the three in-distribution scenarios: mean ± population standard deviation over 3 seeds, Ultralytics-native validation protocol. This protocol differs from the uniform pycocotools protocol used in Tables 3, 5 and 7, so the seed-0 entries here are different numbers from the seed-0 rows in those tables for the same checkpoints; the ranges reported per scenario in the text apply to that scenario’s rows only, not to the table as a whole. These figures characterize variance within the CNN family and are not comparable across families; see Tables 3, 5 and 7 for the protocol-matched comparison against the transformers, whose in-distribution results are single-seed (Sec. 3.3). Nothing is bolded, since no architecture is reliably distinguishable from the others at these standard deviations.                                                                                                                                                      
+
+> Test Validation Model mask mAP 50 mAP 50–95 mask mAP 50 mAP 50–95
+> Controlled RGB
+> YOLOv11-n 0.858 ±0.009 0.503 ±0.020 0.869 ±0.013 0.517 ±0.025
+> YOLOv11-s 0.860 ±0.018 0.504 ±0.013 0.849 ±0.007 0.521 ±0.007
+> YOLOv11-m 0.865 ±0.012 0.510 ±0.014 0.844 ±0.014 0.514 ±0.005
+> YOLOv8-s 0.779 ±0.034 0.463 ±0.026 0.855 ±0.006 0.549 ±0.009
+> Industrial RGB
+> YOLOv11-n 0.477 ±0.051 0.201 ±0.017 0.521 ±0.016 0.268 ±0.022
+> YOLOv11-s 0.428 ±0.039 0.195 ±0.019 0.496 ±0.032 0.228 ±0.010
+> YOLOv11-m 0.221 ±0.050 0.081 ±0.021 0.372 ±0.060 0.193 ±0.028
+> YOLOv8-s 0.440 ±0.050 0.226 ±0.036 0.493 ±0.025 0.242 ±0.005
+> PolarSens multi-map
+> YOLOv11-n 0.926 ±0.021 0.570 ±0.012 0.825 ±0.028 0.432 ±0.009
+> YOLOv11-s 0.890 ±0.012 0.545 ±0.016 0.838 ±0.013 0.442 ±0.005
+> YOLOv11-m 0.897 ±0.028 0.555 ±0.030 0.825 ±0.012 0.445 ±0.007
+> YOLOv8-s 0.889 ±0.023 0.537 ±0.028 0.833 ±0.023 0.445 ±0.005
+
+4.5. Architectural comparison 
+
+Once evaluated under a unified protocol (Sec. 3.5) with quantified seed variance, the cross-model comparison is far less straightforward than single-run metrics imply, for two reasons. First, within the CNN family, model capacity shows no reliable in-distribution ranking once seed variance is accounted for (Table 8: three-seed means for the four ar-chitectures fall within roughly one to two standard devia-tions of each other in nearly every scenario and split). The one exception robust to seed noise is the medium model, which is the worst CNN by a margin exceeding its own vari-ance on industrial RGB and is never the best elsewhere; be-yond that, we do not consider a nano-versus-small-versus-YOLOv8-s ranking established. Second, the transformers do not follow a single pattern relative to the CNNs. In-distribution, RF-DETR is competitive to outright best in ev-ery scenario under the corrected protocol (best model over-all on industrial RGB, best on controlled-RGB test, tied with the best CNN on PolarSens mask mAP 50 ), while trail-ing the CNN cluster on the stricter mAP 50–95 on PolarSens and, on validation splits, falling back into the CNN range rather than leading it; Mask2Former remains the weakest model on PolarSens and controlled RGB but is competitive on industrial RGB test. Latency still tracks capacity cleanly (Table 2): the nano CNN is the fastest model benchmarked (24 ms/img) and Mask2Former the slowest (454 ms/img, roughly 19 × slower), independently of which model is most accurate in a given scenario. The strongest, most gen-eral pattern lies not in in-distribution capacity, but in be-havior under domain shift. Across all close-range cross-evaluations, both transformers, particularly RF-DETR, out-perform every CNN baseline by a wide margin. The next section analyzes this finding alongside a resolution-matched ablation to separate architectural effects from resolution ar-11 Table 9. Polarimetric channel fusion (YOLOv11-n backbone, single class), alignment-preserving augmentation, leakage-free splits (test: 5 unseen welds / 30 images; validation: 15 unseen welds / 90 images). Multi-backbone leads only on test mask mAP 50 and trails on every other column, including its own validation split; with only 5 test and 15 validation welds, single high-IoU-threshold hits or misses swing these metrics disproportionately, so the two variants should be read as comparably poor rather than one reliably beating the other (see the small-test-set caveat in Sec. 5).              
+
+> Test Validation Model mask mAP 50 mAP 50–95 mask mAP 50 mAP 50–95
+> Single-backbone (18ch, split layer) 0.117 0.040 0.178 0.068
+> Multi-backbone (6 parallel) 0.216 0.029 0.083 0.039
+
+tifacts. 
+
+## 5. Discussion and conclusions 
+
+Acquisition quality is a system component. The largest performance factor in this study is not architectural. Three-seed CNN test means span 0.78–0.87 mask mAP 50 in con-trolled conditions and fall to 0.22–0.48 on shop-floor im-agery (Table 8), a gap far wider than any difference between architectures within either scenario. The transformers de-grade less steeply: on the seed-0 checkpoints Mask2Former drops from 0.610 to 0.523 and RF-DETR from 0.900 to 0.619, both smaller relative losses than the weakest CNNs, which anticipates the domain-shift behaviour discussed be-low. For industrial adoption, the acquisition setup (back-ground, illumination, and camera distance) deserves at least as much engineering attention as the choice of network. 
+
+Polarimetric imaging for reflective surfaces. 
+
+Polarization-derived maps are informative for weld segmentation on reflective metal. The multi-map strategy with alignment-preserving augmentation reaches a three-seed mean mask mAP 50 of 0.93 (YOLOv11-n, Table 8) with an unmodified architecture. Two factors drive this: the complementary information across the six maps (0.40 to 0.70 mAP 50 from single- to multi-map) and the geometric augmentation (0.70 to 0.93). Boundary precision remains the open problem, with mAP 50–95 below 0.58. Explicit channel fusion does not help: both fusion variants fall well below the multi-map baseline (Sec. 4.4), so at this dataset size feeding independent maps to an unmodified network uses the polarimetric signal more efficiently than architectural fusion. Across scenarios, polarimetric multi-map (0.93) is on par with the best controlled-RGB result (RF-DETR, 0.900, Table 3), a difference within the seed variance seen elsewhere in this study (0.01–0.03 on comparable splits). We therefore do not claim polarimetric imaging is superior to RGB under controlled acquisition. Its practical advantage is over uncontrolled RGB, where it reaches 0.89–0.93 against 0.25–0.62 for RGB models (seed-0, Table 5): it matches controlled-RGB accuracy without the background, lighting, and distance control that RGB requires, at the cost of a dedicated camera and polarized illumination. 
+
+Model capacity and small data. Within the CNN fam-ily, model capacity gives no reliable in-distribution rank-ing once seed variance is accounted for. Across PolarSens and both RGB scenarios (Table 8), the four architectures’ three-seed means fall within one to two standard devia-tions of each other in almost every split, so nano, small, and YOLOv8-s cannot be separated with three seeds and 8– 15-image test sets. The one ranking that survives is that the medium model is the worst CNN on industrial RGB by more than its own noise and is never best elsewhere. The defensible conclusion is narrow: capacity beyond the nano/small range brings no measurable gain at this data scale, and the choice among small variants should rest on latency and memory rather than an expected accuracy edge. For practice, embedded-friendly models are a safe default in-distribution, and effort is better spent on data collection and acquisition control than on model size. 
+
+Transformers generalize better under domain shift. The clearest exception to “smaller is enough” is transformer be-haviour under distribution shift. In both zero-shot cross-evaluations to the close-range set, from controlled RGB (Ta-ble 4) and from industrial RGB (Table 6), RF-DETR leads by a wide margin regardless of training scenario (three-seed mean mask mAP 50 0.842 and 0.810, against CNN means of 0.08–0.17 and 0.04–0.19 mask mAP 50 ), and its worst seed still beats the best CNN seed in both cases. The effect does not depend on clean training data and is not a single-seed ar-tifact. Figure 5 shows it on one image: the controlled-RGB CNN misses the weld entirely, while RF-DETR trained on the same data localizes it. Two alternative explanations were tested. The first is the evaluation threshold: query-based transformers emit low-confidence detections, and the fixed pycocotools proto-col (Sec. 3.5) scores every model over the full precision– recall curve, removing the bias that a higher cutoff would place on the transformers. The second is input resolu-tion (Table 2: CNNs at native resolution, transformers at 1120/1024 px). Because close-range welds are large in pix-12 Figure 5. Domain-shift comparison on a single close-range test image (ground truth in solid green, prediction in dashed red), both models trained on controlled RGB only and evaluated zero-shot: YOLOv11-n produces no prediction at all, while RF-DETR-Seg-S localizes the weld closely. 
+
+els, a lower resolution could in principle favour the trans-formers. The ablation in Table 10 rules this out: retrain-ing YOLOv11-n from scratch at the transformer resolution (1120 px) recovers almost nothing on the close-range set (0.174 mask mAP 50 ), far below RF-DETR at the same reso-lution (0.842 mask mAP 50 ). The large recovery seen when a natively-trained CNN is merely run at 1120 px (0.611 mask mAP 50 ) is a side effect of testing outside the trained resolu-tion, not evidence that resolution explains the gap. One feature of the industrial-trained RF-DETR needs care: its close-range score exceeds its own in-distribution score (0.810 versus a 0.612 three-seed mean mask mAP 50 ,on every seed). A uniformly easier test set would raise all models, yet the CNNs collapse on the same images, so the close-range set is not simply easy; RF-DETR transfers to the new viewpoint well enough to exceed its noisier in-distribution result. Mask2Former does not show this. Its close-range mean (0.461 mask mAP 50 ) is inflated by a sin-gle strong seed (0.693 against roughly 0.34 for the other two, std 0.164), and the pattern is not consistent across runs. We therefore attribute the domain-shift advantage to RF-DETR specifically, not to transformers as a class, and read Mask2Former’s spread as instability of its head when trained on only 35 industrial images. The mecha-nism most consistent with these results is that the attention-based, DINOv2- or Swin-pretrained backbones generalize to a large distance and viewpoint change more gracefully than the CNN backbones. Confirming this would require an ablation separating backbone pretraining from architecture family, and a CNN pretrained on a comparably large cor-pus, which we did not have. In practice, the result argues for testing candidate models at the deployment viewpoint rather than defaulting to a lightweight CNN, especially for a robot-mounted camera whose distance and angle change along the inspection path. 
+
+Limitations. This is an exploratory study. Test sets are small (5–15 welds per scenario), so single-weld outcomes can move per-split metrics even after averaging three seeds; per-weld variance reporting is planned. Three-seed repeti-tion covers the domain-shift cross-evaluation for both fam-ilies, but the in-distribution transformer results (Tables 3, 5, 7) are single-run, so the smaller transformer–CNN margins there, such as RF-DETR’s in-distribution lead on indus-trial RGB, warrant more caution than the domain-shift re-sult. Mask2Former’s close-range variance (std up to 0.164), larger than any other result here, is itself a finding on head stability in this regime. The RGB datasets cover only three physical specimens; the resolution ablation covers one ar-chitecture and one scenario; transformer training is capped at reduced resolution by GPU memory; and the work ad-dresses weld localization only, not defect classification, which is the natural next step. Finally, all latency figures are offline measurements on a desktop GPU (Table 2); on-line validation on live streams and embedded hardware, in-cluding the accuracy–throughput trade-off at the lower input resolutions such targets require, is left to future work. 
+
+Industrial implications. The results support a phased 13 Table 10. Resolution ablation: YOLOv11-n trained on controlled RGB, evaluated zero-shot on the close-range test set (62 images), uniform 
+
+pycocotools protocol. RF-DETR-Seg-S is included as the transformer reference point at the same test resolution. The native-train/test and RF-DETR rows reproduce values already reported in Table 4.                     
+
+> Configuration Train (px) Test (px) mask mAP 50 mAP 50–95
+> YOLOv11-n, native (baseline) 1920 1920 0.119 0.068 YOLOv11-n, inference-only 1920 1120 0.611 0.330 YOLOv11-n, retrained matched 1120 1120 0.174 0.081 RF-DETR-Seg-S (reference) 1120 1120 0.842 0.537
+
+path. Lightweight CNNs on controlled-acquisition stations can already assist operators in weld localization, standardiz-ing inspection and reducing its time. Polarimetric imaging is a worthwhile upgrade for reflective surfaces, mainly be-cause it removes the acquisition-control burden rather than because it raises an already-competitive accuracy ceiling, at the cost of a dedicated camera and polarized illumina-tion. The offline latency of the fastest model (24 ms/img on a desktop GPU) suggests embedded deployment in robot-guided cells is plausible but unverified on embedded hard-ware. In all cases the deployment viewpoint should be checked in advance, given the domain-shift results. 
+
+## Data availability 
+
+Data will be made available on request. 
+
+## Acknowledgements 
+
+This work was supported by internal institutional funding. 
+
+## References 
+
+[1] Leopoldo Armesto, Josep Tornero, Alvaro Herraez, and Jose Asensio. Inspection system based on artificial vision for paint defects detection on cars bodies. In 2011 IEEE In-ternational Conference on Robotics and Automation , pages 1–4. IEEE, 2011. [2] Jia Chen, Congcong Wang, Fan Shi, Mounir Kaaniche, Meng Zhao, Yan Jing, and Shengyong Chen. Dsnet: Adynamic squeeze network for real-time weld seam image segmentation. Engineering Applications of Artificial Intel-ligence , 133:108278, 2024. [3] Yipeng Chen, Junren Wen, Weiming Shi, Haiqi Gao, Yu Shao, Liang Xu, Shuaibo Feng, Xuehui Wang, Yuchuan Shao, Weidong Shen, et al. Computational spectro-polarimetric imaging with resolution-preserving demosaick-ing. Optics Express , 33(8):17990–18004, 2025. [4] Bowen Cheng, Ishan Misra, Alexander G Schwing, Alexan-der Kirillov, and Rohit Girdhar. Masked-attention mask transformer for universal image segmentation. In Proceed-ings of the IEEE/CVF conference on computer vision and pattern recognition , pages 1290–1299, 2022. [5] Wei Dai, Dayong Li, Ding Tang, Huamiao Wang, and Yinghong Peng. Deep learning approach for defective spot welds classification using small and class-imbalanced datasets. Neurocomputing , 477:46–60, 2022. [6] Payman Goodarzi, Andreas Schütze, and Tizian Schneider. Comparison of different ml methods concerning prediction quality, domain adaptation and robustness. tm-Technisches Messen , 89(4):224–239, 2022. [7] Junjie He, Pengyu Li, Yifeng Geng, and Xuansong Xie. Fastinst: A simple query-based model for real-time instance segmentation. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 23663– 23672, 2023. [8] Kaiming He, Georgia Gkioxari, Piotr Dollár, and Ross Gir-shick. Mask r-cnn. In Proceedings of the IEEE international conference on computer vision , pages 2961–2969, 2017. [9] Ming Hu, Xiangtao Hu, Jiuzhou Zhao, and Honghui Zhan. Weld seam roi detection and segmentation method based on active–passive vision fusion. Sensors , 25(24):7530, 2025. [10] M Imad, C Hopkins, A Hosseini, Nikta Zarif Yussefian, and HA Kishawy. Intelligent machining: a review of trends, achievements and current progress. International Journal of Computer Integrated Manufacturing , 35(4-5):359–387, 2022. [11] Glenn Jocher and Jing Qiu. Ultralytics YOLO11, 2024. Soft-ware. [12] Glenn Jocher, Ayush Chaurasia, and Jing Qiu. Ultralytics YOLOv8, 2023. Software. [13] Rahima Khanam and Muhammad Hussain. Yolov11: An overview of the key architectural enhancements (2024). 
+
+arXiv preprint arXiv:2410.17725 , 2024. [14] Hyungjung Kim, Hyunsu Lee, and Sung-Hoon Ahn. Sys-tematic deep transfer learning method based on a small im-age dataset for spaghetti-shape defect monitoring of fused deposition modeling. Journal of Manufacturing Systems , 65: 439–451, 2022. [15] Dheeraj Dhruva Kumar, Cheng Fang, Yue Zheng, and Yuqing Gao. Semi-supervised transfer learning-based auto-matic weld defect detection and visual inspection. Engineer-ing Structures , 292:116580, 2023. [16] Miho Kurachi, Ryo Kawahara, and Takahiro Okabe. One-shot polarization-based material classification with optimal illumination. Proceedings of the 20th International Joint Conference on Computer Vision, Imaging and Computer Graphics Theory and Applications (VISIGRAPP 2025 , 3: 738–745, 2025. [17] Feng Li, Hao Zhang, Shilong Liu, Jian Guo, Lionel M Ni, and Lei Zhang. Dn-detr: Accelerate detr training by intro-
+
+14 ducing query denoising. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition ,pages 13619–13627, 2022. [18] Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Dollár, and C Lawrence Zitnick. Microsoft coco: Common objects in context. In 
+
+European conference on computer vision , pages 740–755. Springer, 2014. [19] Tsung-Yi Lin et al. COCO API ( pycocotools ). https: //github.com/cocodataset/cocoapi , 2015. Ac-cessed: 2026-08-04. [20] Jiahuan Liu, Fei Guo, Huang Gao, Maoyuan Li, Yun Zhang, and Huamin Zhou. Defect detection of injection molding products on small datasets using transfer learning. Journal of manufacturing processes , 70:400–413, 2021. [21] Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization, 2019. [22] Hu Lu, Yanyan Zhao, Guo Yang, and Shengli Wu. Dsgnet: A lightweight network integrating depthwise separable and ghost convolutions for real-time surface defect segmentation. 
+
+Expert Systems , 43(2):e70187, 2026. [23] Luxonis. OAK-D. https://shop.luxonis.com/ products/oak-d , 2021. Accessed: 2026-08-04. [24] Jaime Molina, J Ernesto Solanes, Laura Arnal, and Josep Tornero. On the detection of defects on specular car body surfaces. Robotics and Computer-Integrated Manufacturing ,48:263–278, 2017. [25] Arun Nandagopal, Jonas Beachy, Colin Acton, and Xu Chen. A robotic surface inspection framework and machine-learning based optimal segmentation for aerospace and pre-cision manufacturing. Journal of Manufacturing Processes ,134:146–157, 2025. [26] Yucheng Pan, Jiasi Chen, Peiwen Wu, Hongsheng Zhong, Zihao Deng, and Daozong Sun. Enhanced rail surface defect segmentation using polarization imaging and dual-stream feature fusion. Sensors , 25(11):3546, 2025. [27] Apostolis Papavasileiou, George Michalos, and Sotiris Makris. Quality control in manufacturing–review and chal-lenges on robotic applications. International Journal of Computer Integrated Manufacturing , 38(1):79–115, 2025. [28] Hui Qu, Yixin Zhou, Junqin Cheng, Junting Cheng, Hongbo Wang, Xunyang Zheng, and Le Gao. Research on real-time precise identification of weld seam types and roi localization based on lightweight improved yolov10n. In 2025 4th Inter-national Conference on Image Processing, Computer Vision and Machine Learning (ICICML) , pages 1137–1142. IEEE, 2025. [29] Roboflow. RF-DETR: A real-time transformer-based object detection model. https://github.com/roboflow/ rf-detr , 2025. Software repository. [30] Mohsen Soori, Roza Dastres, Behrooz Arezoo, and Fooad Karimi Ghaleh Jough. Intelligent robotic systems in industry 4.0: A review. Journal of Advanced Manufacturing Science and Technology , 4(3):2024007–2024007, 2024. [31] Panagiotis Stavropoulos, Alexios Papacharalampopoulos, and Kyriakos Sabatakakis. Robust and secure quality mon-itoring for welding through platform-as-a-service: a resis-tance and submerged arc welding study. Machines , 11(2): 298, 2023. [32] Domen Tabernik, Samo Šela, Jure Skvarˇ c, and Danijel Skoˇ caj. Segmentation-based deep-learning approach for surface-defect detection. Journal of Intelligent Manufactur-ing , 31(3):759–776, 2020. [33] Caidong Wang, Hengyuan Hu, Li Xiao, and Huadong Zheng. Weld seam detection and extraction method based on s-yolo. In 2025 4th International Symposium on Robotics, Artificial Intelligence and Information Engineering (RAIIE) , pages 8– 11. IEEE, 2025. [34] Jun Wang, Xuwei Zhang, Jiaen Liu, Yuanyuan Shi, and Yizhe Huang. Line-structured light fillet weld positioning method to overcome weld instability due to high specular re-flection. Machines , 11(1):38, 2022. [35] Jiazhang Wang, Oliver Cossairt, and Florian Willomitzer. 3d imaging of complex specular surfaces by fusing polarimet-ric and deflectometric information. Optica , 12(4):446–450, 2025. [36] Rui Wen, Wu Xie, Yong Fan, and Lanlan Shen. Sabe-yolo: structure-aware and boundary-enhanced yolo for weld seam instance segmentation. Journal of Imaging , 11(8):262, 2025. [37] Li Xiao, Changjiang Dong, Shengquan Wu, Caidong Wang, Huadong Zheng, and Hengyuan Hu. A weld seam recog-nition method based on improved yolo model and its fea-ture point extraction method. Applied Sciences , 16(5):2499, 2026. [38] Tian Xin, Zhihong Yan, Tongxin Xu, Songhao Li, Renjie Duan, and Moxuan Peng. Rapid visual detection of laser welding defects in bright stainless steel thin plates. Mea-surement Science and Technology , 36(3):035203, 2025. [39] Longcheng Yang, Huajun Wang, Wenjie Meng, and Hongyu Pan. Cvt-unet: A weld pool segmentation method integrating a cnn and a transformer. Heliyon , 10(15), 2024. [40] Zeyu Yu, Dongyun Wang, and Hanyang Wu. Defect detec-tion method for large-curvature and highly reflective surfaces based on polarization imaging and improved yolov11. In 
+
+Photonics , page 368. MDPI, 2025. [41] Minghu Zhao, Xinru Liu, Kaihang Wang, Zishen Liu, Qi Dong, Pengfei Wang, and Yaoheng Su. Welding seam track-ing and inspection robot based on improved yolov8s-seg model. Sensors , 24(14):4690, 2024. [42] Jiawei Zuo, Jing Bai, Shinhyuk Choi, Ali Basiri, Xiahui Chen, Chao Wang, and Yu Yao. Chip-integrated metasur-face full-stokes polarimetric imaging sensor. Light: Science & Applications , 12(1):218, 2023. 
+
+15
