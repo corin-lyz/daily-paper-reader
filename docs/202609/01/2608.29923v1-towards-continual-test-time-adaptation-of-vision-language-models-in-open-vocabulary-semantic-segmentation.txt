@@ -1,0 +1,375 @@
+Title: Towards Continual Test-Time Adaptation of Vision-Language Models in Open-Vocabulary Semantic Segmentation
+
+URL Source: https://arxiv.org/pdf/2608.29923v1
+
+Published Time: Tue, 01 Sep 2026 01:34:51 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# Towards Continual Test-Time Adaptation of Vision-Language Models in Open-Vocabulary Semantic Segmentation 
+
+## Chandler Timm C. Doloriel 1, Yunbei Zhang 2, Sarthak Kumar Maharana 3, Muhammad Salman Siddiqui 1,Tor Kristian Stevik 1, Fadi Al Machot 1, Kristian Hovde Liland 1, Habib Ullah 11Faculty of Science and Technology (REALTEK), Norwegian University of Life Sciences (NMBU) 
+
+> 2
+
+## Tulane University, 3University of Texas at Dallas 
+
+> chandler.timm.cagmat.doloriel@nmbu.no
+
+## Abstract 
+
+Open-vocabulary semantic segmentation (OVSS) relies on vision-language alignment to recognize arbitrary text-defined categories, yet this alignment is fragile under con-tinual test-time distribution shift. Our diagnostic anal-ysis reveals that entropy minimization drives patch-level class collapse, continual updates erode vision-language alignment, and redundant gradients from low-shift sam-ples waste computation. We propose Diversify, Anchor, and Filter (DAF), a stabilization framework that augments entropy-based adaptation with a marginal diversity loss that resists collapse, a cross-modal anchor consistency loss that constrains feature drift relative to a frozen source model, and feature salience filtering that skips low-value backward passes to offset part of the source-anchor over-head. We evaluate on five datasets spanning natural scenes, autonomous driving, underwater imagery, and remote sens-ing with their corrupted variants. Across the evaluated con-tinual shifts, DAF remains stable where entropy minimiza-tion collapses, improving mIoU by over 8 points on Pascal VOC20-C, over 9 points on LoveDA, and over 3 points on Foggy Cityscapes compared to the source model, and is ro-bust to aggressive adaptation and learning rate choices. 
+
+## 1. Introduction 
+
+Contrastive vision-language models (VLMs) such as CLIP [29] have become strong backbones for open-vocabulary semantic segmentation (OVSS) because they align dense visual features with text embeddings of class prompts. Recent OVSS methods such as SCLIP [36] and NACLIP [13] show that broad category vocabularies, ex-tended beyond base classes with synonyms and subcate-gories, can be supported without task-specific retraining. Yet, this open-vocabulary generalization is fragile at test-time. Real deployments face weather, sensor variation, im-age corruptions, and underwater domain shifts [17, 42, 43] that distort patch-to-text similarities for dense prediction. Consider an autonomous driving model deployed across cities with varying weather and sensor conditions, where the vocabulary is defined by text prompts rather than a fixed set. Because collecting labeled target data or retraining of-fline is impractical, the model must adapt on-the-fly from incoming unlabeled samples alone. Real deployment rarely involves a single isolated shift. OVSS systems face evolving domains, making continual test-time adaptation (CTTA) a natural setting [23, 38]. Un-like TTA, CTTA carries model state across domains without access to past data. This is especially difficult for OVSS be-cause standard entropy-based methods such as TENT [35] and CoTTA [38] were designed for closed-vocabulary set-tings and can erode the patch-to-text alignment needed for open-vocabulary prediction. Recent VLM TTA methods use weight averaging, pro-totype shifting, contrastive objectives, and Bayesian up-dates [8, 14, 18, 22, 28, 33, 44], but they remain largely classification-oriented. Traditional entropy-based adapta-tion such as TENT, and its continual extension CoTTA, can be instantiated for OVSS by updating normalization parameters over patch-token logits, while MLMP [27] ex-tends episodic TTA to OVSS. What remains missing is a continual OVSS treatment that explicitly preserves vision-language alignment rather than only reducing prediction en-tropy, which is the gap we study. To understand why continual adaptation is unstable for OVSS, we diagnose MLMP on PASCAL VOC20-C [11, 15] (Fig. 1), where VOC20-C applies 15 standard image cor-ruptions [15] at five severity levels to the PASCAL VOC validation set, revealing two failure modes and an adapta-tion inefficiency. First, entropy minimization shrinks the active class vocabulary, defined as classes receiving more than 1% of patch-token predictions under the argmax of the patch-level softmax, from near 20 to roughly 1 to 3 by step 1arXiv:2608.29923v1 [cs.CV] 30 Aug 2026 (a) Class Collapse (b) Assigned-Class Drift (c) Unassigned-Class Drift (d) Shift vs Prediction      
+
+> Figure 1. Diagnostic analysis of MLMP [27] under CTTA for OVSS with NACLIP [13] ViT-B/32 on PASCAL VOC20-C [11]. (a) Entropy minimization progressively shrinks the active class vocabulary, measured by counting classes that receive more than 1% of patch-token argmax predictions. (b) The cosine similarity between adapted image patch features and their source-assigned text prototypes decreases (r=−0.737 ). (c) Similarity to unassigned prototypes increases ( r= +0 .854 ). (d) Per-sample image feature shift, measured as average cosine distance between adapted and source patch features, correlates with prediction change ( r= +0 .833 ), indicating that source-relative feature change can identify samples whose representations have changed little. These observations motivate our diversity and anchor consistency components for stability, and our filtering component for adaptation efficiency. Full diagnostic methodology and Cityscapes [7] diagnostics are in the supplementary material.
+
+500, as large regions collapse to a few dominant concepts. Second, the cosine similarity between adapted image patch features and their source-assigned text prototypes decreases (r = −0.737 ) while similarity to unassigned prototypes in-creases ( r = +0 .854 ), eroding vision-language alignment. Third, per-sample image feature shift, measured as the aver-age cosine distance between adapted and source patch fea-tures, correlates with prediction change ( r = +0 .833 ), so many samples undergo minimal prediction change yet still consume backward passes. Since dense predictions depend on patch-to-text comparisons, drift degrades a full segmen-tation map rather than a single output. The supplementary material confirms these patterns on Cityscapes-C and pro-vides full diagnostic methodology. These three findings motivate three targeted remedies: a marginal diversity (MDIV) loss to resist class collapse, a cross-modal anchor consistency (CMAC) loss to constrain feature drift, and source-anchored feature salience (SAFS) filtering to skip low-value backward passes and recover part of the source-anchoring cost. Together they form Diversify, Anchor, and Filter (DAF), a simple stabilization framework, with the following contributions: • CTTA for OVSS: While MLMP [27] introduced episodic TTA for OVSS, we address the continual set-ting where model state carries across domains without resetting, preserving vision-language alignment over sequential shifts. • Diagnostic Analysis: We characterize why CTTA is unusually unstable for OVSS, revealing class collapse and cross-modal drift as failure modes tied to degrada-tion of vision-language structure, and low-shift redun-dancy as a motivation for selective updating. • Stabilization Framework: We design DAF as a source-anchored regularization around these failure modes, with MDIV and CMAC as complementary core mechanisms and SAFS as a compute-balancing companion to source anchoring, where CMAC is the OVSS-specific component, instantiated on TENT [35] and MLMP [27]. • Robustness and Evaluation: We evaluate across five datasets, showing that DAF is robust to aggressive adaptation and learning rate choices across the evalu-ated continual shifts where entropy minimization col-lapses, with stable performance under long horizon shifts. 
+
+## 2. Related Work 
+
+Test-time adaptation. Traditional TTA improves robust-ness through self-supervision [34] and entropy minimiza-tion, with TENT as a standard baseline [35], while CTTA extends adaptation to non-stationary streams through teacher averaging [38], self-learning [30], masked self-supervision [9, 20], prompt memories [41], subspace con-strained online learning [10], and related stabilizers sur-veyed in [23]. Sample selection methods such as entropy filtering [25, 26] and object-sensitive selection [19] further study which samples to trust. In parallel, VLM TTA has emerged through weight averaging [28], prototype shift-ing [33], contrastive objectives [14, 18], Bayesian formula-tions [8, 44], and bimodal alignment [22], but these methods remain largely episodic, single-domain, and classification-oriented. 
+
+Segmentation under distribution shift. Source-free seg-mentation methods preserved source knowledge through self-training on unlabeled target images [21, 39], and subsequent test-time adaptation for segmentation intro-duced structural priors [1], active feedback [40], visual prompts [6], and distribution sensitive parameter adapta-tion [24]. Still, these methods assume fixed label spaces and task-specific components, precluding their use as baselines for open-vocabulary inference where classes are defined by 2text prompts at test time. 
+
+Open-vocabulary dense prediction. Open-vocabulary semantic segmentation builds on CLIP [29]. Early methods turned image-level alignment into dense prediction through mask representations [12], region-text alignment [3], and knowledge distillation [2, 4]. Training-free OVSS methods then adapted foundation models for dense inference through correlative self-attention [36], local patch interactions [13], and class purification [5]. MLMP brought episodic TTA to OVSS [27], but a continual treatment that preserves vision-language alignment over time remains missing, which DAF addresses with lightweight source-anchored regularization. 
+
+## 3. Methodology 
+
+Our diagnostic analysis in Sec. 1 revealed three failure modes under continual adaptation: patch-level class col-lapse, vision-language alignment erosion, and redundant gradients from low-shift samples. In OVSS, these are am-plified because predictions depend on patch-to-text compar-isons across an open label space, where absent classes can absorb probability mass and drift degrades an entire seg-mentation map rather than a single output. We address them with a marginal diversity (MDIV) loss as an anti-collapse regularizer, a cross-modal anchor consistency (CMAC) loss as the OVSS-specific component, and source-anchored fea-ture salience (SAFS) filtering as a selective update strategy. Each operates without source training data, labels, or archi-tectural changes, though CMAC and SAFS require a frozen copy of the source model for anchored features. We instan-tiate these on top of TENT [35] and MLMP [27], yielding DAF-T and DAF-M. We first establish the necessary back-ground and notation, then describe each component. 
+
+Preliminaries. CLIP-based OVSS models [13] consist of an image encoder gθ and a text encoder hϕ that map images and class names into a shared embedding space of dimen-sion D. We adopt NACLIP [13] with a ViT-B/32 backbone. Each test image is decomposed into overlapping 224 ×224 
+
+crops, which we call samples and process in a batch of size 
+
+Q. The image encoder outputs F ∈ R(1+ N )×D , whose patch-token subset F1: N ∈ RN ×D excludes the CLS token and has row fq,i for patch i of sample q, and the text encoder maps C class names, extended with synonyms following standard OVSS practice [27, 36], into prototypes T(r) ∈
+
+RC×D using R prompt templates. Per-patch class probabil-ities are obtained by softmax over scaled cosine-similarity logits, pr (c | xq,i ) = softmax( τ · cos( fq,i , T(r) 
+
+> c
+
+)) c.The baseline adaptation signal is template-averaged en-tropy minimization Lent over patch-grid logits. Following TENT [35], we update only the LayerNorm parameters of 
+
+gθ across a sequence of corruption domains without reset-ting, making the model susceptible to error accumulation and alignment erosion. A frozen source copy gθs provides anchored features Fsrc for CMAC and SAFS. Full details are in the supplementary material. 
+
+3.1. Marginal Diversity Loss 
+
+The first failure mode is patch-level class collapse, where the model degenerates from using the full inference-time vocabulary of C candidate text classes to a small subset. We address this with a marginal diversity (MDIV) loss, an anti-collapse regularizer that assumes the source vocabulary re-mains appropriate for the target domain, an assumption not stressed by the ImageNet-C [15] protocol since corruptions preserve the label space. The MDIV loss acts on the aggregate class distribu-tion across the batch, unlike the baseline entropy objective which minimizes uncertainty for each patch independently. Given the per-patch softmax probabilities pr (c | xq,i ), we compute a marginal class distribution for each prompt tem-plate by averaging over all samples in the current adaptation step and over all patch tokens within each sample: 
+
+¯pr (c) = 1
+
+Q · N
+
+> Q
+
+X
+
+> q=1
+> N
+
+X
+
+> i=1
+
+pr (c | xq,i ). (1) The marginal diversity loss maximizes the entropy of these marginal distributions and then averages over templates: 
+
+Ldiv = − 1
+
+R
+
+> R
+
+X
+
+> r=1
+
+H(¯ pr )= 1
+
+R
+
+> R
+
+X
+
+> r=1
+> C
+
+X
+
+> c=1
+
+¯pr (c) log ¯ pr (c).
+
+(2) Minimizing Ldiv maximizes the batch-level marginal class entropy for each template. Ldiv discourages degenerate con-centration of the aggregate prediction distribution rather than enforcing uniform per-image class occurrence, act-ing as a soft anti-collapse regularizer whose strength is controlled by λdiv . When only one prompt template is used, R = 1 and the expressions reduce to the simpler single-template form. Although Ldiv involves entropy, it is not redundant with Lent : Lent applies the logarithm in-side the patch-level summation (average per-patch entropy), whereas Ldiv applies it outside (entropy of the average pre-diction). 
+
+3.2. Cross-Modal Anchor Consistency 
+
+While entropy minimization and marginal diversity (MDIV) loss operate at the prediction level, they do not ex-plicitly constrain the feature space. As the OVSS-specific component, our cross-modal anchor consistency (CMAC) loss directly regularizes the vision-language alignment that 3underpins open-vocabulary prediction. Our diagnostics re-vealed two drift behaviors harmful to segmentation. Drift-Away occurs when the adapted image feature moves away from its assigned text prototype, weakening the correct class association. Drift-Toward occurs when the adapted im-age feature moves closer to an unassigned text prototype, increasing the risk of misclassification. CMAC addresses both behaviors by regularizing feature-level drift using the frozen source model as an anchor. By design, CMAC prior-itizes preservation of source-relative geometry over uncon-strained correction, which may become conservative when source prototype assignments are unreliable under large do-main gaps. 
+
+Source-assigned prototypes. For each patch token f src 
+
+> q,i
+
+from sample q in the frozen source model, we compute its similarity to all prompt-integrated text prototypes and as-sign it to the nearest one: 
+
+aq,i = arg max  
+
+> c
+
+τ · cos( f src 
+
+> q,i
+
+, Tc), (3) where τ is the CLIP logit scale. When multiple prompt templates are available, we average their text embeddings before computing these assignments, so Tc denotes the prompt-integrated prototype for class c.
+
+Anchor consistency. We define sadapt  
+
+> q,i,c
+
+= τ ·cos( f adapt  
+
+> q,i
+
+, Tc)
+
+and ssrc  
+
+> q,i,c
+
+analogously. The CMAC loss combines two one-sided hinge terms into a single objective. The first penalizes drift away from the assigned prototype, active only when adapted similarity drops below source similarity, 
+
+ReLU( ssrc  
+
+> q,i,a q,i
+
+− sadapt  
+
+> q,i,a q,i
+
+). The second penalizes drift to-ward unassigned prototypes, averaged over all C−1 wrong classes and active only when adapted similarity exceeds source similarity, ReLU( sadapt  
+
+> q,i,c
+
+− ssrc 
+
+> q,i,c
+
+) for c̸ = aq,i . In-troducing the Kronecker delta δc,a q,i (equal to 1 if c = aq,i 
+
+and 0 otherwise), the sign function ξq,i,c = 2 δc,a q,i −1, and per-class weight wq,i,c = 11+( C−2)(1 −δc,a q,i ) , which equals 
+
+1 for the assigned prototype and 1 
+
+> C−1
+
+for each unassigned one, both terms unify into: 
+
+Lcmac = 1
+
+Q · N
+
+> Q
+
+X
+
+> q=1
+> N
+
+X
+
+> i=1
+> C
+
+X
+
+> c=1
+
+wq,i,c 
+
+· ReLU 
+
+
+
+ξq,i,c (ssrc  
+
+> q,i,c
+
+− sadapt 
+
+> q,i,c
+
+)
+
+
+
+,
+
+(4) where wq,i,c matches the 1 
+
+> C−1
+
+averaging in the drift-toward term. 
+
+3.3. Source-Anchored Feature Salience Filtering 
+
+Continual adaptation need not backpropagate through every incoming sample equally. Because DAF already computes source and adapted features for CMAC, their discrepancy provides a cheap salience signal for identifying samples whose representations have changed little and whose back-ward computation can be skipped. Source-anchored feature salience (SAFS) filtering uses this signal to recover part of the adaptation time introduced by CMAC’s extra source-model forward pass. While MDIV and CMAC are respon-sible for stability and accuracy, SAFS mainly trades a small amount of peak accuracy for fewer backward passes and lower adaptation time. SAFS is optional and does not alter the stabilization mechanism. For each sample q, we measure the angular feature shift between the adapted and source models by averaging cosine distance over all ViT patch tokens: 
+
+∆q = 1 − 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+cos 
+
+
+
+f adapt  
+
+> q,i
+
+, f src 
+
+> q,i
+
+
+
+. (5) Rather than using a fixed threshold, we compute an adap-tive threshold ρsafs = μ(∆) − αsafs · σ(∆), where μ(∆) and 
+
+σ(∆) are the mean and standard deviation of per-sample shifts and αsafs is a margin hyperparameter. Samples with 
+
+∆q > ρ safs are retained for the loss computation and gradi-ent update, while the remaining samples are filtered out. If all samples fall below the threshold, no filtering is applied to avoid an empty batch. 
+
+Integration. SAFS filtering is applied before computing any loss, restricting the summation over q in the entropy, MDIV, and CMAC losses to SAFS-retained samples. Be-cause DAF augments rather than replaces the baseline ob-jective, the complete adaptation loss combines the chosen baseline loss Lbase with our two regularization terms: L =
+
+Lbase +λdiv Ldiv +λcmac Lcmac , where Lbase denotes the native objective of the chosen baseline, such as TENT’s template-averaged prediction entropy loss or MLMP’s multi-layer, multi-prompt entropy objective with its additional classifi-cation term. 
+
+## 4. Experiments 
+
+4.1. Dataset 
+
+We evaluate on five semantic segmentation datasets spanning diverse visual domains: natural scenes (PAS-CAL VOC20/VOC21 [11]), autonomous driving (Foggy Cityscapes[31], Cityscapes [7]), underwater imagery (SUIM [16]), and remote sensing (LoveDA [37]). For each dataset, we generate corrupted variants following the ImageNet-C protocol [15] at the highest severity (level 5), covering 15 corruption types across noise, blur, weather, and digital categories. The resulting corrupted variants are denoted with a “ -C ” suffix ( e.g ., VOC20-C, LoveDA-C). To leverage the open-vocabulary capability of CLIP, we use class extensions for VOC20 and VOC21 whenever avail-able, augmenting the base vocabulary with synonyms and 4subcategory names. VOC20 extends from 20 to 30 classes and VOC21 from 21 to 56, following the standard proto-col of SCLIP [36], NACLIP [13], and MLMP [27]. Further dataset details are in the supplementary. 
+
+4.2. Implementation Details 
+
+We compare against baseline methods for CTTA, group-ing non-VLM (Vision-Language Model) adaptations (TENT [35], COTTA[38], SAR[26]) with VLM adaptations (WATT [28], CLIPArTT [14], SegTTO[32], MLMP [27]). Segmentation-specific CTTA methods [6, 24] assume fixed label spaces and task-specific components, precluding open-vocabulary use. RPL[30], DEYO[19], M2A[9] are in the supplementary. WATT [28], CLIPArTT [14], and MLMP [27] were designed for episodic TTA with 10 optimization steps per batch, but we evaluate them with 1 step per batch for CTTA consistency. We restrict adaptation to LayerNorm parameters of the CLIP image encoder, keeping the text encoder fixed. Our method is applied on top of TENT (denoted DAF-T) and MLMP (denoted DAF-M). We build upon the public MLMP codebase. For all OVSS baselines, we use NACLIP [13] with a ViT-B/32 backbone as the open-vocabulary semantic segmen-tation (OVSS) model. Following MLMP [27], each input image is divided into overlapping 224 ×224 crops, which are independently passed through the CLIP image encoder. Unless otherwise stated, we use a dataloader batch size of 8 input images before crop extraction, SGD optimizer with a learning rate of 1×10 −3, perform a single optimization step per batch, and set DAF hyperparameters to λdiv = 2 .0,
+
+λcmac = 0 .5, and αsafs = 0 .5. TENT and DAF-T use a single prompt template, while MLMP and DAF-M use 7 prompt templates following the original MLMP setup. All experiments use seed 0. However, the main benchmark results in Tab. 1 are averaged over three seeds (0, 1, 2). Additional results including backbone generalization (ViT-B/16, ViT-L/14), forward transfer, OVSS variant analysis, and cross-dataset ablations are provided in the supplemen-tary material. 
+
+4.3. Results 
+
+Benchmark results. Tab. 1 reports mIoU under contin-ual adaptation across five datasets and their corrupted vari-ants. On clean VOC20 and VOC21, entropy-based meth-ods already improve over source, so DAF yields smaller but consistent gains, showing that stabilization need not sacri-fice peak accuracy when the domain is benign. The ben-efit is larger under corrupted or larger-gap settings. On VOC20-C and VOC21-C, TENT and MLMP collapse be-low source, consistent with the class collapse and alignment erosion diagnosed in Sec. 1, whereas DAF-T and DAF-M remain stable and exceed source. The same pattern appears as the shift strengthens on Foggy Cityscapes, where DAF-M achieves the best mean and gains about 3 points over source, and on LoveDA and LoveDA-C, where DAF-M achieves large gains over both source and MLMP. On Cityscapes-C, entropy-based methods also collapse while DAF stays above source. On SUIM-C, DAF-T improves over source and TENT, while DAF-M improves over MLMP but re-mains below source. Given SUIM’s 110 validation images, we interpret this setting cautiously, though it still reflects MLMP degradation and CMAC conservatism under large domain gaps (Sec. 3.2). ImageNet-C corruptions preserve the label space by design, so these results do not stress the diversity loss assumption that the source vocabulary re-mains appropriate under shifts, and evaluating under vocab-ulary mismatch remains future work. Among VLM-specific baselines, CLIPArTT and SegTTO struggle under continual adaptation, indicating that these tested VLM-specific ob-jectives do not inherently prevent alignment erosion over sequential domains. The stability of DAF-T and DAF-M across these settings aligns with the complementary roles of the MDIV loss and the CMAC loss described in Sec. 3, and the component ablation in Tab. 5 supports their joint contribution to stability. 
+
+Domain-shuffled CTTA. Tab. 2 evaluates long-horizon stability under domain-shuffled multi-pass CTTA on Cityscapes-C and LoveDA, where the domain order is reshuffled each pass without resetting the model. This set-ting stresses error accumulation: repeated exposure to shift-ing domains should reveal whether adaptation compounds or stabilizes. On both datasets, TENT and MLMP degrade progressively across passes, falling far below source. SAR holds near source but never exceeds it. DAF-T and DAF-M stay above source on Cityscapes-C across all three passes, and DAF-M improves on LoveDA across passes, gaining over 10 points above source by the final pass. The progres-sive degradation of entropy-based methods reflects the error accumulation and alignment erosion diagnosed in Sec. 1. That DAF-T and DAF-M avoid this fate, with DAF-M im-proving on LoveDA across passes, points to the joint sta-bilization of MDIV and the source-anchored CMAC loss (Sec. 3.2) in limiting drift accumulation. 
+
+Learning rate robustness. Tab. 3 sweeps the learning rate from 1×10 −2 to 1×10 −5 on VOC20-C to test how each method handles aggressive adaptation. Entropy-based methods are highly sensitive: TENT and MLMP collapse at higher learning rates and only remain stable at 1×10 −4 and below. CoTTA and SAR are more resilient but remain be-low the source mIoU of 54.4. VLM-specific baselines strug-gle across all learning rates. DAF-T and DAF-M exceed the source and maintain stability even at 1×10 −2 where TENT and MLMP collapse to near-zero. This robustness allows DAF to operate at learning rates that destabilize entropy-5Table 1. Benchmark results on segmentation datasets under CTTA using NACLIP[13] ViT-B/32. Adaptation is continuous between domains, without resetting the model. Entries report mIoU (%), averaged over seeds 0/1/2. ”–” indicates OOM (Out-Of-Memory) error. Results on NACLIP[13] ViT-B/16 and ViT-L/14 are in the supplementary material. Dataset Adaptation Method SOURCE Non-VLM VLM TENT[35] CoTTA[38] SAR[26] WATT[28] CLIPArTT[14] SegTTO[32] MLMP[27] DAF-T DAF-M VOC20[11] (Original) 72.4 74.2 ±0.06 72.3 ±0.02 73.6 ±0.01 66.6 ±0.11 19.1 ±0.51 39.1 ±0.63 76.6 ±0.01 73.1 ±0.07 78.2 ±0.02 
+
+VOC20-C[11] 54.4 3.3 ±0.03 44.2 ±1.58 47.9 ±0.14 45.5 ±0.12 2.0 ±0.06 2.4 ±0.12 9.7 ±3.85 57.3 ±0.06 62.7 ±0.03 
+
+VOC21[11] (Original) 41.3 42.0 ±0.02 41.3 ±0.00 41.9 ±0.05 41.0 ±0.03 17.5 ±1.07 41.2 ±0.38 42.9 ±0.01 41.6 ±0.02 43.5 ±0.02 
+
+VOC21-C[11] 33.9 5.0 ±0.76 29.4 ±0.79 33.7 ±0.03 28.7 ±0.01 3.5 ±0.25 1.0 ±0.05 9.4 ±0.96 35.1 ±0.02 36.1 ±0.01 
+
+Foggy Cityscapes[31] Light Fog 27.5 27.8 ±0.01 27.5 ±0.00 27.9 ±0.01 24.6 ±0.03 – 31.4 ±0.14 30.7 ±0.00 27.8 ±0.01 30.6 ±0.02 
+
+Medium Fog 27.0 27.6 ±0.01 26.9 ±0.00 27.9 ±0.01 24.5 ±0.19 – 26.5 ±0.84 28.9 ±0.06 27.5 ±0.00 30.0 ±0.02 
+
+Dense Fog 25.7 26.2 ±0.02 25.4 ±0.03 26.7 ±0.01 19.2 ±0.13 – 21.9 ±1.19 27.4 ±0.04 26.3 ±0.01 28.7 ±0.01 
+
+Mean 26.7 27.2 ±0.01 26.6 ±0.01 27.5 ±0.01 22.8 ±0.12 – 26.6 ±0.63 29.0 ±0.03 27.2 ±0.01 29.8 ±0.00 
+
+Cityscapes-C[7] 17.8 4.5 ±0.01 16.7 ±0.52 17.1 ±0.02 7.7 ±0.00 – 2.9 ±0.01 1.6 ±0.01 19.0 ±0.01 18.5 ±0.01 
+
+SUIM[16] (Original) 22.4 22.5 ±0.02 22.4 ±0.00 22.5 ±0.01 21.9 ±0.36 22.5 ±0.01 23.9 ±0.20 12.9 ±0.02 22.5 ±0.02 13.0 ±0.04 
+
+SUIM-C[16] 19.6 19.5 ±0.08 19.4 ±0.01 19.1 ±0.07 18.5 ±0.07 12.7 ±0.15 12.0 ±0.02 10.6 ±0.02 20.3 ±0.00 11.9 ±0.02 
+
+LoveDA[37] Rural 16.3 16.8 ±0.12 16.1 ±0.00 17.2 ±0.12 19.2 ±0.07 – 11.8 ±0.03 22.0 ±0.30 17.2 ±0.02 28.1 ±0.11 
+
+Urban 29.2 23.8 ±0.27 28.1 ±0.04 23.4 ±0.25 25.6 ±0.06 – 3.8 ±0.02 11.4 ±2.69 31.0 ±0.03 35.5 ±0.08 
+
+Mean 22.7 20.3 ±0.19 22.1 ±0.02 20.3 ±0.18 22.4 ±0.06 – 7.8 ±0.02 16.7 ±1.50 24.1 ±0.00 31.8 ±0.02 
+
+LoveDA-C[37] 9.2 1.2 ±0.00 – 7.6 ±0.15 – – 5.2 ±0.00 5.2 ±0.00 12.3 ±0.01 14.9 ±0.01 
+
+Table 2. Domain-shuffled multi-pass CTTA on Cityscapes-C[7] and LoveDA [37] using NACLIP[13] ViT-B/32. In each pass, we shuffled the domain order without resetting the model. Entries report mIoU (%). ”-” indicates OOM. Results on NACLIP[13] ViT-B/16 are in the supplementary material. 
+
+Variant Cityscapes-C LoveDA Pass 1 Pass 2 Pass 3 Pass 1 Pass 2 Pass 3 SOURCE 17.8 17.8 17.8 22.7 22.7 22.7 TENT 5.3 2.0 2.0 20.1 13.7 5.5 SAR 16.2 15.9 16.6 20.2 20.6 21.4 SegTTO 2.6 2.0 2.0 3.4 2.4 1.9 MLMP 1.2 0.2 0.2 15.2 4.9 4.9 DAF-T 19.0 19.0 18.8 24.1 24.8 25.1 DAF-M 18.2 19.1 18.3 31.8 33.5 33.0 
+
+based methods, a practical advantage that stems from the joint stabilization of the MDIV loss and the CMAC loss. 
+
+Recurring adaptation. Tab. 4 extends the multi-pass evaluation to five passes with a fixed domain order. As in the domain-shuffled setting, TENT and MLMP collapse by the second or third pass and never recover, while DAF-T and DAF-M remain stable across all five passes, stay-ing above source on Cityscapes-C. On LoveDA, DAF-M achieves a mean of 32.3, peaking mid-sequence before settling without catastrophic degradation. These results confirm that the stability observed under domain-shuffled CTTA persists over longer horizons with a fixed order, fur-ther supporting the joint role of MDIV and CMAC in limit-ing drift accumulation. 
+
+Table 3. Learning rate sweep on PASCAL VOC20-C [11] with NACLIP[13] ViT-B/32. Entries report mIoU (%). Results on LoveDA[37] are in the supplementary material. 
+
+METHOD Learning Rate Mean ↑
+
+1e-2 1e-3 1e-4 1e-5 SOURCE 54.4 54.4 54.4 54.4 54.4 TENT 0.7 3.3 55.1 55.0 28.5 CoTTA 45.9 42.6 53.7 54.4 49.2 SAR 33.9 48.1 55.0 54.7 47.9 WATT 3.5 45.7 56.8 57.9 41.0 CLIPArTT 1.4 2.1 10.2 52.0 16.4 SegTTO 0.6 2.3 8.4 32.4 10.9 MLMP 1.7 13.5 57.0 58.6 32.7 DAF-T 53.1 57.4 55.5 54.6 55.2 DAF-M 41.0 62.7 61.5 58.6 56.0 
+
+Component analysis. Tab. 5 ablates the three DAF com-ponents on VOC20-C. The MDIV and CMAC are the core stabilization mechanisms: MDIV alone reaches 44.4 and CMAC alone 39.1, both improving substantially over MLMP’s 9.7 but neither matching the combined 63.4 with-out SAFS. This confirms they address complementary fail-ure modes, with MDIV resisting class collapse and CMAC constraining feature drift, as designed in Sec. 3. Comparing MDIV+CMAC with and without SAFS shows that filtering reduces backward passes by approximately 30% (from 1.0S
+
+to 0.7S per domain) and lowers DAF-M adaptation time from 68.4 s to 50.8 s, at the cost of less than one mIoU point (62.7 vs 63.4), showing that SAFS partly offsets the added adaptation time introduced by source anchoring rather than 6Table 4. Longterm recurring CTTA on Cityscapes-C[7] and LoveDA[37] with NACLIP[13] ViT-B/32. In each pass, we follow the same domain order without resetting the model. Entries report mIoU (%).                                                                                                  
+
+> METHOD Cityscapes-C LoveDA Pass 1 Pass 2 Pass 3 Pass 4 Pass 5 Mean ↑Pass 1 Pass 2 Pass 3 Pass 4 Pass 5 Mean ↑
+> SOURCE 17.8 17.8 17.8 17.8 17.8 17.8 22.7 22.7 22.7 22.7 22.7 22.7 TENT 4.5 2.0 2.0 2.0 2.0 2.5 20.1 13.7 5.5 4.5 4.4 9.6 SAR 17.1 16.8 16.5 16.6 16.6 16.7 20.2 20.6 21.4 22.5 23.0 21.5 SegTTO 2.9 2.1 2.1 2.1 2.1 2.2 3.4 2.4 1.9 1.6 1.5 2.2 MLMP 1.6 0.2 0.2 0.2 0.2 0.5 15.2 4.9 4.9 4.9 4.9 7.0 DAF-T 19.0 19.0 18.8 18.6 18.5 18.8 24.1 24.8 25.1 25.2 25.3 24.9 DAF-M 18.5 19.2 18.6 18.1 17.6 18.4 31.8 33.5 33.0 32.1 31.3 32.3
+
+Table 5. Ablation study on DAF components and adaptation effi-ciency on PASCAL VOC20-C [11] using NACLIP[13] ViT-B/32. Each image is divided into 224 ×224 crops as input to the CLIP model. Each domain has S=1456 samples with batch size of 8, evaluated on an AMD Instinct MI200 GPU. #Fward and #Bward denote the total number of forward and backward passes per do-main, expressed in terms of S. Time (s) is the per-domain adap-tation time in seconds. Results on LoveDA [37] dataset are in the supplementary material.                                                                
+
+> Method Ldiv Lcmac ρsafs #Fward ↓#Bward ↓Time(s) ↓mIoU ↑
+> SOURCE ×××1.0S048.0 54.4 TENT ×××1.0S1.0S48.4 3.3 MLMP ×××1.0S1.0S67.4 9.7 DAF-T ✓✓✓2.0S0.7S69.4 57.3 DAF-M ✓××2.0S1.0S68.0 44.4 DAF-M ×✓×2.0S1.0S50.6 39.1 DAF-M ✓✓×2.0S1.0S68.4 63.4 DAF-M ✓✓✓2.0S0.7S50.8 62.7
+
+contributing directly to stability. Notably, DAF-T increases time over TENT (69.4 s vs 48.4 s) because TENT’s forward and backward costs are roughly equal (we doubled the for-ward pass in DAF), so the additional source forward pass is not offset by SAFS backward savings, whereas MLMP’s more expensive multi-layer backward makes SAFS savings outweigh the source forward, yielding DAF-M a net de-crease from 67.4 s to 50.8 s. SAFS does not reduce the ad-ditional source forward pass required by CMAC, so its net benefit depends on how much backward cost can be saved. 
+
+Hyperparameter analysis. Fig. 2 sweeps four hyperpa-rameters of DAF-M on VOC20-C: batch size, λdiv , λcmac ,and αsafs . For batch size, values of 1 and 2 are unstable but 4 begins to stabilize and 8 through 10 produce nearly identical stable curves, so we use 8 as a balance between stability and memory. For λdiv , a value of 0.5 collapses while 1, 2, and 4 produce stable and nearly identical curves, with 2.0 achiev-ing slightly higher mIoU, indicating that MDIV is robust to tuning once the collapse threshold is crossed. For λcmac ,values of 0.5, 1, 2, and 4 are all stable with nearly identi-cal curves, confirming that CMAC does not require careful tuning, and we default to 0.5. For αsafs , values of 0.2, 0.5, and 1.0 are all stable, and we choose 0.5 as a balance be-tween filtering redundant samples and retaining informative ones. Across all four hyperparameters, the stable ranges are broad, meaning DAF does not require careful tuning, sup-porting the robustness claims in Sec. 1. 
+
+Qualitative predictions. Fig. 3 visualizes segmentation maps on a VOC20-C sample under defocus blur. After con-tinual adaptation, TENT and MLMP collapse to predicting predominantly a single class across the image, providing a direct visual confirmation of the patch-level class col-lapse diagnosed in Sec. 1. DAF-T and DAF-M preserve the multi-class structure of the source prediction, illustrat-ing how the MDIV loss maintains the active class vocabu-lary while CMAC preserves the vision-language alignment needed for correct patch-to-text associations. 
+
+MDIV effect. Fig. 4 examines the absent-class probabil-ity mass metric on VOC20-C, which measures how much softmax probability the model allocates to classes absent from the current batch. Without Ldiv , the model exhibits bimodal behavior, swinging between stable predictions and near-collapse where almost all probability shifts to absent classes. With Ldiv enabled, these extreme swings are re-duced and the diversity loss does not increase absent-class probability mass on average, confirming its role as a stabi-lizer of the active class vocabulary rather than a source of hallucination. 
+
+Consistency loss variants. Tab. 6 compares CMAC against two consistency losses that penalize drift between adapted and source patch tokens without text anchoring. On VOC20-C, CMAC reaches 62.7 mIoU versus 51.7 for 7(a) Batch Size (b) λdiv (c) λcmac (d) αsafs 
+
+Figure 2. Ablation results of DAF-M with NACLIP [13] ViT-B/32 under CTTA in VOC20-C [11]. Entries show mIoU (%). Each panel shows the effect of a single hyperparameter: (a) batch size, (b) λdiv , (c) λcmac , and (d) αsafs . Results for LoveDA-C[37] are in the supplementary material.       
+
+> (a) INPUT (b) GT (c) SOURCE (d) TENT (e) MLMP (f) DAF-T (g) DAF-M
+
+Figure 3. We visualize the prediction of CTTA for OVSS methods using NACLIP [13] ViT-B/32 on PASCAL VOC20-C [11]. Classes shown: dog in dark purple/blue, cat in dark maroon/brown, and sofa in green.        
+
+> (a) Ldiv =False (b) Ldiv =True
+
+Figure 4. Absent-class probability mass on PASCAL VOC20-C [11] with NACLIP [13] ViT-B/32, comparing adaptation with-out (a) and with (b) Ldiv . Results on PASCAL VOC21-C [11] are in the supplementary material. Table 6. Comparison of feature consistency loss variants under CTTA on Cityscapes-C[7] and VOC20-C [11] using NACLIP[13] ViT-B/32. Entries report mIoU (%) and mDice (%). Lcmac is our proposed Cross-modal Anchor Consistency loss (Sec. 3.2). Lcosine 
+
+and LL2 are baselines that penalize angular and Euclidean drift be-tween adapted and source patch tokens, respectively. Implementa-tion details are in supplementary material.                  
+
+> METHOD Cityscapes-C VOC20-C mIoU mDice mIoU mDice
+> Lcosine 15.2 23.0 51.7 66.7
+> LL2 15.2 23.0 40.8 55.2
+> Lcmac 18.5 27.5 62.7 76.0
+
+Lcosine and 40.8 for LL2 . On Cityscapes-C, CMAC still leads at 18.5 versus 15.2 for both alternatives. Because CLIP features are L2-normalized, cosine and L2 distances are proportional on the unit hypersphere, so both constrain angular drift but penalize all directions equally. They can-not distinguish harmful drift away from the assigned text prototype from benign reorientation that preserves vision-language alignment. CMAC overcomes this with a one-sided hinge anchored to text prototypes, separately penal-izing drift away from the assigned class and toward unas-signed classes. The 11-point gap between Lcmac and Lcosine 
+
+on VOC20-C confirms that text-anchored directionality, not feature alignment alone, preserves segmentation accuracy under continual adaptation. 
+
+## 5. Conclusion 
+
+We introduced CTTA for OVSS, a setting where standard entropy-based updates erode the vision-language alignment that enables flexible segmentation. Our diagnostic anal-ysis revealed class collapse and cross-modal drift as fail-ure modes tied to degradation of vision-language struc-ture, along with adaptation inefficiency from redundant gradients. The proposed DAF framework addresses each through a marginal diversity (MDIV) loss, a cross-modal anchor consistency (CMAC) loss, and source-anchored fea-ture salience (SAFS) filtering. Across the evaluated con-tinual shifts, DAF remains stable where entropy minimiza-tion collapses, is robust to aggressive learning rates, and sustains performance under long-horizon multi-pass adap-tation. DAF’s stabilization relies on two assumptions: that the source vocabulary remains appropriate for the target do-main, and that source-relative semantic geometry stays in-formative under shift. When these assumptions are vio-lated, such as under severe vocabulary mismatch, MDIV loss may resist beneficial adaptation and CMAC loss may 8become overly conservative, as reflected by the weaker gains under larger domain gaps. Future work could explore source-anchored regularization for other vision-language tasks with vocabulary mismatch. 
+
+## References 
+
+[1] Mathilde Bateson, H. Lombaert, and Ismail Ben Ayed. Test-time adaptation with shape moments for image segmenta-tion. In International Conference on Medical Image Com-puting and Computer-Assisted Intervention , 2022. 2 [2] Kaixin Cai, Pengzhen Ren, Yi Zhu, Hang Xu, Jian zhuo Liu, Changlin Li, Guangrun Wang, and Xiaodan Liang. Mixreorg: Cross-modal mixed patch reorganization is a good mask learner for open-world semantic segmentation. 2023 IEEE/CVF International Conference on Computer Vision (ICCV) , pages 1196–1205, 2023. 3 [3] Junbum Cha, Jonghwan Mun, and Byungseok Roh. Learn-ing to generate text-grounded mask for open-world semantic segmentation from only image-text pairs. 2023 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 11165–11174, 2022. 3 [4] Jun Chen, Deyao Zhu, Guocheng Qian, Bernard Ghanem, Zhicheng Yan, Chenchen Zhu, Fanyi Xiao, Sean Chang Cu-latana, and Mohamed Elhoseiny. Exploring open-vocabulary semantic segmentation from clip vision encoder distillation only. 2023 IEEE/CVF International Conference on Com-puter Vision (ICCV) , pages 699–710, 2023. 3 [5] Qi Chen, Lingxiao Yang, Yun Chen, Nailong Zhao, Jian-huang Lai, Jie Shao, and Xiaohua Xie. Training-free class purification for open-vocabulary semantic segmenta-tion. 2025 IEEE/CVF International Conference on Com-puter Vision (ICCV) , pages 23124–23134, 2025. 3 [6] Ziyang Chen, Yiwen Ye, Mengkang Lu, Yongsheng Pan, and Yong Xia. Each test image deserves a specific prompt: Con-tinual test-time adaptation for 2d medical image segmenta-tion. 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 11184–11193, 2023. 2, 5[7] Marius Cordts, Mohamed Omran, Sebastian Ramos, Timo Rehfeld, Markus Enzweiler, Rodrigo Benenson, Uwe Franke, Stefan Roth, and Bernt Schiele. The cityscapes dataset for semantic urban scene understanding. 2016 IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , pages 3213–3223, 2016. 2, 4, 6, 7, 8 [8] Shuang Cui, Jinglin Xu, Yi Li, Xiongxin Tang, Jiang-meng Li, Jiahuan Zhou, Fanjiang Xu, Fuchun Sun, and Hui Xiong. Bayestta: Continual-temporal test-time adaptation for vision-language models via gaussian discriminant analy-sis. ArXiv , abs/2507.08607, 2025. 1, 2 [9] Chandler Timm Cagmat Doloriel, Yunbei Zhang, Yeonguk Yu, Taki Hasan Rafi, Muhammad salman siddiqui, Tor Kris-tian Stevik, Fadi Al Machot, Kristian Hovde Liland, and Habib Ullah. Family matters: A systematic study of spa-tial vs. frequency masking for continual test-time adaptation. 
+
+Transactions on Machine Learning Research , 2026. 2, 5 [10] Dexin Duan, Rui Xu, Peilin Liu, and Fei Wen. Life-long test-time adaptation via online learning in tracked low-dimensional subspace. In Conference on Neural Information Processing Systems (NeurIPS) , 2025. 2 [11] Mark Everingham, S. M. Ali Eslami, Luc Van Gool, Christo-pher K. I. Williams, John M. Winn, and Andrew Zisserman. The pascal visual object classes challenge: A retrospective. 
+
+International Journal of Computer Vision , 2014. 1, 2, 4, 6, 7, 8 [12] Golnaz Ghiasi, Xiuye Gu, Yin Cui, and Tsung-Yi Lin. Scal-ing open-vocabulary image segmentation with image-level labels. In European Conference on Computer Vision , 2021. 3[13] Sina Hajimiri, Ismail Ben Ayed, and Jos´ e Dolz. Pay atten-tion to your neighbours: Training-free open-vocabulary se-mantic segmentation. IEEE/CVF Winter Conference on Ap-plications of Computer Vision (WACV) , 2025. 1, 2, 3, 5, 6, 7, 8[14] Gustavo Adolfo Vargas Hakim, David Osowiechi, Mehrdad Noori, Milad Cheraghalikhani, Ali Bahri, Moslem Yazdan-panah, Ismail Ben Ayed, and Christian Desrosiers. Cli-partt: Adaptation of clip to new domains at test time. 2025 IEEE/CVF Winter Conference on Applications of Computer Vision (WACV) , 2025. 1, 2, 5, 6 [15] Dan Hendrycks and Thomas Dietterich. Benchmarking neu-ral network robustness to common corruptions and perturba-tions. In International Conference on Learning Representa-tions , 2018. 1, 3, 4 [16] Md Jahidul Islam, Chelsey Edge, Yuyang Xiao, Peigen Luo, Muntaqim Mehtaz, Christopher Morse, Sadman Sakib Enan, and Junaed Sattar. Semantic segmentation of underwater im-agery: Dataset and benchmark. In 2020 IEEE/RSJ Interna-tional Conference on Intelligent Robots and Systems (IROS) ,pages 1769–1776. IEEE, 2020. 4, 6 [17] Dmitry A. Konovalov, Alzayat Saleh, Michael Bradley, Man-galam Sankupellay, Simone Marini, and Marcus Sheaves. Underwater fish detection with weak multi-domain supervi-sion. 2019 International Joint Conference on Neural Net-works (IJCNN) , pages 1–8, 2019. 1 [18] Marc Lafon, Gustavo Adolfo Vargas Hakim, Cl´ ement Ram-bour, Christian Desrosiers, and Nicolas Thome. Cliptta: Ro-bust contrastive vision-language test-time adaptation. Neural Information Processing Systems , abs/2507.14312, 2025. 1, 2 [19] Jonghyun Lee, Dahuin Jung, Saehyung Lee, Junsung Park, Juhyeon Shin, Uiwon Hwang, and Sungroh Yoon. Entropy is not enough for test-time adaptation: From the perspective of disentangled factors. ICLR , 2024. 2, 5 [20] Jiaming Liu, Ran Xu, Senqiao Yang, Renrui Zhang, Qizhe Zhang, Zehui Chen, Yandong Guo, and Shanghang Zhang. Continual-mae: Adaptive distribution masked autoencoders for continual test-time adaptation. Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024. 2 [21] Yuang Liu, Wei Zhang, and Jun Wang. Source-free do-main adaptation for semantic segmentation. 2021 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 1215–1224, 2021. 2 [22] Sarthak Kumar Maharana, Baoming Zhang, Leonid Karlin-sky, Rog´ erio Feris, and Yunhui Guo. Batclip: Bimodal online 
+
+9test-time adaptation for clip. 2025 IEEE/CVF International Conference on Computer Vision (ICCV) , pages 1569–1579, 2024. 1, 2 [23] Sarthak Kumar Maharana, Shambhavi Mishra, Yunbei Zhang, Shuaicheng Niu, Taki Hasan Rafi, Jihun Hamm, Marco Pedersoli, Jose Dolz, and Yunhui Guo. Continual test-time adaptation in computer vision: Methods, benchmarks, and future directions. Transactions on Machine Learning Research , 2026. Survey Certification. 1, 2 [24] Jiayin Ni, Senqiao Yang, Jiaming Liu, Xiaoqi Li, Wenyu Jiao, Ran Xu, Zehui Chen, Yi Liu, and Shanghang Zhang. Distribution-aware continual test-time adaptation for seman-tic segmentation. 2024 IEEE International Conference on Robotics and Automation (ICRA) , pages 3044–3050, 2024. 2, 5 [25] Shuaicheng Niu, Jiaxiang Wu, Yifan Zhang, Yaofo Chen, Shi Dong Zheng, Peilin Zhao, and Mingkui Tan. Efficient test-time model adaptation without forgetting. In Interna-tional Conference on Machine Learning , 2022. 2 [26] Shuaicheng Niu, Jiaxiang Wu, Yifan Zhang, Zhiquan Wen, Yaofo Chen, Peilin Zhao, and Mingkui Tan. Towards stable test-time adaptation in dynamic wild world. In Internetional Conference on Learning Representations , 2023. 2, 5, 6 [27] Mehrdad Noori, David Osowiechi, Gustavo Adolfo Vargas Hakim, Ali Bahri, Moslem Yazdanpanah, Sahar Dastani, Farzad Beizaee, Ismail Ben Ayed, and Christian Desrosiers. Test-time adaptation of vision-language models for open-vocabulary semantic segmentation. The Thirty-ninth An-nual Conference on Neural Information Processing Systems ,2025. 1, 2, 3, 5, 6 [28] David Osowiechi, Mehrdad Noori, Gustavo Adolfo Vargas Hakim, Moslem Yazdanpanah, Ali Bahri, Milad Cheragha-likhani, Sahar Dastani, Farzad Beizaee, Ismail Ben Ayed, and Christian Desrosiers. Watt: Weight average test-time adaptation of clip. The Thirty-eighth Annual Conference on Neural Information Processing Systems , 2024. 1, 2, 5, 6 [29] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, Gretchen Krueger, and Ilya Sutskever. Learning transferable vi-sual models from natural language supervision. ArXiv ,abs/2103.00020, 2021. 1, 3 [30] Evgenia Rusak, Steffen Schneider, George Pachitariu, Luisa Eck, Peter Gehler, Oliver Bringmann, Wieland Brendel, and Matthias Bethge. If your data distribution shifts, use self-learning. Trans. Mach. Learn. Res. , 2022, 2021. 2, 5 [31] Christos Sakaridis, Dengxin Dai, and Luc Van Gool. Seman-tic foggy scene understanding with synthetic data. Interna-tional Journal of Computer Vision , 126:973 – 992, 2017. 4, 6[32] Ulindu De Silva, Dr Sahan Samaraweera, Sasini Wanigath-unga, Kavindu Kariyawasam, Kanchana Ranasinghe, Muza-mmal Naseer, and Ranga Rodrigo. Test-time optimization for domain adaptive open vocabulary segmentation. ArXiv ,abs/2501.04696, 2025. 5, 6 [33] Elaine Sui, Xiaohan Wang, and Serena Yeung-Levy. Just shift it: Test-time prototype shifting for zero-shot general-ization with vision-language models. 2025 IEEE/CVF Win-ter Conference on Applications of Computer Vision (WACV) ,pages 825–835, 2024. 1, 2 [34] Yu Sun, Xiaolong Wang, Zhuang Liu, John Miller, Alexei Efros, and Moritz Hardt. Test-time training with self-supervision for generalization under distribution shifts. In 
+
+International conference on machine learning , pages 9229– 9248. PMLR, 2020. 2 [35] Dequan Wang, Evan Shelhamer, Shaoteng Liu, Bruno A. Ol-shausen, and Trevor Darrell. Tent: Fully test-time adaptation by entropy minimization. In International Conference on Learning Representations , 2021. 1, 2, 3, 5, 6 [36] Feng Wang, Jieru Mei, and Alan L. Yuille. Sclip: Rethinking self-attention for dense vision-language inference. European Conference on Computer Vision , 2024. 1, 3, 5 [37] Junjue Wang, Zhuo Zheng, Ailong Ma, Xiaoyan Lu, and Yanfei Zhong. Loveda: A remote sensing land-cover dataset for domain adaptive semantic segmentation. NeurIPS Datasets and Benchmarks , abs/2110.08733, 2021. 4, 6, 7, 8 [38] Qin Wang, Olga Fink, Luc Van Gool, and Dengxin Dai. Con-tinual test-time domain adaptation. In Proceedings of Con-ference on Computer Vision and Pattern Recognition , 2022. 1, 2, 5, 6 [39] Mucong Ye, Jing Zhang, Jinpeng Ouyang, and Ding Yuan. Source data-free unsupervised domain adaptation for seman-tic segmentation. Proceedings of the 29th ACM International Conference on Multimedia , 2021. 2 [40] Longhui Yuan, Shuangliang Li, Zhuo He, and Binhui Xie. Few clicks suffice: Active test-time adaptation for semantic segmentation. ArXiv , abs/2312.01835, 2023. 2 [41] Yunbei Zhang, Akshay Mehra, Shuaicheng Niu, and Jihun Hamm. DPCore: Dynamic prompt coreset for continual test-time adaptation. In Forty-second International Conference on Machine Learning , 2025. 2 [42] Tengyun Zhao, Zhencai Shen, Hui Zou, Ping Zhong, and Yingyi Chen. Unsupervised adversarial domain adaptation based on interpolation image for fish detection in aquacul-ture. Comput. Electron. Agric. , 198:107004, 2022. 1 [43] Tengyun Zhao, Guoxu Zhang, Ping Zhong, and Zhencai Shen. Dmdnet: A decoupled multi-scale discriminant model for cross-domain fish detection. Biosystems Engineering ,2023. 1 [44] Lihua Zhou, Mao Ye, Shuaifeng Li, Nianxin Li, Xiatian Zhu, Lei Deng, Hongbin Liu, and Zhen Lei. Bayesian test-time adaptation for vision-language models. 2025 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 29999–30009, 2025. 1, 2 
+
+10
