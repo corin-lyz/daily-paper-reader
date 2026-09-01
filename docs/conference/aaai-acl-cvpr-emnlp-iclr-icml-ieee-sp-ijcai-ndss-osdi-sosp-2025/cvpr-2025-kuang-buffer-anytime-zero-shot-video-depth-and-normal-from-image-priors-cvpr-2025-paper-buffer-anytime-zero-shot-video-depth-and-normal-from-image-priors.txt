@@ -1,0 +1,279 @@
+Title: Buffer Anytime: Zero-Shot Video Depth and Normal from Image Priors
+
+URL Source: https://openaccess.thecvf.com/content/CVPR2025/papers/Kuang_Buffer_Anytime_Zero-Shot_Video_Depth_and_Normal_from_Image_Priors_CVPR_2025_paper.pdf
+
+Published Time: Mon, 02 Jun 2025 01:24:46 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+# Buffer Anytime: Zero-Shot Video Depth and Normal from Image Priors 
+
+# Zhengfei Kuang 1, Tianyuan Zhang 2, Kai Zhang 3, Hao Tan 3, Sai Bi 3, Yiwei Hu 3,Zexiang Xu 3, Milos Hasan 3, Gordon Wetzstein 1, Fujun Luan 31Stanford University 2Massachusetts Institute of Technology 3Adobe Research 
+
+{zhengfei,gordonwz }@stanford.edu tianyuan@mit.edu 
+
+{kaiz,hatan,sbi,yiwhu,zexu,mihasan,fluan }@adobe.com bufferanytime.github.io Depth Anything V2 Buffer Anytime MariGold-E2E-FT Buffer Anytime 
+
+> Time Time
+> Input Frames Input Frames
+
+Figure 1. Buffer Anytime improves temporal consistency in video geometry estimation without paired training data. Top: Comparison of depth estimation between Depth Anything V2 [55] and our method on a challenging dynamic scene with lighting variations. While the original model shows inconsistent depth predictions across frames, our approach maintains stable depth estimates. Bottom: Surface normal estimation comparison between Marigold-E2E-FT [20] and our method on an outdoor scene with complex geometry. Our method preserves consistent normal maps across frames while maintaining accurate geometric details. In both cases, our method achieves better temporal consistency without requiring video–geometry paired training data. 
+
+# Abstract 
+
+We present Buffer Anytime , a framework for estimation of depth and normal maps (which we call geometric buffers) from video that eliminates the need for paired video–depth and video–normal training data. Instead of relying on large-scale annotated video datasets, we demonstrate high-quality video buffer estimation by leveraging single-image priors with temporal consistency constraints. Our zero-shot training strategy combines state-of-the-art image estima-tion models based on optical flow smoothness through a hy-brid loss function, implemented via a lightweight temporal attention architecture. Applied to leading image models like Depth Anything V2 and Marigold-E2E-FT, our approach This CVPR paper is the Open Access version, provided by the Computer Vision Foundation. Except for this watermark, it is identical to the accepted version; the final published version of the proceedings is available on IEEE Xplore. 17660 significantly improves temporal consistency while maintain-ing accuracy. Experiments show that our method not only outperforms image-based approaches but also achieves re-sults comparable to state-of-the-art video models trained on large-scale paired video datasets, despite using no such paired video data. 
+
+# 1. Introduction 
+
+Acquiring depth and normal maps from monocular RGB input frames has been a fundamental research topic in com-puter vision for decades. Serving as a bridge between 2D images and 3D representations, advances in this field have enabled breakthrough applications across domains such as embodied AI, 3D/4D reconstruction and generation, and au-tonomous driving. Recent advances in foundational models, including im-age/video diffusion models [1, 5, 6, 24, 37] and large lan-guage models (LLMs) [16, 47], has accelerated the devel-opment of powerful models for image and video buffer es-timation. By buffers we mean information such as per-pixel depth, normals, lighting, or material properties; in this pa-per we specifically focus on depth and normals (i.e., ge-ometry buffers). Empowered by large-scale datasets cap-tured in synthetic environments and the real world, recent works [19, 32, 57] have demonstrated impressive results in predicting various types of buffers from images. A promis-ing line of recent work [30, 44] further extends the use of large-scale models for video buffer prediction, showing su-perior video depth predictions with high fidelity and consis-tency across frames. Our work originates from the following question: Can image-based buffer estimation models help with the task of video buffer estimation? Comparing to mainstream im-age/video generative models that take input in lower dimen-sions as conditions (i.e., text or a single frame) and gener-ate higher-dimensional outputs (i.e., image or video), the buffer estimation models are usually conditioned on RGB image/video of the same size as the desired results; the input already contains rich structural and semantic information. As a result, image inversion models are much more likely to produce consistent contents given similar input conditions compared to text-to-image/video generation models. This observation drives us to explore the possibility of upgrad-ing existing image models for video buffer generation. In this paper, we demonstrate a positive answer for the above question by showing an effective video geometry buffer model trained from image priors without any super-vision from ground truth video geometry data. We pro-pose Buffer Anytime , a flexible zero-shot 1 training strategy 
+
+> 1In this context, “zero-shot” refers to training without paired video– geometry ground truth data, rather than the traditional meaning of handling unseen classes.
+
+that combines the knowledge of an image geometry model with existing optical flow methods to ensure both temporal consistency and accuracy of the learned model predictions. We apply the training scheme on two state-of-the-art image models, Depth Anything V2 [55] (for depth estimation) and Marigold-E2E-FT [20] (for normal estimation), and show significant improvements in different video geometry esti-mation evaluations. We summarize the major contributions of our work as: • A zero-shot training scheme to fine-tune an image geo-metric buffer model for video geometric buffer genera-tion; • A hybrid training supervision that consists of a regulariza-tion loss from the image model and an optical flow based smoothness loss; • A lightweight temporal attention based architecture for video temporal consistency; • Our proposed models outperform the image baseline models by a large margin and are comparable to state-of-the-art video models trained on paired video data. 
+
+# 2. Related Work 
+
+Our work intersects with several active research areas in computer vision. We first review recent advances in monoc-ular depth and normal estimation, particularly focusing on large-scale and diffusion-based approaches, and video methods with their efforts in maintaining temporal consis-tency. We then examine video diffusion models that inspire our temporal modeling strategy. 
+
+## 2.1. Monocular Depth Estimation 
+
+Monocular depth estimation has evolved through several paradigm shifts. Early works [28, 34, 43] relied on hand-crafted features and algorithms, while subsequent deep-learning methods [18, 22, 56, 58] improved performance through learned representations. MiDaS [40] and Depth Anything [54] further advanced the field by leveraging large-scale datasets, with Depth Anything V2 [55] en-hancing robustness through pseudo depth labels. Re-cent works incorporating diffusion models [19, 26, 32] achieved fine-grained detail, while E2EFT [20] improved efficiency through single-step inference and end-to-end fine-tuning. While these advances represented major progress for single-image depth estimation, they did not address temporal consistency in videos. NVDS [51] tack-les this challenge by introducing a stabilization framework and video depth dataset, followed by ChronoDepth [44] and DepthCrafter [30] which leveraged video diffusion models (e.g. Stable Video Diffusion [5]) to boost prediction quality. Unlike these approaches that require annotated datasets, our method achieves comparable results without ground truth depth maps. 17661 2.2. Monocular Surface Normal Estimation 
+
+Surface normal estimation has evolved significantly since the pioneering work of Hoiem et al. [27, 28], who in-troduced learning-based approaches using handcrafted fea-tures. The advent of deep learning sparked numerous neural network-based approaches [3, 4, 12, 15, 17, 48, 49]. Re-cent advances include Omnidata[14] and its successor Om-nidata v2 [31], which leverage large-scale diverse datasets with sophisticated 3D data augmentation. Another line of research [19, 20, 26, 39] focuses on jointly predicting nor-mal and depth maps in a unified framework to enforce cross-domain consistency. Recently, DSINE [2] enhanced robust-ness by incorporating geometric inductive bias into data-driven methods. However, these works focus solely on single-image predictions without addressing temporal co-herence. 
+
+## 2.3. Video Diffusion Models 
+
+Recent advances in video diffusion models enable high-quality video generation from multimodal input conditions, such as text [6, 24, 38, 46], image [5, 23, 52], camera tra-jectory [25, 33] and human pose [10, 29, 45]. Among them, AnimateDiff [24] introduced plug-and-play motion mod-ules for adding dynamics to the existing image model Sta-ble Diffusion [1], supporting generalized video generation for various personalized domains. These advances inspired our temporal modeling approach, though we differ by lever-aging image-based priors and optical-flow models without requiring direct video-level supervision. 
+
+# 3. Method 
+
+We first formulate our problem as follows: given an input RGB video consisting of K frames, I1,...,K ∈
+
+RK×H×W ×3, we aim to predict the corresponding depth maps D1,...,K ∈ RK×H×W , and surface normal maps 
+
+N 1,...,K ∈ RK×H×W ×3 represented in camera coordi-nates. For convenience, we will mainly focus on describ-ing the task of depth estimation without loss of general-ity. While existing state-of-the-art methods for video depth prediction models are trained from paired datasets, i.e., a set of data pairs (I1,...,K , ˆD1,...,K )1,...,N data of input frames and ground truth depth maps, our model does not require any paired video datasets, instead only relying on the RGB video data (I1,...,K )1,...,N data .The key insight of our approach is to combine image-based diffusion priors and optical-flow based temporal stabilization control. Given an image depth prediction model f image  
+
+> θ
+
+(I) = Dimage trained by large-scale image paired datasets to reconstruct the underlying data prior 
+
+pimage (D|I), our goal is to develop an upgraded video model f video  
+
+> θ
+
+that is backed by f image  
+
+> θ
+
+and able to predict depth maps from videos, i.e., f video  
+
+> θ
+
+(I1,...,K ) = Dvideo  
+
+> 1,...,K
+
+.Input Video Video Model Output Single Frame Image Model Output  
+
+> ℒ!"#$% /ℒ&'()*+
+> ℒ,$*-+"
+> Fixed Image Model
+> Randomly Sampled Frame Same Initialized Video Model
+> Pre-trained Video Optical-Flow Model
+> Fine-tuned Image Model
+> Temporal Module
+> Video Optical Flows
+
+Figure 2. Visualization of Our Training Pipeline. Our pipeline consists of three branches: an optical flow network that extracts optical flow from input video to guide temporal smoothness; a fixed single-frame image model for regularization, and the trained video model that integrates a fine-tuned image backbone with tem-poral layers. 
+
+The prediction of f video  
+
+> θ
+
+should satisfy two conditions: First, each frame of the depth prediction Dvideo  
+
+> i
+
+should accom-modate the image data prior pimage (D|I) and second, the frames of the prediction should be temporally stable and consistent with each other. 
+
+## 3.1. Training Pipeline 
+
+To achieve the two conditions, we design a novel training strategy (Fig. 4) that employs two different types of losses: A regularization loss that forces the model to produce re-sults aligned with the image model, and an optical flow based stabilization loss as described in Section 3.2. In depth estimation, the regularization loss is based on the affine-invariant relative loss in previous works [20, 54]: 
+
+Ldepth = 1
+
+HW || ˆD′ 
+
+> k
+
+− D′
+
+> k
+
+|| 2, (1) where H, W are the image sizes, D′ 
+
+> k
+
+is the predicted depth map of the k-th frame normalized by the offset t =
+
+median (Dk) and the scale s = 1
+
+> HW
+
+P 
+
+> x
+
+|Di(x) − t|, and 
+
+ˆD′ 
+
+> k
+
+is the normalized depth map from the image model. In normal estimation, we leverage the latent representation of the backbone model, and simply apply an L2 loss on the predicted latent maps z:
+
+Lnormal = 1
+
+HW || ˆzk − zk|| 2. (2) To speed up training, we randomly select one frame from the video in each iteration and calculate the regularization loss on this frame only. The overall training loss is: 
+
+L = ωreg. · L depth / normal + Lstable , (3) 17662 Current Frame Next Frame Predicted Map Edge Based Mask Cycle Validation Mask     
+
+> Canny Edge Detection
+> Dilate
+> Inverse
+> (a) Mask Generation
+> w/o Masking with Masking
+> (b) Visualization of Masking on the Error Map Figure 3. Illustration of our masking procedure for the optical flow loss. Row 1 : Given two adjacent frames, we first apply cycle validation on the predicted optical flows to filter out the outliers;
+> Row 2 : We then apply an edge detection procedure on the pre-dicted depth map to mask out the boundaries. Row 3 : The combi-nation of two masks diminish the effect of inaccurate optical flow prediction to the smoothness error map.
+
+where ωreg. is the weight for per-frame regularization with pretrained single-view depth or normal predictors, and is set to 1 in all experiments, Lstable is the optical flow based tem-poral stabilization loss defined in Sec. 3.2. During training, a fixed pre-trained image model and an optical flow model are also deployed aside from the trained video model. We calculate the single frame prediction and the optical flow maps in a just-in-time manner. For the normal model, calcu-lating the temporal stabilization loss requires decoding the output latent maps into RGB frames first, which is imprac-tical to apply to all frames at once due to memory limita-tions. Hence we apply the deferred back-propagation tech-nique introduced in Zhang et al. [59]. Specifically, we first split the latent map into chunks of 4 frames, then calculate the stabilization loss for each chunk at a time and back-propagate the gradients. We concatenate the gradients of all chunks together as the gradient of the whole latent maps. 
+
+## 3.2. Optical Flow Based Stabilization 
+
+Single-view image predictors usually suffer from inconsis-tent results across frames due to the ambiguity of affine transformation (i.e., scale and offset) of the prediction and uncertainty from the model. To alleviate this problem, a reasonable approach is to align the depth predictions be-tween the corresponding pixels across different frames. In-spired by previous network prediction stabilizing works [9, 50, 51], we apply a pre-trained optical flow estimator to cal-culate the correspondence between adjacent frames for the temporal consistency stabilization. Specifically, given the predicted optical flow maps between two adjacent frames 
+
+Ik, Ik+1 are Ok→k+1 and Ok+1 →k, a stabilization loss be-tween the two frames can be defined as: 
+
+Lstable = 12HW 
+
+X
+
+> x
+
+|Ik(x) − Ik+1 (Ok→k+1 (x)) |1 (4) 
+
++ 12HW 
+
+X
+
+> x
+
+|Ik+1 (x) − Ik(Ok+1 →k(x)) |1. (5) In practice, however, the optical flow prediction can be in-accurate or wrong due to the limitations of the pretrained model, harming the effectiveness of the loss as Fig. 3 shows. To prevent that, we add two filtering methods to curate the correctly corresponded pixels across the frames. The first method applies the cycle-validation technique that is com-monly used in many previous image correspondence meth-ods. Here we only select the pixels in Ik that satisfy: 
+
+|| Ok→k+1 (Ok+1 →k(x)) − x|| 2 ≤ τc, (6) where τc is a hyper-parameter threshold. The second tech-nique is based on the observation that the stabilization loss can be incorrectly overestimated near the boundary areas in the depth frames due to the inaccuracy of the optical flow. Here, our solution is to apply the Canny edge detector [8] on predicted depth maps, and then filter out the losses on the pixels that are close to the detected edges (i.e., the Manhat-tan distance is smaller than 3 pixels). The combination of these two filters effectively removes outliers and improves the robustness of our model. 
+
+## 3.3. Model Architecture 
+
+For generating consistent and high-fidelity video results across frames, choosing a powerful and stable image-based backbone model that robustly preserves the structure of the input frames is crucial: it can greatly reduce the in-consistency and ambiguity of the image results, facilitat-ing our video model training process. Recent advances in large-scale image-to-depth and image-to-normal models have brought up many powerful candidates. In this work, we opt to use Depth Anything V2 [55] for the backbone of our depth prediction model, and Marigold-E2E-FT [20] for our normal prediction model. Depth Anything V2 [55] is a Dense Vision Transformer (DPT) [41] that consists of a Vision Transformer (ViT) [13] as an encoder, and a lightweight refinement network that fuses the feature outputs of several ViT blocks together and produces the final results. Here we freeze the ViT backbone and only fine-tune the refinement network. As Fig. 4 (a) 17663 Image Patches 
+
+> (𝐵×𝑇, 𝐻 !×𝑊 !)
+> Patchify
+> RGB Video Frames
+> (𝐵, 𝑇, 3, 𝐻, 𝑊)
+> ViT Blocks ViT Blocks ViT Blocks ViT Blocks Reassemble Reassemble Reassemble Reassemble Fusion Temporal Fusion Temporal Fusion Temporal Fusion & Head
+> Output Depth Maps
+> (𝐵, 𝑇, 𝐻, 𝑊)
+
+(a) Depth Estimation Model 
+
+> RGB Video Frames
+> (𝐵, 𝑇, 3, 𝐻, 𝑊)
+> Output Normal Maps
+> (𝐵, 𝑇, 3, 𝐻, 𝑊)
+> Encoder Decoder
+> RGB Latent Maps
+> (𝐵, 𝑇, 𝐶, 𝐻′, 𝑊′)
+> Input Noise Maps (Zeros)
+> (𝐵, 𝑇, 𝐶, 𝐻′, 𝑊′)
+
+⊕
+
+> Temporal Blocks Spatial Blocks
+> Diffusion U-Net
+> Denoised Latent Maps
+> (𝐵, 𝑇, 𝐶, 𝐻′, 𝑊′)
+
+(b) Normal Estimation Model 
+
+> Fixed Fine-Tuned Trained from Scratch (Zero Init)
+
+Figure 4. Our Network Architecture. We present two model architectures for video geometry estimation: (a) A depth estimation model based on Depth Anything V2 [55], where we inject temporal blocks between fusion layers while keeping the ViT backbone frozen. The model processes video frames (B, T, 3, H, W ) through a patchify layer, multiple ViT blocks with reassemble and fusion operations, and temporal blocks to produce depth maps (B, T, H, W ). (b) A normal estimation model built upon Marigold-E2E-FT [20], where we insert temporal blocks between spatial layers in the diffusion U-Net. The model takes RGB video frames as input, processes them through an encoder to obtain latent maps, combines them with zero noise maps, and processes through the U-Net with alternating spatial and temporal blocks to generate normal maps (B, T, 3, H, W ). Blue blocks are fixed during training, green blocks are fine-tuned, and pink blocks are trained from scratch with zero initialization. 
+
+shows, we inject three temporal blocks in between the fu-sion blocks, as a bridge to connect the latent maps across different frames. Notice that the ViT blocks are fully de-tached from the gradient flow, which helps reducing the memory cost during training, enabling support for longer videos. Marigold-E2E-FT [20] is a Latent Diffusion Model [42] built upon Stable-Diffusion V2.0 [1]. As Fig. 4 (b) demon-strates, we insert temporal layers between the spatial lay-ers. The original U-Net layers and the autoencoder are both fixed during training. The temporal blocks in both models are structured similarly to the blocks in AnimateDiff [24], consisting of several temporal attention blocks followed by a projection layer. The final projection layer of each block is zero-initialized to ensure the model acts the same as the image model when training begins. Our framework combines the power of state-of-the-art single-view models with temporal consistency through a carefully designed training strategy and architecture. The optical flow based temporal stabilization and regularization losses work together to ensure both high-quality per-frame predictions and temporal coherence, while our lightweight temporal blocks enable efficient processing of video se-quences. By freezing the backbone networks and only train-ing the temporal components, we maintain the strong geo-metric understanding capabilities of the pretrained models while adding temporal reasoning abilities. In the follow-ing section, we conduct extensive experiments to validate our design choices and demonstrate the effectiveness of our approach across various video geometry estimation tasks. 
+
+# 4. Experiments 
+
+All of our experiments are conducted on NVIDIA H100 GPUs with 80GB memory. Based on memory constraints, we set the maximum sequence length to 110 frames for depth estimation and 32 frames for normal estimation. We collect approximately 200K videos for training, with each clip containing 128 frames and with resolutions between 
+
+252 × 420 and 308 × 546 pixels. We use the AdamW [35] optimizer with learning rates of 10 −4 for depth and 10 −5
+
+for normal estimation. We train on 24 H100 GPUs with a total batch size of 24. The entire training process takes ap-proximately one day for 20,000 iterations. we adopt GM-Flow [53] for the optical flow estimation. 17664 Method Time ScanNet [11] KITTI [21] Bonn [36] AbsRel ↓ δ1 ↑ OPW ↓ AbsRel ↓ δ1↑ OPW ↓ AbsRel ↓ δ1 ↑ OPW ↓                                                                      
+
+> ChronoDepth [44] 106s 0.159 0.783 0.092 0.151 ∗0.797 ∗0.050 0.109 ∗0.886 ∗0.035 NVDS [51] 283s 0.187 0.677 0.143 0.253 0.588 0.089 0.210 ∗0.693 ∗0.068 DepthCrafter [30] 270s 0.125 0.848 0.082 0.110 0.881 0.111 0.075 0.971 0.029 MariGold [32] 475s 0.166 0.769 0.241 0.149 0.796 0.235 0.091 0.931 0.109 MariGold-E2E-FT [20] 72s 0.150 0.802 0.145 0.151 0.779 0.100 0.090 0.921 0.053 Depth Anything V2 [55] 31s 0.135 0.822 0.121 0.140 0.804 0.089 0.119 ∗0.875 ∗0.059 Ours (Depth Anything V2) 33s 0.123 0.853 0.076 0.119 0.865 0.038 0.102 0.925 0.028
+
+Table 1. Evaluation on video depth estimation. We compare our method against both video-based methods (top section) trained with video supervision and single-image methods (middle section) across three datasets: ScanNet (indoor static), KITTI (outdoor), and Bonn (indoor dynamic). We report absolute relative error (AbsRel), accuracy within 25% of ground truth ( δ1), and temporal consistency (OPW). Inference time is normalized by frame resolution for fair comparison. *Values marked with asterisk show slight differences from those reported in DepthCrafter. Best results are in bold , second best are underlined. Method Sintel [7] ScanNet [11] Mean ↓ Median ↓ 11 .25 ◦ ↑ OPW ↓ Mean ↓ Median ↓ 11 .25 ◦ ↑ OPW ↓
+
+DSINE [2] 35.710 29.707 20.005 0.131 22.754 11.438 55.095 0.119 Lotus [26] 34.462 28.576 19.966 0.169 22.110 10.622 57.931 0.122 Marigold [32] 38.142 32.696 16.101 0.427 23.530 11.456 55.905 0.190 Marigold-E2E-FT [20] 32.858 27.300 22.476 0.152 21.587 9.951 59.500 0.092 Ours (Marigold-E2E-FT) 33.421 28.320 20.664 0.065 21.500 9.915 59.634 0.069 
+
+Table 2. Evaluation on the video normal estimation. We evaluate on Sintel (synthetic dynamic scenes) and ScanNet (real indoor scenes) datasets. The Mean and Median metrics measure angular error in degrees, 11 .25 ◦ shows percentage of predictions within 11 .25 ◦
+
+of ground truth, and OPW measures temporal consistency. Our method maintains comparable per-frame accuracy while significantly improving temporal stability (OPW) compared to previous approaches. Best results are in bold , second best are underlined. Method AbsRel ↓ δ1 ↑ OPW ↓
+
+Ours wreg. = 0 .1 0.137 0.846 0.040 Ours wreg. = 3 0.122 0.860 0.040 Ours no mask 0.122 0.860 0.036 Ours all frames 0.120 0.865 0.035 
+
+Ours 0.119 0.865 0.038 Table 3. Ablation Study on KITTI depth estimation. We evalu-ate different variants of our model: different regularization weights (wreg. ), removing optical flow correspondence masking (no mask), and using all frames instead of a single frame for regularization (all frames). Our full model achieves the best AbsRel while maintain-ing strong performance in δ1 and temporal consistency (OPW). 
+
+## 4.1. Video Depth Estimation Results 
+
+We evaluate our method on the benchmark provided by DepthCrafter [30], which adapts standard image depth met-rics for video evaluation. For each test video, the evalu-ation first solves for a global affine transformation (offset and scale) that best aligns predictions to ground truth across all frames, then computes metrics on the transformed pre-dictions. We report three metrics: Mean Absolute Rela-tive Error ( AbsRel ), the percentage of pixels within 1.25× of ground truth ( δ1), and optical-flow-based smoothness er-ror ( OPW ), defined similarly to our smoothness loss. We evaluate on three datasets: ScanNet [11] (static indoor scenes), KITTI [21] (street views with LiDAR depth), and Bonn [36] (dynamic indoor scenes), using the same test splits as DepthCrafter. As shown in Tab. 1, our model significantly improves upon its backbone, Depth Anything V2 [55], in both quality and temporal smoothness. Notably, we achieve compara-ble performance to DepthCrafter, the current state-of-the-art trained on large-scale annotated video datasets, partic-ularly on ScanNet and KITTI datasets. We also demon-strate qualitative comparisons in Fig. 5. Where our model produces more visually stable results than Depth Anything V2, while successfully preserving the structure of the image model prediction. 
+
+## 4.2. Video Normal Estimation Results 
+
+In the absence of a standard video normal estimation bench-mark, we establish our evaluation protocol based on the image-level metrics from [2]. We select two datasets con-taining continuous frames: Sintel [7] (synthetic dynamic scenes) and ScanNet [11]. For each scene, we uniformly sample 32 frames as test sequences. We evaluate using 17665 Depth Anything V2 Depth Anything V2 + Buffer Anytime Depth Crafter Input Video Figure 5. Qualitative comparison on Video Depth Estimation . For better visualization, we also show the time slice on the red lines of each video on their right side. Our model keeps the structure details shown in the image model results while achieving smoother performance on the time axis. 
+
+three image-based metrics: mean and median angles be-tween predicted and ground truth normals, percentage of predictions within 11.25° of ground truth, plus the video smoothness metric from our depth evaluation. Results in Tab. 2 show that our model maintains per-formance comparable to the image backbone on per-frame metrics while significantly improving temporal smoothness. The limited improvement in image-based metrics is ex-pected, as these metrics primarily assess per-frame accuracy rather than temporal consistency. The substantial improve-ment in the smoothness metric demonstrates our model’s ability to generate temporally coherent predictions, as visu-alized in Fig. 6. 
+
+## 4.3. Ablation Study 
+
+We conduct ablation studies on KITTI depth estimation to validate our design choices. We compare our full model against four variants: (1) Ours ωreg . = 0 .1 and (2) Ours 
+
+ωreg . = 3 use different regularization loss weights; (3) 
+
+Ours no mask omits the optical flow masking; and (4) Ours all frames applies regularization to all frames instead of a single random frame. Our full model outperforms the first three variants, validating our design choices. Inter-estingly, Ours all frames shows similar performance to our 17666 Input Video DSINE Marigold-E2E-FT Marigold-E2E-FT+ Buffer Anytime  
+
+> Time Time Time Figure 6. Qualitative comparison on Video Normal Estimation . We show the same time slice as in the depth estimation results, and two predicted frames of each model corresponding to the input frames on the first and third lines. Our model successfully removes the inconsistency from the image model as pointed by the red arrows, achieving smoother results in the time slices.
+
+standard model, suggesting that single-frame regularization sufficiently maintains alignment with the image prior. 
+
+# 5. Discussion 
+
+In this work, we present a zero-shot framework for video geometric buffer estimation that eliminates the need for paired video-buffer training data. By leveraging state-of-the-art single-view priors combined with optical flow-based temporal consistency, our approach achieves temporally stable and coherent results that match or surpass those of methods trained on large-scale video datasets, as demon-strated in our experiments. While our approach highlights the power of combining image model priors with optical flow smoothness guidance, there are areas for improvement. First, as our model builds upon image model priors, it may struggle in extreme cases where the backbone model completely fails. Second, while optical flow provides smoothness and temporal consistency between adjacent frames, it only account for correlations across continuous frames. It may fail to, for instance, cap-ture consistent depth information for objects that temporar-ily leave and re-enter the scene. To tackle these problems, we believe promising future directions are to incorporate large-scale image models with limited video supervision for a hybrid training, or to develop more sophisticated cross-frame consistent guidance (e.g. losses defined in 3D space). In summary, we propose this framework as a promis-ing step toward reducing reliance on costly video annota-tions for geometric understanding tasks, offering valuable insights for future research in video inversion problems. 
+
+Acknowledgements. This work was done when Zhengfei Kuang and Tianyuan Zhang were interns at Adobe Re-search. 17667 References 
+
+[1] Stability AI. Stable diffusion version 2. https : / / huggingface . co / stabilityai / stable -diffusion-2 , 2022. Accessed: 2024-11-11. 2, 3, 5 [2] Gwangbin Bae and Andrew J Davison. Rethinking induc-tive biases for surface normal estimation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 9535–9545, 2024. 3, 6 [3] Gwangbin Bae, Ignas Budvytis, and Roberto Cipolla. Es-timating and exploiting the aleatoric uncertainty in surface normal estimation. In Proceedings of the IEEE/CVF Interna-tional Conference on Computer Vision , pages 13137–13146, 2021. 3 [4] Aayush Bansal, Bryan Russell, and Abhinav Gupta. Marr revisited: 2d-3d alignment via surface normal prediction. In 
+
+Proceedings of the IEEE conference on computer vision and pattern recognition , pages 5965–5974, 2016. 3 [5] Andreas Blattmann, Tim Dockhorn, Sumith Kulal, Daniel Mendelevitch, Maciej Kilian, Dominik Lorenz, Yam Levi, Zion English, Vikram Voleti, Adam Letts, et al. Stable video diffusion: Scaling latent video diffusion models to large datasets. arXiv preprint arXiv:2311.15127 , 2023. 2, 3 [6] Tim Brooks, Bill Peebles, Connor Holmes, Will DePue, Yufei Guo, Li Jing, David Schnurr, Joe Taylor, Troy Luh-man, Eric Luhman, Clarence Ng, Ricky Wang, and Aditya Ramesh. Video generation models as world simulators. 2024. 2, 3 [7] Daniel J Butler, Jonas Wulff, Garrett B Stanley, and Michael J Black. A naturalistic open source movie for opti-cal flow evaluation. In Computer Vision–ECCV 2012: 12th European Conference on Computer Vision, Florence, Italy, October 7-13, 2012, Proceedings, Part VI 12 , pages 611– 625. Springer, 2012. 6 [8] John Canny. A computational approach to edge detection. 
+
+IEEE Transactions on pattern analysis and machine intelli-gence , (6):679–698, 1986. 4 [9] Yuanzhouhan Cao, Yidong Li, Haokui Zhang, Chao Ren, and Yifan Liu. Learning structure affinity for video depth estima-tion. In Proceedings of the 29th ACM International Confer-ence on Multimedia , page 190–198, New York, NY, USA, 2021. Association for Computing Machinery. 4 [10] Di Chang, Yichun Shi, Quankai Gao, Jessica Fu, Hongyi Xu, Guoxian Song, Qing Yan, Yizhe Zhu, Xiao Yang, and Mo-hammad Soleymani. Magicpose: Realistic human poses and facial expressions retargeting with identity-aware diffusion, 2024. 3 [11] Angela Dai, Angel X Chang, Manolis Savva, Maciej Hal-ber, Thomas Funkhouser, and Matthias Nießner. Scannet: Richly-annotated 3d reconstructions of indoor scenes. In 
+
+Proceedings of the IEEE conference on computer vision and pattern recognition , pages 5828–5839, 2017. 6 [12] Tien Do, Khiem Vuong, Stergios I Roumeliotis, and Hyun Soo Park. Surface normal estimation of tilted images via spatial rectifier. In Computer Vision–ECCV 2020: 16th European Conference, Glasgow, UK, August 23–28, 2020, Proceedings, Part IV 16 , pages 265–280. Springer, 2020. 3 [13] Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Syl-vain Gelly, Jakob Uszkoreit, and Neil Houlsby. An image is worth 16x16 words: Transformers for image recognition at scale. ICLR , 2021. 4 [14] Ainaz Eftekhar, Alexander Sax, Jitendra Malik, and Amir Zamir. Omnidata: A scalable pipeline for making multi-task mid-level vision datasets from 3d scans. In Proceedings of the IEEE/CVF International Conference on Computer Vi-sion , pages 10786–10796, 2021. 3 [15] David Eigen and Rob Fergus. Predicting depth, surface nor-mals and semantic labels with a common multi-scale con-volutional architecture. In Proceedings of the IEEE inter-national conference on computer vision , pages 2650–2658, 2015. 3 [16] Luciano Floridi and Massimo Chiriatti. Gpt-3: Its nature, scope, limits, and consequences. Minds and Machines , 30: 681–694, 2020. 2 [17] David Ford Fouhey, Abhinav Gupta, and Martial Hebert. Unfolding an indoor origami world. In Computer Vision– ECCV 2014: 13th European Conference, Zurich, Switzer-land, September 6-12, 2014, Proceedings, Part VI 13 , pages 687–702. Springer, 2014. 3 [18] Huan Fu, Mingming Gong, Chaohui Wang, Kayhan Bat-manghelich, and Dacheng Tao. Deep ordinal regression net-work for monocular depth estimation. In Proceedings of the IEEE conference on computer vision and pattern recogni-tion , pages 2002–2011, 2018. 2 [19] Xiao Fu, Wei Yin, Mu Hu, Kaixuan Wang, Yuexin Ma, Ping Tan, Shaojie Shen, Dahua Lin, and Xiaoxiao Long. Geowiz-ard: Unleashing the diffusion priors for 3d geometry esti-mation from a single image. In European Conference on Computer Vision , pages 241–258. Springer, 2025. 2, 3 [20] Gonzalo Martin Garcia, Karim Abou Zeid, Christian Schmidt, Daan de Geus, Alexander Hermans, and Bastian Leibe. Fine-tuning image-conditional diffusion models is easier than you think. arXiv preprint arXiv:2409.11355 ,2024. 1, 2, 3, 4, 5, 6 [21] Andreas Geiger, Philip Lenz, Christoph Stiller, and Raquel Urtasun. Vision meets robotics: The kitti dataset. The Inter-national Journal of Robotics Research , 32(11):1231–1237, 2013. 6 [22] Cl´ ement Godard, Oisin Mac Aodha, and Gabriel J Bros-tow. Unsupervised monocular depth estimation with left-right consistency. In Proceedings of the IEEE conference on computer vision and pattern recognition , pages 270–279, 2017. 2 [23] Yuwei Guo, Ceyuan Yang, Anyi Rao, Maneesh Agrawala, Dahua Lin, and Bo Dai. Sparsectrl: Adding sparse controls to text-to-video diffusion models. In arXiv , 2023. 3 [24] Yuwei Guo, Ceyuan Yang, Anyi Rao, Zhengyang Liang, Yaohui Wang, Yu Qiao, Maneesh Agrawala, Dahua Lin, and Bo Dai. Animatediff: Animate your personalized text-to-image diffusion models without specific tuning. arXiv preprint arXiv:2307.04725 , 2023. 2, 3, 5 [25] Hao He, Yinghao Xu, Yuwei Guo, Gordon Wetzstein, Bo 17668 Dai, Hongsheng Li, and Ceyuan Yang. Cameractrl: Enabling camera control for text-to-video generation, 2024. 3 [26] Jing He, Haodong Li, Wei Yin, Yixun Liang, Leheng Li, Kaiqiang Zhou, Hongbo Liu, Bingbing Liu, and Ying-Cong Chen. Lotus: Diffusion-based visual foundation model for high-quality dense prediction. arXiv preprint arXiv:2409.18124 , 2024. 2, 3, 6 [27] Derek Hoiem, Alexei A Efros, and Martial Hebert. Au-tomatic photo pop-up. In ACM SIGGRAPH 2005 Papers ,pages 577–584. 2005. 3 [28] Derek Hoiem, Alexei A Efros, and Martial Hebert. Recov-ering surface layout from an image. International Journal of Computer Vision , 75:151–172, 2007. 2, 3 [29] Li Hu, Xin Gao, Peng Zhang, Ke Sun, Bang Zhang, and Liefeng Bo. Animate anyone: Consistent and controllable image-to-video synthesis for character animation. In arXiv ,2023. 3 [30] Wenbo Hu, Xiangjun Gao, Xiaoyu Li, Sijie Zhao, Xiaodong Cun, Yong Zhang, Long Quan, and Ying Shan. Depthcrafter: Generating consistent long depth sequences for open-world videos. arXiv preprint arXiv:2409.02095 , 2024. 2, 6 [31] O˘ guzhan Fatih Kar, Teresa Yeo, Andrei Atanov, and Amir Zamir. 3d common corruptions and data augmentation. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vi-sion and Pattern Recognition , pages 18963–18974, 2022. 3 [32] Bingxin Ke, Anton Obukhov, Shengyu Huang, Nando Met-zger, Rodrigo Caye Daudt, and Konrad Schindler. Repurpos-ing diffusion-based image generators for monocular depth estimation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 9492– 9502, 2024. 2, 6 [33] Zhengfei Kuang, Shengqu Cai, Hao He, Yinghao Xu, Hong-sheng Li, Leonidas Guibas, and Gordon. Wetzstein. Collab-orative video diffusion: Consistent multi-video generation with camera control. In arXiv , 2024. 3 [34] Ce Liu, Jenny Yuen, Antonio Torralba, Josef Sivic, and William T Freeman. Sift flow: Dense correspondence across different scenes. In Computer Vision–ECCV 2008: 10th Eu-ropean Conference on Computer Vision, Marseille, France, October 12-18, 2008, Proceedings, Part III 10 , pages 28–42. Springer, 2008. 2 [35] Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization, 2019. 5 [36] Emanuele Palazzolo, Jens Behley, Philipp Lottes, Philippe Giguere, and Cyrill Stachniss. Refusion: 3d reconstruction in dynamic environments for rgb-d cameras exploiting resid-uals. In 2019 IEEE/RSJ International Conference on Intel-ligent Robots and Systems (IROS) , pages 7855–7862. IEEE, 2019. 6 [37] Ryan Po, Wang Yifan, Vladislav Golyanik, Kfir Aberman, Jonathan T Barron, Amit Bermano, Eric Chan, Tali Dekel, Aleksander Holynski, Angjoo Kanazawa, et al. State of the art on diffusion models for visual computing. In Computer Graphics Forum , page e15063. Wiley Online Library, 2024. 2[38] Adam Polyak, Amit Zohar, Andrew Brown, Andros Tjandra, Animesh Sinha, Ann Lee, Apoorv Vyas, Bowen Shi, Chih-Yao Ma, Ching-Yao Chuang, et al. Movie gen: A cast of media foundation models. arXiv preprint arXiv:2410.13720 ,2024. 3 [39] Xiaojuan Qi, Renjie Liao, Zhengzhe Liu, Raquel Urtasun, and Jiaya Jia. Geonet: Geometric neural network for joint depth and surface normal estimation. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recogni-tion , pages 283–291, 2018. 3 [40] Ren´ e Ranftl, Katrin Lasinger, David Hafner, Konrad Schindler, and Vladlen Koltun. Towards robust monocular depth estimation: Mixing datasets for zero-shot cross-dataset transfer. IEEE transactions on pattern analysis and machine intelligence , 44(3):1623–1637, 2020. 2 [41] Ren´ e Ranftl, Alexey Bochkovskiy, and Vladlen Koltun. Vi-sion transformers for dense prediction. In Proceedings of the IEEE/CVF international conference on computer vision ,pages 12179–12188, 2021. 4 [42] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Bj¨ orn Ommer. High-resolution image synthesis with latent diffusion models. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 10684–10695, 2022. 5 [43] Ashutosh Saxena, Min Sun, and Andrew Y Ng. Make3d: Learning 3d scene structure from a single still image. IEEE transactions on pattern analysis and machine intelligence ,31(5):824–840, 2008. 2 [44] Jiahao Shao, Yuanbo Yang, Hongyu Zhou, Youmin Zhang, Yujun Shen, Matteo Poggi, and Yiyi Liao. Learning tem-porally consistent video depth from video diffusion priors. 
+
+arXiv preprint arXiv:2406.01493 , 2024. 2, 6 [45] Ruizhi Shao, Youxin Pang, Zerong Zheng, Jingxiang Sun, and Yebin Liu. Human4dit: 360-degree human video gen-eration with 4d diffusion transformer. ACM Transactions on Graphics (TOG) , 43(6), 2024. 3 [46] Uriel Singer, Adam Polyak, Thomas Hayes, Xi Yin, Jie An, Songyang Zhang, Qiyuan Hu, Harry Yang, Oron Ashual, Oran Gafni, et al. Make-a-video: Text-to-video generation without text-video data. arXiv preprint arXiv:2209.14792 ,2022. 3 [47] Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timoth´ ee Lacroix, Baptiste Rozi` ere, Naman Goyal, Eric Hambro, Faisal Azhar, et al. Llama: Open and efficient foundation language models. 
+
+arXiv preprint arXiv:2302.13971 , 2023. 2 [48] Rui Wang, David Geraghty, Kevin Matzen, Richard Szeliski, and Jan-Michael Frahm. Vplnet: Deep single view normal estimation with vanishing points and lines. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 689–698, 2020. 3 [49] Xiaolong Wang, David Fouhey, and Abhinav Gupta. De-signing deep networks for surface normal estimation. In 
+
+Proceedings of the IEEE conference on computer vision and pattern recognition , pages 539–547, 2015. 3 [50] Yiran Wang, Zhiyu Pan, Xingyi Li, Zhiguo Cao, Ke Xian, and Jianming Zhang. Less is more: Consistent video depth estimation with masked frames modeling. In Proceedings of the 30th ACM International Conference on Multimedia ,pages 6347–6358, 2022. 4 17669 [51] Yiran Wang, Min Shi, Jiaqi Li, Zihao Huang, Zhiguo Cao, Jianming Zhang, Ke Xian, and Guosheng Lin. Neural video depth stabilizer. In Proceedings of the IEEE/CVF Interna-tional Conference on Computer Vision , pages 9466–9476, 2023. 2, 4, 6 [52] Dejia Xu, Weili Nie, Chao Liu, Sifei Liu, Jan Kautz, Zhangyang Wang, and Arash Vahdat. Camco: Camera-controllable 3d-consistent image-to-video generation. arXiv preprint arXiv:2406.02509 , 2024. 3 [53] Haofei Xu, Jing Zhang, Jianfei Cai, Hamid Rezatofighi, and Dacheng Tao. Gmflow: Learning optical flow via global matching. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 8121– 8130, 2022. 5 [54] Lihe Yang, Bingyi Kang, Zilong Huang, Xiaogang Xu, Jiashi Feng, and Hengshuang Zhao. Depth anything: Unleashing the power of large-scale unlabeled data. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 10371–10381, 2024. 2, 3 [55] Lihe Yang, Bingyi Kang, Zilong Huang, Zhen Zhao, Xiao-gang Xu, Jiashi Feng, and Hengshuang Zhao. Depth any-thing v2. arXiv preprint arXiv:2406.09414 , 2024. 1, 2, 4, 5, 6[56] Wei Yin, Yifan Liu, Chunhua Shen, and Youliang Yan. En-forcing geometric constraints of virtual normal for depth pre-diction. In Proceedings of the IEEE/CVF international con-ference on computer vision , pages 5684–5693, 2019. 2 [57] Zheng Zeng, Valentin Deschaintre, Iliyan Georgiev, Yannick Hold-Geoffroy, Yiwei Hu, Fujun Luan, Ling-Qi Yan, and Miloˇ s Haˇ san. Rgb ↔x: Image decomposition and synthesis using material-and lighting-aware diffusion models. In ACM SIGGRAPH 2024 Conference Papers , pages 1–11, 2024. 2 [58] Chi Zhang, Wei Yin, Billzb Wang, Gang Yu, Bin Fu, and Chunhua Shen. Hierarchical normalization for robust monocular depth estimation. Advances in Neural Informa-tion Processing Systems , 35:14128–14139, 2022. 2 [59] Kai Zhang, Nick Kolkin, Sai Bi, Fujun Luan, Zexiang Xu, Eli Shechtman, and Noah Snavely. Arf: Artistic radiance fields. In European Conference on Computer Vision , pages 717–733. Springer, 2022. 4 17670

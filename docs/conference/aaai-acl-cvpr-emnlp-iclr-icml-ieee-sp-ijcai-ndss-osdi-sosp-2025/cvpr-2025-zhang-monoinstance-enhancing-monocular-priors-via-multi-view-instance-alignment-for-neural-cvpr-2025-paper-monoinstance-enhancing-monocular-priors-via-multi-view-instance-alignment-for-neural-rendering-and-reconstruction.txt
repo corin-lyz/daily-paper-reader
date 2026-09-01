@@ -1,0 +1,400 @@
+Title: MonoInstance: Enhancing Monocular Priors via Multi-view Instance Alignment for Neural Rendering and Reconstruction
+
+URL Source: https://openaccess.thecvf.com/content/CVPR2025/papers/Zhang_MonoInstance_Enhancing_Monocular_Priors_via_Multi-view_Instance_Alignment_for_Neural_CVPR_2025_paper.pdf
+
+Published Time: Mon, 02 Jun 2025 02:37:39 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+# MonoInstance: Enhancing Monocular Priors via Multi-view Instance Alignment for Neural Rendering and Reconstruction 
+
+# Wenyuan Zhang 1, Yixiao Yang 1, Han Huang 1, Liang Han 1, Kanle Shi 2,Yu-Shen Liu 1* , Zhizhong Han 3
+
+# School of Software, Tsinghua University, Beijing, China 1
+
+# Kuaishou Technology, Beijing, China 2
+
+# Department of Computer Science, Wayne State University, Detroit, USA 3  
+
+> {zhangwen21,yangyixi21,h-huang20,hanl23 }@mails.tsinghua.edu.cn shikanle@kuaishou.com, liuyushen@tsinghua.edu.cn, h312h@wayne.edu
+
+# Abstract 
+
+Monocular depth priors have been widely adopted by neu-ral rendering in multi-view based tasks such as 3D recon-struction and novel view synthesis. However, due to the inconsistent prediction on each view, how to more effectively leverage monocular cues in a multi-view context remains a challenge. Current methods treat the entire estimated depth map indiscriminately, and use it as ground truth su-pervision, while ignoring the inherent inaccuracy and cross-view inconsistency in monocular priors. To resolve these issues, we propose MonoInstance , a general approach that explores the uncertainty of monocular depths to provide enhanced geometric priors for neural rendering and recon-struction. Our key insight lies in aligning each segmented instance depths from multiple views within a common 3D space, thereby casting the uncertainty estimation of monocu-lar depths into a density measure within noisy point clouds. For high-uncertainty areas where depth priors are unreli-able, we further introduce a constraint term that encourages the projected instances to align with corresponding instance masks on nearby views. MonoInstance is a versatile strat-egy which can be seamlessly integrated into various multi-view neural rendering frameworks. Our experimental results demonstrate that MonoInstance significantly improves the performance in both reconstruction and novel view synthesis under various benchmarks. Project page: https://wen-yuan-zhang.github.io/MonoInstance/ .
+
+# 1. Introduction 
+
+Learning scene representations from multiple posed RGB images is a foundational task in computer vision and graph-
+
+> *The corresponding author is Yu-Shen Liu.
+
+ics [2, 27, 80, 96], with numerous applications across diverse domains such as virtual reality, robotics and autonomous driving. Bridging the gap between 2D images and 3D repre-sentations has become a central challenge in the field. Tra-ditional approaches like Multi-View Stereo (MVS) [75, 89], address this issue by matching features between adjacent views, followed by dense depth estimation and point cloud fusion. Recent methods tackle this problem more effectively through volume rendering. By learning neural representa-tions, either implicit or explicit ones, like NeRF [40] and 3D Gaussians [20], we can conduct volume rendering to rendered these neural representations into images. The ren-dering results are then supervised by ground truth ones to optimize the neural representations accordingly. Although these methods are capable of generating plausible 3D meshes or novel views [11, 46, 62], they struggle to recover fine-grained geometric details. This limitation arises since that the photometric consistency from color images can not en-sure perfect geometric clues, which is further complicated by the shape-radiance ambiguity [83]. To overcome these obstacles, recent solutions typically incorporate monocular priors as additional supervision, such as depths [57, 80, 97] and normals [8, 33, 61]. However, the effectiveness of monocular priors becomes a bottleneck hin-dering the performance of these methods, primarily due to two factors. One is that the predictions from monocular pri-ors are not perfectly accurate due to domain gaps. The other is that monocular priors are inferred independently from each RGB image, leading to geometry inconsistency across dif-ferent viewpoints. MVS-based methods [3, 19, 63] mitigate these issues by deriving the uncertainty through comparing the predicted depths with the projected ones from adjacent views, which is puzzled by view occlusions. While the latest methods [6, 71] incorporate an additional branch within the rendering framework to predict the uncertainty. However, This CVPR paper is the Open Access version, provided by the Computer Vision Foundation. Except for this watermark, it is identical to the accepted version; the final published version of the proceedings is available on IEEE Xplore. 21642 the uncertainty prediction module in these methods is cou-pled with the rendering branch, and thus its performance is disturbed by the quality of rendering. To resolve these issues, we introduce MonoInstance to enhance monocular priors for neural rendering frameworks by exploring the inconsistency among each instance depths in monocular cues. Our insight builds on the fact that within the same scene, the monocular priors in 3D space will pro-duce depth inconsistency on different views. Hence, when we back-project the depths of the same object from different views into world coordinate system, we can estimate the un-certainty of a 3D point according to the point density in the neighborhood. Specifically, we first segment multi-view im-ages into consistent instances. For each segmented instance, we then back-project and align the multi-view estimated depth values together to create a noisy point cloud. We then evaluate the density of back-projected depth points from each viewpoint within the fused point cloud as the uncer-tainty measurement, leading to an uncertainty map on each view to highlight the uncertainty area of the instance. For high-uncertainty regions where the priors do not work well, we introduce an additional constraint term, guide the ray sampling, and reduce the weights for inaccurate supervision to infer the geometry and improve rendering details. We evaluate MonoInstance upon different neural repre-sentation learning frameworks in dense-view reconstruction, sparse-view reconstruction and sparse novel view synthesis under the widely used benchmarks. Experimental results show that our method achieves the state-of-the-art perfor-mance in various tasks. Our contributions are listed below. • We introduce MonoInstance, which detects uncertainty in 3D according to inconsistent clues from monocular priors on multi-view. Our method is a general strategy to enhance monocular priors for various multi-view neural rendering and reconstruction frameworks. • Based on the uncertainty maps, we introduce novel strate-gies to reduce the negative impact brought by inconsis-tent monocular clues and mine more reliable supervision through photometric consistency. • We show our superiority over the state-of-the-art methods using multi-view neural rendering in 3D reconstruction and novel view synthesis on the widely used benchmarks. 
+
+# 2. Related Work 
+
+Neural implicit representations have made a huge progress in various tasks [22, 23, 25, 29, 38, 67, 70, 91, 92, 94], which can be learned using different supervision like multi-view [13, 17, 69, 85, 87] and point clouds [4, 5, 24, 34– 37, 43, 44, 90]. In the following, we focus on reviewing works on learning implicit representations from multi-view. 
+
+Neural 3D Reconstruction with Radiance Fields. Neural Radiance Fields (NeRF) have been a universal technique for multi-view 3D reconstruction. Notable efforts [45, 62, 77] achieve differentiable rendering of neural implicit func-tions, such as signed distance function [71, 88] and occu-pancy [15, 45], to infer neural implicit surfaces. Recent approaches introduce various priors as additional supervi-sions to improve the reconstruction in texture-less areas, such as monocular depth [71, 80, 88], normals [33, 61], semantic segmentations [47, 95]. More recent methods im-prove the monocular cues by detecting uncertainties through multi-view projection of depths and normals [61, 66], but the projections suffer from view occlusions. Latest meth-ods [6, 59, 71] integrate uncertainty estimation within the neural rendering framework, yet the predicted uncertain-ties are compromised by the rendering quality, especially in complex structures where RGB rendering fails. Moreover, these techniques are specifically designed for indoor scene reconstruction and not applicable across different multi-view neural rendering frameworks. Since there are often only few available views in real-world scenes, some methods are de-veloped for sparse view reconstruction. These methods either are pre-trained on large-scale datasets and finetuned on test scenes [28, 30, 41, 48, 49, 54], or leverage monocular priors and cross-view features to overfit a single scene [16, 68]. 
+
+Novel View Synthesis with Gaussian Splatting. Recently, 3D Gaussian Splatting [20] has become a new paradigm in neural rendering due to its fast rendering speed and out-standing performance [26, 86, 93]. Despite high-quality rendering [31, 64], 3DGS shows poor performance when the number of input views is reduced, due to the overfitted dis-tribution of Gaussians. Recent methods [21, 50, 72, 82, 97] tackle this problem by imposing monocular depth priors. However, the priors from pre-trained models often contain significant errors and cannot optimally position the Gaus-sians. Although monocular depth cues have been widely adopted in multi-view neural rendering and reconstruction frameworks, the uncertainty in depth priors has not been fully explored. To this end, we propose MonoInstance, a universal depth prior enhancement strategy that can seam-lessly integrate with various multi-view neural rendering and reconstruction frameworks to improve their performances. 
+
+# 3. Method 
+
+Given a set of posed images {Ij }Nj=1 and the correspond-ing monocular depth maps {Dj }Nj=1 , we aim to estimate N
+
+uncertainty maps {Uj }Nj=1 according to the inconsistency of monocular depth cues on multi-view images. These un-certainty maps work with our novel strategies to enhance the monocular cues in various neural rendering frameworks to improve the rendering performance and reconstruction accuracy. To achieve this, we introduce a novel scheme to evaluate the uncertainty of 3D points by measuring the point density in a neighborhood. Our novel strategy will use these estimated uncertainty maps to guide the ray sampling, reduce 21643 Back - 
+
+> Project
+> Density
+> Estimation
+> Project &
+> Assemble
+> Multi -View
+> Consistent
+> Segmentation
+> 🔒
+> Uncertainty Maps
+> Differentiable
+> Rendering
+> 0
+> 11
+> 0
+> Rendered Depth
+> Rendered Image GT Image
+> Monocular Depth
+> 🔒
+> Monocular Depth
+> Estimation
+
+(a) Multi -View  Consistent Uncertainty Estimation (Sec. 3.2)  
+
+> Adaptive Prior
+> Loss (Sec. 3.3)
+> Photometric
+> Loss
+> Uncertainty -Guided
+> Ray Sampling (Sec. 3.4)
+
+(b) Neural  Rendering Pipeline 
+
+Neural 
+
+Primitives 
+
+(c) Instance  Mask Constraint (Sec. 3.3)  
+
+> Filter &
+> Interpolate Color
+> Volume
+> Rendering
+> Projection
+> Reference
+> Color
+> Constraint
+> Loss
+> Reference View Nearby View
+> …
+> …
+> …
+> …
+> …
+> …
+
+Figure 1. Overview of our method. We take multi-view 3D reconstruction through NeRF based rendering as an example. (a) Starting from multi-view consistent instance segmentation and estimated monocular depths, we align the same instance from different viewpoints by back-projecting instance depths into a point cloud. The monocular inconsistent clues across different views become a measurement of density estimation in neighborhood of each point, leading to uncertainty maps (Sec. 3.2). The estimated uncertainty maps are further utilized in (b) neural rendering pipeline to guide adaptive depth loss, ray sampling (Sec. 3.4) and (c) instance mask constraints (Sec. 3.3). 
+
+the negative impact brought by the inconsistency, and mine more reliable photometric consistency as a remedy, which thereby enables our method to consistently improve the per-formance in different neural rendering tasks. An overview of our method is shown in Fig. 1, where we use NeRF-based 3D reconstruction pipeline as an example. See supplementary materials for the differences when applied to 3DGS. 
+
+## 3.1. Preliminary 
+
+Neural Radiance Fields (NeRF) [40] and 3D Gaussian Splat-ting (3DGS) [20] have become paradigms for learning 3D representations from multi-view images. By learning a map-ping from 3D positions to densities, NeRF is able to render novel views from given viewpoints using volume rendering, 
+
+ˆC(r) = 
+
+> M
+
+∑
+
+> i=1
+
+αiTici, α i = 1 −exp( −σiδi), T i =
+
+> i−1
+
+∏
+
+> k=1
+
+(1 −αk),
+
+(1) where σi, δ i, α i, c i are the density, sampling interval, opac-ity and accumulated transmittance at i-th sampled point re-spectively and ˆC(r) is the synthesized color of the ray r. We can also render depth or normal images in a similar way by accumulating the depth or gradient instead of color, 
+
+ˆD(r) = 
+
+> M
+
+∑
+
+> i=1
+
+αiTiti, ˆN (r) = 
+
+> M
+
+∑
+
+> i=1
+
+αiTini, (2) where ti, n i are the sampling distance and gradient of the 
+
+i-th sampled point, respectively. Recent methods extract plausible surfaces from radiance fields by modeling a rela-tionship between SDF and volume density, 
+
+σ(si) = 
+
+{ 12β exp( −si 
+
+> β
+
+) if si ≤ 0 
+
+> 1
+> β
+
+− 12β exp( si 
+
+> β
+
+) if si > 0 , (3) where β is a learnable variance parameter and si = SDF (xi)
+
+is the inferred SDF of the sampled point xi.Similarly, 3DGS learns 3D Gaussians via differentiable volume rendering for scene modeling, 
+
+ˆC(u, v ) = 
+
+> M
+
+∑
+
+> i=1
+
+ci ∗ oi ∗ pi(u, v )
+
+> i−1
+
+∏
+
+> k=1
+
+(1 − ok ∗ pk(u, v )) , (4) where ˆC(u, v ) is the rendered color at the pixel (u, v ),
+
+pi(u, v ), c i, o i denote the Gaussian probability, the color and the opacity of the i-th Gaussian projected onto the pixel 
+
+(u, v ), respectively. The neural primitives such as radiance fields and 3D Gaussians can be optimized by minimizing the rendered color and the GT color, 
+
+Lcolor = ∑
+
+> r∈R
+
+∥ ˆC(r) − C(r)∥1. (5) 
+
+## 3.2. Uncertainty Estimation from Multi-View In-consistent Monocular Prior 
+
+Monocular depth priors have been widely adopted in neural rendering and reconstruction frameworks. However, un-21644 𝑥  
+
+> ݕ
+> ݖ
+> Reference Images Fused Point Cloud
+> Projection
+> min
+> 1
+> 0
+> max
+> Ball Query
+> Uncertainty Map
+> Density Estimation
+
+Figure 2. Illustration of uncertainty estimation. Areas with incon-sistent depths (chair legs) correspond to more dispersed point cloud areas with low density (few points) in a neighborhood, indicating high uncertainty. In contrast, areas with accurate depths (chair seats) correspond to the points that are densely distributed on the true surface, indicating low uncertainty. 
+
+der the setting of multi-view, the priors struggle to produce consistent results within the same structures from different viewpoints due to the inherent inaccuracy, which makes the optimization even more complex. This issue inspires us to delve into the monocular uncertainty of scene structures from multi-view to provide a more robust prior for neural rendering. To this end, we introduce a novel manner to eval-uate uncertainty by point density in a neighborhood after aligning multi-view instances in a unified 3D space. 
+
+Multi-view consistent segmentation. We first aim to seg-ment every object in the scene to evaluate the uncertainty individually. The reason why we evaluate uncertainty at instance object level is to avoid the impact of object scale on density estimation. Inspired by MaskClustering [73], we achieve a consistent segmentation across multi-view through a graph-based clustering algorithm. Specifically, we firstly obtain instance segmentation on each image using [52], and then, we connect pairs of instances from different views with an edge to form a graph, if the back-projected depth point clouds of the two instances are close enough in terms of Chamfer Distance. Graph clustering algorithm [55] is then applied to partition the graph nodes into instance clusters. For indoor scenes, based on the assumption that monocular priors in textureless areas are often reliable [61, 80], we filter out the background instances and set the uncertainty of the them as zero, using GroundedSAM [53] as an identifica-tion tool. More implementation details can be found in the supplementary materials. 
+
+Uncertainty Estimation. Based on the observation that consistent depth will assemble back-projected points from different views tighter, leading to more certain points, we use the point density in a 3D neighborhood as the uncertainty. This is also a classic idea in point cloud denoising [32, 81]. To this end, we first back-project the monocular depths of each segmented instance from multi-view into world coordi-nate 3D space to form a point cloud, where the monocular depths are pre-aligned with the rendering depths through scale-shift invariant affine [80]. We observe that the accurate Monocular Depth Image  DebSDF  Ours    
+
+> Near Far Low High
+
+Figure 3. Visual comparison of the estimated uncertainty maps between DebSDF and ours. Our method estimates sharp uncertainty maps that faithfully capture the fine-grained geometric structures. 
+
+depth points consistently fall on the surface of the instance. In contrast, the noisy points coming from inaccurate predic-tions are independently distributed along various viewing directions towards the object, thus exhibiting anisotropic distributions with large variance, as illustrated in Fig. 2. To further evaluate the density, we first downsample the fused point cloud to a fixed number (30,000 in our experi-ments) to decouple the relationship between the number of the points and the viewpoints. For the segmentation of the instance in each frame, we then back-project the masked monocular depth into 3D points and use ball query [51] to calculate the density of each point in small neighborhood, as shown in Fig. 2. The radius for ball query is defined as 
+
+r = Vol (Bopt (P )) + 0 .01 , (6) where P is the downsampled fused point cloud, Bopt (P )
+
+denotes the minimum oriented bounding box of P [1] and Vol denotes the volume of the bounding box. The densities are then normalized across all query points in all frames, 
+
+d(p(u, v )) = d(p(u, v )) 
+
+max (u,v )∈S i d(p(u, v )) , (7) where p(u, v ) is the back-projected 3D point of pixel (u, v ),
+
+d(p(u, v )) is the measured density of that point and Si is the segmented pixel area in the i-th image. The normalized densities are back-projected onto the image to obtain the per-pixel uncertainty estimation on the instance, 
+
+Ui(u, v ) = 1 − d(p(u, v )) , (8) where Ui(u, v ) denotes the uncertainty at the pixel (u, v ) of the i-th image. We sequentially estimate the uncertainty for each instance in multi-view, thereby assembling complete uncertainty maps for all views. 
+
+## 3.3. Adaptive Prior Loss and Uncertainty-Based Mask Constraint 
+
+With the estimated uncertainty, we aim to reduce the negative impact of the inconsistency from the monocular clues and 21645 mine more reliable photo consistency as a remedy. First, we employ the estimated uncertainty maps as weights on the difference between monocular depths and the rendering ones, which filter out the impact brought by inaccurate supervision. This leads to an adaptive prior loss, as shown in Fig. 1. However, the regions of high-uncertainty, which often contain complex structures, are not effectively recovered by relying solely on photometric loss. To facilitate the learning of these areas, we further introduce an uncertainty-based instance mask constraint, enforcing the alignment of the learned instances within multi-view segmentation, as illus-trated in Fig. 1. Specifically, inspired by Pixel Warping [9], for a ray emitted from a high-uncertainty instance region Sir
+
+in the reference view Ir , we project points {pj }Kj=1 sampled on the ray into a nearby view In, and filter out the projected points {πn(pj )}Kj=1 which fall within the instance mask Sin
+
+in In. We then use the interpolated colors of these filtered projected points on In and the corresponding predicted opac-ities αj to render the final color, 
+
+ˆCsil n =
+
+> K
+
+∑
+
+> j=1
+
+1j · In[πn(pj )] αj
+
+∏
+
+> l<j
+
+(1 − αl),
+
+1j =
+
+{
+
+1 πn(pj ) ∈ Sin
+
+0 πn(pj ) /∈ Sin
+
+.
+
+(9) The rendered color ˆCsil n is compared with the corresponding ground truth color in Ir as additional supervision. Unlike Pixel Warping [9], we discriminately accumulate the pro-jected points that just fall within the instance mask in the nearby view, because we are prompted of which sampling points contribute to the rendering of this instance through multi-view segmentation. This enables us to implicitly con-strain these sampling points to align with the object surfaces. 
+
+## 3.4. Optimization 
+
+Uncertainty-Guided Ray Sampling. We use the estimated uncertainty maps as probabilities to guide the ray sampling, paying more attention to regions with high uncertainty. We first allocate the number of sampling pixels for each instance according to its area in the segmentation. And then we calculate the sampling probabilities according to uncertainty. The probability in i-th view is defined as prob i(u, v ) = 
+
+Ui(u, v ) + 0 .05 , where the additional 0.05 ensures that the sampling is not omitted in areas with zero uncertainty. 
+
+Training. Our training process is divided into two stages. In the first stage, we uniformly apply monocular depth pri-ors to learn a coarse representation of the scene. We then render low-resolution depth maps from all viewpoints to align the multi-view monocular depths to the same scale. Subsequently, we evaluate multi-view uncertainty for every segmented instance and assemble them to uncertainty maps of all frames. In the second stage, we integrate the uncer-tainty maps into the training process to utilize guided ray sampling, adaptive depth loss and instance mask constraints. 
+
+Loss Function. The overall loss function is defined as 
+
+L = Lcolor + λ1Leik + λ2Lsil + λ3Ld + λ4Ln, (10) where Leik is the Eikonal term [76], Lsil is the instance mask constraint introduced in Sec. 3.3, Ld is the adaptive depth loss and Ln is an optional adaptive normal loss. λ1−4
+
+are hyper-parameters for weighting each term. 
+
+# 4. Experiments 
+
+To evaluate the effectiveness of our method, we conduct experiments based on various neural representation learning frameworks using multi-view images, including dense-view 3D reconstruction, sparse-view 3D reconstruction and sparse view synthesis. 
+
+## 4.1. Dense-view 3D Reconstruction 
+
+Datasets. We evaluate our performance under two real-world indoor scene datasets, including ScanNet [7] and Replica [58]. We select 4 scenes from ScanNet and all 8 scenes from Replica, following baseline settings [71, 80]. Each scene consists of various numbers of observations from dense viewpoints, ranging from 200 to 400. 
+
+Baselines and metrics. We compare our method with the latest indoor scene reconstruction methods including MonoSDF [80], SDF-OCC-Hybrid [33] (shorted for “Hy-bridNeRF”), H2O-SDF [47], DebSDF [71], RS-Recon [78]. Note that the source code of H2O-SDF has not been made publicly available, thus we are unable to obtain its results on Replica dataset. Following baselines [78, 80], we report Chamfer Distance (CD), F-score in ScanNet dataset and additional Normal Consistency (N.C.) in Replica dataset. 
+
+Implementation details. We build our code upon the source code of MonoSDF [80]. The hyper-parameters in Eq. (9) are set as λ1 = 0 .1, λ 2 = 0 .4, λ 3 = 0 .5, λ 4 = 0 .05 . Since the monocular normals are homologous with depths which come from the same foundation model, they show similar performances in the same regions of the images. Therefore, we can uniformly utilize the estimated uncertainty map to depth and normal priors. The nearby views used in Sec. 3.3 are selected according to the difference between observation angles. More implementation details are discussed in the supplementary materials. 
+
+Comparisons. We report numerical comparisons on Scan-Net and Replica datasets in Tab. 1. Our method outperforms all baseline methods on ScanNet dataset and achieves the highest normal consistency on Replica dataset. Visual com-parisons in Fig. 4 show that our method is capable of re-constructing fine-grained details of the scene, especially in the small thin structures such as the lamp on the piano, the flowers on the tea table and the chair legs. 21646 Table 1. Averaged dense-view 3D reconstruction metrics on ScanNet and Replica datasets. 
+
+Methods ScanNet Replica Acc ↓ Comp ↓ Prec ↑ Recall ↑ F-score ↑ Acc ↓ Comp ↓ CD ↓ N.C. ↑ F-score ↑
+
+UNISURF [45] 0.554 0.164 0.212 0.362 0.267 0.045 0.053 0.049 0.909 0.789 MonoSDF [80] 0.035 0.048 0.799 0.681 0.733 0.027 0.031 0.029 0.921 0.861 HybridNeRF [33] 0.039 0.041 0.800 0.760 0.779 0.025 0.027 0.026 0.934 0.921 
+
+H2O-SDF [47] 0.032 0.037 0.834 0.769 0.799 - - - - -DebSDF [71] 0.036 0.040 0.807 0.765 0.785 0.028 0.030 0.029 0.932 0.883 RS-Recon [78] 0.040 0.040 0.809 0.779 0.794 0.027 0.025 0.026 0.934 0.917 Ours 0.035 0.032 0.846 0.824 0.834 0.024 0.029 0.026 0.937 0.918 Ground Truth Ours RS -Recon DebSDF MonoSDF  HybridNeRF 
+
+> Replica  ScanNet
+> Figure 4. Visual comparisons of dense-view 3D reconstruction on ScanNet and Replica dataset.
+
+## 4.2. Sparse-view 3D Reconstruction 
+
+Datasets. We further evaluate our method in reconstructing 3D shapes from sparse observations on DTU dataset [18]. Following previous methods [16, 79], we report our results on the 15 scenes, each of which shows single object with background from 3 viewpoints with small overlapping. 
+
+Baselines and metrics. We compare our method with the latest sparse-view reconstruction approaches including the traditional MVS methods such as COLMAP [56], overfitting-based methods such as NeuSurf [16], generalizing-finetuning methods such as SparseNeuS [30], VolRecon [54], ReTR [28] and UFORecon [41]. We use CD between the reconstructed meshes and the real-scanned point clouds as the evaluation metrics, following baselines [16]. 
+
+Implementation details. We use the official code released by NeuSurf [16] to produce our results of sparse-view re-construction. The hyper-parameters in Eq. (9) are consistent with those employed in dense-view reconstruction. Since the multi-view images in each DTU scene capture the unique object, there is no need to conduct additional multi-view consistent instance segmentation. In our implementation, we first segment the scene into the object and the background, and then align and compute the uncertainty map only for the center object from various viewpoints. 
+
+Comparisons. We report numerical evaluations on DTU dataset in Tab. 2. For fair comparison, we also report the results of NeuSurf with monocular cues (NeuSurf †), which are uniformly applied to all pixels, similar to MonoSDF [80]. The superiority results in terms of CD show the effective-ness of our method. Further comparison between NeuSurf and NeuSurf † reveals that indiscriminately applying monoc-ular depths to all pixels does not significantly improve the performance of NeuSurf. While our method leverages the 21647 Table 2. Averaged Chamfer Distance (CD) over the 15 scenes on DTU dataset in reconstructions from sparse views (small overlaps). NeuSurf † means NeuSurf with additional monocular cues.                    
+
+> Methods COLMAP [56] SparseNeuS f t [30] VolRecon [54] ReTR [28] NeuSurf [16] NeuSurf †[16] UFORecon [41] Ours CD ↓2.61 3.34 3.02 2.65 1.35 1.30 1.43 1.18
+
+Reference Image Ours NeuSurf UFORecon ReTR VolRecon 
+
+> Figure 5. Visual comparisons on DTU dataset under the task of little-overlapping sparse input reconstruction. Table 3. Quantitative comparison on LLFF dataset in novel view synthesis from sparse views.
+
+Methods PSNR ↑ SSIM ↑ LPIPS ↓
+
+RegNeRF [42] 19.08 0.587 0.336 FreeNeRF [74] 19.08 0.587 0.336 3DGS [20] 15.52 0.405 0.408 DNGaussian [21] 19.12 0.591 0.294 FSGS [97] 20.31 0.652 0.288 COR-GS [82] 20.45 0.712 0.196 Ours 20.73 0.731 0.184 
+
+estimated uncertainty maps to enhance the learning of the high-uncertainty regions, avoiding the misguidance from the inaccurate monocular priors. We showcase our improve-ments in visual comparison in Fig. 5, where our method consistently produces more complete and smoother surfaces compared to baseline methods. 
+
+## 4.3. Sparse Novel View Synthesis 
+
+Datasets. We further evaluate our method on 3DGS-based sparse-input novel view synthesis (NVS) task on LLFF dataset [39]. It contains 8 forward-facing real-world scenes. We select 3 views and downscale their resolutions as 8 to train, following previous works [42, 97]. 
+
+Baselines and metrics. We compare our method with latest few-shot NVS methods, including NeRF-based methods, such as RegNeRF [42], FreeNeRF [74] and 3DGS-based methods, such as DNGaussian [21], FSGS [97] and COR-GS [82]. We report PSNR, SSIM [65] and LPIPS [84] to evaluate the rendering quality following previous works [60, 97]. The implementation details of this section are provided in the supplementary materials. 
+
+> Table 4. Ablation study of each module on ScanNet dataset. Start-ing from the base model, we progressively add each of our module to reveal the impact of the proposed modules.
+
+Acc ↓ Comp ↓ F-score ↑
+
+Base 0.039 0.042 0.749 +Mono Uncertainty 0.036 0.039 0.786 +Adaptive Sampling 0.036 0.035 0.805 +Mask Constraint (Full) 0.035 0.032 0.834          
+
+> Table 5. Ablation study of different monocular priors. The results are averaged F-score across the four ScanNet scenes.
+> Methods Omnidata [10] Metric3D v2 [14] GeoWizard [12] MonoSDF 0.733 0.749 0.741 Ours 0.825 0.834 0.829
+
+Comparisons. The numerical and visual comparison are shown in Tab. 3 and Fig. 6. The visualizations of rendered images and depths further demonstrate our advanced results in recovering complex object details. We further visualize our uncertainty maps across different datasets in Fig. 7. Com-parisons among the GT images, monocular depths, and the final results show that our method adaptively captures the in-accuracies in monocular depths, thereby achieving superior results beyond the quality of the priors. 
+
+## 4.4. Ablation Study 
+
+Effectiveness of each module. We conduct ablation studies to justify the effectiveness of the modules in our method on ScanNet dataset. Starting from the base model, which is identical to MonoSDF [80], we progressively add each of our modules to show the improvements of the reconstructed results. These additions include the adaptive monocular 21648 Ground Truth Ours FSGS DNGaussian FreeNeRF RegNeRF 
+
+> Monocular
+> Uncertainty Map
+> Monocular
+> Uncertainty Map
+
+Figure 6. Visual comparisons of sparse novel view synthesis. In the uncertainty maps, areas that are more white indicate higher uncertainty. Monocular Depth Image  Uncertainty Map  Results    
+
+> Near Far Low High
+
+Figure 7. Visualization of our uncertainty maps calculated from monocular depths. Our uncertainties effectively identify the incon-sistency across monocular clues on multi-view. 
+
+prior supervision, the uncertainty-guided ray sampling and the uncertainty-based instance mask constraint, as reported in Tab. 4. The visual comparisons in Fig. 8 indicate that our method, equipped with each proposed module, successfully recovers complete and detailed geometric structures. 
+
+Choice of monocular priors. We further evaluate the per-formance of our method with different prior estimation mod-els, including Omnidata [10], Metric3D v2 [14] and Ge-oWizard [12]. The improvement of our method beyond MonoSDF [80] indicates that our method consistently en-hances the monocular priors obtained from various estima-tion models. To fully reveal the potential of our approach, Base  + Monocular Uncertainty    
+
+> + Adaptive Sampling +Instance Mask Constraint (Full)
+
+Figure 8. Visualization of ablations on each of our module. 
+
+we choose Metric3D v2 as our primary prior model. 
+
+# 5. Conclusion 
+
+We propose MonoInstance, a novel approach to enhance monocular priors to provide robust monocular cues for multi-view neural rendering frameworks. To this end, we estimate the uncertainty of monocular priors by aligning multi-view instance depths in a unified 3D space and detecting the den-sities in point clouds. The estimated uncertainty maps are further utilized in adaptive prior loss, uncertainty-guided ray sampling and instance mask constraint. Our approach can be applied upon different multi-view neural rendering and reconstruction methods to enhance the monocular priors for better neural representation learning. Visual and numerical comparisons with the state-of-the-art methods justify our effectiveness and superiority over the latest methods. 21649 6. Acknowledgment 
+
+We thank Ruihong Yin for generously providing their pre-trained meshes, as well as Shujuan Li and Junsheng Zhou for their valuable discussions and suggestions. This work was partially supported by Deep Earth Probe and Mineral Resources Exploration—National Science and Technology Major Project (2024ZD1003405), and the National Natural Science Foundation of China (62272263). 
+
+# References 
+
+[1] Gill Barequet and Sariel Har-Peled. Efficiently approximating the minimum-volume bounding box of a point set in three dimensions. Journal of Algorithms , 38(1):91–109, 2001. 4 [2] Jonathan T Barron, Ben Mildenhall, Matthew Tancik, Peter Hedman, Ricardo Martin-Brualla, and Pratul P Srinivasan. Mip-nerf: A multiscale representation for anti-aliasing neural radiance fields. In Proceedings of the IEEE/CVF international conference on computer vision , pages 5855–5864, 2021. 1 [3] Anpei Chen, Zexiang Xu, Fuqiang Zhao, Xiaoshuai Zhang, Fanbo Xiang, Jingyi Yu, and Hao Su. MVSNeRF: Fast gener-alizable radiance field reconstruction from multi-view stereo. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 14124–14133, 2021. 1 [4] Chao Chen, Yu-Shen Liu, and Zhizhong Han. Learning local pattern modularization for point cloud reconstruction from unseen classes. In European Conference on Computer Vision ,pages 305–323. Springer, 2024. 2 [5] Chao Chen, Yu-Shen Liu, and Zhizhong Han. Sharpening neural implicit functions with frequency consolidation priors. 
+
+AAAI Conference on Artificial Intelligence , 2025. 2 [6] Ziyi Chen, Xiaolong Wu, and Yu Zhang. NC-SDF: En-hancing indoor scene reconstruction using neural sdfs with view-dependent normal compensation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 5155–5165, 2024. 1, 2 [7] Angela Dai, Angel X Chang, Manolis Savva, Maciej Hal-ber, Thomas Funkhouser, and Matthias Nießner. ScanNet: Richly-annotated 3D reconstructions of indoor scenes. In 
+
+Proceedings of the IEEE conference on computer vision and pattern recognition , pages 5828–5839, 2017. 5 [8] Pinxuan Dai, Jiamin Xu, Wenxiang Xie, Xinguo Liu, Huamin Wang, and Weiwei Xu. High-quality surface reconstruction using gaussian surfels. In SIGGRAPH 2024 Conference Pa-pers . Association for Computing Machinery, 2024. 1 [9] Franc ¸ois Darmon, B´ en´ edicte Bascle, Jean-Cl´ ement Devaux, Pascal Monasse, and Mathieu Aubry. Improving neural im-plicit surfaces geometry with patch warping. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 6260–6269, 2022. 5 [10] Ainaz Eftekhar, Alexander Sax, Jitendra Malik, and Amir Zamir. Omnidata: A scalable pipeline for making multi-task mid-level vision datasets from 3D scans. In Proceedings of the IEEE/CVF International Conference on Computer Vision ,pages 10786–10796, 2021. 7, 8 [11] Sara Fridovich-Keil, Giacomo Meanti, Frederik Rahbæk War-burg, Benjamin Recht, and Angjoo Kanazawa. K-Planes: Explicit radiance fields in space, time, and appearance. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vi-sion and Pattern Recognition , pages 12479–12488, 2023. 1 [12] Xiao Fu, Wei Yin, Mu Hu, Kaixuan Wang, Yuexin Ma, Ping Tan, Shaojie Shen, Dahua Lin, and Xiaoxiao Long. Ge-owizard: Unleashing the diffusion priors for 3d geometry estimation from a single image. In European Conference on Computer Vision , pages 241–258. Springer, 2025. 7, 8 [13] Liang Han, Junsheng Zhou, Yu-Shen Liu, and Zhizhong Han. Binocular-guided 3d gaussian splatting with view consistency for sparse view synthesis. In Advances in Neural Information Processing Systems , 2024. 2 [14] Mu Hu, Wei Yin, Chi Zhang, Zhipeng Cai, Xiaoxiao Long, Hao Chen, Kaixuan Wang, Gang Yu, Chunhua Shen, and Shaojie Shen. Metric3d v2: A versatile monocular geometric foundation model for zero-shot metric depth and surface nor-mal estimation. IEEE Transactions on Pattern Analysis and Machine Intelligence , 2024. 7, 8 [15] Pengchong Hu and Zhizhong Han. Learning neural implicit through volume rendering with attentive depth fusion priors. In Advances in Neural Information Processing Systems , 2023. 2[16] Han Huang, Yulun Wu, Junsheng Zhou, Ge Gao, Ming Gu, and Yu-Shen Liu. NeuSurf: On-surface priors for neural surface reconstruction from sparse input views. In Proceed-ings of the AAAI Conference on Artificial Intelligence , pages 2312–2320, 2024. 2, 6, 7 [17] Han Huang, Yulun Wu, Chao Deng, Ge Gao, Ming Gu, and Yu-Shen Liu. FatesGS: Fast and accurate sparse-view surface reconstruction using gaussian splatting with depth-feature consistency. In Proceedings of the AAAI Conference on Arti-ficial Intelligence , 2025. 2 [18] Rasmus Jensen, Anders Dahl, George Vogiatzis, Engil Tola, and Henrik Aanæs. Large scale multi-view stereopsis evalu-ation. In IEEE Conference on Computer Vision and Pattern Recognition , pages 406–413, 2014. 6 [19] Berk Kaya, Suryansh Kumar, Carlos Oliveira, Vittorio Fer-rari, and Luc Van Gool. Uncertainty-aware deep multi-view photometric stereo. In Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition , pages 12601–12611, 2022. 1 [20] Bernhard Kerbl, Georgios Kopanas, Thomas Leimk¨ uhler, and George Drettakis. 3D gaussian splatting for real-time radiance field rendering. ACM Transactions on Graphics , 42(4):1–14, 2023. 1, 2, 3, 7 [21] Jiahe Li, Jiawei Zhang, Xiao Bai, Jin Zheng, Xin Ning, Jun Zhou, and Lin Gu. Dngaussian: Optimizing sparse-view 3d gaussian radiance fields with global-local depth normalization. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 20775–20785, 2024. 2, 7 [22] Qing Li, Huifang Feng, Kanle Shi, Yue Gao, Yi Fang, Yu-Shen Liu, and Zhizhong Han. NeuralGF: Unsupervised point normal estimation by learning neural gradient function. Ad-vances in Neural Information Processing Systems , 36:66006– 66019, 2023. 2 [23] Shujuan Li, Junsheng Zhou, Baorui Ma, Yu-Shen Liu, and Zhizhong Han. NeAF: Learning neural angle fields for point 21650 normal estimation. In Proceedings of the AAAI Conference on Artificial Intelligence , pages 1396–1404, 2023. 2 [24] Shengtao Li, Ge Gao, Yudong Liu, Ming Gu, and Yu-Shen Liu. Implicit filtering for learning neural signed distance functions from 3d point clouds. European Conference on Computer Vision , 2024. 2 [25] Shujuan Li, Junsheng Zhou, Baorui Ma, Yu-Shen Liu, and Zhizhong Han. Learning continuous implicit field with local distance indicator for arbitrary-scale point cloud upsampling. In Proceedings of the AAAI Conference on Artificial Intelli-gence , pages 3181–3189, 2024. 2 [26] Shujuan Li, Yu-Shen Liu, and Zhizhong Han. Gaussianudf: Inferring unsigned distance functions through 3d gaussian splatting. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2025. 2 [27] Zhaoshuo Li, Thomas M¨ uller, Alex Evans, Russell H Tay-lor, Mathias Unberath, Ming-Yu Liu, and Chen-Hsuan Lin. Neuralangelo: High-fidelity neural surface reconstruction. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 8456–8465, 2023. 1 [28] Yixun Liang, Hao He, and Yingcong Chen. Retr: Modeling rendering via transformer for generalizable neural surface reconstruction. Advances in Neural Information Processing Systems , 36, 2024. 2, 6, 7 [29] Xinhai Liu, Zhizhong Han, Sanghuk Lee, Yan-Pei Cao, and Yu-Shen Liu. D-Net: Learning for distinctive point clouds by self-attentive point searching and learnable feature fusion. 
+
+Computer Aided Geometric Design , 104:102206, 2023. 2 [30] Xiaoxiao Long, Cheng Lin, Peng Wang, Taku Komura, and Wenping Wang. SparseNeuS: Fast Generalizable Neural Sur-face Reconstruction from Sparse Views. In European Confer-ence on Computer Vision , pages 210–227. Springer, 2022. 2, 6, 7 [31] Tao Lu, Mulin Yu, Linning Xu, Yuanbo Xiangli, Limin Wang, Dahua Lin, and Bo Dai. Scaffold-GS: Structured 3d gaussians for view-adaptive rendering. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 20654–20664, 2024. 2 [32] Shitong Luo and Wei Hu. Score-based point cloud denoising. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 4583–4592, 2021. 4 [33] Xiaoyang Lyu, Peng Dai, Zizhang Li, Dongyu Yan, Yi Lin, Yifan Peng, and Xiaojuan Qi. Learning a room with the occ-sdf hybrid: Signed distance function mingled with occupancy aids scene representation. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 8940– 8950, 2023. 1, 2, 5, 6 [34] Baorui Ma, Zhizhong Han, Yu-Shen Liu, and Matthias Zwicker. Neural-Pull: Learning signed distance function from point clouds by learning to pull space onto surface. In 
+
+International Conference on Machine Learning , pages 7246– 7257. PMLR, 2021. 2 [35] Baorui Ma, Yu-Shen Liu, and Zhizhong Han. Reconstructing Surfaces for Sparse Point Clouds with On-Surface Priors. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 6315–6325, 2022. [36] Baorui Ma, Yu-Shen Liu, Matthias Zwicker, and Zhizhong Han. Surface Reconstruction from Point Clouds by Learning Predictive Context Priors. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 6326–6337, 2022. [37] Baorui Ma, Yu-Shen Liu, and Zhizhong Han. Learning signed distance functions from noisy 3d point clouds via noise to noise mapping. In Advances in Neural Information Process-ing Systems , 2023. 2 [38] Baorui Ma, Huachen Gao, Haoge Deng, Zhengxiong Luo, Tiejun Huang, Lulu Tang, and Xinlong Wang. You See it, You Got it: Learning 3D Creation on Pose-Free Videos at Scale. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2025. 2 [39] Ben Mildenhall, Pratul P Srinivasan, Rodrigo Ortiz-Cayon, Nima Khademi Kalantari, Ravi Ramamoorthi, Ren Ng, and Abhishek Kar. Local light field fusion: Practical view synthe-sis with prescriptive sampling guidelines. ACM Transactions on Graphics (ToG) , 38(4):1–14, 2019. 7 [40] Ben Mildenhall, Pratul P Srinivasan, Matthew Tancik, Jonathan T Barron, Ravi Ramamoorthi, and Ren Ng. NeRF: Representing scenes as neural radiance fields for view syn-thesis. In European Conference on Computer Vision (ECCV) ,pages 405–421. Springer, 2020. 1, 3 [41] Youngju Na, Woo Jae Kim, Kyu Beom Han, Suhyeon Ha, and Sung-Eui Yoon. Uforecon: Generalizable sparse-view surface reconstruction from arbitrary and unfavorable sets. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 5094–5104, 2024. 2, 6, 7 [42] Michael Niemeyer, Jonathan T Barron, Ben Mildenhall, Mehdi SM Sajjadi, Andreas Geiger, and Noha Radwan. Reg-nerf: Regularizing neural radiance fields for view synthesis from sparse inputs. In Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition , pages 5480–5490, 2022. 7 [43] Takeshi Noda, Chao Chen, Weiqi Zhang, Xinhai Liu, Yu-Shen Liu, and Zhizhong Han. MultiPull: Detailing signed distance functions by pulling multi-level queries at multi-step. In Advances in Neural Information Processing Systems , 2024. 2[44] Takeshi Noda, Chao Chen, Junsheng Zhou, Weiqi Zhang, Yu-Shen Liu, and Zhizhong Han. Learning bijective surface parameterization for inferring signed distance functions from sparse point clouds with grid deformation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2025. 2 [45] Michael Oechsle, Songyou Peng, and Andreas Geiger. UNISURF: Unifying neural implicit surfaces and radiance fields for multi-view reconstruction. In Proceedings of the IEEE/CVF International Conference on Computer Vision ,pages 5589–5599, 2021. 2, 6 [46] Keunhong Park, Utkarsh Sinha, Jonathan T. Barron, Sofien Bouaziz, Dan B Goldman, Steven M. Seitz, and Ricardo Martin-Brualla. Nerfies: Deformable neural radiance fields. 
+
+IEEE International Conference on Computer Vision , 2021. 1 [47] Minyoung Park, Mirae Do, Yeon Jae Shin, Jaeseok Yoo, Jongkwang Hong, Joongrock Kim, and Chul Lee. H2O-SDF: Two-phase learning for 3d indoor reconstruction using object 21651 surface fields. In The Twelfth International Conference on Learning Representations , 2023. 2, 5, 6 [48] Rui Peng, Xiaodong Gu, Luyang Tang, Shihe Shen, Fanqi Yu, and Ronggang Wang. GenS: Generalizable neural surface reconstruction from multi-view images. Advances in Neural Information Processing Systems , 36:56932–56945, 2023. 2 [49] Rui Peng, Shihe Shen, Kaiqiang Xiong, Huachen Gao, Jianbo Jiao, Xiaodong Gu, and Ronggang Wang. Surface-Centric Modeling for High-Fidelity Generalizable Neural Surface Reconstruction. In European Conference on Computer Vision ,pages 183–200. Springer, 2024. 2 [50] Rui Peng, Wangze Xu, Luyang Tang, Jianbo Jiao, Ronggang Wang, et al. Structure Consistent Gaussian Splatting with Matching Prior for Few-shot Novel View Synthesis. Advances in Neural Information Processing Systems , 37:97328–97352, 2024. 2 [51] Charles Ruizhongtai Qi, Li Yi, Hao Su, and Leonidas J Guibas. Pointnet++: Deep hierarchical feature learning on point sets in a metric space. Advances in neural information processing systems , 30, 2017. 4 [52] Lu Qi, Jason Kuen, Tiancheng Shen, Jiuxiang Gu, Wenbo Li, Weidong Guo, Jiaya Jia, Zhe Lin, and Ming-Hsuan Yang. High quality entity segmentation. In Proceedings of the IEEE/CVF International Conference on Computer Vision ,pages 4047–4056, 2023. 4 [53] Tianhe Ren, Shilong Liu, Ailing Zeng, Jing Lin, Kunchang Li, He Cao, Jiayu Chen, Xinyu Huang, Yukang Chen, Feng Yan, et al. Grounded SAM: Assembling open-world models for diverse visual tasks. arXiv preprint arXiv:2401.14159 ,2024. 4 [54] Yufan Ren, Fangjinhua Wang, Tong Zhang, Marc Polle-feys, and Sabine S¨ usstrunk. Volrecon: Volume rendering of signed ray distance functions for generalizable multi-view reconstruction. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 16685– 16695, 2023. 2, 6, 7 [55] Satu Elisa Schaeffer. Graph clustering. Computer science review , 1(1):27–64, 2007. 4 [56] Johannes L Schonberger and Jan-Michael Frahm. Structure-from-motion revisited. In Proceedings of the IEEE Confer-ence on Computer Vision and Pattern Recognition , pages 4104–4113, 2016. 6, 7 [57] Jiuhn Song, Seonghoon Park, Honggyu An, Seokju Cho, Min-Seop Kwak, Sungjin Cho, and Seungryong Kim. D¨ arf: Boost-ing radiance fields from sparse input views with monocular depth adaptation. Advances in Neural Information Processing Systems , 36:68458–68470, 2023. 1 [58] Julian Straub, Thomas Whelan, Lingni Ma, Yufan Chen, Erik Wijmans, Simon Green, Jakob J Engel, Raul Mur-Artal, Carl Ren, Shobhit Verma, et al. The replica dataset: A digital replica of indoor spaces. arXiv preprint arXiv:1906.05797 ,2019. 5 [59] Ziyu Tang, Weicai Ye, Yifan Wang, Di Huang, Hujun Bao, Tong He, and Guofeng Zhang. ND-SDF: Learning normal deflection fields for high-fidelity indoor reconstruction. In-ternational Conference on Learning Representations , 2025. 2[60] Guangcong Wang, Zhaoxi Chen, Chen Change Loy, and Zi-wei Liu. SparseNeRF: Distilling depth ranking for few-shot novel view synthesis. In Proceedings of the IEEE/CVF Inter-national Conference on Computer Vision , pages 9065–9076, 2023. 7 [61] Jiepeng Wang, Peng Wang, Xiaoxiao Long, Christian Theobalt, Taku Komura, Lingjie Liu, and Wenping Wang. NeuRIS: Neural reconstruction of indoor scenes using normal priors. In European conference on computer vision , pages 139–155. Springer, 2022. 1, 2, 4 [62] Peng Wang, Lingjie Liu, Yuan Liu, Christian Theobalt, Taku Komura, and Wenping Wang. NeuS: Learning neural im-plicit surfaces by volume rendering for multi-view reconstruc-tion. Advances in Neural Information Processing Systems ,34:27171–27183, 2021. 1, 2 [63] Xiaofeng Wang, Zheng Zhu, Guan Huang, Xu Chi, Yun Ye, Ziwei Chen, and Xingang Wang. Crafting monocular cues and velocity guidance for self-supervised multi-frame depth learning. In Proceedings of the AAAI Conference on Artificial Intelligence , pages 2689–2697, 2023. 1 [64] Yufei Wang, Zhihao Li, Lanqing Guo, Wenhan Yang, Alex C Kot, and Bihan Wen. ContextGS: Compact 3D Gaussian Splatting with Anchor Level Context Model. Advances in Neural Information Processing Systems , 2024. 2 [65] Zhou Wang, Alan C Bovik, Hamid R Sheikh, and Eero P Simoncelli. Image quality assessment: from error visibility to structural similarity. IEEE transactions on image processing ,13(4):600–612, 2004. 7 [66] Yi Wei, Shaohui Liu, Yongming Rao, Wang Zhao, Jiwen Lu, and Jie Zhou. NerfingMVS: Guided optimization of neural radiance fields for indoor multi-view stereo. In Proceedings of the IEEE/CVF International Conference on Computer Vision ,pages 5610–5619, 2021. 2 [67] Xin Wen, Junsheng Zhou, Yu-Shen Liu, Hua Su, Zhen Dong, and Zhizhong Han. 3d shape reconstruction from 2d im-ages with disentangled attribute flow. In Proceedings of the IEEE/CVF conference on computer vision and pattern recog-nition , pages 3803–3813, 2022. 2 [68] Haoyu Wu, Alexandros Graikos, and Dimitris Samaras. S-VolSDF: Sparse multi-view stereo regularization of neural implicit surfaces. In Proceedings of the IEEE/CVF Interna-tional Conference on Computer Vision , pages 3556–3568, 2023. 2 [69] Yulun Wu, Han Huang, Wenyuan Zhang, Chao Deng, Ge Gao, Ming Gu, and Yu-Shen Liu. Sparis: Neural implicit surface reconstruction of indoor scenes from sparse views. In AAAI Conference on Artificial Intelligence , 2025. 2 [70] Peng Xiang, Xin Wen, Yu-Shen Liu, Hui Zhang, Yi Fang, and Zhizhong Han. Retro-FPN: Retrospective feature pyramid network for point cloud semantic segmentation. In Proceed-ings of the IEEE/CVF international conference on computer vision , pages 17826–17838, 2023. 2 [71] Yuting Xiao, Jingwei Xu, Zehao Yu, and Shenghua Gao. Debsdf: Delving into the details and bias of neural indoor scene reconstruction. IEEE Transactions on Pattern Analysis and Machine Intelligence , 2024. 1, 2, 5, 6 [72] Wangze Xu, Huachen Gao, Shihe Shen, Rui Peng, Jianbo Jiao, and Ronggang Wang. MVPGS: Excavating multi-view priors 21652 for gaussian splatting from sparse input views. In European Conference on Computer Vision , pages 203–220. Springer, 2024. 2 [73] Mi Yan, Jiazhao Zhang, Yan Zhu, and He Wang. Maskclus-tering: View consensus based mask graph clustering for open-vocabulary 3d instance segmentation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 28274–28284, 2024. 4 [74] Jiawei Yang, Marco Pavone, and Yue Wang. Freenerf: Im-proving few-shot neural rendering with free frequency regu-larization. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 8254–8263, 2023. 7 [75] Yao Yao, Zixin Luo, Shiwei Li, Tian Fang, and Long Quan. MVSNet: Depth inference for unstructured multi-view stereo. In European Conference on Computer Vision (ECCV) , pages 767–783, 2018. 1 [76] Lior Yariv, Yoni Kasten, Dror Moran, Meirav Galun, Matan Atzmon, Basri Ronen, and Yaron Lipman. Multiview Neu-ral Surface Reconstruction by Disentangling Geometry and Appearance. Advances in Neural Information Processing Systems , 33:2492–2502, 2020. 5 [77] Lior Yariv, Jiatao Gu, Yoni Kasten, and Yaron Lipman. Vol-ume rendering of neural implicit surfaces. Advances in Neural Information Processing Systems , 34:4805–4815, 2021. 2 [78] Ruihong Yin, Yunlu Chen, Sezer Karaoglu, and Theo Gevers. Ray-distance volume rendering for neural scene reconstruc-tion. In European Conference on Computer Vision , pages 377–394. Springer, 2024. 5, 6 [79] Alex Yu, Vickie Ye, Matthew Tancik, and Angjoo Kanazawa. pixelNeRF: Neural radiance fields from one or few images. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , 2021. 6 [80] Zehao Yu, Songyou Peng, Michael Niemeyer, Torsten Sat-tler, and Andreas Geiger. MonoSDF: Exploring monocular geometric cues for neural implicit surface reconstruction. Ad-vances in neural information processing systems , 35:25018– 25032, 2022. 1, 2, 4, 5, 6, 7, 8 [81] Faisal Zaman, Ya Ping Wong, and Boon Yian Ng. Density-based denoising of point cloud. In 9th International Con-ference on Robotic, Vision, Signal Processing and Power Applications: Empowering Research and Innovation , pages 287–295. Springer, 2017. 4 [82] Jiawei Zhang, Jiahe Li, Xiaohan Yu, Lei Huang, Lin Gu, Jin Zheng, and Xiao Bai. CoR-GS: sparse-view 3D Gaussian splatting via co-regularization. In European Conference on Computer Vision , pages 335–352. Springer, 2024. 2, 7 [83] Kai Zhang, Gernot Riegler, Noah Snavely, and Vladlen Koltun. Nerf++: Analyzing and improving neural radiance fields. arXiv preprint arXiv:2010.07492 , 2020. 1 [84] Richard Zhang, Phillip Isola, Alexei A Efros, Eli Shechtman, and Oliver Wang. The unreasonable effectiveness of deep features as a perceptual metric. In Proceedings of the IEEE conference on computer vision and pattern recognition , pages 586–595, 2018. 7 [85] Wenyuan Zhang, Ruofan Xing, Yunfan Zeng, Yu-Shen Liu, Kanle Shi, and Zhizhong Han. Fast Learning Radiance Fields by Shooting Much Fewer Rays. IEEE Transactions on Image Processing , 32:2703–2718, 2023. 2 [86] Wenyuan Zhang, Yu-Shen Liu, and Zhizhong Han. Neu-ral signed distance function inference through splatting 3d gaussians pulled on zero-level set. In Advances in Neural Information Processing Systems , 2024. 2 [87] Wenyuan Zhang, Kanle Shi, Yu-Shen Liu, and Zhizhong Han. Learning unsigned distance functions from multi-view images with volume rendering priors. In European Conference on Computer Vision , pages 397–415. Springer, 2024. 2 [88] Wenyuan Zhang, Emily Yue ting Jia, Junsheng Zhou, Baorui Ma, Kanle Shi, Yu-Shen Liu, and Zhizhong Han. NeRFPrior: Learning neural radiance field as a prior for indoor scene reconstruction. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2025. 2 [89] Dongxu Zhao, Daniel Lichy, Pierre-Nicolas Perrin, Jan-Michael Frahm, and Soumyadip Sengupta. Mvpsnet: Fast generalizable multi-view photometric stereo. In Proceed-ings of the IEEE/CVF International Conference on Computer Vision , pages 12525–12536, 2023. 1 [90] Junsheng Zhou, Baorui Ma, Wenyuan Zhang, Yi Fang, Yu-Shen Liu, and Zhizhong Han. Differentiable registration of images and lidar point clouds with voxelpoint-to-pixel match-ing. Advances in Neural Information Processing Systems , 36: 51166–51177, 2023. 2 [91] Junsheng Zhou, Yu-Shen Liu, and Zhizhong Han. Zero-shot scene reconstruction from single images with deep prior assembly. In Advances in Neural Information Processing Systems , 2024. 2 [92] Junsheng Zhou, Jinsheng Wang, Baorui Ma, Yu-Shen Liu, Tiejun Huang, and Xinlong Wang. Uni3D: Exploring uni-fied 3d representation at scale. International Conference on Learning Representations , 2024. 2 [93] Junsheng Zhou, Weiqi Zhang, and Yu-Shen Liu. DiffGS: Functional gaussian splatting diffusion. In Advances in Neural Information Processing Systems , 2024. 2 [94] Junsheng Zhou, Weiqi Zhang, Baorui Ma, Kanle Shi, Yu-Shen Liu, and Zhizhong Han. UDiFF: Generating Conditional Unsigned Distance Fields with Optimal Wavelet Diffusion. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 21496–21506, 2024. 2 [95] Xiaowei Zhou, Haoyu Guo, Sida Peng, Yuxi Xiao, Haotong Lin, Qianqian Wang, Guofeng Zhang, and Hujun Bao. Neural 3d scene reconstruction with indoor planar priors. IEEE Transactions on Pattern Analysis and Machine Intelligence ,2024. 2 [96] Zihan Zhu, Songyou Peng, Viktor Larsson, Weiwei Xu, Hujun Bao, Zhaopeng Cui, Martin R Oswald, and Marc Pollefeys. Nice-slam: Neural implicit scalable encoding for slam. In 
+
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 12786–12796, 2022. 1 [97] Zehao Zhu, Zhiwen Fan, Yifan Jiang, and Zhangyang Wang. Fsgs: Real-time few-shot view synthesis using gaussian splat-ting. In European Conference on Computer Vision , pages 145–163. Springer, 2024. 1, 2, 7 21653
