@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-01</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-02</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 12 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 4 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>5</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>7</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>3</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>1</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-01 23:34:43 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-02 23:30:51 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,7 +62,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日共读12篇，精读5篇、速读7篇，重点聚焦视觉几何与开放词汇分割两大方向。最值得精读的是《OptiGeo》与《Towards Continual Test-Time Adaptation》，分别解决光学挑战场景下的单目几何感知和视觉语言模型的持续测试时适应问题。建议优先复现或延伸这两篇高影响力工作，速读可作背景补充。</p>
+<p>今日共读4篇，聚焦单目深度估计与实时立体匹配，精读3篇、速读1篇。最值得看的是《Monocular Depth Estimation from a Single Image》（9.0分）对单目深度估计进展与机遇的综述，以及《PhasorNet》（8.0分）用频域学习加速立体匹配。建议先从高分综述建立全局认知，再结合《NBS: No Bias Stereo》（7.0分）对比不同立体匹配</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -71,12 +71,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">5 篇</strong>
+    <strong class="dpr-home-dashboard-count">3 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="OptiGeo: Efficient Monocular Geometry for Embodied Perception in Optically Challenging Scenes">OptiGeo: Efficient Monocular Geometry for Embodied Perception in Optically Challenging Scenes</span></li><li><span class="dpr-home-dashboard-paper-title" title="Towards Continual Test-Time Adaptation of Vision-Language Models in Open-Vocabulary Semantic Segmentation">Towards Continual Test-Time Adaptation of Vision-Language Models in Open-Vocabulary Semantic Segmentation</span></li><li><span class="dpr-home-dashboard-paper-title" title="Efficient and High-Quality Depth Estimation via Pixel-Space Diffusion with Linear Attention">Efficient and High-Quality Depth Estimation via Pixel-Space Diffusion with Linear Attention</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Monocular Depth Estimation from a Single Image: Progress and Opportunities">Monocular Depth Estimation from a Single Image: Progress and Opportunities</span></li><li><span class="dpr-home-dashboard-paper-title" title="PhasorNet: Learning Structure from Frequency for Real-Time Stereo Matching">PhasorNet: Learning Structure from Frequency for Real-Time Stereo Matching</span></li><li><span class="dpr-home-dashboard-paper-title" title="Restrict, Don&#x27;t Retrain: Inference-Time VLM Guidance for Zero-Shot Aerial Segmentation">Restrict, Don&#x27;t Retrain: Inference-Time VLM Guidance for Zero-Shot Aerial Segmentation</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">seg <strong>3</strong></span><span class="dpr-home-dashboard-tag">mono-depth <strong>2</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">mono-depth <strong>1</strong></span><span class="dpr-home-dashboard-tag">seg <strong>1</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>1</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -84,12 +84,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">7 篇</strong>
+    <strong class="dpr-home-dashboard-count">1 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="NBS: No Bias Stereo">NBS: No Bias Stereo</span></li><li><span class="dpr-home-dashboard-paper-title" title="AdapToPASS: Ambiguity-aware Adaptive Spherical Transformer for Panoramic Semantic Segmentation">AdapToPASS: Ambiguity-aware Adaptive Spherical Transformer for Panoramic Semantic Segmentation</span></li><li><span class="dpr-home-dashboard-paper-title" title="Dynamic-Robust Photometric-Semantic Reconstruction for Open-Vocabulary 3D Scene Understanding">Dynamic-Robust Photometric-Semantic Reconstruction for Open-Vocabulary 3D Scene Understanding</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="NBS: No Bias Stereo">NBS: No Bias Stereo</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">seg <strong>4</strong></span><span class="dpr-home-dashboard-tag">stereo-depth <strong>3</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">stereo-depth <strong>1</strong></span></div>
 </section>
 </div>
 
